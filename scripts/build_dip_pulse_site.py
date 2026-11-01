@@ -143,6 +143,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
     "parties": "Zusammenschlüsse (Fraktionen und Gruppen, etwa CDU/CSU oder Gruppe BSW) und fraktionslos für Abgeordnete ohne Zusammenschluss.",
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
+    "mdb_zugehoerigkeiten": "Zugehörigkeit jedes MdB je Wahlperiode und Zeitraum: welcher Zusammenschluss oder fraktionslos, aus den MdB-Stammdaten des Bundestages.",
+    "party_seats": "Sitzzahl je Zusammenschluss (und fraktionslos), Wahlperiode und Zeitraum, gezählt aus mdb_zugehoerigkeiten.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
     "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten oder namentlichen Abstimmungen verbunden werden; abstract ist die DIP-Zusammenfassung als Klartext (HTML entfernt, Leerraum normalisiert).",
@@ -1491,6 +1493,36 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         raise DatabaseRebuildError(str(exc)) from exc
 
 
+def read_cached_stammdaten(database_path: Path) -> list[dict[str, Any]] | None:
+    """The cached MdB-Stammdaten as one dict per ``MDB`` element (the input of
+    ``derive.mdb_zugehoerigkeiten``), or None when no file is cached. Reading
+    the cached zip is C1 step 4; until then there is never a file."""
+    return None
+
+
+def rebuild_seat_counts(store: sqlite3.Connection, mdbs: list[dict[str, Any]] | None) -> None:
+    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the MdB-Stammdaten
+    into the staged store (C1). With no Stammdaten both tables stay empty and a
+    warning says so; Stammdaten that break an interval or size rule raise
+    DatabaseRebuildError, so nothing is swapped in."""
+    if mdbs is None:
+        print("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen): "
+              "mdb_zugehoerigkeiten and party_seats stay empty", file=sys.stderr)
+        return
+    try:
+        zugehoerigkeiten = derive.mdb_zugehoerigkeiten(mdbs, since_wahlperiode=V1_FIRST_WAHLPERIODE)
+        seats = derive.party_seats(zugehoerigkeiten)
+        derive.check_seat_totals(seats)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The MdB-Stammdaten break a seat rule: {exc}") from exc
+    if not seats:
+        # check_seat_totals checks only the Wahlperioden present, so a file
+        # without one would leave both tables empty with no warning.
+        raise DatabaseRebuildError(f"The MdB-Stammdaten hold no Mandat from Wahlperiode {V1_FIRST_WAHLPERIODE} on")
+    with store:
+        pulse_store.persist_seat_counts(store, zugehoerigkeiten, seats, pulse_store.utc_now())
+
+
 def _staged_store_path(database_path: Path) -> Path:
     """A fresh staged file for a store, under the writer lock: in the store's
     private directory, never in the published tree (registry.private_dir), and on
@@ -1664,6 +1696,7 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
+        rebuild_seat_counts(store, read_cached_stammdaten(database_path))
         try:
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
@@ -2966,7 +2999,7 @@ _COLUMN_SOURCE_ABGEORDNETENWATCH = {
     ("mps", "wahlkreis"),
     ("mps", "bundesland"),
 }
-_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes"}
+_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes", "mdb_zugehoerigkeiten"}
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
@@ -2981,6 +3014,8 @@ _TABLE_SOURCE_DERIVED = (
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
         "vote_proceedings", "vote_passages",
+        # Counted from mdb_zugehoerigkeiten (derive.party_seats), not read.
+        "party_seats",
         # The local store's own schema version counter, not source data.
         "schema_migrations",
     }
@@ -3019,6 +3054,10 @@ _COLUMN_SOURCE_DERIVED = {
     ("mps", "aw_match"),
     ("contributions", "parent_rede_id"),
     ("contributions", "sprechrolle"),
+    # The Zugehörigkeit stretches are cut from the Stammdaten dates by the
+    # interval rules (handover day, Mandat clipping, S5), not copied.
+    ("mdb_zugehoerigkeiten", "valid_from"),
+    ("mdb_zugehoerigkeiten", "valid_until"),
 }
 
 
@@ -3040,6 +3079,7 @@ LICENSE_LAYER_SOURCES = {
     "dip": {"dip"},
     "dip-quellenangabe": {"dip"},
     "bundestag-abstimmungen": {"bundestag.de"},
+    "bundestag-stammdaten": {"bundestag.de"},
     # Only mps.display_name/party_id use it, and the mps table is tagged dip.
     "dip-oder-bundestag-abstimmungen": {"dip"},
     "abgeordnetenwatch": {"abgeordnetenwatch"},
@@ -3051,7 +3091,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 11
+EXPORT_FORMAT = 12
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.

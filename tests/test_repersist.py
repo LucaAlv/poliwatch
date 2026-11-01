@@ -35,6 +35,38 @@ def protocol_xml(number: str) -> str:
     return f'<dbtplenarprotokoll wahlperiode="{wahlperiode}" sitzung-nr="{sitzung}"><sitzungsverlauf><tagesordnungspunkt top-id="TOP1"/></sitzungsverlauf></dbtplenarprotokoll>'
 
 
+CDU_CSU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
+SPD = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+
+
+def stammdaten_mdb(mdb_id: str, first: str, last: str, *memberships: tuple[str, str, str | None]) -> dict:
+    """One MdB-Stammdaten ``MDB`` element as the derivation reads it: a WP 21
+    Mandat from the constituent day, open, with these Fraktion/Gruppe memberships."""
+    return {
+        "ID": mdb_id,
+        "NAMEN": [{"VORNAME": first, "NACHNAME": last, "HISTORIE_VON": "25.03.2025"}],
+        "WAHLPERIODEN": [{
+            "WP": "21", "MDBWP_VON": "25.03.2025", "MDBWP_BIS": None,
+            "INSTITUTIONEN": [
+                {"INSART_LANG": "Fraktion/Gruppe", "INS_LANG": name, "MDBINS_VON": von, "MDBINS_BIS": bis}
+                for name, von, bis in memberships
+            ],
+        }],
+    }
+
+
+def stammdaten_wp21() -> list[dict]:
+    """A whole WP 21 Bundestag of 630 seats (rule 6 needs the legal size reached):
+    one AfD member who leaves for fraktionslos on 10.11.2025 (a handover day),
+    229 CDU/CSU and 400 SPD members throughout."""
+    switcher = stammdaten_mdb("11000000", "Erika", "Wechsel",
+                              ("Fraktion Alternative für Deutschland", "25.03.2025", "10.11.2025"),
+                              ("Fraktionslos", "10.11.2025", None))
+    rest = [stammdaten_mdb(f"110{index:05d}", "Max", f"Muster{index}", (CDU_CSU if index <= 229 else SPD, "25.03.2025", None))
+            for index in range(1, 630)]
+    return [switcher, *rest]
+
+
 class ReparseCachedXmlTests(unittest.TestCase):
     """A rule change in the parser reaches the cached reports and the store from the
     cached XML, with no re-fetch (A1)."""
@@ -913,6 +945,115 @@ class RepersistTests(unittest.TestCase):
         try:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM votes WHERE context_state IS NULL").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], pulse_store.SCHEMA_VERSION)
+        finally:
+            conn.close()
+
+    # Value: protects=a rebuild with no MdB-Stammdaten leaves both seat tables empty and says so on stderr, never silently; fails_when=the hook skips without a warning, or writes rows from nothing; why_new=C1 step 3 adds the hook; seam=repersist_cached_reports on a real store
+    def test_without_cached_stammdaten_the_seat_tables_are_empty_and_a_warning_says_so(self) -> None:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.repersist()
+        self.assertEqual(self.count("mdb_zugehoerigkeiten"), 0)
+        self.assertEqual(self.count("party_seats"), 0)
+        self.assertIn("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen)", err.getvalue())
+
+    def seat_rows(self) -> tuple[list[tuple], list[tuple]]:
+        conn = sqlite3.connect(self.database)
+        try:
+            members = conn.execute(
+                "SELECT z.mdb_id, z.name, z.wahlperiode, p.name, z.valid_from, z.valid_until "
+                "FROM mdb_zugehoerigkeiten z JOIN parties p ON p.id = z.party_id ORDER BY z.mdb_id, z.valid_from"
+            ).fetchall()
+            seats = conn.execute(
+                "SELECT p.name, s.wahlperiode, s.valid_from, s.valid_until, s.seats "
+                "FROM party_seats s JOIN parties p ON p.id = s.party_id ORDER BY p.name, s.valid_from"
+            ).fetchall()
+            return members, seats
+        finally:
+            conn.close()
+
+    # Value: protects=the rebuild writes the Stammdaten-derived Zugehörigkeiten and seat counts with
+    #   party ids from the parties table (fraktionslos as that table's row, C1 decision), and a second
+    #   repersist of the same input leaves the rows and the file unchanged; fails_when=the hook drops
+    #   or duplicates rows, names a party outside parties, or writes something clock- or order-dependent;
+    #   why_new=C1 step 3 adds the hook; seam=repersist_cached_reports with read_cached_stammdaten
+    #   patched (the zip reader is step 4)
+    def test_stammdaten_become_seat_rows_that_a_second_repersist_leaves_identical(self) -> None:
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=stammdaten_wp21()):
+            _, rebuilt = self.repersist()
+            self.assertTrue(rebuilt.replaced)
+            members, seats = self.seat_rows()
+            before = sha(self.database)
+            _, rebuilt = self.repersist()
+        self.assertFalse(rebuilt.replaced)
+        self.assertEqual(before, sha(self.database))
+        self.assertEqual(self.seat_rows(), (members, seats))
+        self.assertEqual(seats, [
+            ("AfD", 21, "2025-03-25", "2025-11-10", 1),
+            ("CDU/CSU", 21, "2025-03-25", None, 229),
+            ("SPD", 21, "2025-03-25", None, 400),
+            ("fraktionslos", 21, "2025-11-10", None, 1),
+        ])
+        self.assertEqual(len(members), 631)
+        self.assertEqual([row for row in members if row[0] == "11000000"], [
+            ("11000000", "Erika Wechsel", 21, "AfD", "2025-03-25", "2025-11-10"),
+            ("11000000", "Erika Wechsel", 21, "fraktionslos", "2025-11-10", None),
+        ])
+
+    # Value: protects=Stammdaten that break a seat rule stop the rebuild with the cause named and the
+    #   previous store byte for byte; fails_when=StammdatenError escapes as a traceback past the CLI's
+    #   DatabaseRebuildError handler, or a half-written store is swapped in; why_new=C1 step 3 adds the
+    #   hook; seam=repersist_cached_reports with read_cached_stammdaten patched
+    def test_stammdaten_that_break_a_seat_rule_stop_the_rebuild_and_keep_the_store(self) -> None:
+        self.repersist()
+        before = sha(self.database)
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=stammdaten_wp21()[:3]):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "WP 21: at most 3 seats on any day, never the legal 630"):
+                self.repersist()
+        self.assertEqual(before, sha(self.database))
+
+    # Value: protects=Stammdaten with no Mandat from WP 18 on (an empty file, or only older WPs) stop the
+    #   rebuild instead of leaving both seat tables empty with no warning; fails_when=the hook accepts
+    #   an empty derivation, which check_seat_totals passes because it checks only the WPs present;
+    #   why_new=checklist class 5 on C1 step 3; seam=repersist_cached_reports with read_cached_stammdaten patched
+    def test_stammdaten_without_a_v1_mandate_stop_the_rebuild(self) -> None:
+        self.repersist()
+        before = sha(self.database)
+        old_only = stammdaten_mdb("11000001", "Max", "Alt", (CDU_CSU, "17.10.2017", None))
+        old_only["WAHLPERIODEN"][0]["WP"] = "17"
+        for label, records in (("empty", []), ("WP 17 only", [old_only])):
+            with self.subTest(label), mock.patch.object(build, "read_cached_stammdaten", return_value=records):
+                with self.assertRaisesRegex(build.DatabaseRebuildError, "no Mandat from Wahlperiode 18 on"):
+                    self.repersist()
+                self.assertEqual(before, sha(self.database))
+
+    # Value: protects=a schema 8 store (no seat tables) is refused byte for byte by a non-upgrade rebuild and upgraded to schema 9 by --repersist; fails_when=the party_seats guard is dropped (an online build stamps 9 over a store whose seat tables it just created empty) or the upgrade trips over the old store; why_new=C1 bumps the schema to 9; seam=none; no_claim=a store written by released code (the old shape is staged by dropping what schema 9 added)
+    def test_a_schema_8_store_is_refused_by_an_online_rebuild_and_upgraded_by_repersist(self) -> None:
+        entries, _ = self.repersist()
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("DROP TABLE party_seats")
+            conn.execute("DROP TABLE mdb_zugehoerigkeiten")
+            conn.execute("DELETE FROM schema_migrations WHERE version >= 9")
+            conn.commit()
+        finally:
+            conn.close()
+        old = sha(self.database)
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "Old build-store schema.*--offline --repersist"):
+            build.rebuild_database_from_entries(self.database, entries, vorgang_cache={"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+        self.assertEqual(old, sha(self.database))
+        # The export names the upgrade too, not the dictionary entries the old store lacks tables for.
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema.*--offline --repersist"):
+            build.export_distribution_data(database_path=self.database, exports_dir=self.output_dir / "exports")
+        self.assertEqual(old, sha(self.database))
+
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
+        self.assertEqual(self.count("party_seats"), 0)
+        self.assertEqual(self.count("mdb_zugehoerigkeiten"), 0)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 9)
         finally:
             conn.close()
 

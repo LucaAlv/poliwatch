@@ -1016,17 +1016,18 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_twenty_nine_csvs_named_and_headered(self) -> None:
+    def test_all_thirty_one_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 29)
+        self.assertEqual(len(csv_files), 31)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
             "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
+            "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -1065,7 +1066,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 11)
+        self.assertEqual(manifest["export_format"], 12)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1548,7 +1549,9 @@ class ExportDistributionDataTests(unittest.TestCase):
             "agenda_item_politikfelder": ["agenda_item_id", "politikfeld"],
             "agenda_item_votes": ["agenda_item_id", "vote_id"],
             "agenda_items": ["id"], "contributions": ["id"], "datenstand": ["tag"], "documents": ["id"],
-            "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"], "person_aliases": ["id"],
+            "mdb_zugehoerigkeiten": ["mdb_id", "wahlperiode", "valid_from"],
+            "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"],
+            "party_seats": ["party_id", "wahlperiode", "valid_from"], "person_aliases": ["id"],
             "person_bindings": ["id"], "person_records": ["id"], "persons": ["id"],
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],

@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS mdb_zugehoerigkeiten (
   mdb_id TEXT NOT NULL,                 -- Stammdaten person id (the same number as the protocol XML Redner-ID)
   name TEXT NOT NULL,                   -- display name, for reading only
   wahlperiode INTEGER NOT NULL,
-  party_id TEXT REFERENCES parties(id), -- NULL = fraktionslos on these days
+  party_id TEXT NOT NULL REFERENCES parties(id), -- the `fraktionslos` row on days without a Zugehörigkeit (D8)
   valid_from TEXT NOT NULL,             -- first day (inclusive)
   valid_until TEXT,                     -- first day no longer covered (exclusive); NULL = open at the Stand date
   PRIMARY KEY (mdb_id, wahlperiode, valid_from)
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS mdb_zugehoerigkeiten (
 
 -- Derived from mdb_zugehoerigkeiten in the store: one row per Zusammenschluss and unbroken seat count.
 CREATE TABLE IF NOT EXISTS party_seats (
-  party_id TEXT REFERENCES parties(id), -- NULL = fraktionslos
+  party_id TEXT NOT NULL REFERENCES parties(id), -- the `fraktionslos` row counts the members without one (D8)
   wahlperiode INTEGER NOT NULL,
   valid_from TEXT NOT NULL,
   valid_until TEXT,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS party_seats (
 
 - **Traceability.** A seat count resolves to the named members behind it: the `mdb_zugehoerigkeiten` rows that cover that day. That covers principle 1 without a vote id. A recipe can recount any figure from the export.
 - **Personal fields:** the Stammdaten id and the display name only. No biography: birth dates, professions and the rest stay out.
-- **fraktionslos** is a NULL `party_id`, not a party row. The step-2 derivation names it `"fraktionslos"`; step 3 maps that name to whatever this bullet settles. CONTEXT.md says it is the absence of a Zugehörigkeit, not an organisation. Step 3 checks whether SQLite's handling of a NULL in a composite primary key needs a sentinel instead. If it does, a fixed `fraktionslos` party row, the one `parties` already has, is the fallback, with the dictionary saying it is not a Zusammenschluss.
+- **fraktionslos** is the existing `fraktionslos` parties row, not NULL (D8, decided in step 3). CONTEXT.md says it is the absence of a Zugehörigkeit, not an organisation; the dictionary says so for both `party_id` columns.
 - **Lookup rule (C2–C5 depend on it).** The seats of group G at date d are the row with `valid_from <= d` and (`valid_until IS NULL` or `d < valid_until`) in d's WP. No row means no seat count, shown as such. Dates after the Stand follow D6.
 - **Not in C1:** linking `mdb_id` to `mps.xml_redner_id`, which would put Mandat dates on the MP pages.
 
@@ -155,8 +155,7 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
    - Tests with a small fixture zip under `tests/fixtures/`, built from the step 1b structure. No network in tests.
 5. **Cross-check.** The disagreement report and its summary line. A test with a fixture vote whose total disagrees.
 6. **Export.**
-   - The source tags, the `bundestag-stammdaten` layer, the dictionary entries and `EXPORT_FORMAT` 12.
-   - The pins in `tests/test_daten_export.py`: CSV count (:1019), format (:1068), primary keys (:1546-1560).
+   - Done in step 3 (the export refuses a table without a dictionary entry): the source tags, the `bundestag-stammdaten` layer, the dictionary entries, the captions, `EXPORT_FORMAT` 12 and the `tests/test_daten_export.py` pins.
    - A `column_source` test (beside `tests/test_build_dip_pulse_site.py:3182`).
    - `tests/_daten_fixture.py` with Stammdaten-derived rows.
 7. **R2.**
@@ -211,6 +210,78 @@ The second case is the Berlin repeat election moving a Grünen seat to another L
 
 After the rule, the file gives 2,914 `mdb_zugehoerigkeiten` rows and 171 `party_seats` rows (WP 18: 29, WP 19: 66, WP 20: 62, WP 21: 14). The size check passes in all four WPs. Every S3 pin and first-day composition is reproduced exactly. The last WP 20 day is 733 (SPD 207, CDU/CSU 196, Grüne 117, FDP 90, AfD 76, Gruppe Die Linke 28, Gruppe BSW 10, fraktionslos 9). The Stand day 2026-04-29 is 630 (CDU/CSU 208, AfD 150, SPD 120, Grüne 85, Die Linke 64, fraktionslos 3).
 
+## Step 3 result (2026-11-01)
+
+Schema 9 is in, test-first. The owner settled four questions before the tests were written.
+
+**What changed**
+- **Schema.** `SCHEMA_VERSION` 8 → 9. Both tables are created in `persist_dip_pulse_store.initialize`, with `party_id NOT NULL` (D8). Neither table has `created_at`/`updated_at`: the rows are recomputed on every rebuild, and with no clock column a second repersist leaves the file byte-identical.
+- **Sentinel.** `require_current_schema` refuses a store that has `mps` but no `party_seats`, so only `--offline --repersist` upgrades a schema 8 store.
+- **Store writer.** `pulse_store.persist_seat_counts(conn, zugehoerigkeiten, seats, now)` replaces both tables and maps each `party` name, `"fraktionslos"` included, to its row through `upsert_party`.
+- **Hook.** `build.rebuild_seat_counts(store, read_cached_stammdaten(database_path))` runs in `_rebuild_database_from_entries` after the roster block and before `require_current_speech_rules` / `registry.reconcile`. Every rebuild reaches it: online, `--repersist`, and every test caller.
+  - **No Stammdaten (None):** both tables stay empty, and stderr gets `warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen)`.
+  - **A `StammdatenError`:** an interval rule, the closed name map or the size check fails; the hook raises `DatabaseRebuildError` and the store is untouched. Without this wrapping, the CLI would have printed a traceback.
+  - **Stammdaten with no Mandat from WP 18 on:** an empty file, or only older WPs, also raises `DatabaseRebuildError` (checklist class 5). `check_seat_totals` checks only the WPs present, so the tables would otherwise have come out empty with no warning.
+- **Loader.** `read_cached_stammdaten(database_path)` returns None until step 4 reads the zip. It is the test seam: tests patch it with synthetic `MDB` dicts.
+- **Export (brought forward from step 6, owner decision).** The export iterates every store table and refuses one with no dictionary entry, so step 3 needed these pieces:
+  - dictionary entries for both tables
+  - Daten-page captions
+  - source tags: `mdb_zugehoerigkeiten` is `bundestag.de`, except `valid_from`/`valid_until`, which are `derived` because the interval rules cut them; `party_seats` is `derived`
+  - the `bundestag-stammdaten` licence layer, mapped to `{"bundestag.de"}`
+  - `EXPORT_FORMAT` 11 → 12, so 29 → 31 CSVs
+  - the pins in `tests/test_daten_export.py` (CSV count, format, primary keys)
+  - README, CONTEXT.md, `docs/stable-ids.md`, `docs/project-documentation.md` and `docs/data-license.md`, which stated schema 8 / format 11 / 29 CSVs and would otherwise be false
+
+  Step 6 keeps the `column_source` test, the `_daten_fixture` rows and `docs/data-methods.md`.
+
+**Tests** (`tests/test_repersist.py`; the `test_a1_followups` pin is now 9):
+- no Stammdaten: both tables empty, warning on stderr
+- 630 synthetic WP 21 MdBs plus a switcher (AfD → fraktionslos on a handover day): exact `party_seats` rows and the switcher's two Zugehörigkeit rows; a second repersist keeps the file and the rows
+- 3 MdBs: the size check raises `DatabaseRebuildError`, store byte-identical
+- empty / WP 17-only Stammdaten: `DatabaseRebuildError`, store byte-identical
+- a schema 8 store: refused byte for byte by a non-upgrade rebuild, upgraded by repersist
+
+Rule 6 needs each WP's legal size reached, so any fixture needs a whole Bundestag. Step 4's fixture zip has the same constraint.
+
+**Real-file check.** A scratch reader ran the real file through `derive` and `persist_seat_counts` into an in-memory schema 9 store. The result was 2,914 / 171 rows (29 / 66 / 62 / 14 per WP), no PK, CHECK or FK failure, and the nine parties expected. The four Textarchiv pins and the Stand-day composition match step 2.
+
+**Figures.** No existing figure moves. Production builds pass None until step 4, so both tables are empty and no other table is touched. The export gains two header-only CSVs and the format number.
+
+**For step 4**
+- `read_cached_stammdaten` gets only `database_path`, but the zip lives in `OUTPUT_DIR/data`. With `--database-path` elsewhere, that is not the store's directory. Step 4 either passes the output directory to the rebuild or keeps the file beside the store.
+- `derive.mdb_zugehoerigkeiten` raises `KeyError`/`ValueError`, not `StammdatenError`, on an `MDB` without `ID` or a `WAHLPERIODE` with a non-numeric `WP`. The hook catches only `StammdatenError`. The reader must refuse such records, or derive must raise `StammdatenError` for them, so a malformed file ends in `DatabaseRebuildError` and not a traceback. No input reaches this today.
+- `xml.etree` elements are falsy when they have no children, so `wp.find("INSTITUTIONEN") or []` is the wrong test. Use `is not None`.
+
+### Step 3 review checklist (`docs/agents/review-checklist.md`, full pass: 379+ changed lines)
+
+1. **Sibling path.**
+   - **Sentinel:** it lives in `require_current_schema` (`persist_dip_pulse_store.py:57`), which every path calls: `initialize`, the non-upgrade rebuild (`build_dip_pulse_site.py:~1585`), the export (`:~4103`, before the dictionary loads; pinned in the schema 8 test), `facts.ensure_canonical`, and the offline render and pipeline checks (`:~13401`, `:~13627`, `:~13702`, `:~14028`).
+   - **Hook:** it sits in `_rebuild_database_from_entries`, the one function behind the online persist, `--repersist` and every test rebuild. `--no-persist` and the facts engine never rebuild and never write the seat tables.
+2. **Stale beats fresh.** Not touched. The tables are deleted and rewritten in a fresh staged store, with no carry-over.
+3. **Order and history.** `derive.party_seats` sorts its output, and the S5 tie-break goes in id order. `_content_digests` is order-independent, and the second-repersist test pins a byte-identical file.
+4. **One key, one function.** A party name becomes its id only through `upsert_party` (`stable_key("party", name)`), the same function `speeches`, `vote_fractions` and `vote_members` use. `mdb_id` is `derive._clean(ID)`. A missing `ID` is the step-4 item above.
+5. **Absent vs zero.** None means no Stammdaten: warning, empty tables. An empty derivation is refused (`build_dip_pulse_site.py`, `rebuild_seat_counts`), with a test. A WP missing from an otherwise good file gives no rows for that WP. That is "no seat count" under the lookup rule, and step 5's cross-check flags it.
+6. **Derived columns.** Not touched.
+7. **Neighbour binding.** Not touched.
+8. **Hostile text.** Not touched. No new scanner; the step-2 derivation is unchanged.
+9. **Input shape.** No new flag, file or id reaches a path. Malformed `MDB` dicts are the step-4 item above.
+10. **Interrupted run.** Both writes go into the staged store, inside the existing swap. A failure unlinks the staged file, and the published store is untouched (tests pin it byte for byte).
+11. **Claims.**
+    - The dictionary entries follow `derive._stammdaten_name` (the name on the first day), `_mandate_stretches` (clipping, handover day) and the S5 trim. "Ein Name außerhalb der Liste bricht den Build ab" is `StammdatenError` turned into `DatabaseRebuildError`. The size sentence is `check_seat_totals`.
+    - The `mdb_id` = Redner-ID claim is checked on the real file: 11003516 is Alexander Dobrindt and 11004792 is Rainer Kraft, the Redner-IDs the protocol fixtures use.
+    - README "31 CSV.gz" is pinned by `test_all_thirty_one_csvs_named_and_headered`.
+    - The caption no longer calls `party_seats` a denominator, since no per-seat figure exists yet.
+    - **Owed under D7:** the attribution short string in `docs/data-license.md` (embedded in DATA.md) and ADR 0003 name no MdB-Stammdaten. It changes with the layer's terms, before a release.
+12. **Loop cost.** About 2,900 rows go in through `executemany`, with one `upsert_party` per party name (cached). That is negligible against a rebuild.
+13. **Last commit.** Rechecked after the class 5 and class 11 fixes: the new guard has its test, and the wording fixes are covered by the export tests.
+
+**Checks no diff review replaces**
+- **Figures:** none moved. Production passes None until step 4, so no existing table is written differently. The only output change is format 12 and two header-only CSVs. The real file through the writer reproduces the step-2 numbers.
+- **Fresh vs incremental:** the second-repersist test (same file, same rows).
+- **Browser:** not opened. The Daten page gains two rows from the same `render_daten_schema` template, and the caption test covers both.
+- **Python 3.13.12:** not reached; `html.parser` is untouched.
+- **Adversarial lenses (red team, Codex):** owed once, on the C1 tip handed to `/gstack-ship`.
+
 ## Decisions
 
 | | Question | Recommendation |
@@ -221,7 +292,8 @@ After the rule, the file gives 2,914 `mdb_zugehoerigkeiten` rows and 171 `party_
 | D4 | WP 20 Linke boundary | Resolved (F4) unless the Stammdaten dates the Gruppen other than 2024-02-02 |
 | D5 | Textanteil rename of R2 | Optional fold-in (same lines), otherwise its own TODO |
 | D6 | Dates after the Stammdaten's Stand | **Decided 2026-11-01 (owner): (a).** Evidence in S4: 1 of 33 roll-calls after the Stand disagrees. (a) Carry the Stand composition forward, print the Stand date beside every seat figure and in the manifest, and flag later roll-call disagreements as drift. The alternatives: (b) no seats after the Stand, which leaves months of WP 21 with no denominator; (c) fill in from roll-calls after the Stand, which brings E4-type errors back into recent months. Decide after step 1b |
-| D7 | Licence layer | New layer `bundestag-stammdaten`; terms settled under track D before a release |
+| D7 | Licence layer | New layer `bundestag-stammdaten`; terms settled under track D before a release. The layer exists since step 3 |
+| D8 | How fraktionslos is stored | **Decided 2026-11-01 (owner): the existing `fraktionslos` parties row**, `party_id NOT NULL` in both tables. A NULL would let SQLite's composite primary key accept duplicate fraktionslos rows, since every NULL counts as distinct. It would also make the seat tables the only ones that do not spell fraktionslos the way `speeches`, `vote_fractions` and `vote_members` do (through `upsert_party`), and every join in steps 5 and 7 would need a COALESCE. A forgotten COALESCE drops the fraktionslos share with no error |
 
 ## History: why the source changed
 
