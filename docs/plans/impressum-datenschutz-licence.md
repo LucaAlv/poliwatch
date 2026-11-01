@@ -752,7 +752,7 @@ NO UNRESOLVED DECISIONS
 
 Where the build differs from the steps above, and why:
 
-- **O4, branch order.** Batches 7 and 8 were not on main. The owner chose to build on 4705fb3 anyway. Expect small conflicts at rebase: the Daten footer's issues label and `tests/test_daten_page.py` (batch 8), and a few lines of ADR 0003 and `docs/project-documentation.md`.
+- **O4, branch order.** Batches 7 and 8 were not on main, so the owner chose to build on 4705fb3 anyway. Once PR #127 (batches 5–8, v0.28.0.0) landed, the branch was rebased onto d189961. There were two conflicts: the Daten footer, which keeps main's „Datenfehler melden (GitHub)“ label and adds the legal span, and the `--data-issues-url` row in `docs/project-documentation.md`, which keeps main's text.
 - **10a.** The plan said to also run `build_dip_pulse_site.validate_manifest` on `--previous-manifest`. That validator refuses every export format but the current one, so the release after this branch's format bump (11 to 12) could never name its predecessor. `publish_dip_pulse_data.previous_manifest_problem` checks the fields `release_changes` reads instead, and refuses `null`, numbers and lists.
 - **10c.** The release script has no "requested version" input. The build itself now refuses: `parse_args` rejects a release `--data-tag` with `--no-persist` or `--data-manifest`, and `run_data_pipeline` raises when no export carries the tag (no store, `DataExportUnavailable`, `$BUNDESTAG_PULSE_DATA_MANIFEST`).
 - **10d.** Both sides are normalised (`build_revision.text_sha256`), not one, so the outcome does not depend on the checkout the release script runs in.
