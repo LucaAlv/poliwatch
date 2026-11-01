@@ -327,6 +327,18 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P1 (plan item 1.5); P2 (exclusion record (f), publication guard); P3 for the rest
 **Depends on:** A3 merged
 
+### Refuse a render when the Vorgang cache is newer than the store
+
+**What:** Record a fingerprint of the Vorgang cache (`dip-vorgang-cache.json`, plus the Antrag cache) when the store is persisted. An offline render then refuses when the cache on disk differs, and the message names `--offline --repersist`. This is the same shape as `require_current_speech_rules` (`persist_dip_pulse_store.py:72-92`).
+
+**Why:** From A4 slice 1 on, the votes archive shows the Politikfelder persisted in the store, not tags recomputed from the cache at render time (`docs/plans/a4-site-from-release.md`, R4: `tests/test_politikfelder.py:1445` is rewritten). A cache refreshed without a repersist would therefore leave stale tags on the page, with no warning. No current command updates the cache without a persist, so the issue is latent. It matters more once slices 4–7 read more cache-derived data from the store: "Worum es geht", Antrag passages and dossier tags.
+
+**Context:** Found by the outside voice of the A4 eng review (2026-11-01, O7; decision R9 in the plan). Start from the speech-rule check and add one store table or `PRAGMA user_version`-style row for the fingerprint.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** A4 slice 1
+
 ## Protokoll-Dossier
 
 ### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
