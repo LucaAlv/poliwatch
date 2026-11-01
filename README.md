@@ -160,8 +160,9 @@ Related knobs, in the order you will reach for them:
 | `--dossier-document-number 21/90` | Also acquire this protocol on top of what `--detail-limit` selects. Repeatable. |
 | `--backfill-incomplete` | Acquire exactly the sittings the build reports as incomplete (below). |
 | `--protocol-wahlperiode N` | Acquire only sittings of this Wahlperiode: `--limit` counts its newest protocols, `--backfill-incomplete` acquires only its gaps. Default `0` = every Wahlperiode. |
-| `--exclude-document-number 18/84` | Skip this sitting if its source is rejected, instead of stopping the build (repeatable; only after reading its rejection diagnostic, see below). |
-| `--sleep S` | Seconds between DIP API requests. Default `0`, with `--backfill-incomplete` `0.5`. |
+| `--exclude-document-number 18/84` | Keep this sitting out of the build whatever the parser says, and record it in `data/coverage-exclusions.json` so every later run leaves it out too (repeatable; add a number only after reading its rejection diagnostic, see below). Any other rejected source still stops the build. |
+| `--include-document-number 18/84` | Take this sitting off the exclusion record again (repeatable; online runs only). |
+| `--sleep S` | Seconds between DIP API requests. Default `0`, with `--backfill-incomplete` `2`. |
 | `--roster-wahlperiode N` | Wahlperiode whose MdB roster `--enrich mp-roster` fetches (repeatable). Default: every one from 18 to the catalog's newest; the Abgeordnete index lists the members of the newest. |
 | `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
 | `--enrich ID` | Add optional profile or full-roster acquisition to this update (`aw-profiles`, `mp-roster`, `all`). Votes are already on by default. |
