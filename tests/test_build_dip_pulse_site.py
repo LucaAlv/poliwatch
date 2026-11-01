@@ -3220,6 +3220,10 @@ class BuildClockAndWeekTests(unittest.TestCase):
         refresh = mock.patch.object(build_dip_pulse_site, "refresh_vorgang_cache", return_value={})
         refresh.start()
         self.addCleanup(refresh.stop)
+        # Every online build refreshes the Sitzungskalender; never reach bundestag.de from a test.
+        calendar = mock.patch.object(build_dip_pulse_site.sitzungskalender, "refresh_if_due")
+        calendar.start()
+        self.addCleanup(calendar.stop)
 
     _item = SittingWeekComparisonTests._item
     _entry = SittingWeekComparisonTests._entry
