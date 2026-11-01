@@ -4,6 +4,8 @@ from __future__ import annotations
 import itertools
 import json
 import fcntl
+import os
+import stat
 from contextlib import contextmanager
 from functools import lru_cache
 from collections.abc import Iterator
@@ -38,13 +40,64 @@ def private_dir(database_path: Path) -> Path:
     """Where a store's writer lock and staged copies live: never in a published
     tree. A store in ``OUTPUT/data/`` is published with OUTPUT, so its private
     directory is ``.OUTPUT.private`` beside OUTPUT; any other store gets
-    ``.STORE.private`` in its own directory. Derived from the resolved path, so
-    every spelling of one store (a symlink, ``..``) names one lock."""
+    ``.STORE.private`` in its own directory. The ``data`` rule is a path
+    convention: any store whose directory is named ``data`` follows it, and a
+    ``data`` directly under the filesystem root has no OUTPUT to sit beside, so
+    that store keeps its private directory in its own directory. Derived from
+    the resolved path, so every spelling of one store (a symlink, ``..``) names
+    one lock."""
     store = database_path.resolve()
     if store.parent.name == "data":
         root = store.parent.parent
-        return root.parent / f".{root.name}.private"
+        if root.parent != root:
+            return root.parent / f".{root.name}.private"
     return store.parent / f".{store.name}.private"
+
+
+def _euid() -> int:
+    return os.geteuid()
+
+
+def ensure_private_dir(path: Path) -> Path:
+    """A private directory that is safe to write and sweep: a real directory
+    this user owns that no one else can write. Created (0700) when absent; an
+    existing one with group or other write bits is repaired, and refused only
+    when the bits stay (a file system that keeps no POSIX modes). A symlink, a
+    non-directory or a foreign owner is refused before anything is created,
+    written or swept there, so a directory planted in a shared tree cannot
+    redirect the sweeps. ``OSError`` for a failed creation (errno kept) and
+    ``PermissionError`` for a refusal, so every caller's ``OSError`` path
+    applies."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.mkdir(path, 0o700)
+            except FileExistsError:
+                pass
+        except OSError as exc:
+            raise OSError(exc.errno, (
+                f"{path}: the private directory for staged stores and the writer lock could not be created "
+                f"({exc.strerror}); its parent must be writable and on the store's file system (docs/stable-ids.md)"
+            )) from exc
+        info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode):
+        raise PermissionError(f"{path} is a symbolic link, not a private directory; remove it and rerun")
+    if not stat.S_ISDIR(info.st_mode):
+        raise PermissionError(f"{path} is not a directory; remove it and rerun")
+    if info.st_uid != _euid():
+        raise PermissionError(f"{path} is owned by uid {info.st_uid}, not this user; remove it and rerun")
+    if info.st_mode & 0o022:
+        os.chmod(path, 0o700)
+        info = os.lstat(path)
+        if info.st_mode & 0o022:
+            raise PermissionError(
+                f"{path} is writable by group or others and its mode cannot be changed "
+                "(a file system without POSIX modes, such as some bind mounts, is not supported; docs/stable-ids.md)"
+            )
+    return path
 
 
 def writer_lock_path(database_path: Path) -> Path:
@@ -57,7 +110,7 @@ def writer_lock(database_path: Path) -> Iterator[None]:
     file is never removed: flock belongs to its inode."""
     database_path.parent.mkdir(parents=True, exist_ok=True)
     path = writer_lock_path(database_path)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_dir(path.parent)
     with path.open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
