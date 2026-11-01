@@ -329,6 +329,10 @@ server so downloads work on `localhost`.
   GitHub assets are flat while the page links `<base URL><generation>/<file>`, so a GitHub
   release URL as `--data-base-url` does not resolve yet (open hosting decision). The README
   §7 hosting paragraph named here has not been written.
+  *Status update 2026-11-01:* `LICENSE-DATA.md` now exists at the repository root and is
+  carried by every export (export format 12), so `--publish` no longer refuses for a
+  missing file; it refuses an export whose licence string is empty or whose
+  `LICENSE-DATA.md` differs from the one the manifest's commit holds.
 
 ### Copy and links elsewhere
 
@@ -374,6 +378,8 @@ server so downloads work on `localhost`.
   roll-call data and abgeordnetenwatch profile links. Today `sources.html` describes sources
   but not a licence. Decide the wording before the page ships; until then the line reads
   "Lizenzhinweis: siehe Quellen und Methode".
+  *Status update 2026-11-01:* decided in ADR 0003; the line is the short string of
+  `LICENSE-DATA.md`, and the placeholder remains only for a manifest that carries no licence.
 - **CORS on release assets.** Only matters for the deferred Datasette Lite links; check
   with `curl -I` on the first published asset (see The Assignment).
 - **zstd vs gzip.** zstd -19 gives 31 MB vs 47 MB, but gzip is stdlib and universally

@@ -447,7 +447,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 
 | Option | Default | Effect |
 |---|---:|---|
-| `--data-base-url URL` | `data/exports/` or `$BUNDESTAG_PULSE_DATA_BASE_URL` | Where the page's download links point; absolute only for `https://`, `http://` or a leading `/` |
+| `--data-base-url URL` | `data/exports/` or `$BUNDESTAG_PULSE_DATA_BASE_URL` | Where the page's download links point; absolute only for `https://`, `http://` or a leading `/`. Refused at the start of the export: a host that does not parse, a base with no host, a backslash (browsers read `/\host/` as another site) and a URL with credentials |
 | `--data-manifest PATH\|URL` | `OUTPUT_DIR/data/exports/datenstand.json` or `$BUNDESTAG_PULSE_DATA_MANIFEST` | Which manifest the Daten page renders from; a URL is an explicit opt-in fetch (10 s timeout, 32 MB cap) and is rejected under `--offline`. The local export is skipped while an override is given (unless `--force-export`) |
 | `--force-export` | off | Re-run the export even when its inputs (store, recipe SQL/metadata, codebook input bytes, build revision, export format, tag, licence, issues URL, coverage counts) are unchanged, or when `--data-manifest` would otherwise skip it |
 | `--data-tag TAG` | `local` | Tag of the export; it ends every file name of the generation and shows as "Release <tag>". Either `local` or a release version `YYYY.MM.DD[.N]` (`scripts/publish_dip_pulse_data.sh --next-version` prints it); the parser refuses anything else. A release tag also requires a bare 12-digit build revision and committed authored inputs |
