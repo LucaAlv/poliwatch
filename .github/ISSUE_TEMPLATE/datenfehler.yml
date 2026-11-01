@@ -1,0 +1,52 @@
+name: Datenfehler
+description: Eine Zahl, ein Name, eine Zuordnung oder ein Text stimmt nicht mit der Quelle überein – auf der Seite oder im Download.
+title: "Datenfehler: "
+labels: ["needs-triage", "datenfehler"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für die Meldung. Ein Datenfehler lässt sich prüfen, wenn die Stelle auf der Seite und die Stelle in der Quelle nebeneinanderstehen.
+        Bitte nur Daten, Methode und Code, keine Bewertung von Parteien oder Personen: [Regeln für Beiträge](https://github.com/LucaAlv/poliwatch/blob/main/CODE_OF_CONDUCT.md).
+        Bestätigte Fehler werden korrigiert und das Issue geschlossen; eine persönliche Antwort ist nicht garantiert.
+        Persönliche Anliegen (Datenschutz, Korrekturwünsche betroffener Personen, Presse) gehören nicht in ein öffentliches Issue.
+  - type: input
+    id: seite
+    attributes:
+      label: Seite
+      description: Adresse aus der Adresszeile des Browsers. Über den Link auf der Daten-Seite steht hier schon „database.html"; liegt der Fehler auf einer anderen Seite, bitte deren Adresse eintragen.
+      placeholder: https://…/sitzung/21-84.html
+    validations:
+      required: true
+  - type: textarea
+    id: angezeigt
+    attributes:
+      label: Was steht auf der Seite?
+      description: Zahl oder Satz möglichst wörtlich.
+    validations:
+      required: true
+  - type: textarea
+    id: quelle
+    attributes:
+      label: Was steht in der Quelle?
+      description: Die entsprechende Stelle aus Plenarprotokoll, Drucksache oder Abstimmungsliste, möglichst wörtlich.
+    validations:
+      required: true
+  - type: input
+    id: quelllink
+    attributes:
+      label: Link zur Quelle
+      description: DIP-Vorgang, Plenarprotokoll (gern mit Seitenzahl) oder Abstimmungsliste auf bundestag.de.
+      placeholder: https://dip.bundestag.de/…
+    validations:
+      required: true
+  - type: input
+    id: datenstand
+    attributes:
+      label: Datenstand (optional)
+      description: Nur bei Fehlern im Download: das Release, zu finden auf der Daten-Seite unter „Rohdaten".
+      placeholder: data-2026.10.31
+  - type: textarea
+    id: hinweise
+    attributes:
+      label: Weitere Hinweise (optional)

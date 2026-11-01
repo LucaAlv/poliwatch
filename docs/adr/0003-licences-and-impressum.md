@@ -108,6 +108,15 @@ The operator is one person with limited time, the audience is mostly not develop
   - No ideas template, and Discussions stay off until there is demand.
   - The site's „Fehler melden" link (`issues_url`) opens the Datenfehler form with the page URL pre-filled.
 
+**Amended 2026-11-01 (what the first governance batch ships).**
+- **Link:** the label is „Datenfehler melden (GitHub)", so a reader knows before the click that the report happens on GitHub and needs an account. The only report link is the Daten page footer; per-page links wait for a site base URL and A3 (TODOS.md).
+- **Pre-fill:** the page pre-fill is a configured query string, not a render-time helper. The documented `--data-issues-url` value in `docs/project-documentation.md` opens the form with `seite=database.html`; `tests/test_issue_forms.py` checks that the template and field ids it names exist. The operator sets it for the public build only once the repository is public; a private repository gives non-members a 404.
+- **Datenfehler form:** two optional fields beyond the list above: `datenstand` (the release, for errors in a download) and `hinweise`. The intro states that confirmed errors are fixed and the issue closed, with no promised reply.
+- **No conduct checkbox:** a required checkbox is not enforced while the repository is private, and a ticked box changes no behaviour. The rules (`CODE_OF_CONDUCT.md`, „Regeln für Beiträge") are linked from the forms' intro and from `CONTRIBUTING.md`.
+- **Labels:** the forms apply `needs-triage`, plus `datenfehler` or `bug`; a label missing from the repository is skipped silently.
+- **E-mail channel:** the „Private Anliegen" contact link in `config.yml`, the e-mail address in `SECURITY.md` and conduct rule 4, and `security.txt` wait for the Impressum and the final domain. Until then the forms say private matters do not belong in a public issue and name no alternative.
+- **Security reporting:** GitHub private vulnerability reporting can be switched on only for a public repository, so it follows the visibility flip. `SECURITY.md` says so until then.
+
 ## Open questions for a lawyer before launch
 
 1. Whether a c/o or Impressum address service satisfies § 18 MStV for a private person, or whether the home address must be published.

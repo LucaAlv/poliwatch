@@ -357,8 +357,18 @@ class DatenPageTests(unittest.TestCase):
             with self.subTest(url=url):
                 manifest = dict(self.manifest, issues_url=url)
                 html = b.render_database_page(manifest, mp_lookup=self.lookup, features=all_selection())
-                self.assertEqual("Fragen und Fehler" in html, expected)
+                self.assertEqual("Datenfehler melden (GitHub)" in html, expected)
                 self.assertNotIn("javascript:", html)
+
+    # Value: protects=the documented GitHub form URL (template and seite query) reaches the Daten footer as one href with the & escaped, so the report link opens the Datenfehler form with the page filled in; fails_when=safe_issues_url drops the query string or the href is not escaped; why_new=the footer test only used query-free URLs; seam=none
+    def test_footer_issues_link_keeps_the_prefill_query(self) -> None:
+        url = "https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml&seite=database.html"
+        manifest = dict(self.manifest, issues_url=url)
+        html = b.render_database_page(manifest, mp_lookup=self.lookup, features=all_selection())
+        self.assertIn(
+            '<a href="https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml&amp;seite=database.html">Datenfehler melden (GitHub)</a>',
+            html,
+        )
 
     def test_local_build_state_line(self) -> None:
         self.assertIn("Rohdaten &middot; lokaler Build", self.html)
