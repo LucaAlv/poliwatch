@@ -571,7 +571,12 @@ class BackfillSelectionTests(unittest.TestCase):
                 persisted = sorted(
                     entry["report"]["protocol"]["dokumentnummer"] for entry in rebuild.call_args.args[1]
                 ) if rebuild.called else None
+                excluded_for_rebuild[:] = sorted(rebuild.call_args.kwargs["excluded_document_numbers"]) if rebuild.called else []
                 return code, persisted, stderr.getvalue()
+
+            # The rebuild is told which sittings are listed, so a listed sitting that is
+            # already stored leaves the store instead of reading as missing evidence.
+            excluded_for_rebuild: list[str] = []
 
             # An unlisted refusal still stops the run before the store is rebuilt (D4).
             code, persisted, stderr = run("--exclude-document-number", "21/3")
@@ -587,6 +592,7 @@ class BackfillSelectionTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertEqual(written, [])
             self.assertEqual(persisted, [])
+            self.assertEqual(excluded_for_rebuild, ["21/1", "21/2", "21/3"])
             entries = json.loads(record.read_text(encoding="utf-8"))["exclusions"]
             self.assertEqual([(e["document_number"], e["date"], e["reason"]) for e in entries],
                              [("21/1", "2026-06-11", "excluded"), ("21/2", "2026-06-12", "excluded"),
@@ -609,6 +615,7 @@ class BackfillSelectionTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertEqual(written, ["21/2"])
             self.assertEqual(persisted, ["21/1", "21/2"])
+            self.assertEqual(excluded_for_rebuild, ["21/3"])
             self.assertEqual([e["document_number"] for e in json.loads(record.read_text(encoding="utf-8"))["exclusions"]],
                              ["21/3"], stderr)
 

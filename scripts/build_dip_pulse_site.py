@@ -673,11 +673,16 @@ def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def recorded_exclusions(output_dir: Path) -> set[str]:
+    """The document numbers the exclusion record lists (D2), normalized."""
+    return {normalized_document_number(entry.get("document_number")) for entry in load_coverage_exclusions(output_dir)}
+
+
 def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The cached entries minus the sittings the exclusion record lists (D2). An
     offline run passes no list, and a report cached before its sitting was
     listed is still on disk; the record keeps it out of the store."""
-    recorded = {normalized_document_number(entry.get("document_number")) for entry in load_coverage_exclusions(output_dir)}
+    recorded = recorded_exclusions(output_dir)
     return [
         entry for entry in entries
         if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in recorded
@@ -1458,7 +1463,7 @@ def _entry_label(entry: dict[str, Any]) -> str:
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, upgrade=False, vorgang_cache=None) -> Rebuilt:
+                                  today=None, upgrade=False, vorgang_cache=None, excluded_document_numbers=()) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1470,7 +1475,9 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     accepts a store of an older schema; every other caller is refused, so the
     registry is re-minted only on that explicit step. Returns a ``Rebuilt``. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
-    DatabaseRebuildError with the previous store untouched."""
+    DatabaseRebuildError with the previous store untouched. A stored protocol
+    whose document number is in ``excluded_document_numbers`` (the reviewed
+    exclusions, D2) is not missing evidence: it leaves the store."""
     # One spelling for the lock, the staging directory and the swap: a rebuild
     # through a symlink to the store replaces the store, not the link.
     database_path = Path(database_path).resolve()
@@ -1479,7 +1486,7 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
                 catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade,
-                vorgang_cache=vorgang_cache)
+                vorgang_cache=vorgang_cache, excluded_document_numbers=excluded_document_numbers)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1522,8 +1529,10 @@ def _rebuild_database_from_entries(
     today: date | None = None,
     upgrade: bool = False,
     vorgang_cache: dict[str, Any] | None = None,
+    excluded_document_numbers: Collection[str] = (),
 ) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    excluded = {normalized_document_number(number) for number in excluded_document_numbers}
     if database_path.exists():
         try:
             probe = facts.open_readonly(database_path)
@@ -1578,9 +1587,14 @@ def _rebuild_database_from_entries(
         if database_path.exists():
             previous = facts.open_readonly(database_path)
             try:
-                previous_protocols = {row[0] for row in previous.execute("SELECT id FROM protocols")}
                 available = {str(entry["report"]["protocol"]["id"]) for entry in entries}
-                missing = previous_protocols - available
+                # A reviewed exclusion (D2) of a stored sitting drops it from the
+                # store; any other stored sitting without its report stops the build.
+                missing = {
+                    protocol_id
+                    for protocol_id, document_number in previous.execute("SELECT id, document_number FROM protocols")
+                    if protocol_id not in available and normalized_document_number(document_number) not in excluded
+                }
                 if missing:
                     raise DatabaseRebuildError(f"Missing cached evidence for protocols {sorted(missing)}; restore their reports before --offline --repersist")
                 registry.copy_previous(previous, store)
@@ -2215,6 +2229,7 @@ def repersist_cached_reports(
     XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and the
     ``Rebuilt`` result. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
+    recorded = recorded_exclusions(output_dir)
     cached = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols, strict=True))
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
@@ -2223,7 +2238,7 @@ def repersist_cached_reports(
     rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, upgrade=True, vorgang_cache=vorgang_cache,
+        today=today, upgrade=True, vorgang_cache=vorgang_cache, excluded_document_numbers=recorded,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
@@ -13843,6 +13858,7 @@ def main() -> int:
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
                         today=resolve_today(getattr(args, "today", None)),
                         vorgang_cache=vorgang_cache,
+                        excluded_document_numbers=listed,
                     ).facts_report
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)

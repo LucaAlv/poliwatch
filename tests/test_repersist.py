@@ -556,6 +556,32 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(before, sha(self.database))
         self.assertEqual(self.count("protocols"), 3)
 
+    # Value (D2): protects=a reviewed exclusion of a sitting that is already stored drops it from
+    # the store instead of stopping the rebuild (and every later replay, since the record is
+    # durable) as missing cached evidence, while an unlisted stored sitting without its report
+    # still stops it; fails_when=the retention check ignores the exclusion record;
+    # seam=repersist_cached_reports on a real store.
+    def test_a_recorded_exclusion_of_a_stored_sitting_leaves_the_store(self) -> None:
+        self.repersist()
+        self.assertEqual(self.count("protocols"), 2)
+        record = {"exclusions": [{"document_number": "21/84", "date": "2025-01-01", "reason": "excluded",
+                                  "recorded_at": "2026-11-01T00:00:00Z"}]}
+        (self.output_dir / "data" / build.COVERAGE_EXCLUSIONS_FILENAME).write_text(json.dumps(record), encoding="utf-8")
+        entries, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
+        self.assertEqual([e["report"]["protocol"]["dokumentnummer"] for e in entries], ["20/999"])
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual([r[0] for r in conn.execute("SELECT document_number FROM protocols")], ["20/999"])
+            conn.execute("INSERT INTO protocols(id, document_number, created_at, updated_at) VALUES ('x', '99/1', 't', 't')")
+            conn.commit()
+        finally:
+            conn.close()
+        before = sha(self.database)
+        with self.assertRaisesRegex(build.DatabaseRebuildError, r"Missing cached evidence for protocols \['x'\]"):
+            self.repersist()
+        self.assertEqual(before, sha(self.database))
+
     def test_the_roster_rows_are_preserved(self) -> None:
         conn = pulse_store.connect(self.database)
         try:
