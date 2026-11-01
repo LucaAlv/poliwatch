@@ -4012,6 +4012,12 @@ class StoreCoverageGapTests(unittest.TestCase):
         self.assertIn("1 sitting(s) recorded as excluded are still in the store (21/2)", gap)
         self.assertIsNone(build_dip_pulse_site.store_coverage_gap(self._store([("pp-1", "21/1")]), self._entries(("pp-1", "21/1")), excluded={"21/2"}))
 
+    # Value: protects=a cached report with no dokumentnummer that the store lacks is named by its protocol id, not by a blank or a crash; fails_when=the label falls back to None/"" or the sort of mixed labels raises;
+    #   why_new=every row above carries a number; unnumbered reports reach the build (cached_report_fix has a placeholder for them); seam=none; no_claim=none beyond protects
+    def test_an_unnumbered_report_is_named_by_its_protocol_id(self) -> None:
+        gap = build_dip_pulse_site.store_coverage_gap(self._store([]), self._entries(("pp-7", None), ("pp-8", "21/8")))
+        self.assertIn("2 cached report(s) are not in the store (21/8, pp-7)", gap)
+
     def test_an_empty_store_and_no_reports_agree(self) -> None:
         self.assertIsNone(build_dip_pulse_site.store_coverage_gap(self._store([]), []))
 
