@@ -4859,7 +4859,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
         {relationships_block}
       </section>
       <footer>
-        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Fragen und Fehler</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
       </footer>
     </main>
   </div>
@@ -12292,7 +12292,7 @@ def is_url(value: str) -> bool:
     return bool(re.match(r"^https?://", value))
 
 
-# The "Fragen und Fehler" footer link may come from a --data-manifest that
+# The "Datenfehler melden (GitHub)" footer link may come from a --data-manifest that
 # the operator fetched from elsewhere, so it gets the same scheme discipline
 # as --data-base-url: https://, http://, mailto: or a site-relative path.
 _ISSUES_URL_RE = re.compile(r"^(https?://|mailto:|/)")
@@ -12763,7 +12763,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-issues-url",
         default=None,
-        help="Optional URL for a 'Fragen und Fehler' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only.",
+        help="Optional URL for the 'Datenfehler melden' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only. docs/project-documentation.md gives the GitHub form URL that pre-fills the page.",
     )
     args = parser.parse_args()
     # The tag ends every export file name and is shown as "Release <tag>".

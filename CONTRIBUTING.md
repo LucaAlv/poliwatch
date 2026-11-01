@@ -1,5 +1,11 @@
 # Contributing
 
+## Fehler melden und Regeln
+
+Fehler und Datenfehler werden als Issue gemeldet, über eines der [beiden Formulare](https://github.com/LucaAlv/poliwatch/issues/new/choose); dafür ist ein kostenloses GitHub-Konto nötig. Für Beiträge gelten die [Regeln für Beiträge](CODE_OF_CONDUCT.md). Sicherheitslücken gehören nicht in ein öffentliches Issue: siehe [SECURITY.md](SECURITY.md).
+
+## Development
+
 Before your first fetch, check `.env.local`: the empty `DIP_API_KEY=` copied from `.env.example` overrides an exported key and makes the preview stop. Fill it in or remove the empty line. See [First-time setup (§2)](README.md#2-first-time-setup).
 
 Run these from the repository root:
