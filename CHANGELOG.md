@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0.0] - 2026-11-01
+
+### Changed
+
+- **Every page renders from the SQLite store.** An online update always rebuilds the store, and an `--offline` render reads it. To preview a sitting without touching the site you serve, build into a clone copy of the output directory (README "Try a fetch or a backfill in a scratch directory"). Every online build now also refreshes the Sitzungskalender when it is due.
+- **An `--offline` render refuses instead of rendering from half the data.** With no store it exits 1 with `error: no store at …`, naming `--offline --repersist` (or an online update). When the store and the cached reports cover different sittings, it exits 1, names up to 5 sittings per case and the repair: a cached report the store lacks (`--offline --repersist`), a stored sitting whose report is gone (restore the report, or exclude the sitting), or an excluded sitting the store still holds (`--offline --repersist`). The offline render checks before any page is written. An online build runs the same check after its rebuild.
+- No page changes. A full-site render of the 716-sitting reference store before and after this change (measured against 40fa3bc, before the merge of 0.28.0.0) differed only in timestamps, generation names and the hashes that follow from them; 0 of 1,908 Fakt values moved.
+
+### Removed
+
+- **`--no-persist`.** Passing it is now an error. The `database.html` fallback no longer mentions it.
+
 ## [0.28.0.0] - 2026-11-01
 
 ### Added
