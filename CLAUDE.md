@@ -6,6 +6,10 @@ Nothing is published. No reader, citation, or downstream user depends on any cur
 
 During a review or a /ship run, fix now only correctness defects: a figure or row that is wrong or would move, a false statement or broken link in DATA.md, the site or other user-facing output, or a crash on input the code can actually receive. Record everything else in TODOS.md with enough context to act on later: cosmetic or wording-only output, test hygiene, code comments, latent issues no current input reaches, and defects that predate the change. From the second fix cycle of a /ship run on, defer anything that is not a correctness defect, so the run reaches its PR. The pre-release rule above decides how a fix is made, not whether a non-correctness finding is worth another review round.
 
+## Review checklist
+
+`docs/agents/review-checklist.md` holds the bug classes ship kept finding late, plus the replay and browser checks no diff review replaces. Apply it when you finish a change, at the start of `/gstack-ship`, in every `code-review`, and in `/gstack-review` inside ship; the file says how for each.
+
 ## Skill routing
 
 Route by request type:
@@ -30,10 +34,6 @@ GitHub Issues (LucaAlv/poliwatch) hold specced work; TODOS.md holds gstack's sma
 ### Triage labels
 
 Default five labels. See `docs/agents/triage-labels.md`.
-
-### Review checklist
-
-Before `/gstack-ship`, and in every review of a branch or diff, apply `docs/agents/review-checklist.md`: the bug classes ship kept finding late, plus the replay and browser checks no diff review replaces.
 
 ### Domain docs
 
