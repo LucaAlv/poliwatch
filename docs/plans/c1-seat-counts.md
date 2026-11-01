@@ -180,6 +180,7 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
      - the government-office MdBs TODO is now unblockable from the same file: add a note there
      - the `GRUPPE_DIE_LINKE_SINCE` naming note
      - the licence layer under D
+   - Done (2026-11-01), see "Step 8 result".
 9. **Replay on the real store, as part of the owed A3 post-merge rebuild** (disk: about 52 GB free, about 13 GB per gate).
    - Use a `cp -cR` clone, then `--enrich mdb-stammdaten` online (one fetch), then `--offline --repersist` twice, then export.
    - Report:
@@ -537,6 +538,28 @@ Step 9 should reproduce these through the build.
     - "Spätere Wechsel fehlen dort" is D6.
 12. **Loop cost.** Sitting dates times seat rows is about 300 × 15 per WP. The real-data run takes well under a second.
 13. **Last commit.** The variable rename and the docstring fix came before the full-suite run.
+
+## Step 8 result (2026-11-01)
+
+**Docs**
+- **README.** The format-12 note now names R2's `sitzanteil_prozent`. Schema 9, format 12 and the 32 CSVs were already correct from steps 3 and 4.
+- **`docs/stable-ids.md`.** Rechecked, correct: the seat tables mint no ids.
+- **`docs/data-methods.md`.** One sentence in "Sitzzahlen" points to R2's column. Its definition reaches DATA.md through the recipe's column meaning and method, so no second copy is needed.
+
+**TODOS.md**
+- **Roadmap C1.** Marked done, effort M rather than small, with its follow-ups named. Track D lists the new Stammdaten licence item.
+- **C1 entry.** Moved to Completed, with a summary and the superseded criterion. The original text is kept below it, marked superseded.
+- **New entries:**
+  - **"Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten"** (Abstimmungen, **P1**, M). It covers 47 votes and six MdBs. The published group counts of those votes are wrong until it is fixed, so it is P1, not the P2 the other C follow-ups get. The owner may re-rank it.
+  - "C1 seat counts: deferred findings" (Daten, P3). The seven "Left open" items from steps 4, 5 and 7.
+  - "Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)" (Daten, P2, track D). It includes the attribution string and ADR 0003 owed since step 3.
+  - "Link `mdb_zugehoerigkeiten` to the MP pages" (Abgeordnete, P3).
+  - "Rename `GRUPPE_DIE_LINKE_SINCE`" (Abgeordnete, P3, cosmetic).
+- **Update notes** on "List MdBs in a government office as Abgeordnete" and "Store DIP `person_roles` …": the Stammdaten in the store unblock the membership half of both.
+
+**Not done here**
+- CHANGELOG and VERSION, which `/gstack-ship` writes.
+- The step 9 replay.
 
 ## Decisions
 

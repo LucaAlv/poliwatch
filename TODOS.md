@@ -20,14 +20,14 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
-1. "Fraktion seat counts in the store" (small; the denominator for per-seat figures).
+1. Done 2026-11-01 (see Completed): "Fraktion seat counts in the store". Effort M, not small: the source became the Bundestag's MdB-Stammdaten, with a new acquisition, two tables and a roll-call cross-check. Its follow-ups: "Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten" (Abstimmungen) and "C1 seat counts: deferred findings" (Daten).
 2. "Diskursanalyse: precomputed term series per Zusammenschluss and month".
 3. "Politikfelder over time: which Zusammenschluss emphasises what" (after B3).
 4. "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion", which answers "who interrupts most".
 5. Then "Muster" and "Präsenz".
 
 **D. Before anything goes public**
-- Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Tag the abgeordnetenwatch MP columns with their real source".
+- Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)", "Tag the abgeordnetenwatch MP columns with their real source".
 - The release: "Write the release script", "Public data changelog per release", "A DOI per release and a citation file". Codebook/recipe-CSV generation is implemented (2026-10-29; see Completed); uploading the artifacts still belongs to the release script.
 - Hosting: "Site hosting plan for the 2.5 GB generated site". After A3 the site is 5.4 GB, 1.35 GB without `data/` (2026-10-29).
 
@@ -192,6 +192,39 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+### C1 seat counts: deferred findings
+
+**What:** Items from the C1 build (steps 3–7, 2026-11-01). Each was deferred under the fix-now-or-defer rule, because none is a wrong figure today:
+1. **`stammdaten.refresh` makes one attempt.** There is no retry and no line in the DIP request log. A failed fetch keeps the previous file, and the next build retries.
+2. **A failed ETag sidecar write is reported wrongly.** If the sidecar write fails after the replace, the warning names the old Stand although the new file is cached. The next fetch is then a full download.
+3. **The online path's cross-check call has no test of its own.** The offline one does. The Politikfeld summary beside it is in the same position.
+4. **A real misattribution can be filed as `change_on_vote_day`.** This happens when it falls on a day whose Zugehörigkeit changes cover the difference. The count rule narrows it, and the reference data has no such case.
+5. **A `shift_between_groups` could be a derivation fault rather than a source error.** Step 9 compares the ids with E4 again.
+6. **`validate_manifest` does not check the shape of the manifest's `stammdaten`.** A published override manifest with a malformed `stand` makes the Daten page raise in `stammdaten_stand_day`. The export writes the key from the store, so no current input reaches this.
+7. **An earlier cross-check report can stay in place.** This happens if the store cannot be read when the cross-check runs. The build has just written the store, so no current input reaches this.
+
+Done when each has a fix or a decision.
+
+**Why:** These are the "Left open" lists in `docs/plans/c1-seat-counts.md`, steps 4, 5 and 7.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)
+
+**What:** The seat tables (`mdb_zugehoerigkeiten`, `party_seats`, `mdb_stammdaten_stand`) carry the licence layer `bundestag-stammdaten` (C1, D7). The Open Data page gives "© Deutscher Bundestag" and says the data "können zur maschinellen Weiterverarbeitung genutzt werden", with no licence. Then:
+- ask, together with the roll-call question, whether the derived Zugehörigkeit rows (id, name, dates, group) may be redistributed;
+- write the layer's terms into `docs/data-license.md`, the attribution short string embedded in DATA.md, and ADR 0003, none of which names the MdB-Stammdaten yet.
+
+Done when the layer has written terms and DATA.md's attribution names the file.
+
+**Why:** It is a release blocker under track D, not an implementation blocker. The zip itself stays in the private directory, never in OUTPUT (D9).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Settle the roll-call source for redistribution (same e-mail)
 
 ### Validate final merged A1/A2 before the A3 backfill
 
@@ -499,6 +532,34 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Abgeordnete
 
+### Link `mdb_zugehoerigkeiten` to the MP pages
+
+**What:** `mdb_zugehoerigkeiten.mdb_id` is the same number as the protocol XML Redner-ID (`mps.xml_redner_id`; checked on Dobrindt 11003516 and Kraft 11004792). Join the two through the person registry. Each Personenseite then shows its Mandat dates and its Zugehörigkeit history per Wahlperiode, and R1/R3 can take the Fraktion of a Rede's or Stimme's date instead of the representative record's.
+
+Done when:
+- a Personenseite lists its Mandate and Zugehörigkeiten from the store;
+- the join's unmatched ids are counted in the build log.
+
+**Why:** Left out of C1 by design: the seat counts need no person link.
+
+**Context:**
+- **Redner-ID collision:** one Redner-ID can name two people (Completed, "The Bundestag XML gives one Redner-ID to two people (11005304)"). Guard that case.
+- **Government MdBs:** government MdBs without a roster row have Stammdaten rows, which ties in with "List MdBs in a government office as Abgeordnete".
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Rename `GRUPPE_DIE_LINKE_SINCE`
+
+**What:** `derive.GRUPPE_DIE_LINKE_SINCE` is 2023-12-06, the day the Fraktion Die Linke ended. The Gruppen were recognised on 2024-02-02, and in between the protocols label the 38 MdBs fraktionslos (C1 plan F4). The constant re-files no Rede in that interval and the Stammdaten agree, so no figure is wrong. But the name says the Gruppe existed from 2023-12-06. Rename it, e.g. `DIE_LINKE_FRAKTION_ENDED`, or date it 2024-02-02, and fix the comment. Done when the name and comment state what the date is.
+
+**Why:** Found in C1 step 1 (F4). Cosmetic.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Bundesrat members are ingested as MdBs (`_has_mdb_funktion` matches "MdBR")
 
 **What:** `_has_mdb_funktion` (`scripts/build_dip_pulse_site.py`) tests `"mdb" in value.lower()`, so DIP's `MdBR` and `Stellv. MdBR` count as MdB. Match the role exactly (`MdB`), and report roster rows, Abgeordnete list rows and pages old/new.
@@ -557,6 +618,8 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **What:** ADR 0001 says a Rede whose Plenarprotokoll names no Zusammenschluss counts for the speaker's Zugehörigkeit on the date of the Sitzung. The store keeps no membership history: `mps.person_roles_json` is DIP's `funktion` list, and `compact_person` drops DIP's `person_roles` (fraktion and Wahlperiode per role). The Rede therefore counts for the speaker's party as the store holds it. Keep `person_roles`, and let `derive` pick the role of the Rede's Wahlperiode.
 
+**Update 2026-11-01:** `mdb_zugehoerigkeiten` (C1) holds the Zugehörigkeit per day, keyed by the Redner-ID number. With "Link `mdb_zugehoerigkeiten` to the MP pages", the Rede's date can pick it directly, and DIP's `person_roles` are no longer needed for this.
+
 **Why:** Measured 2026-09-29: only 1 Rede (20/109 ID2010905000) has neither a Zusammenschluss nor a Sprechrolle, so the approximation costs almost nothing today; `compare_store_values.py` reports the count so it stays visible.
 
 **Effort:** S
@@ -568,6 +631,8 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 **What:** DIP's `funktion` holds only a person's current office, so 48 WP 21 MdBs whose office is Parl. Staatssekretär (27), Bundesminister (8), Staatsminister (7), Vizepräsident(in) (4) or another government one are not in the roster: the Abgeordnete list has 589 of about 630. Their Mandat shows in DIP only as a `person_roles` entry with a `fraktion` for the Wahlperiode, and not even that for some (Merz, Dobrindt, Dorothee Bär, Wadephul: roles end at WP 20 on 2026-10-30), so DIP alone cannot list all of them; the Bundestag's MdB-Stammdaten (MDB_STAMMDATEN XML, with MDBWP_VON/BIS) can, and would also give Mandat end dates.
 
 **Why:** They are MdBs (CONTEXT.md) and the list says it is complete.
+
+**Update 2026-11-01:** the MdB-Stammdaten are now in the store (C1). `mdb_zugehoerigkeiten` has a row for every Mandat from WP 18 on, these 48 included, with Mandat dates. The roster rule can take membership from there instead of DIP's `person_roles`; the registry join for party-less Sprechrolle records is still needed.
 
 **Context:** Tried 2026-10-30 with the `person_roles` rule (637 listed) and backed out: the registry's name guesses match on (name, party), and a Rede given as a member of the Bundesregierung has no party, so 29 of the 48 split into an Abgeordnete row without Reden and a separate Redner page with them (5 such splits before). Needs, first, a registry rule that joins a party-less Sprechrolle record to a roster record of the same name (`person_registry.match_rows`, A.2 territory: guard namesakes), then the roster rule (`derive.is_mdb_funktion` plus the Fraktion role, display name = the name segment of DIP's `titel`, Fraktion from the role when the top-level field is empty).
 
@@ -712,18 +777,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Effort:** M
 **Priority:** P2
 **Depends on:** None
-
-### Fraktion seat counts in the store
-
-**What:** A `party_seats` table (`party_id`, `wahlperiode`, `seats`, `valid_from`) filled from the mp-roster enrichment (count of roster rows per Fraktion) with a bundestag.de Sitzverteilung override; exported in the Daten CSVs. Done when `SELECT sum(seats)` for WP 21 equals the roster size and a per-seat column appears in recipe R2.
-
-**Why:** `parties` has `id, name, created_at, updated_at` only (`scripts/persist_dip_pulse_store.py:71-76`); every per-Sitz or share-of-Fraktion number (Zwischenrufe, Präsenz, Redeanteil) needs a denominator, and the `parties.name` duplicate bug under Daten shows why it must be one clean row per Fraktion.
-
-**Context:** Small; the roster count is already computable from `mps.party_id` once the duplicate rows are merged. Fraktionslose count as their own row.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** `parties.name` holds Python-list-repr duplicates of the same party
 
 ### Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion
 
@@ -926,6 +979,27 @@ Done when the chart and the recipe give the same numbers on the same release, an
 **Depends on:** Politikfeld tags; the Rede-counting items; v1 coverage
 
 ## Abstimmungen
+
+### Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten
+
+**What:** On 47 roll-calls in WP 19 and WP 20, bundestag.de files six MdBs under the wrong group: Kamann, Bülow, Pasemann, Witt, Huber and Heßenkemper (`docs/source-errors.md` E4). `vote_members.party_id` and `vote_fractions` copy the pages, so these members' Stimmen count for the wrong group. That affects the vote panel's group blocks, the Mehrheitsvotum and Abweichler (R3, Fakten). Re-file each member's Stimme under their Zugehörigkeit on the vote's date from `mdb_zugehoerigkeiten`, recompute the affected `vote_fractions` rows and Mehrheitsvoten, and report old and new values per vote.
+
+Done when:
+- the C1 cross-check (`seat-crosscheck.json`) shows no `shift_between_groups` roll-call;
+- the page's totals stay available as the source's own figures;
+- the fix runs on every rebuild, not as a one-off patch.
+
+**Why:** The C1 cross-check measured it on 2026-11-01. The Textarchiv backs the Stammdaten in every case. Until this is fixed, the published group counts of those 47 votes are wrong.
+
+**Context:**
+- **Vote ids:** `docs/plans/c1-seat-counts.md` "Step 5 result" lists them: 31 from 487 to 571, 9 from 696 to 706, 750–754 and 756–757.
+- **Where the rule goes:** at persist time, after the C1 tables exist in the staged store. The rebuild order puts `rebuild_seat_counts` after the reports are persisted, so the rule needs a pass after it, or the seat tables must move earlier.
+- **Votes from before WP 18** have no Stammdaten rows and stay as the source has them.
+- **Decide** whether a Stimme keeps the page's group as a second column, the page being the source.
+
+**Effort:** M
+**Priority:** P1 (a wrong published figure)
+**Depends on:** Fraktion seat counts in the store (done)
 
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
@@ -1312,6 +1386,36 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Fraktion seat counts in the store
+
+**Done (2026-11-01):** built on `claude/c1-implementation-plan-970e85` in steps 2–7 of [the C1 plan](docs/plans/c1-seat-counts.md). The real-store replay (plan step 9) belongs to the owed A3 post-merge rebuild.
+- **Source:** the Bundestag's MdB-Stammdaten (D1), not the roster count the entry proposed.
+  - The roster has 740 WP 21 rows against 630 seats, 151 rows without a party, one Fraktion per person and 48 government MdBs missing.
+  - The roll-call totals date a change only at the next roll-call and misattribute members (`docs/source-errors.md` E4). They stay as the cross-check.
+- **Tables (schema 9, export format 12, 32 CSVs):**
+  - `mdb_zugehoerigkeiten`: one row per MdB, Wahlperiode and stretch;
+  - `party_seats`: counted from them, with fraktionslos as its own row;
+  - `mdb_stammdaten_stand`: the file's Stand and sha256, also in the manifest and on the Daten page.
+- **Acquisition:** `--enrich mdb-stammdaten`, cached in the store's private directory. Every rebuild derives the tables from the cache. Without a cache the tables are empty, with a warning.
+- **Cross-check:** `seat-crosscheck.json` in the private directory compares every roll-call with the seats and files each disagreement under a cause. On the reference data: 497 of 556 roll-calls agree, 47 are the E4 misattributions, 10 are changes on the vote's day, 1 is E5 and 1 falls after the Stand.
+- **R2:** gains `sitzanteil_prozent`, with the Stand in its caveat (D6 (a): the composition at the Stand is carried forward).
+- **Figures:** no existing figure moved.
+
+**Superseded criterion:** "`SELECT sum(seats)` for WP 21 equals the roster size" is replaced by the plan's "Done when": each day's total is at most the legal size (631, 709, 736, 630) and reaches it in each WP, and the four Textarchiv pins hold.
+
+The original entry follows; its source, effort and criterion are superseded.
+
+**What:** A `party_seats` table (`party_id`, `wahlperiode`, `seats`, `valid_from`) filled from the mp-roster enrichment (count of roster rows per Fraktion) with a bundestag.de Sitzverteilung override; exported in the Daten CSVs. Done when `SELECT sum(seats)` for WP 21 equals the roster size and a per-seat column appears in recipe R2.
+
+**Why:** `parties` has `id, name, created_at, updated_at` only (`scripts/persist_dip_pulse_store.py:71-76`); every per-Sitz or share-of-Fraktion number (Zwischenrufe, Präsenz, Redeanteil) needs a denominator, and the `parties.name` duplicate bug under Daten shows why it must be one clean row per Fraktion.
+
+**Context:** Small; the roster count is already computable from `mps.party_id` once the duplicate rows are merged. Fraktionslose count as their own row.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** `parties.name` holds Python-list-repr duplicates of the same party
+**Completed:** 2026-11-01, commits 13f3341 to b50371f plus the step 8 docs commit on `claude/c1-implementation-plan-970e85`, unpushed; the real-store replay (plan step 9) is owed.
 
 ### v1 coverage: every Sitzung from WP 18 to the present
 
