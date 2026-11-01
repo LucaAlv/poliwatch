@@ -440,6 +440,23 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertIn(".vote-context-more[open] > summary .vote-context-teaser { display:none; }", css)
         self.assertNotIn(":has(", css)
 
+    # Value: protects=the folded "Worum es geht" blocks keep the dashed separator, and the three vote-context toggles show open/closed with a glyph (no native marker on the blue toggle text) and a 44 px target on touch screens; fails_when=a rule is dropped or the marker goes back to display:block with no glyph; why_new=B4 edges items 1 and 23(b); seam=none; no_claim=Safari/VoiceOver reading of the alt text
+    def test_context_toggles_show_their_state_and_folded_blocks_stay_separated(self) -> None:
+        css = self._page_css(self._render([self._item(1, 1)]))
+        self.assertIn(".vote-context-overflow > .vote-context-block { padding-top:8px; border-top:1px dashed var(--line); }", css)
+        toggles = ":is(.vote-context-more, .vote-context-overflow, .vote-context-quote-more)"
+        self.assertIn(f"{toggles} > summary::-webkit-details-marker {{ display:none; }}", css)
+        closed = ':is(.vote-context-overflow, .vote-context-quote-more) > summary::before { content:"▸ "; content:"▸ " / ""; }'
+        opened = ':is(.vote-context-overflow, .vote-context-quote-more)[open] > summary::before { content:"▾ "; content:"▾ " / ""; }'
+        self.assertIn(".vote-context-more > summary .vote-context-toggle::before, " + closed, css)
+        self.assertIn(".vote-context-more[open] > summary .vote-context-toggle::before, " + opened, css)
+        coarse = css[css.index("@media (pointer:coarse)", css.index(".vote-context-overflow > summary {")):]
+        self.assertTrue(
+            coarse.startswith(
+                "@media (pointer:coarse) {\n      .vote-context-overflow > summary, .vote-context-quote-more summary { min-height:44px; }"
+            )
+        )
+
     def test_runtime_is_guarded_on_pages_without_a_toggle(self) -> None:
         # The script ships on every dossier, including the empty states that
         # render no #attention-list and no toggle; it must return before it
