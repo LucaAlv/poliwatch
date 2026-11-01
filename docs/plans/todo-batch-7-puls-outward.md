@@ -197,7 +197,7 @@ Recommendation: **B**. The variable is read inside `week_radar_feed`. It must be
           "speech_count": 42, "share_percent": 10.3,
           "speeches_by_group": [
             {"fraktion": "SPD", "sprechrolle": null, "speech_count": 9},
-            {"fraktion": null, "sprechrolle": "Bundesregierung", "speech_count": 3}
+            {"fraktion": null, "sprechrolle": "bundesregierung", "speech_count": 3}
           ],
           "attributed_speech_count": 42,
           "trace": {"vorgang_id": "…", "first_week": "2026-W30", "first_position": "1. Beratung", "first_href": "protocols/….html#top-5", "current_position": "2./3. Beratung"},
@@ -213,7 +213,7 @@ Recommendation: **B**. The variable is read inside `week_radar_feed`. It must be
 
 - Field rules:
   - **Naming (design review DR7).** Keys are English snake_case like the release's columns (`speech_count`, `char_count`, `yes_count` in `scripts/data_dictionary.json`). German appears only in values and in the DIP field names the release keeps (`dokumentnummer`, `datum`, `vorgangstyp`, `vorgangsposition`, `titel`). An earlier draft mixed in `reden`, `weitere` and `namentliche_abstimmung`; they became `speech_count`, `unranked` and `has_votes`.
-  - `speeches_by_group` is CONTEXT.md's "Redeanteil je Zusammenschluss". Each entry splits the label into the release's own `speeches.fraktion` / `speeches.sprechrolle` columns: a label among `derive.SPRECHROLLE_LABELS` values goes to `sprechrolle`, and everything else (fraktionslos and Unbekannt included) goes to `fraktion`. The keys follow the release's column names. The schema does **not** promise that a row equals `GROUP BY fraktion, sprechrolle` on the release. The radar counts from report JSON (`item_stats`: `xml_speech_count`, `xml_speakers` via `speaker_party`), not from the store, and "One module that counts Reden and Beiträge" is still open in TODOS. T3 gate: on the demo store, compare the per-TOP JSON counts with the SQL counts. Report any difference as a finding, never paper over it with a mapping. Add the reproducibility sentence to the `stability` note only when the counts are equal.
+  - `speeches_by_group` is CONTEXT.md's "Redeanteil je Zusammenschluss". Each entry splits the label into the release's own `speeches.fraktion` / `speeches.sprechrolle` columns: a label among `derive.SPRECHROLLE_LABELS` values goes to `sprechrolle` **as its code, the key of that mapping** (`bundesregierung`, `bundesrat`, `weitere`, as `speeches.sprechrolle` stores it; owner decision D10, 2026-11-01), and everything else (fraktionslos and Unbekannt included) goes to `fraktion`. The keys follow the release's column names. The schema does **not** promise that a row equals `GROUP BY fraktion, sprechrolle` on the release. The radar counts from report JSON (`item_stats`: `xml_speech_count`, `xml_speakers` via `speaker_party`), not from the store, and "One module that counts Reden and Beiträge" is still open in TODOS. T3 gate: on the demo store, compare the per-TOP JSON counts with the SQL counts. Report any difference as a finding, never paper over it with a mapping. Add the reproducibility sentence to the `stability` note only when the counts are equal.
     - Before T3 lands, check that the release's `fraktion` values for fraktionslos and Unbekannt match the radar labels. If they do not, map them in the projection and pin that with a test.
     - The list is sorted by count descending, then by label, so the order is deterministic.
   - Counts and the week denominator are both present. `share_percent` is `round(percent(...), 1)`, the figure the page shows.
@@ -339,7 +339,7 @@ Not touched: `parse_args`, the `render_site` signature, `week_header_facts`, `re
 - Parity: for the selected week, the payload's row `href`s and `lead_title`/`titles` equal the radar rows in `render_front_page`'s markup on the same entries. There is one computation, `week_topic_rows`, and this test pins it.
 - Whitelist: every key at every level belongs to the schema set, and nothing is a `Counter` or a raw item.
 - `speeches_by_group`:
-  - a Sprechrolle side such as Bundesregierung lands in `sprechrolle`, with `fraktion` null;
+  - a Sprechrolle side such as Bundesregierung lands in `sprechrolle` as its code (`bundesregierung`), with `fraktion` null;
   - the counts sum to `attributed_speech_count`.
 - RSS title: an equal-weight top row yields its type label, never one Antrag's title (D16); the title is cut at 90 characters.
 - RSS description: it carries the denominator sentence and the source line naming every sitting.

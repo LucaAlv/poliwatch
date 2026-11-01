@@ -45,10 +45,14 @@ WEEKS_BACK = 12
 ITEM_TITLE_CHARS = 90
 STABILITY = (
     "Fields are only added within schema_version 1; a rename, removal or meaning change raises "
-    "schema_version. Links are relative to the site root. Weeks are newest first."
+    "schema_version. Links are relative to the site root. Weeks are newest first. "
+    "In speeches_by_group, sprechrolle holds the release's codes (bundesregierung, bundesrat, weitere); "
+    "a Rede in a Sprechrolle is counted on that side only, so a row need not equal "
+    "GROUP BY fraktion, sprechrolle on the release."
 )
 _BERLIN = ZoneInfo("Europe/Berlin")
-_ROLE_LABELS = frozenset(derive.SPRECHROLLE_LABELS.values())
+#: The radar names a Sprechrolle side by its display label; the release stores the code.
+_ROLE_CODES = {label: code for code, label in derive.SPRECHROLLE_LABELS.items()}
 
 
 def week_id(week: tuple[int, int]) -> str:
@@ -58,15 +62,16 @@ def week_id(week: tuple[int, int]) -> str:
 def speeches_by_group(party_counts: Counter[str]) -> list[dict[str, Any]]:
     """Redeanteil je Zusammenschluss as the release's ``speeches.fraktion`` / ``sprechrolle`` columns.
 
-    A radar label among the Sprechrolle sides goes to ``sprechrolle`` (``fraktion`` null).
+    A radar label among the Sprechrolle sides goes to ``sprechrolle`` as the release's code
+    ("Bundesregierung" -> "bundesregierung", ``fraktion`` null); the display label stays on the page.
     "Unbekannt" is the radar's word for a Rede whose protocol names no Zusammenschluss;
     the store holds that as NULL, so both columns are null. Every other label, "fraktionslos"
     included, is a ``fraktion``. Sorted by count descending, then label.
     """
     rows = []
     for label, count in sorted(party_counts.items(), key=lambda item: (-item[1], item[0])):
-        if label in _ROLE_LABELS:
-            fraktion, sprechrolle = None, label
+        if label in _ROLE_CODES:
+            fraktion, sprechrolle = None, _ROLE_CODES[label]
         elif label == "Unbekannt":
             fraktion, sprechrolle = None, None
         else:

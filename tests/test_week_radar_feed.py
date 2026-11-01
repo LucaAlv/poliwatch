@@ -130,17 +130,18 @@ class PayloadTests(unittest.TestCase):
             self.assertEqual(set(unranked), SCHEMA_KEYS["unranked"])
         self.assertNotIn("rank", json.dumps(payload).lower().replace("unranked", ""))
 
-    # Value: protects=Redeanteil je Zusammenschluss is split like the release's speeches.fraktion/sprechrolle: a Sprechrolle side is never a Fraktion, Unbekannt is NULL in both; fails_when=Bundesregierung lands in fraktion, Unbekannt is written as a Fraktion, or the counts stop adding up to the attributed Reden; why_new=the radar's label strings differ from the release's two columns; seam=speeches_by_group, build_payload; no_claim=equality with a SQL GROUP BY on a real store (not measured here)
+    # Value: protects=Redeanteil je Zusammenschluss is split like the release's speeches.fraktion/sprechrolle: a Sprechrolle side is its release code (bundesregierung, bundesrat, weitere) and never a Fraktion, Unbekannt is NULL in both; fails_when=a display label ("Bundesregierung") reaches sprechrolle, a side lands in fraktion, Unbekannt is written as a Fraktion, or the counts stop adding up to the attributed Reden; why_new=the radar's label strings differ from the release's two columns and owner decision D10 fixed the codes; seam=speeches_by_group, build_payload; no_claim=equality with a SQL GROUP BY on a real store (a role speech the store also tags with a fraktion counts on its side only)
     def test_speeches_by_group_splits_like_the_release_columns(self) -> None:
-        counts = Counter({"SPD": 4, "Bundesregierung": 3, "Unbekannt": 1, "fraktionslos": 1, "weitere Sprechrolle": 1})
+        counts = Counter({"SPD": 4, "Bundesregierung": 3, "Unbekannt": 1, "fraktionslos": 1, "weitere Sprechrolle": 1, "Bundesrat": 1})
         self.assertEqual(
             feed.speeches_by_group(counts),
             [
                 {"fraktion": "SPD", "sprechrolle": None, "speech_count": 4},
-                {"fraktion": None, "sprechrolle": "Bundesregierung", "speech_count": 3},
-                {"fraktion": None, "sprechrolle": None, "speech_count": 1},  # "Unbekannt" sorts before "fraktionslos"
+                {"fraktion": None, "sprechrolle": "bundesregierung", "speech_count": 3},
+                {"fraktion": None, "sprechrolle": "bundesrat", "speech_count": 1},  # ties sort by the radar label
+                {"fraktion": None, "sprechrolle": None, "speech_count": 1},  # "Unbekannt"
                 {"fraktion": "fraktionslos", "sprechrolle": None, "speech_count": 1},
-                {"fraktion": None, "sprechrolle": "weitere Sprechrolle", "speech_count": 1},
+                {"fraktion": None, "sprechrolle": "weitere", "speech_count": 1},
             ],
         )
         minister = make_speaker(None, 100, role="Bundesminister für Finanzen")
@@ -150,7 +151,7 @@ class PayloadTests(unittest.TestCase):
         payload = build([make_entry("2026-06-10", "21/82", [item])])
         (row,) = payload["weeks"][0]["rows"]
         sides = {(g["fraktion"], g["sprechrolle"]): g["speech_count"] for g in row["speeches_by_group"]}
-        self.assertEqual(sides, {("SPD", None): 2, (None, "Bundesregierung"): 1})
+        self.assertEqual(sides, {("SPD", None): 2, (None, "bundesregierung"): 1})
         self.assertEqual(sum(sides.values()), row["attributed_speech_count"])
         self.assertEqual(row["attributed_speech_count"], row["speech_count"])
         self.assertEqual(row["share_percent"], 100.0)
