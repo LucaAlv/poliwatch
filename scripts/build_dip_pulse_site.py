@@ -93,7 +93,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Collection, Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Sibling scripts, imported as plain modules (scripts/ is on sys.path when this
@@ -106,6 +106,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
+import dip_cache
 import abgeordnetenwatch as aw
 import derive
 import speech_kinds
@@ -245,7 +246,10 @@ def build_dossiers_with_progress(
     load_existing: Callable[[dict[str, Any]], dict[str, Any] | None],
     build_dossier: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Build dossiers sequentially while emitting human-readable progress to stderr."""
+    """Build dossiers sequentially while emitting human-readable progress to stderr.
+
+    A source refusal stops the build (D4). The sittings of
+    ``--exclude-document-number`` (D2) never reach this loop."""
     # Dossier building is the slow part of a build (XML download, DIP lookups,
     # roll-call scraping, optionally LLM calls), so each sitting gets a
     # numbered start/finish line on stderr. Failures print the elapsed time
@@ -267,13 +271,14 @@ def build_dossiers_with_progress(
             label = f"{label} from {protocol_date}"
 
         started = time.monotonic()
+        protocol.pop("dossier_failure_reasons", None)
         print(f"[dossiers] [{index}/{total}] {action}: {label}.", file=sys.stderr, flush=True)
         try:
             entry = build_dossier(protocol, existing_report)
         except dip.DipError as exc:
+            elapsed = time.monotonic() - started
             if exc.source_rejected:
                 raise  # D4: no staged store may replace accepted data after source refusal.
-            elapsed = time.monotonic() - started
             protocol["dossier_failure_reasons"] = ["source_unavailable"]
             print(
                 f"[dossiers] [{index}/{total}] Skipped unavailable {label} after {elapsed:.1f}s: {exc}",
@@ -353,10 +358,9 @@ def fetch_protocols(
     while fetch_all or len(protocols) < limit:
         page = client.get_json("/plenarprotokoll", params)
         protocols.extend(page.get("documents") or [])
-        if isinstance(page.get("numFound"), int) and not isinstance(page.get("numFound"), bool):
-            num_found = page["numFound"]
+        num_found = dip.page_count(page) if dip.page_count(page) is not None else num_found
         cursor = page.get("cursor")
-        if not cursor or cursor == previous_cursor:
+        if not cursor or cursor == previous_cursor or (fetch_all and dip.holds_all(protocols, num_found)):
             break
         previous_cursor = cursor
         params["cursor"] = cursor
@@ -370,6 +374,100 @@ def fetch_protocols(
             "Fix: run the update again."
         )
     return protocols if fetch_all else protocols[:limit]
+
+
+#: Days after the last full catalog fetch until a run fetches the whole catalog
+#: again; in between, closed Wahlperioden come from the cached catalog (owner
+#: decision 2026-10-23: DIP answers only about a hundred requests in a window).
+CATALOG_FULL_FETCH_DAYS = 7
+
+
+class CatalogCountMismatch(Exception):
+    """A filtered catalog list that does not add up to DIP's own count."""
+
+
+def _catalog_list(client: dip.ApiClient, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every protocol of one filtered catalog list, checked against DIP's count."""
+    params = dict(params)
+    protocols: list[dict[str, Any]] = []
+    previous_cursor = None
+    num_found: int | None = None
+    while True:
+        page = client.get_json("/plenarprotokoll", params)
+        protocols.extend(page.get("documents") or [])
+        num_found = dip.page_count(page) if dip.page_count(page) is not None else num_found
+        cursor = page.get("cursor")
+        if not cursor or cursor == previous_cursor or dip.holds_all(protocols, num_found):
+            break
+        previous_cursor = cursor
+        params["cursor"] = cursor
+    if num_found is None or len({str(p.get("id")) for p in protocols}) != num_found:
+        raise CatalogCountMismatch(f"DIP listed {len(protocols)} protocols for {params}, not {num_found}")
+    return protocols
+
+
+def catalog_payload(protocols: list[dict[str, Any]], *, full_fetched_at: str | None) -> dict[str, Any]:
+    """The cached catalog file. ``full_fetched_at`` is the last time the whole
+    catalog was fetched; a run that merged cached Wahlperioden keeps it."""
+    now = dip.utc_now()
+    return {"authoritative": True, "fetched_at": now, "full_fetched_at": full_fetched_at or now, "protocols": protocols}
+
+
+def fetch_catalog(
+    client: dip.ApiClient, output_dir: Path, *, now: datetime | None = None
+) -> tuple[list[dict[str, Any]], str]:
+    """The whole DIP catalog and when it was last fetched in full.
+
+    A cached catalog fully fetched in the last CATALOG_FULL_FETCH_DAYS supplies
+    every Wahlperiode before the newest (a closed Wahlperiode does not change),
+    and the entries without one (the Sonderdrucke, "SDr 1981"). Fetched fresh
+    are the newest Wahlperiode and a closed one in which some sittings still lack
+    the XML URL the others have; Wahlperioden 1-17 list none at all. The
+    merge is used only when it adds up to DIP's total count, so a new
+    Wahlperiode or a gap in the cache falls back to the full fetch, as does a
+    missing, unreadable or old cache. A file from before ``full_fetched_at``
+    counts from ``fetched_at``: every write then followed a full fetch. A DIP
+    failure is raised, not answered with the 48 requests of a full fetch. The
+    merge comes back in DIP's order, newest first, like a full fetch."""
+    now = now or datetime.now(timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    full = lambda: (fetch_protocols(client, 0, [], None), stamp)  # noqa: E731
+    try:
+        payload = json.loads((output_dir / "data" / facts.CATALOG_FILENAME).read_text(encoding="utf-8"))
+        cached = [p for p in payload["protocols"] if isinstance(p, dict)] if payload.get("authoritative") is True else []
+        full_fetched_at = str(payload.get("full_fetched_at") or payload.get("fetched_at") or "")
+        fetched = datetime.strptime(full_fetched_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return full()
+    if not cached or now - fetched > timedelta(days=CATALOG_FULL_FETCH_DAYS):
+        return full()
+    by_wp: dict[int, list[dict[str, Any]]] = {}
+    without_wp: list[dict[str, Any]] = []
+    for protocol in cached:
+        wahlperiode = wahlperiode_of(protocol)
+        (by_wp.setdefault(wahlperiode, []) if wahlperiode is not None else without_wp).append(protocol)
+    if not by_wp:
+        return full()
+    newest = max(by_wp)
+    frozen = {
+        wp for wp, protocols in by_wp.items()
+        if wp < newest and len({bool(protocol_xml_url(p)) for p in protocols}) == 1
+    }
+    total = dip.page_count(client.get_json("/plenarprotokoll", {"f.zuordnung": "BT"}))
+    merged = [*without_wp, *(p for wp in sorted(frozen) for p in by_wp[wp])]
+    try:
+        for wahlperiode in sorted(set(by_wp) - frozen):
+            merged.extend(_catalog_list(client, {"f.zuordnung": "BT", "f.wahlperiode": wahlperiode}))
+    except CatalogCountMismatch as exc:
+        print(f"[catalog] {exc}; fetching the whole catalog.", file=sys.stderr)
+        return full()
+    if total is None or len({str(p.get("id")) for p in merged}) != total:
+        print(f"[catalog] cached and fresh lists hold {len(merged)} protocols, DIP {total}; fetching the whole catalog.",
+              file=sys.stderr)
+        return full()
+    print(f"[catalog] {len(merged)} protocols: Wahlperiode {', '.join(map(str, sorted(frozen)))} from the cache "
+          f"(full fetch {full_fetched_at}), the rest fresh.", file=sys.stderr)
+    return sorted(merged, key=protocol_sort_key, reverse=True), full_fetched_at
 
 
 # Which sittings of the catalog this run acquires. --document-number and
@@ -400,6 +498,58 @@ def select_acquisition_protocols(
             ]
         return ordered[:limit]
     return ordered
+
+
+# A backfill sends DIP thousands of requests in one run; on 2026-10-04 about
+# four a second drew a bot challenge that made sittings source_unavailable, and
+# in the A3 pilot DIP stopped answering /person after about 250 requests at
+# 0.5 s (docs/plans/a3-pilot.md). Decision 9 of the WP 18/19 round 2 sets 2 s;
+# the dserver XML of the same run is paced by dip.XmlPacer.
+BACKFILL_SLEEP_SECONDS = 2.0
+
+
+# A backfill's roll-call scan budget, in list pages of ten votes. It is a cap,
+# not a cost: each sitting's scan stops at the first entry older than its date
+# (or at the list end), and the pages are shared build-wide, so the deepest
+# target sitting decides how many are read. On 2026-10-19 the list reached 2013
+# at offset 720 (page 72), the start of WP 18; 200 leaves room for years of
+# new votes. A smaller budget never marks a sitting structural for good:
+# _structural_vote_gap retries it once the budget is larger than the one used.
+BACKFILL_VOTE_SCAN_PAGES = 200
+
+
+# v1 coverage starts with the first Wahlperiode that has structured
+# Plenarprotokoll XML (PRODUCT.md, "v1 coverage"). Only the backfill selection
+# judges from it (D3): the facts periods keep judging from the earliest stored
+# sitting, so a build's completeness does not depend on how it was invoked.
+V1_FIRST_WAHLPERIODE = 18
+
+
+def wahlperiode_of(protocol: dict[str, Any]) -> int | None:
+    number = normalized_document_number(protocol.get("dokumentnummer"))
+    head = number.split("/", 1)[0] if "/" in number else ""
+    return int(head) if head.isdigit() else None
+
+
+def roster_periods(args: argparse.Namespace, catalog: list[dict[str, Any]]) -> list[int]:
+    """--roster-wahlperiode as given, else every period from
+    V1_FIRST_WAHLPERIODE to the newest one the catalog lists."""
+    given = getattr(args, "roster_wahlperiode", None)
+    if given:
+        return sorted(set(given))
+    newest = max((number for number in map(wahlperiode_of, catalog) if number is not None), default=V1_FIRST_WAHLPERIODE)
+    return list(range(V1_FIRST_WAHLPERIODE, max(newest, V1_FIRST_WAHLPERIODE) + 1))
+
+
+def v1_coverage_floor(catalog: list[dict[str, Any]]) -> str | None:
+    """The date of the catalog's first sitting of V1_FIRST_WAHLPERIODE, or None
+    when the catalog lists none."""
+    days = [
+        str(protocol.get("datum") or "")[:10]
+        for protocol in catalog
+        if wahlperiode_of(protocol) == V1_FIRST_WAHLPERIODE and protocol.get("datum")
+    ]
+    return min(days) if days else None
 
 
 # --backfill-incomplete: the sittings a facts period is waiting for. A sitting
@@ -446,6 +596,7 @@ def incomplete_sitting_protocols(
     *,
     votes: bool = True,
     scan_pages: int | None = None,
+    wahlperiode: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     stored = []
     for entry in entries:
@@ -457,7 +608,8 @@ def incomplete_sitting_protocols(
             }
         )
     gaps = facts.sitting_gaps(
-        stored, facts.completeness_from_entries(entries), facts.sitting_catalog(catalog, authoritative=True)
+        stored, facts.completeness_from_entries(entries), facts.sitting_catalog(catalog, authoritative=True),
+        lower_bound=v1_coverage_floor(catalog),
     )
     acquirable: list[dict[str, Any]] = []
     waiting: list[dict[str, Any]] = []
@@ -465,7 +617,7 @@ def incomplete_sitting_protocols(
     structural: list[dict[str, Any]] = []
     for protocol in sorted(catalog, key=protocol_sort_key, reverse=True):
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
-        if gap is None:
+        if gap is None or (wahlperiode and wahlperiode_of(protocol) != wahlperiode):
             continue
         if _structural_vote_gap(gap, scan_pages):
             structural.append(protocol)
@@ -476,6 +628,121 @@ def incomplete_sitting_protocols(
         else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
     return acquirable, waiting, vote_only, structural
+
+
+def backfill_scope_lines(
+    catalog: list[dict[str, Any]],
+    entries: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+    wahlperiode: int | None,
+) -> list[str]:
+    """What a backfill judges before it acquires anything: the range (from the v1
+    floor or the earliest stored sitting, whichever is earlier) and the selected
+    sittings per Wahlperiode."""
+    stored = [str(((entry.get("report") or {}).get("protocol") or {}).get("datum") or "")[:10] for entry in entries]
+    starts = [day for day in [v1_coverage_floor(catalog), *stored] if day]
+    newest = max((str(p.get("datum") or "")[:10] for p in catalog if p.get("datum")), default="")
+    per_wp: dict[int, int] = {}
+    for protocol in selected:
+        number = wahlperiode_of(protocol)
+        if number is not None:
+            per_wp[number] = per_wp.get(number, 0) + 1
+    counts = ", ".join(f"WP {number}: {count}" for number, count in sorted(per_wp.items())) or "none"
+    scope = f"WP {wahlperiode} only" if wahlperiode else "every Wahlperiode"
+    return [
+        f"[backfill] judged from {min(starts) if starts else '?'} to {newest or '?'} "
+        f"(v1 coverage from WP {V1_FIRST_WAHLPERIODE}); scope: {scope}",
+        f"[backfill] selected per Wahlperiode: {counts}",
+    ]
+
+
+COVERAGE_EXCLUSIONS_FILENAME = "coverage-exclusions.json"
+
+
+def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
+    """The reviewed sittings of ``--exclude-document-number`` kept out of the
+    store (D2), oldest first; empty when the record does not exist."""
+    path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    entries = payload.get("exclusions") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        raise RuntimeError(f"{path} has no exclusions list")
+    return entries
+
+
+def recorded_exclusions(output_dir: Path) -> set[str]:
+    """The document numbers the exclusion record lists (D2), normalized."""
+    return {normalized_document_number(entry.get("document_number")) for entry in load_coverage_exclusions(output_dir)}
+
+
+def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The cached entries minus the sittings the exclusion record lists (D2). An
+    offline run passes no list, and a report cached before its sitting was
+    listed is still on disk; the record keeps it out of the store."""
+    recorded = recorded_exclusions(output_dir)
+    return [
+        entry for entry in entries
+        if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in recorded
+    ]
+
+
+def update_coverage_exclusions(
+    output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]], *, included: set[str] = frozenset()
+) -> None:
+    """Record each sitting this run excluded (D2) and drop a sitting the run
+    took back with --include-document-number or the store now holds. Untouched
+    when none of that happened, so a build without exclusions writes no file."""
+    entries = {entry["document_number"]: entry for entry in load_coverage_exclusions(output_dir)}
+    before = dict(entries)
+    for number in included:
+        entries.pop(number, None)
+    for entry in stored:
+        protocol = (entry.get("report") or {}).get("protocol") or {}
+        entries.pop(normalized_document_number(protocol.get("dokumentnummer")), None)
+    for protocol in excluded:
+        number = normalized_document_number(protocol.get("dokumentnummer"))
+        if number not in entries:
+            entries[number] = {
+                "document_number": number,
+                "date": str(protocol.get("datum") or "")[:10],
+                "reason": "excluded",
+                "recorded_at": dip.utc_now(),
+            }
+    if entries == before:
+        return
+    path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
+    ordered = sorted(entries.values(), key=lambda entry: (entry["date"], entry["document_number"]))
+    dip.write_text_atomic(path, json.dumps({"exclusions": ordered}, ensure_ascii=False, indent=2) + "\n")
+
+
+def acquisition_summary_lines(
+    protocols: list[dict[str, Any]], *, dip_stopped: str | None = None
+) -> tuple[list[str], bool]:
+    """The end-of-run summary of the sittings this run tried and did not acquire,
+    by reason, and whether any of them should fail the run: every skip does
+    except a sitting on the reviewed exclusion list."""
+    by_reason: dict[str, list[str]] = {}
+    for protocol in protocols:
+        for reason in protocol.get("dossier_failure_reasons") or []:
+            by_reason.setdefault(reason, []).append(normalized_document_number(protocol.get("dokumentnummer")))
+    if not by_reason:
+        return [], False
+    skipped = sorted({number for numbers in by_reason.values() for number in numbers})
+    lines = [f"[summary] {len(skipped)} of {len(protocols)} sitting(s) not acquired:"]
+    for reason, numbers in sorted(by_reason.items()):
+        lines.append(f"  {reason}: {', '.join(numbers)}")
+    failing = any(reason != "excluded" for reason in by_reason)
+    if dip_stopped:
+        lines.append(
+            f"  DIP stopped answering ({dip_stopped}); the run asked it nothing more, so the sittings after "
+            "the stop were not tried. DIP's block lasts hours: wait before re-running."
+        )
+    if failing:
+        lines.append("  Fix: re-run the same command once DIP answers; acquired sittings are kept.")
+    return lines, failing
 
 
 def _first_numbers(numbers: list[str], limit: int = 3) -> str:
@@ -1110,7 +1377,7 @@ _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
 
 
 def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
-    """The MdB roster rows of an existing store, read without migrating it."""
+    """Preserved roster biographies, read without migrating the existing store."""
     if not database_path.exists():
         return []
     previous = facts.open_readonly(database_path)
@@ -1118,6 +1385,12 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
         columns = {row[1] for row in previous.execute("PRAGMA table_info(mps)")}
         if "is_mdb" not in columns:
             return []
+        roster_records = set()
+        if previous.execute("SELECT 1 FROM sqlite_master WHERE name='person_records'").fetchone():
+            for record in previous.execute("SELECT id, evidence_json FROM person_records"):
+                evidence = json.loads(record["evidence_json"])
+                if (evidence.get("ever_mdb") or evidence.get("is_mdb")) and not evidence.get("vacated"):
+                    roster_records.add(record["id"])
         return [
             dict(row)
             for row in previous.execute(
@@ -1125,9 +1398,10 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
                 SELECT m.*, p.name AS party_name
                 FROM mps m
                 LEFT JOIN parties p ON p.id = m.party_id
-                WHERE m.is_mdb = 1
                 """
             )
+            # Retain biographies after a known non-MdB role clears its old flag.
+            if row["is_mdb"] or row["id"] in roster_records
         ]
     finally:
         previous.close()
@@ -1189,7 +1463,7 @@ def _entry_label(entry: dict[str, Any]) -> str:
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, upgrade=False, vorgang_cache=None) -> Rebuilt:
+                                  today=None, upgrade=False, vorgang_cache=None, excluded_document_numbers=()) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1201,7 +1475,9 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     accepts a store of an older schema; every other caller is refused, so the
     registry is re-minted only on that explicit step. Returns a ``Rebuilt``. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
-    DatabaseRebuildError with the previous store untouched."""
+    DatabaseRebuildError with the previous store untouched. A stored protocol
+    whose document number is in ``excluded_document_numbers`` (the reviewed
+    exclusions, D2) is not missing evidence: it leaves the store."""
     # One spelling for the lock, the staging directory and the swap: a rebuild
     # through a symlink to the store replaces the store, not the link.
     database_path = Path(database_path).resolve()
@@ -1210,7 +1486,7 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
                 catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade,
-                vorgang_cache=vorgang_cache)
+                vorgang_cache=vorgang_cache, excluded_document_numbers=excluded_document_numbers)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1253,8 +1529,10 @@ def _rebuild_database_from_entries(
     today: date | None = None,
     upgrade: bool = False,
     vorgang_cache: dict[str, Any] | None = None,
+    excluded_document_numbers: Collection[str] = (),
 ) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    excluded = {normalized_document_number(number) for number in excluded_document_numbers}
     if database_path.exists():
         try:
             probe = facts.open_readonly(database_path)
@@ -1280,7 +1558,6 @@ def _rebuild_database_from_entries(
     # Every cached role is checked first, so one error lists all of them and
     # nothing is built or replaced (DX-E1).
     derive.check_sprechrollen(entry["report"] for entry in entries)
-    roster_rows = _read_roster_rows(database_path) if preserve_roster else []
 
     # The facts the previous store held, carried into the fresh one. The engine
     # recomputes them right after this and overwrites them if anything moved -
@@ -1310,14 +1587,20 @@ def _rebuild_database_from_entries(
         if database_path.exists():
             previous = facts.open_readonly(database_path)
             try:
-                previous_protocols = {row[0] for row in previous.execute("SELECT id FROM protocols")}
                 available = {str(entry["report"]["protocol"]["id"]) for entry in entries}
-                missing = previous_protocols - available
+                # A reviewed exclusion (D2) of a stored sitting drops it from the
+                # store; any other stored sitting without its report stops the build.
+                missing = {
+                    protocol_id
+                    for protocol_id, document_number in previous.execute("SELECT id, document_number FROM protocols")
+                    if protocol_id not in available and normalized_document_number(document_number) not in excluded
+                }
                 if missing:
                     raise DatabaseRebuildError(f"Missing cached evidence for protocols {sorted(missing)}; restore their reports before --offline --repersist")
                 registry.copy_previous(previous, store)
             finally:
                 previous.close()
+        roster_rows = _read_roster_rows(database_path) if preserve_roster else []
         for entry in sorted(entries, key=entry_sort_key, reverse=True):
             try:
                 pulse_store.persist_report(store, entry["report"], vorgang_cache)
@@ -1325,6 +1608,7 @@ def _rebuild_database_from_entries(
                 raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
         if roster_rows:
             now = pulse_store.utc_now()
+            live_records = {row[0] for row in store.execute("SELECT id FROM temp.registry_touched")}
             with store:
                 skipped = [row for row in roster_rows if not canonical_dip_person_id(row.get("dip_person_id"))]
                 if skipped:
@@ -1334,7 +1618,8 @@ def _rebuild_database_from_entries(
                     if not canonical_dip_person_id(row.get("dip_person_id")):
                         continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
-                    pulse_store.upsert_mp(
+                    roles = _parse_listish(row.get("function"))
+                    record_id = pulse_store.upsert_mp(
                         store,
                         now=now,
                         display_name=row.get("display_name"),
@@ -1369,8 +1654,11 @@ def _rebuild_database_from_entries(
                         aw_politician_id=row.get("aw_politician_id"),
                         aw_match=row.get("aw_match"),
                         person_roles_json=row.get("person_roles_json"),
-                        is_mdb=True,
+                        is_mdb=not roles or derive.is_mdb_funktion(roles),
                     )
+                    # Preserved biographies are not fresh source evidence for matching.
+                    if record_id not in live_records:
+                        store.execute("DELETE FROM temp.registry_touched WHERE id=?", (record_id,))
         if roster_ingest is not None:
             try:
                 roster_ingest(store)
@@ -1497,7 +1785,8 @@ def reparse_cached_xml(
     return reparsed
 
 
-def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause: float = 0.25) -> tuple[int, int]:
+def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause: float = 0.25,
+                      pacer: Any = None) -> tuple[int, int]:
     """Download the Plenarprotokoll XML of every cached report that has none in
     ``data/xml/`` (a public bundestag.de file, no API key). Returns (fetched,
     failed). Older builds did not keep the XML."""
@@ -1518,7 +1807,7 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
             continue
         try:
             publication.validate_external_url(protocol["xml_url"], "bundestag-xml")
-            text = dip.fetch_text(protocol["xml_url"])
+            text = pacer.fetch(protocol["xml_url"]) if pacer is not None else dip.fetch_text(protocol["xml_url"])
             # An error or maintenance page served with HTTP 200 must not become the cache.
             root = dip.ET.fromstring(text)
             wahlperiode, _, sitzung = document_number.partition("/")
@@ -1537,7 +1826,7 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
         path.parent.mkdir(parents=True, exist_ok=True)
         dip.write_text_atomic(path, text)
         fetched += 1
-        if pause:
+        if pause and pacer is None:
             time.sleep(pause)
     return fetched, failed
 
@@ -1940,7 +2229,8 @@ def repersist_cached_reports(
     XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and the
     ``Rebuilt`` result. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
-    cached = load_existing_detail_entries(output_dir, protocols, strict=True)
+    recorded = recorded_exclusions(output_dir)
+    cached = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols, strict=True))
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
@@ -1948,7 +2238,7 @@ def repersist_cached_reports(
     rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, upgrade=True, vorgang_cache=vorgang_cache,
+        today=today, upgrade=True, vorgang_cache=vorgang_cache, excluded_document_numbers=recorded,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
@@ -2459,6 +2749,11 @@ def write_report_and_page(
     database_page_href: str | None = None,
     roll_call_page_cache: dict[str, str] | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    person_cache: dict[str, dict[str, Any]] | None = None,
+    xml_pacer: dip.XmlPacer | None = None,
+    vorgang_drucksachen_cache: dict[str, dict[str, Any]] | None = None,
+    save_dip_caches: Callable[[], None] | None = None,
+    dip_breaker: dip.DipBreaker | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -2488,9 +2783,18 @@ def write_report_and_page(
         summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
         roll_call_page_cache=roll_call_page_cache,
+        person_cache=person_cache,
+        vorgang_drucksachen_cache=vorgang_drucksachen_cache,
+        dip_breaker=dip_breaker,
         xml_sink=xml_sink,
+        xml_pacer=xml_pacer,
     )
-    report = dip.build_report(args, protocol=protocol)
+    try:
+        report = dip.build_report(args, protocol=protocol)
+    finally:
+        # What this sitting fetched stays fetched, even when it failed part-way.
+        if save_dip_caches is not None:
+            save_dip_caches()
     keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
     if summary_mode in {"auto", "required"}:
         reconcile_generated_and_cached_summaries(report, existing_report)
@@ -2747,7 +3051,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 10
+EXPORT_FORMAT = 11
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -2799,12 +3103,40 @@ REPRESENTATIVE_SQL = (
 _MP_ID_MEANING = "Konsolidierte Personenkennung (persons.id), im HTML nur Linkschlüssel."
 _DISPLAY_NAME_MEANING = "Anzeigename der repräsentativen Quellaufzeichnung: MdB-Kader vor XML-Redner, dann identity_key."
 
+# Parties are keyed by name across Wahlperioden (per-WP Fraktion identity is its
+# own issue), so every recipe carries the Wahlperiode of its sitting and groups
+# by it: no figure pools the SPD of WP 18 with the SPD of WP 21. The protocols
+# table has no Wahlperiode column; it is the document number's prefix.
+def _wahlperiode_sql(alias: str) -> str:
+    return f"CAST(substr({alias}.document_number, 1, instr({alias}.document_number, '/') - 1) AS INTEGER)"
+
+
+# The sitting of a vote: its own protocol, else the first sitting whose agenda
+# item claims it.
+_VOTE_PROTOCOL_SQL = (
+    "COALESCE((SELECT ai.protocol_id FROM agenda_item_votes aiv JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
+    "                  JOIN protocols p0 ON p0.id = ai.protocol_id\n"
+    "                  WHERE aiv.vote_id = v.id ORDER BY p0.document_number LIMIT 1), v.protocol_id)"
+)
+
+# Output definitions of the wahlperiode column, by what the row counts.
+_WP_SPEECH_MEANING = "Wahlperiode der Sitzung der Rede: Präfix der Protokollnummer (protocols.document_number) als Zahl."
+_WP_VOTE_MEANING = (
+    "Wahlperiode der Sitzung der Abstimmung: Präfix der lexikografisch kleinsten Protokollnummer der Sitzungen, "
+    "deren TOP sie zugeordnet ist, ersatzweise von votes.protocol_id, als Zahl."
+)
+# What LIMIT 5 does to a recipe ordered by Wahlperiode first.
+_WP_LIMIT_METHOD = (
+    "Die Ausgabe ist auf fünf Zeilen begrenzt; da zuerst nach Wahlperiode absteigend sortiert wird, zeigt sie die "
+    "obersten Zeilen der jüngsten Wahlperiode und ältere Wahlperioden nur, wenn die jüngste weniger als fünf Zeilen hat."
+)
+
 # The recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
-# addendum: R1/R3 join mp_canonical). R1 groups by the canonical id, so its
-# counts equal the pooled counts on the MP profile pages; R3 groups by the
-# canonical id and Fraktion, so a member who switched Fraktion has one row per
-# Fraktion.
+# addendum: R1/R3 join mp_canonical). R1 groups by the canonical id and
+# Wahlperiode, so its counts equal the pooled counts on the MP profile pages
+# within one Wahlperiode; R3 groups by the canonical id, Wahlperiode and
+# Fraktion, so a member who switched Fraktion has one row per Fraktion.
 #
 # Every "hidden" column is selected (it is the link key) but never rendered as
 # its own cell; the "link" on a visible column says which kind of link to try
@@ -2818,65 +3150,76 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "title": "Wer hielt die meisten Reden?",
         "sql": (
             REPRESENTATIVE_SQL
-            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            + "SELECT mc.canonical_id AS mp_id, " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
+            "       m.display_name, pa.name AS fraktion,\n"
             "       COUNT(*) AS reden, SUM(s.char_count) AS zeichen\n"
             "FROM speeches s\n"
+            "JOIN protocols p ON p.id = s.protocol_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = s.mp_id\n"
             "JOIN representative m ON m.person_id = mc.canonical_id\n"
-            "LEFT JOIN parties p ON p.id = m.party_id\n"
-            "GROUP BY mc.canonical_id\n"
-            "ORDER BY reden DESC, zeichen DESC, mc.canonical_id\n"
+            "LEFT JOIN parties pa ON pa.id = m.party_id\n"
+            "GROUP BY mc.canonical_id, wahlperiode\n"
+            "ORDER BY wahlperiode DESC, reden DESC, zeichen DESC, mc.canonical_id\n"
             "LIMIT 5;"
         ),
         "columns": (
             {"name": "mp_id", "meaning": _MP_ID_MEANING, "align": "text", "hidden": True},
+            {"name": "wahlperiode", "meaning": _WP_SPEECH_MEANING, "align": "num"},
             {"name": "display_name", "meaning": _DISPLAY_NAME_MEANING, "align": "text", "link": "mp"},
-            {"name": "fraktion", "meaning": "Partei/Fraktion der repräsentativen Quellaufzeichnung (parties.name über mps.party_id); leer ohne Zuordnung, etwa für Sprechrollen.", "align": "text"},
-            {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Person über alle ihre Quellaufzeichnungen.", "align": "num"},
-            {"name": "zeichen", "meaning": "Summe von speeches.char_count der erfassten Reden dieser Person; Zeichen, keine Zeit.", "align": "num"},
+            {"name": "fraktion", "meaning": "Partei/Fraktion der repräsentativen Quellaufzeichnung (parties.name über mps.party_id), in jeder Wahlperiode dieselbe; leer ohne Zuordnung, etwa für Sprechrollen.", "align": "text"},
+            {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Person in dieser Wahlperiode über alle ihre Quellaufzeichnungen.", "align": "num"},
+            {"name": "zeichen", "meaning": "Summe von speeches.char_count der erfassten Reden dieser Person in dieser Wahlperiode; Zeichen, keine Zeit.", "align": "num"},
         ),
         "depends_on": None,
         "caveat": (
-            "Reden in einer Sprechrolle (Bundesregierung, Bundesrat, weitere) zählen für die Person; das "
-            "Fraktionslabel kommt aus der repräsentativen Aufzeichnung und fehlt nur, wenn diese keine Zugehörigkeit trägt."
+            "Je Wahlperiode gezählt, die jüngste zuerst. Reden in einer Sprechrolle (Bundesregierung, Bundesrat, weitere) "
+            "zählen für die Person; das Fraktionslabel kommt aus der repräsentativen Aufzeichnung und fehlt nur, wenn "
+            "diese keine Zugehörigkeit trägt."
         ),
         "method": (
-            "Gezählt wird je konsolidierter Person (mp_canonical); Reden, deren Redneraufzeichnung keiner Person "
-            "zugeordnet ist, fehlen. Das Fraktionslabel stammt aus der repräsentativen Aufzeichnung, nicht aus den "
-            "einzelnen Reden: für eine zugleich als MdB erfasste Person kann es deren Fraktion zeigen, auch für Reden in "
-            "einer Sprechrolle. Reihenfolge: Reden, dann Zeichen absteigend, dann Kennung."
+            "Gezählt wird je konsolidierter Person (mp_canonical) und Wahlperiode der Sitzung; Reden, deren "
+            "Redneraufzeichnung keiner Person zugeordnet ist, fehlen. Das Fraktionslabel stammt aus der repräsentativen "
+            "Aufzeichnung, nicht aus den einzelnen Reden, und ist für alle Wahlperioden einer Person dasselbe: für eine "
+            "zugleich als MdB erfasste Person kann es deren Fraktion zeigen, auch für Reden in einer Sprechrolle. "
+            "Reihenfolge: Wahlperiode absteigend, dann Reden, dann Zeichen absteigend, dann Kennung. " + _WP_LIMIT_METHOD
         ),
     },
     {
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
+            "SELECT " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
+            "       CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
             "                          WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
-            "                          ELSE COALESCE(NULLIF(s.fraktion, ''), p.name) END AS fraktion,\n"
+            "                          ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
             "       COUNT(*) AS reden,\n"
-            "       ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent\n"
+            "       ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
+            + _wahlperiode_sql("p") + "), 1) AS anteil_prozent\n"
             "FROM speeches s\n"
+            "JOIN protocols p ON p.id = s.protocol_id\n"
             "JOIN mps m ON m.id = s.mp_id\n"
-            "LEFT JOIN parties p ON p.id = m.party_id\n"
-            "GROUP BY 1\n"
-            "ORDER BY reden DESC, fraktion\n"
+            "LEFT JOIN parties pa ON pa.id = m.party_id\n"
+            "GROUP BY 1, 2\n"
+            "ORDER BY wahlperiode DESC, reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
+            {"name": "wahlperiode", "meaning": _WP_SPEECH_MEANING, "align": "num"},
             {"name": "fraktion", "meaning": "Gruppe der Rede: Bundesregierung, Bundesrat oder weitere Sprechrolle nach speeches.sprechrolle, sonst speeches.fraktion, ersatzweise die Partei der Redneraufzeichnung.", "align": "text"},
-            {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe mit Redneraufzeichnung.", "align": "num"},
-            {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an allen gespeicherten Reden, Prozent mit einer Nachkommastelle; Join und LIMIT begrenzen die Ausgabe.", "align": "num"},
+            {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe in dieser Wahlperiode mit Redneraufzeichnung.", "align": "num"},
+            {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an den Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle.", "align": "num"},
         ),
         "depends_on": None,
         "caveat": (
-            "Bundesregierung, Bundesrat und weitere Sprechrollen stehen als eigene Zeilen; der Nenner sind alle "
-            "gespeicherten Reden. Die gezeigten Zeilen ergeben zusammen nicht unbedingt 100 %: Reden ohne "
-            "Redneraufzeichnung fehlen in den Zeilen, und nur die fünf Gruppen mit den meisten Reden erscheinen."
+            "Anteile je Wahlperiode, die jüngste zuerst: Fraktionen gleichen Namens aus verschiedenen Wahlperioden "
+            "werden nicht zusammengezählt. Bundesregierung, Bundesrat und weitere Sprechrollen stehen als eigene Zeilen "
+            "und zählen im Nenner mit. Nur die fünf obersten Zeilen erscheinen, sie ergeben daher zusammen nicht "
+            "unbedingt 100 %."
         ),
         "method": (
-            "Der Nenner ist SUM(char_count) über alle Zeilen von speeches; die Zeilen selbst setzen eine "
-            "Redneraufzeichnung in mps voraus (innerer Join). Reihenfolge: Reden absteigend, dann Gruppenname."
+            "Der Nenner ist je Wahlperiode SUM(char_count) über dieselben Reden, die gezählt werden: Reden mit "
+            "Redneraufzeichnung in mps (innerer Join). Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann "
+            "Gruppenname. " + _WP_LIMIT_METHOD
         ),
     },
     {
@@ -2884,55 +3227,56 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
             REPRESENTATIVE_SQL
-            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            + "SELECT mc.canonical_id AS mp_id, " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
+            "       m.display_name, pa.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
             "FROM vote_members vm\n"
+            "JOIN votes v ON v.id = vm.vote_id\n"
+            "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
             "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
             "JOIN representative m ON m.person_id = mc.canonical_id\n"
-            "JOIN parties p ON p.id = vm.party_id\n"
+            "JOIN parties pa ON pa.id = vm.party_id\n"
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
             "  AND vm.vote <> vf.leading_vote\n"
-            "  AND p.name <> 'fraktionslos'\n"
-            "GROUP BY mc.canonical_id, p.name\n"
-            "ORDER BY abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
+            "  AND pa.name <> 'fraktionslos'\n"
+            "GROUP BY mc.canonical_id, wahlperiode, pa.name\n"
+            "ORDER BY wahlperiode DESC, abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
             {"name": "mp_id", "meaning": _MP_ID_MEANING, "align": "text", "hidden": True},
+            {"name": "wahlperiode", "meaning": _WP_VOTE_MEANING, "align": "num"},
             {"name": "display_name", "meaning": _DISPLAY_NAME_MEANING, "align": "text", "link": "mp"},
             {"name": "fraktion", "meaning": "Fraktion oder Gruppe laut Stimme (vote_members.party_id); Stimmen fraktionsloser Mitglieder sind ausgeschlossen.", "align": "text"},
-            {"name": "abweichungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit eigenem Ja/Nein entgegen dem Ja/Nein-Mehrheitsvotum der eigenen Fraktion oder Gruppe, je Person und Fraktion oder Gruppe.", "align": "num"},
+            {"name": "abweichungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit eigenem Ja/Nein entgegen dem Ja/Nein-Mehrheitsvotum der eigenen Fraktion oder Gruppe, je Person, Wahlperiode und Fraktion oder Gruppe.", "align": "num"},
         ),
         "depends_on": "votes",
-        "caveat": None,
+        "caveat": "Je Wahlperiode gezählt, die jüngste zuerst.",
         "method": (
-            "Gezählt werden unterschiedliche Abstimmungen je konsolidierter Person und Fraktion oder Gruppe, nicht einzelne "
-            "Stimmen; wer die Fraktion gewechselt hat, erscheint mit einer Zeile je Fraktion. Stimme und "
+            "Gezählt werden unterschiedliche Abstimmungen je konsolidierter Person, Wahlperiode und Fraktion oder Gruppe, "
+            "nicht einzelne Stimmen; wer die Fraktion gewechselt hat, erscheint mit einer Zeile je Fraktion. Stimme und "
             "Gruppensumme (vote_fractions) müssen beide vorliegen. Enthaltungen, nicht abgegebene Stimmen, Abstimmungen "
-            "ohne Ja/Nein-Mehrheitsvotum und fraktionslose Mitglieder zählen nicht. Reihenfolge: Abweichungen absteigend, "
-            "dann Anzeigename, Personenkennung und Fraktion."
+            "ohne Ja/Nein-Mehrheitsvotum und fraktionslose Mitglieder zählen nicht. Reihenfolge: Wahlperiode absteigend, "
+            "dann Abweichungen absteigend, dann Anzeigename, Personenkennung und Fraktion. " + _WP_LIMIT_METHOD
         ),
     },
     {
         "id": "r4-knappste-abstimmungen",
         "title": "Die knappsten namentlichen Abstimmungen",
         "sql": (
-            "SELECT COALESCE(MIN(p.document_number),\n"
-            "              (SELECT p2.document_number FROM protocols p2 WHERE p2.id = v.protocol_id)) AS document_number,\n"
+            "SELECT p.document_number, " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
             "       v.date, v.title, v.yes_count AS ja, v.no_count AS nein,\n"
             "       ABS(v.yes_count - v.no_count) AS differenz\n"
             "FROM votes v\n"
-            "LEFT JOIN agenda_item_votes aiv ON aiv.vote_id = v.id\n"
-            "LEFT JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
-            "LEFT JOIN protocols p ON p.id = COALESCE(ai.protocol_id, v.protocol_id)\n"
-            "GROUP BY v.id\n"
+            "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
             "ORDER BY differenz ASC, v.date DESC, v.id\n"
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "document_number", "meaning": "Lexikografisch kleinste verknüpfte Protokollnummer, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "document_number", "meaning": "Lexikografisch kleinste Protokollnummer der Sitzungen, deren TOP die Abstimmung zugeordnet ist, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "wahlperiode", "meaning": _WP_VOTE_MEANING, "align": "num"},
             {"name": "date", "meaning": "Datum der Abstimmung als ISO-Kalendertag YYYY-MM-DD, ohne Uhrzeit/Zeitzone.", "align": "text"},
             {"name": "title", "meaning": "Titel der Abstimmung laut Quelle (votes.title).", "align": "text", "link": "document", "truncate": 90},
             {"name": "ja", "meaning": "Zahl der Ja-Stimmen laut Abstimmungssumme.", "align": "num"},
@@ -2943,6 +3287,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
+            "Eine Abstimmung ganz ohne Protokoll fehlt. Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
             "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
         ),
     },
@@ -2950,31 +3295,35 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r5-vorgaenge-meiste-reden",
         "title": "Vorgänge mit den meisten Reden",
         "sql": (
-            "SELECT pr.id AS proceeding_id, pr.title, pr.proceeding_type AS typ,\n"
+            "SELECT pr.id AS proceeding_id, " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
+            "       pr.title, pr.proceeding_type AS typ,\n"
             "       COUNT(DISTINCT s.id) AS reden, COUNT(DISTINCT ai.protocol_id) AS sitzungen,\n"
             "       MIN(p.document_number) AS erste_drucksache\n"
             "FROM proceedings pr\n"
             "JOIN proceeding_positions pp ON pp.proceeding_id = pr.id\n"
             "JOIN agenda_items ai ON ai.id = pp.agenda_item_id\n"
             "JOIN speeches s ON s.agenda_item_id = ai.id\n"
-            "LEFT JOIN protocols p ON p.id = ai.protocol_id\n"
-            "GROUP BY pr.id\n"
-            "ORDER BY reden DESC, sitzungen DESC, pr.id\n"
+            "JOIN protocols p ON p.id = ai.protocol_id\n"
+            "GROUP BY pr.id, wahlperiode\n"
+            "ORDER BY wahlperiode DESC, reden DESC, sitzungen DESC, pr.id\n"
             "LIMIT 5;"
         ),
         "columns": (
             {"name": "proceeding_id", "meaning": "DIP-Kennung des Vorgangs; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "wahlperiode", "meaning": "Wahlperiode der Sitzungen mit verknüpftem TOP: Präfix der Protokollnummer (protocols.document_number) als Zahl.", "align": "num"},
             {"name": "title", "meaning": "Titel des Vorgangs laut DIP (proceedings.title).", "align": "text", "link": "proceeding", "truncate": 90},
             {"name": "typ", "meaning": "Vorgangstyp gemäß DIP.", "align": "text"},
-            {"name": "erste_drucksache", "meaning": "Trotz des Namens: lexikografisch kleinste Plenarprotokollnummer der verknüpften Sitzungen, keine Drucksache.", "align": "text"},
-            {"name": "reden", "meaning": "Anzahl unterschiedlicher Reden (speeches.id) zu Tagesordnungspunkten dieses Vorgangs.", "align": "num"},
-            {"name": "sitzungen", "meaning": "Anzahl unterschiedlicher Sitzungen mit verknüpftem TOP und mindestens einer Rede zu diesem Vorgang.", "align": "num"},
+            {"name": "erste_drucksache", "meaning": "Trotz des Namens: lexikografisch kleinste Plenarprotokollnummer der verknüpften Sitzungen dieser Wahlperiode, keine Drucksache.", "align": "text"},
+            {"name": "reden", "meaning": "Anzahl unterschiedlicher Reden (speeches.id) zu Tagesordnungspunkten dieses Vorgangs in dieser Wahlperiode.", "align": "num"},
+            {"name": "sitzungen", "meaning": "Anzahl unterschiedlicher Sitzungen dieser Wahlperiode mit verknüpftem TOP und mindestens einer Rede zu diesem Vorgang.", "align": "num"},
         ),
         "depends_on": None,
-        "caveat": None,
+        "caveat": "Je Wahlperiode gezählt, die jüngste zuerst.",
         "method": (
-            "Nur Verknüpfungen über proceeding_positions und agenda_items zählen. Reihenfolge: Reden, dann Sitzungen "
-            "absteigend, dann Kennung. Die CSV folgt der SQL-Projektion; das HTML zeigt erste_drucksache vor reden und sitzungen."
+            "Nur Verknüpfungen über proceeding_positions und agenda_items zählen; ein Vorgang mit Sitzungen in zwei "
+            "Wahlperioden erscheint mit einer Zeile je Wahlperiode. Reihenfolge: Wahlperiode absteigend, dann Reden, dann "
+            "Sitzungen absteigend, dann Kennung. " + _WP_LIMIT_METHOD + " Die CSV folgt der SQL-Projektion; das HTML "
+            "zeigt erste_drucksache vor reden und sitzungen."
         ),
     },
     {
@@ -2983,30 +3332,34 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r6-ausschuss",
         "title": "Aus welchen Ausschüssen kommen die Beschlussempfehlungen namentlicher Abstimmungen?",
         "sql": (
-            "SELECT u.value AS beschlussempfehlung_urheber,\n"
+            "SELECT " + _wahlperiode_sql("p") + " AS wahlperiode, u.value AS beschlussempfehlung_urheber,\n"
             "       COUNT(DISTINCT vd.vote_id) AS abstimmungen\n"
             "FROM vote_documents vd\n"
+            "JOIN votes v ON v.id = vd.vote_id\n"
+            "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
             "JOIN documents d ON d.id = vd.document_id\n"
             "JOIN json_each(d.origin_json) u\n"
             "WHERE d.document_type LIKE 'Beschlussempfehlung%'\n"
             "  AND d.herausgeber = 'BT'\n"
-            "GROUP BY u.value\n"
-            "ORDER BY abstimmungen DESC, beschlussempfehlung_urheber\n"
+            "GROUP BY wahlperiode, u.value\n"
+            "ORDER BY wahlperiode DESC, abstimmungen DESC, beschlussempfehlung_urheber\n"
             "LIMIT 5;"
         ),
         "columns": (
+            {"name": "wahlperiode", "meaning": _WP_VOTE_MEANING, "align": "num"},
             {"name": "beschlussempfehlung_urheber", "meaning": "Urheber aus DIP origin_json einer Bundestagsdrucksache vom Typ Beschlussempfehlung; kein Beleg für Federführung.", "align": "text"},
-            {"name": "abstimmungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit mindestens einer solchen Beschlussempfehlung dieses Urhebers.", "align": "num"},
+            {"name": "abstimmungen", "meaning": "Anzahl unterschiedlicher Abstimmungen dieser Wahlperiode mit mindestens einer solchen Beschlussempfehlung dieses Urhebers.", "align": "num"},
         ),
         "depends_on": "votes",
         "caveat": (
             "Zählt die Abstimmungen, unter deren Drucksachen eine Beschlussempfehlung dieses Ausschusses ist "
             "(Urheber laut DIP). Das zitiert das Dokument und sagt nicht, dass der Ausschuss federführend war: "
-            "Eine Abstimmung über einen Entschließungsantrag nennt oft die Beschlussempfehlung zum Gesetz."
+            "Eine Abstimmung über einen Entschließungsantrag nennt oft die Beschlussempfehlung zum Gesetz. "
+            "Je Wahlperiode gezählt, die jüngste zuerst."
         ),
         "method": (
             "Nur Bundestagsdrucksachen (herausgeber BT), deren Dokumenttyp mit „Beschlussempfehlung“ beginnt. "
-            "Reihenfolge: Abstimmungen absteigend, dann Urheber."
+            "Reihenfolge: Wahlperiode absteigend, dann Abstimmungen absteigend, dann Urheber. " + _WP_LIMIT_METHOD
         ),
     },
 )
@@ -3070,6 +3423,7 @@ def _inputs_hash(
     catalog_count: int = 0,
     dossier_count: int = 0,
     readiness: dict[str, str] | None = None,
+    excluded_sittings: list[str] | tuple[str, ...] = (),
     commit: str | None = None,
     codebook_sha256: dict[str, str] | None = None,
 ) -> str:
@@ -3090,6 +3444,7 @@ def _inputs_hash(
         "issues_url": issues_url,
         "catalog_count": catalog_count,
         "dossier_count": dossier_count,
+        "excluded": sorted(excluded_sittings),
         "readiness": {
             feature_id: (readiness or {}).get(feature_id, "unavailable") for feature_id in ("votes", "aw-profiles", "mp-roster")
         },
@@ -3681,7 +4036,10 @@ def export_distribution_data(
     issues_url: str | None = None,
     commit: str | None = None,
     force: bool = False,
+    excluded_sittings: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
+    """``excluded_sittings``: the reviewed exclusions of
+    coverage-exclusions.json, counted as nicht erfasst (ausgeschlossen)."""
     if sqlite3.sqlite_version_info < (3, 35, 0):
         raise DataExportUnavailable(
             f"data export needs SQLite 3.35+ (found {sqlite3.sqlite_version}); "
@@ -3733,6 +4091,7 @@ def export_distribution_data(
             catalog_count=catalog_count,
             dossier_count=dossier_count,
             readiness=readiness,
+            excluded_sittings=excluded_sittings,
             commit=commit,
             codebook_sha256=codebook.sha256,
         )
@@ -3762,6 +4121,7 @@ def export_distribution_data(
                 readiness=readiness,
                 catalog_count=catalog_count,
                 dossier_count=dossier_count,
+                excluded_sittings=excluded_sittings,
                 tag=tag,
                 license_text=license_text,
                 issues_url=issues_url,
@@ -3828,6 +4188,7 @@ def _run_export(
     readiness: dict[str, str],
     catalog_count: int,
     dossier_count: int,
+    excluded_sittings: list[str] | tuple[str, ...],
     tag: str,
     license_text: str,
     issues_url: str | None,
@@ -3916,6 +4277,12 @@ def _run_export(
         synthetic_rede_ids = int(
             snapshot_conn.execute(
                 "SELECT COUNT(*) FROM speeches WHERE rede_id REGEXP '^[0-9]+:[0-9]+:[0-9]+$'"
+            ).fetchone()[0]
+        )
+        # A Rede that rule 5 (6c) split out of the <rede> it was printed in.
+        split_rede_ids = int(
+            snapshot_conn.execute(
+                "SELECT COUNT(*) FROM speeches WHERE rede_id REGEXP '^[^:]+:[0-9]+$'"
             ).fetchone()[0]
         )
         conflicting_votes = int(
@@ -4121,7 +4488,9 @@ def _run_export(
                 for feature_id in ("votes", "aw-profiles", "mp-roster")
             },
             "synthetic_rede_ids": synthetic_rede_ids,
+            "split_rede_ids": split_rede_ids,
             "conflicting_votes": conflicting_votes,
+            "excluded": sorted(excluded_sittings, key=lambda number: [int(part) for part in number.split("/") if part.isdigit()]),
             "wahlperioden": wahlperioden,
         },
     }
@@ -4272,6 +4641,12 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         f"{pulse_html.format_int(coverage['dossier_count'])} von {pulse_html.format_int(coverage['catalog_count'])} "
         "Protokollen im Katalog als Dossier erfasst"
     )
+    excluded = coverage.get("excluded") or []
+    if excluded:
+        coverage_line += (
+            f" &middot; {pulse_html.format_int(len(excluded))} nicht erfasst (ausgeschlossen): "
+            + pulse_html.esc(", ".join(excluded))
+        )
     bausteine_line = " &middot; ".join(
         f"{pulse_html.esc(BAUSTEINE_LABELS[key])}: {pulse_html.esc(value)}" for key, value in coverage["bausteine"].items()
     )
@@ -4288,6 +4663,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
       <div><span class="eyebrow">Zeilen</span><strong>{pulse_html.format_int(manifest['total_rows'])}</strong><p class="tile-sub">{pulse_html.format_int(len(manifest['tables']))} Tabellen &middot; {pulse_html.format_int(manifest['relationships'])} Beziehungen</p></div>
       <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
     </section>
+    <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
     <p class="coverage-line">{coverage_line}</p>
     <p class="bausteine-line">{bausteine_line}</p>
     <p class="provenance-line">{provenance_line}</p>
@@ -4647,7 +5023,7 @@ def _daten_page_styles() -> str:
     .summary-band div { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:13px 14px; }
     .summary-band strong { display:block; margin-top:4px; font-size:26px; font-variant-numeric:tabular-nums; }
     .tile-sub { font-size:12px; margin-top:2px; }
-    .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    .scope-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
     .table-nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
     .table-nav a {
       display:inline-flex;
@@ -8002,35 +8378,74 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
+def land_office_wahlperioden(person: Mapping[str, Any]) -> set[int]:
+    """Wahlperioden in which DIP records the person only in a Land-government
+    office: a ``person_roles`` entry with a ``bundesland`` and no Fraktion, and no
+    Fraktion role in the same Wahlperiode. DIP lists a person under every
+    Wahlperiode of any office while ``funktion`` names only the latest one, so
+    Olaf Scholz (Erster Bürgermeister in Hamburg in WP 18/19) is listed for WP 18
+    with ``funktion`` MdB. A Land office excludes a Bundestag seat; a federal
+    minister's role has no ``bundesland`` and is left alone."""
+    land: set[int] = set()
+    fraktion: set[int] = set()
+    for role in person.get("person_roles") or []:
+        if not isinstance(role, Mapping):
+            continue
+        numbers = {int(n) for n in role.get("wahlperiode_nummer") or [] if str(n).isdigit()}
+        if role.get("fraktion"):
+            fraktion |= numbers
+        elif role.get("bundesland"):
+            land |= numbers
+    return land - fraktion
+
+
 def ingest_mdb_roster(
     client: dip.ApiClient,
     store: Any,
     *,
-    wahlperiode: int,
+    wahlperioden: Sequence[int],
     profile_resolver: Any | None = None,
 ) -> dict[str, int]:
-    """Fetch the full set of MdBs for a legislative period from DIP /person and
-    upsert them as is_mdb=1 rows, optionally enriched with abgeordnetenwatch
-    biographical data. Makes the Abgeordnete list complete rather than limited to
-    speakers seen in ingested protocols."""
+    """Fetch the MdBs of each legislative period in ``wahlperioden`` from DIP
+    /person and upsert one is_mdb=1 row per person, optionally enriched with
+    abgeordnetenwatch biographical data. Makes the Abgeordnete list complete
+    rather than limited to speakers seen in ingested protocols.
+
+    A person listed in several periods is one row whose ``wahlperiode`` is the
+    JSON list of them, so a WP 18 leaver keeps a roster row and a page while the
+    index of the newest period lists only its members (collect_abgeordnete).
+    ``is_mdb`` stays the roster-source flag (biography authority, ever_mdb); it
+    does not mean "member now"."""
     stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0}
     if store is None:
         return stats
-    persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
-    stats["fetched"] = len(persons)
-    now = pulse_store.utc_now()
-    pulse_store.initialize(store)
-    with store:
+    members: dict[str, dict[str, Any]] = {}
+    for wahlperiode in sorted(set(wahlperioden)):
+        persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
+        stats["fetched"] += len(persons)
         for person in persons:
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
             if not derive.is_mdb_funktion(funktion):
+                continue
+            if wahlperiode in land_office_wahlperioden(person):
                 continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
                 # such row would share one name-party:Unbekannt record.
                 stats["skipped_no_id"] += 1
                 continue
+            member = members.setdefault(str(compact["id"]), {"wahlperioden": set()})
+            member["wahlperioden"].add(wahlperiode)
+            # Periods run oldest first, so the newest period's record names the
+            # person and their Fraktion.
+            member["compact"] = compact
+    now = pulse_store.utc_now()
+    pulse_store.initialize(store)
+    with store:
+        for member in members.values():
+            compact = member["compact"]
+            funktion = compact.get("funktion") or []
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
             fraktion = fraktion_list[0] if fraktion_list else None
@@ -8074,7 +8489,7 @@ def ingest_mdb_roster(
                 occurrence_id=roster_occurrence_id(compact.get("id")),
                 title=compact.get("titel"),
                 function=funktion,
-                wahlperiode=compact.get("wahlperiode"),
+                wahlperiode=json.dumps(sorted(member["wahlperioden"])),
                 profile_url=profile_url,
                 birth_year=birth_year,
                 gender=gender,
@@ -8330,6 +8745,12 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "bundesland": first("bundesland"),
             "aw_politician_id": first("aw_politician_id"),
             "is_mdb": any(r["is_mdb"] for r in members),
+            # The periods the DIP roster lists this person as an MdB in; who is
+            # a member now is derived from them below.
+            "roster_wahlperioden": sorted({
+                int(number) for r in members if r["is_mdb"]
+                for number in _parse_listish(r["wahlperiode"]) if str(number).isdigit()
+            }),
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
@@ -8345,6 +8766,12 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             for r in members:
                 for key in registry.mp_keys(r):
                     lookup[key] = cid
+
+    # "Current MdB" is membership in the newest period the roster lists, not
+    # is_mdb, which every roster row of WP 18 onward carries.
+    newest = max((number for mp in mps for number in mp["roster_wahlperioden"]), default=None)
+    for mp in mps:
+        mp["current_mdb"] = newest is not None and newest in mp["roster_wahlperioden"]
 
     key_owners = {}
     for row in rows:
@@ -8471,32 +8898,66 @@ def render_abgeordnete_script() -> str:
     (() => {
       const search = document.querySelector("[data-mp-search]");
       const rows = Array.from(document.querySelectorAll("[data-mp-row]"));
+      const formerRows = Array.from(document.querySelectorAll("[data-former-mp-row]"));
+      const formerSection = document.querySelector("[data-former-mps]");
       const rednerRows = Array.from(document.querySelectorAll("[data-redner-row]"));
       const rednerEmpty = document.querySelector("[data-redner-empty]");
       const partyButtons = Array.from(document.querySelectorAll("[data-party-filter]"));
       const counter = document.querySelector("[data-mp-count]");
       let activeParty = "";
-      const apply = () => {
-        const q = (search ? search.value : "").trim().toLowerCase();
-        let visible = 0;
-        rows.forEach((row) => {
+      let visible = 0;
+      let formerVisible = 0;
+      let rednerVisible = 0;
+      // Set while the former-MdB section is open only because a filter found
+      // matches in it, so clearing the filter closes it again.
+      let formerAutoOpened = false;
+      const filterRows = (list, q, byParty) => {
+        let shown = 0;
+        list.forEach((row) => {
           const matchesText = !q || row.dataset.search.includes(q);
-          const matchesParty = !activeParty || row.dataset.party === activeParty;
+          const matchesParty = !byParty || !activeParty || row.dataset.party === activeParty;
           const show = matchesText && matchesParty;
           row.hidden = !show;
-          if (show) visible += 1;
+          if (show) shown += 1;
         });
-        // The Fraktion filter narrows the Abgeordnete list only: Redner outside
-        // it are listed without one, so the search alone filters them.
-        let rednerVisible = 0;
-        rednerRows.forEach((row) => {
-          const show = !q || row.dataset.search.includes(q);
-          row.hidden = !show;
-          if (show) rednerVisible += 1;
-        });
-        if (rednerEmpty && rednerRows.length) rednerEmpty.hidden = rednerVisible > 0;
-        if (counter) counter.textContent = String(visible + rednerVisible);
+        return shown;
       };
+      // "Angezeigt" counts the rows on screen: rows of the former-MdB section
+      // count only while it is open.
+      const updateCount = () => {
+        const formerShown = formerSection && formerSection.open ? formerVisible : 0;
+        if (counter) counter.textContent = String(visible + formerShown + rednerVisible);
+      };
+      const apply = () => {
+        const q = (search ? search.value : "").trim().toLowerCase();
+        // The Fraktion filter narrows the Abgeordnete lists (current and former)
+        // only: Redner outside them are listed without one, so the search alone
+        // filters them.
+        visible = filterRows(rows, q, true);
+        formerVisible = filterRows(formerRows, q, true);
+        rednerVisible = filterRows(rednerRows, q, false);
+        if (formerSection) {
+          const filtering = Boolean(q || activeParty);
+          if (filtering && formerVisible > 0) {
+            if (!formerSection.open) {
+              formerSection.open = true;
+              formerAutoOpened = true;
+            }
+          } else if (formerAutoOpened) {
+            formerSection.open = false;
+            formerAutoOpened = false;
+          }
+        }
+        if (rednerEmpty && rednerRows.length) rednerEmpty.hidden = rednerVisible > 0;
+        updateCount();
+      };
+      if (formerSection) {
+        formerSection.addEventListener("toggle", () => {
+          // A section the reader closed or opened by hand is theirs to keep.
+          if (!formerSection.open) formerAutoOpened = false;
+          updateCount();
+        });
+      }
       if (search) search.addEventListener("input", apply);
       partyButtons.forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -8509,6 +8970,16 @@ def render_abgeordnete_script() -> str:
     })();
   </script>
 """
+
+
+# Lower-cased search text of a roster row (current or former MdB): name,
+# Fraktion, Wahlkreis and Bundesland, as the search box placeholder promises.
+def _mp_search_key(mp: dict[str, Any]) -> str:
+    return " ".join(
+        str(value).lower()
+        for value in (mp.get("name"), mp.get("party"), mp.get("wahlkreis"), mp.get("bundesland"))
+        if value
+    )
 
 
 # "Wahlkreis · Bundesland" for the roster table, or an em dash when unknown.
@@ -8536,10 +9007,40 @@ def render_abgeordnete_index(
     publication_domains: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
-    # Only actual MdBs are listed. People who merely appear as speakers
-    # (ministers, Bundesrat guests) still get a profile page - see
+    # Only members of the newest roster period are listed; earlier members of
+    # WP 18 onward follow in their own table. People who merely appear as
+    # speakers (ministers, Bundesrat guests) still get a profile page - see
     # write_abgeordnete_pages - they just do not clutter the roster.
-    listed = [mp for mp in mps if mp.get("is_mdb")]
+    listed = [mp for mp in mps if mp.get("current_mdb")]
+    former = sorted(
+        (mp for mp in mps if mp.get("is_mdb") and not mp.get("current_mdb")),
+        key=lambda mp: (str(mp.get("name") or "").casefold(), mp["id"]),
+    )
+    former_rows = "".join(
+        f"""
+            <tr data-former-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(_mp_search_key(mp))}">
+              <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
+              <td>{pulse_html.esc(mp.get('party') or '—')}</td>
+              <td>{pulse_html.esc(', '.join(str(number) for number in mp.get('roster_wahlperioden') or []))}</td>
+              <td class="num">{pulse_html.esc(mp.get('speech_count') or 0)}</td>
+            </tr>
+            """
+        for mp in former
+    )
+    former_section = (
+        f'<details class="former-mps" id="fruehere-abgeordnete" data-former-mps><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
+        f"({pulse_html.format_int(len(former))})</summary>"
+        '<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlperioden</th>'
+        f'<th class="num">Reden</th></tr></thead><tbody>{former_rows}</tbody></table></details>'
+        if former
+        else ""
+    )
+    former_pointer = (
+        f"Wer nur in einer früheren Wahlperiode seit der {V1_FIRST_WAHLPERIODE}. im Bundestag saß, steht unter "
+        '<a href="#fruehere-abgeordnete">Frühere Abgeordnete</a>. '
+        if former
+        else ""
+    )
     parties = sorted({mp["party"] for mp in listed if mp.get("party")})
     party_chips = "".join(
         f'<button class="party-chip" type="button" data-party-filter="{pulse_html.esc(party)}">{pulse_html.esc(party)}</button>'
@@ -8547,14 +9048,9 @@ def render_abgeordnete_index(
     )
     rows = []
     for mp in listed:
-        search_key = " ".join(
-            str(value).lower()
-            for value in (mp.get("name"), mp.get("party"), mp.get("wahlkreis"), mp.get("bundesland"))
-            if value
-        )
         rows.append(
             f"""
-            <tr data-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(search_key)}">
+            <tr data-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(_mp_search_key(mp))}">
               <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
               <td>{pulse_html.esc(mp.get('party') or '—')}</td>
               <td>{pulse_html.esc(_location_label(mp))}</td>
@@ -8587,8 +9083,8 @@ def render_abgeordnete_index(
     redner_section = (
         '<section class="redner-group" id="weitere-redner">'
         "<h2>Weitere Rednerinnen und Redner</h2>"
-        "<p>Personen, die im Plenum gesprochen haben und nicht in der Liste oben stehen: etwa für die Bundesregierung "
-        "oder den Bundesrat, oder als Mitglied des Bundestages einer früheren Wahlperiode. Mitglieder des Bundestages, "
+        "<p>Personen, die im Plenum gesprochen haben und in keiner der Listen oben stehen: etwa für die Bundesregierung "
+        f"oder den Bundesrat, oder als Mitglied des Bundestages vor der {V1_FIRST_WAHLPERIODE}. Wahlperiode. Mitglieder des Bundestages, "
         "die ein Regierungsamt haben, führt DIP ohne die Funktion MdB; sie stehen bis auf Weiteres hier.</p>"
         '<table class="mp-table"><thead><tr><th>Name</th><th>Sprechrolle</th><th class="num">Reden</th></tr></thead><tbody>'
         + "".join(redner_rows)
@@ -8622,7 +9118,7 @@ def render_abgeordnete_index(
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
-        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. Wer im Plenum sprach und nicht in dieser Liste steht, folgt unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
+        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. {former_pointer}Wer im Plenum sprach und in keiner dieser Listen steht, folgt unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
       </div>
       <div class="follow-summary">
         <span class="eyebrow">Angezeigt</span>
@@ -8641,6 +9137,7 @@ def render_abgeordnete_index(
       <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
     </div>
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
+    {former_section}
     {redner_section}
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
@@ -8910,7 +9407,7 @@ def write_abgeordnete_pages(
     _write_new_file(abg_dir / "index.html", render_abgeordnete_index(mps, features, publication_domains))
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    listed = sum(1 for mp in mps if mp.get("is_mdb"))
+    listed = sum(1 for mp in mps if mp.get("current_mdb"))
     return {"count": listed, "detail_count": len(detail_mps), "index_path": abg_dir / "index.html"}
 
 
@@ -9598,7 +10095,9 @@ def render_facts_week(
 """
 
 
-def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_plural: str) -> str:
+def _facts_methodik_metric_items(
+    registry: tuple[dict[str, Any], ...], period_plural: str, coverage: str | None = None
+) -> str:
     items = []
     for metric in registry:
         gates = [f"mindestens {metric['min_history_weeks']} vergleichbare {period_plural}"]
@@ -9606,7 +10105,11 @@ def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_pl
             gates.append(f"Wert mindestens {pulse_html.format_int(int(metric['min_value']))}")
         if metric.get("requires_topic"):
             gates.append("Thema muss bestimmbar sein")
-        caveat = f'<p class="caveat">{pulse_html.esc(metric["caveat"])}</p>' if metric.get("caveat") else ""
+        caveat = (
+            f'<p class="caveat">{pulse_html.esc(facts.fill_caveat(metric["caveat"], coverage))}</p>'
+            if metric.get("caveat")
+            else ""
+        )
         direction_text = "größter" if metric["direction"] == "max" else "kleinster"
         per_period = "je Woche mit Sitzung" if period_plural == "Wochen" else "je Monat"
         items.append(
@@ -9617,10 +10120,10 @@ def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_pl
     return "".join(items)
 
 
-def render_facts_methodik(features: Selection | None = None) -> str:
+def render_facts_methodik(features: Selection | None = None, coverage: str | None = None) -> str:
     features = features or publication_selection()
-    weekly_items = _facts_methodik_metric_items(facts.REGISTRY, "Wochen")
-    monthly_items = _facts_methodik_metric_items(facts.MONTHLY_REGISTRY, "Monate")
+    weekly_items = _facts_methodik_metric_items(facts.REGISTRY, "Wochen", coverage)
+    monthly_items = _facts_methodik_metric_items(facts.MONTHLY_REGISTRY, "Monate", coverage)
     floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)
     min_abweichler = int(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"])
     return f"""<!doctype html>
@@ -9745,10 +10248,15 @@ def write_facts_pages(
     all_facts: list[dict[str, Any]] = []
     expected = {"index.html", "methodik.html"}
     read_store = not no_persist and database_path.exists()
+    coverage: str | None = None
     if read_store:
         conn = facts.open_readonly(database_path)
         try:
             all_facts = facts.load_facts(conn)
+            # The caveats that name the coverage start take it from this store.
+            coverage = facts.coverage_label(conn)
+            for row in all_facts:
+                row["coverage_label"] = coverage
             # An incomplete period says which sitting keeps it incomplete. The
             # store holds no acquisition state, so the reports the build is
             # holding and the cached catalog are read again here, exactly as the
@@ -9824,7 +10332,7 @@ def write_facts_pages(
     archive_path = facts_dir / "index.html"
     if read_store or not archive_path.exists():
         archive_path.write_text(render_facts_archive(all_facts, features=features), encoding="utf-8")
-    (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features), encoding="utf-8")
+    (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features, coverage=coverage), encoding="utf-8")
     periods = {(row["period_kind"], row["period_key"]) for row in all_facts}
     posted = sum(1 for row in all_facts if row["publishable"])
     return {"periods": len(periods), "posted": posted, "index_path": facts_dir / "index.html"}
@@ -11712,6 +12220,7 @@ def render_site(
     is_remote_manifest: bool = False,
     bill_slugs: set[str] | None = None,
     authoritative_catalog: bool = False,
+    catalog_full_fetched_at: str | None = None,
     vorgang_cache: dict[str, Any] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
@@ -11776,7 +12285,7 @@ def render_site(
         dip.write_text_atomic(
             catalog_path,
             json.dumps(
-                {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
+                catalog_payload(protocols, full_fetched_at=catalog_full_fetched_at),
                 ensure_ascii=False,
                 indent=2,
             )
@@ -12138,7 +12647,8 @@ def apply_to_args(args: argparse.Namespace, selection: EnrichmentSelection) -> N
     args.no_roster = "mp-roster" not in selection
     args.no_abgeordnetenwatch = "aw-profiles" not in selection
     if "votes" in selection:
-        args.vote_scan_pages = 30 if getattr(args, "vote_scan_pages", None) is None else args.vote_scan_pages
+        default_pages = BACKFILL_VOTE_SCAN_PAGES if getattr(args, "backfill_incomplete", False) else 30
+        args.vote_scan_pages = default_pages if getattr(args, "vote_scan_pages", None) is None else args.vote_scan_pages
     else:
         args.vote_scan_pages = 0
 
@@ -12556,6 +13066,29 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--exclude-document-number",
+        action="append",
+        default=[],
+        metavar="DOCUMENT_NUMBER",
+        help=(
+            "Keep this sitting out of the build (repeatable), whatever the parser says: it is not fetched, "
+            "reported or stored. Add a number only after a review of its source: the sitting is recorded in "
+            "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (ausgeschlossen). "
+            "Every later run, online or offline, keeps a recorded sitting out without the flag. "
+            "Any source refusal of an unlisted sitting still stops the build before the store is replaced."
+        ),
+    )
+    parser.add_argument(
+        "--include-document-number",
+        action="append",
+        default=[],
+        metavar="DOCUMENT_NUMBER",
+        help=(
+            "Take this sitting off the exclusion record (repeatable): the run treats it like any other sitting, "
+            "and it leaves OUTPUT_DIR/data/coverage-exclusions.json. Needs an online run."
+        ),
+    )
+    parser.add_argument(
         "--person-limit",
         type=int,
         default=0,
@@ -12612,7 +13145,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Roll-call list pages scanned per sitting (default 30: votes are acquired by default). "
+            "Roll-call list pages scanned per sitting (default 30, with --backfill-incomplete 200: votes are "
+            "acquired by default; each scan stops at the sitting's date). "
             "0 turns vote acquisition off, like --no-votes. A sitting whose date lies beyond the "
             "window is recorded as partial (scan_budget_exhausted); raise this to reach older sittings."
         ),
@@ -12629,7 +13163,15 @@ def parse_args() -> argparse.Namespace:
             f"Defaults to {dip.ROLL_CALL_LIST_ID_ENV} or {dip.DEFAULT_ROLL_CALL_LIST_ID}."
         ),
     )
-    parser.add_argument("--sleep", type=float, default=0.0, help="Optional delay between DIP API requests.")
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=None,
+        help=(
+            "Delay in seconds between DIP API requests (default 0; with --backfill-incomplete "
+            f"{BACKFILL_SLEEP_SECONDS}, so a run of hundreds of sittings stays under DIP's bot protection)."
+        ),
+    )
     parser.add_argument(
         "--no-abgeordnetenwatch",
         action="store_true",
@@ -12649,16 +13191,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--roster-wahlperiode",
         type=int,
-        default=21,
-        help="Legislative period whose full MdB roster is fetched from DIP /person for the Abgeordnete pages (default 21).",
+        action="append",
+        default=None,
+        help=(
+            "Legislative period whose full MdB roster is fetched from DIP /person for the Abgeordnete pages "
+            f"(repeatable; default every period from {V1_FIRST_WAHLPERIODE} to the catalog's newest). "
+            "The Abgeordnete index lists the members of the newest one."
+        ),
     )
     parser.add_argument(
         "--protocol-wahlperiode",
         type=int,
-        default=21,
+        default=0,
         help=(
-            "Legislative period --limit counts the newest protocols of "
-            "(default 21; use 0 to count across all periods)."
+            "Acquire only sittings of this legislative period: --limit counts its newest protocols, "
+            "--backfill-incomplete acquires only its gaps (default 0: every period)."
         ),
     )
     parser.add_argument(
@@ -12709,6 +13256,8 @@ def parse_args() -> argparse.Namespace:
         help="Optional URL for a 'Fragen und Fehler' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only.",
     )
     args = parser.parse_args()
+    if args.sleep is None:
+        args.sleep = BACKFILL_SLEEP_SECONDS if args.backfill_incomplete else 0.0
     # The tag ends every export file name and is shown as "Release <tag>".
     if args.data_tag is not None and args.data_tag != "local" and not release_version.is_version(args.data_tag):
         parser.error(f"--data-tag {args.data_tag!r} is neither 'local' nor a release version (YYYY.MM.DD[.N]; scripts/publish_dip_pulse_data.sh --next-version)")
@@ -12727,6 +13276,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
+    if args.include_document_number and (args.offline or args.fetch_xml):
+        parser.error("--include-document-number takes a sitting back into an online build; it cannot be combined with --offline or --fetch-xml")
+    both = {normalized_document_number(n) for n in args.include_document_number} & {
+        normalized_document_number(n) for n in args.exclude_document_number
+    }
+    if both:
+        parser.error(f"--exclude-document-number and --include-document-number both name {', '.join(sorted(both))}")
     if args.fetch_xml and (args.offline or args.repersist or args.backfill_incomplete):
         parser.error(
             "--fetch-xml downloads the missing XML files and exits; run --offline --repersist as a second command"
@@ -12899,6 +13455,7 @@ def run_data_pipeline(
                 readiness=readiness,
                 catalog_count=len(protocols),
                 dossier_count=len(entries),
+                excluded_sittings=[entry["document_number"] for entry in load_coverage_exclusions(output_dir)],
                 license_text=license_text,
                 issues_url=issues_url,
                 tag=getattr(args, "data_tag", None) or "local",
@@ -12944,11 +13501,11 @@ def main() -> int:
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
         try:
-            entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+            entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
         except CachedReportError as exc:
             print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
-        fetched, failed = fetch_missing_xml(output_dir, entries)
+        fetched, failed = fetch_missing_xml(output_dir, entries, pacer=dip.XmlPacer())
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
         if not failed:
             print("fetch-xml: next, run --offline --repersist to re-read Reden and Beiträge from it.", file=sys.stderr)
@@ -13119,7 +13676,7 @@ def main() -> int:
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
             try:
-                cached_entries = load_existing_detail_entries(output_dir, protocols)
+                cached_entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols))
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
                 return 1
@@ -13209,10 +13766,20 @@ def main() -> int:
             sleep_seconds=args.abgeordnetenwatch_sleep,
         )
 
-    client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    # One per run: after DIP_FAILURE_LIMIT failed DIP requests in a row, no
+    # sitting or later step asks DIP again (a3-pilot.md, 2026-10-23).
+    dip_breaker = dip.DipBreaker()
+    client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=dip_breaker)
+    xml_pacer = dip.XmlPacer()  # one dserver window budget for the whole run
     # One roll-call list page cache per build: every sitting reads the same
     # pages from the top, so only the first one pays for them.
     roll_call_page_cache: dict[str, str] = {}
+    # One DIP /person record per person (D5): a backfill meets the same MdBs in
+    # hundreds of sittings. Filled from and saved to the cross-run DIP caches
+    # (dip_cache) once the catalog names the newest Wahlperiode.
+    person_cache: dict[str, dict[str, Any]] = {}
+    vorgang_drucksachen_cache: dict[str, dict[str, Any]] = {}
+    dip_request_cache: dip_cache.DipCache | None = None
     try:
         # Step 1: the catalog, then the subset of it that gets a dossier.
         # --dossier-document-number can add sittings to the dossier list without
@@ -13220,19 +13787,36 @@ def main() -> int:
         # re-filters that combined list for a usable XML URL.
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
         # The whole catalog, whatever narrows the acquisition below.
-        protocols = fetch_protocols(client, 0, [], None)
+        protocols, catalog_full_fetched_at = fetch_catalog(client, output_dir)
+        dip_request_cache = dip_cache.DipCache.load(
+            output_dir, newest_wahlperiode=max(filter(None, map(wahlperiode_of, protocols)), default=None)
+        )
+        person_cache.update(dip_request_cache.persons)
+        vorgang_drucksachen_cache.update(dip_request_cache.vorgang_drucksachen)
+        dip_request_cache.persons, dip_request_cache.vorgang_drucksachen = person_cache, vorgang_drucksachen_cache
+        # D2: the exclusion list is the record plus this run's flag, minus what the
+        # run takes back. A listed sitting is skipped before acquisition, whatever
+        # the parser would say: no fetch, no report, no store row.
+        included = {normalized_document_number(n) for n in getattr(args, "include_document_number", [])}
+        listed = {
+            normalized_document_number(entry.get("document_number")) for entry in load_coverage_exclusions(output_dir)
+        } | {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])}
+        listed -= included
         if getattr(args, "backfill_incomplete", False):
             try:
-                backfill_entries = load_existing_detail_entries(output_dir, protocols)
+                stored_entries = load_existing_detail_entries(output_dir, protocols)
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
                 return 1
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
-                backfill_entries,
-                protocols,
+                stored_entries,
+                [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
+                wahlperiode=protocol_wahlperiode,
             )
+            for line in backfill_scope_lines(protocols, stored_entries, acquisition_scope, protocol_wahlperiode):
+                print(line, file=sys.stderr)
             if structural:
                 print(
                     f"[backfill] leaving {len(structural)} sitting(s) a rescan at these settings cannot fix: roll-call "
@@ -13269,11 +13853,18 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
+        excluded_protocols = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) in listed]
+        for protocol in excluded_protocols:
+            protocol["dossier_failure_reasons"] = ["excluded"]
+        detail_protocols = [p for p in detail_protocols if normalized_document_number(p.get("dokumentnummer")) not in listed]
         # What this run acquires is one scope; what the store keeps is another.
         # Every cached dossier of the catalog stays, whatever the acquisition
         # was narrowed to, and only the acquired sittings are refreshed.
         try:
-            existing_entries = load_existing_detail_entries(output_dir, protocols)
+            existing_entries = [
+                entry for entry in load_existing_detail_entries(output_dir, protocols)
+                if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in listed
+            ]
         except CachedReportError as exc:
             print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
@@ -13318,8 +13909,16 @@ def main() -> int:
                     include_dev_view=args.include_dev_view,
                     database_page_href=dossier_database_page_href(args, database_path),
                     roll_call_page_cache=roll_call_page_cache,
+                    person_cache=person_cache,
+                    xml_pacer=xml_pacer,
                     vorgang_cache=vorgang_cache,
+                    vorgang_drucksachen_cache=vorgang_drucksachen_cache,
+                    save_dip_caches=dip_request_cache.save,
+                    dip_breaker=dip_breaker,
                 ),
+            )
+            update_coverage_exclusions(
+                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
             # then read it back for the MP pages. The dossier pages are written
@@ -13352,11 +13951,13 @@ def main() -> int:
             if not args.no_persist:
                 refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
 
+                roster_wahlperioden = roster_periods(args, protocols)
+
                 def ingest_roster(staged: sqlite3.Connection) -> None:
-                    stats = ingest_mdb_roster(client, staged, wahlperiode=args.roster_wahlperiode, profile_resolver=profile_resolver)
+                    stats = ingest_mdb_roster(client, staged, wahlperioden=roster_wahlperioden, profile_resolver=profile_resolver)
                     print(
                         f"roster: {stats['mdb']} MdBs of {stats['fetched']} persons "
-                        f"(WP{args.roster_wahlperiode}), {stats['enriched']} enriched",
+                        f"(WP {', '.join(str(n) for n in roster_wahlperioden)}), {stats['enriched']} enriched",
                         file=sys.stderr,
                     )
 
@@ -13369,6 +13970,7 @@ def main() -> int:
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
                         today=resolve_today(getattr(args, "today", None)),
                         vorgang_cache=vorgang_cache,
+                        excluded_document_numbers=listed,
                     ).facts_report
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
@@ -13461,10 +14063,17 @@ def main() -> int:
         is_remote_manifest=is_remote_manifest,
         bill_slugs=bill_slugs,
         authoritative_catalog=True,
+        catalog_full_fetched_at=catalog_full_fetched_at,
         vorgang_cache=vorgang_cache,
     )
     print(index_path)
-    return 0
+    summary, failing = acquisition_summary_lines(
+        [*detail_protocols, *excluded_protocols],
+        dip_stopped=dip_breaker.last_error if dip_breaker.consecutive >= dip_breaker.limit else None,
+    )
+    for line in summary:
+        print(line, file=sys.stderr)
+    return 1 if failing else 0
 
 
 if __name__ == "__main__":

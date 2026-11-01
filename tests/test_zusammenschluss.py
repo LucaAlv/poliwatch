@@ -29,6 +29,9 @@ class ZusammenschlussSpellingTests(unittest.TestCase):
             "Grüne": "BÜNDNIS 90/DIE GRÜNEN",
             "DIE LINKE": "Die Linke",
             "LINKE": "Die Linke",
+            # Spellings of the WP 18/19 XML (A3 pilot census): 19/100 and two more.
+            "BÜNDNIS 90/DIE GRÜNE N": "BÜNDNIS 90/DIE GRÜNEN",
+            "BÜNDNIS 90/ DIE GRÜNEN": "BÜNDNIS 90/DIE GRÜNEN",
             "Fraktionslos": "fraktionslos",
             "Fraktionslose": "fraktionslos",
             # A Gruppe is its own kind of Zusammenschluss, spelt one way.

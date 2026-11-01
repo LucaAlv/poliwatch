@@ -39,6 +39,11 @@ PARTY_COLORS = {
     "AfD": "#2f6fb4",
     "BÜNDNIS 90/DIE GRÜNEN": "#169b62",
     "Die Linke": "#b01873",
+    # WP 18-20 Fraktion and the WP 20/21 Gruppen: shades that stay apart from
+    # the Fraktion Die Linke and readable on white (FDP yellow is darkened).
+    "FDP": "#b38f00",
+    "Gruppe Die Linke": "#d9539f",
+    "Gruppe BSW": "#7b2c5b",
     "fraktionslos": "#7a8699",
     # The sides a Rede in a Sprechrolle counts for (ADR 0001), not Fraktionen.
     "Bundesregierung": "#b06b00",

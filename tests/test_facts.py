@@ -140,7 +140,7 @@ class RegistryTests(unittest.TestCase):
                 caveat = facts.REGISTRY_BY_ID[metric_id]["caveat"]
                 self.assertTrue(caveat and caveat.strip())
         self.assertIn("Gewissensfragen", facts.REGISTRY_BY_ID[ABWEICHLER]["caveat"])
-        self.assertIn("seit Januar 2022", facts.REGISTRY_BY_ID[ERSTE]["caveat"])
+        self.assertIn(facts.COVERAGE_SLOT, facts.REGISTRY_BY_ID[ERSTE]["caveat"])
 
     def test_a_metric_without_its_required_caveat_is_rejected(self) -> None:
         stripped = tuple(
@@ -593,6 +593,42 @@ class LaengsteSitzungTests(StoreCase):
         row = self.one(SITZUNG)
         self.assertIsNone(row["value"])
         self.assertEqual(row["week_n"], 0)
+
+
+class CoverageCaveatTests(StoreCase):
+    # Value (plan 2.8): protects=the erste-reden caveat names the store's real coverage start
+    # instead of a fixed "seit Januar 2022"; fails_when=the date stays hard-coded or a WP that
+    # starts at protocol 1 is named by month; seam=facts.coverage_label + card_caveat.
+    def test_the_erste_reden_caveat_names_the_coverage_start(self) -> None:
+        self.seed(week_specs(2, wp=20, start_number=14, year=2022))
+        self.assertEqual(facts.coverage_label(self.conn), "seit Januar 2022")
+        row = {"metric_id": ERSTE, "coverage_label": "seit Beginn der 18. Wahlperiode"}
+        self.assertEqual(
+            facts.card_caveat(row),
+            "Erste Rede in unserer Abdeckung seit Beginn der 18. Wahlperiode, nicht zwingend die erste Rede im Bundestag.",
+        )
+        self.assertEqual(
+            facts.card_caveat({"metric_id": ERSTE}),
+            "Erste Rede in unserer Abdeckung, nicht zwingend die erste Rede im Bundestag.",
+        )
+
+    def test_a_store_from_protocol_one_is_covered_from_the_start_of_its_wahlperiode(self) -> None:
+        self.seed(week_specs(2, wp=21, start_number=1, year=2025))
+        self.assertEqual(facts.coverage_label(self.conn), "seit Beginn der 21. Wahlperiode")
+
+    # Value (review 2026-11-01): protects=the stored and exported fact_metrics.caveat (Daten
+    # download fact_metrics-local.csv.gz) carries the filled caveat the cards show; fails_when=the
+    # raw "{abdeckung}" template is written to the store; seam=facts.compute_and_store.
+    def test_the_stored_caveat_has_its_coverage_slot_filled(self) -> None:
+        self.seed(week_specs(2, wp=20, start_number=14, year=2022))
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet())
+        caveats = dict(conn.execute("SELECT id, caveat FROM fact_metrics"))
+        self.assertFalse([metric for metric, caveat in caveats.items() if facts.COVERAGE_SLOT in str(caveat or "")])
+        self.assertEqual(
+            caveats[ERSTE],
+            "Erste Rede in unserer Abdeckung seit Januar 2022, nicht zwingend die erste Rede im Bundestag.",
+        )
 
 
 class ErsteRedenTests(StoreCase):
@@ -1691,7 +1727,8 @@ class EngineTests(StoreCase):
         for row in monthly_posted:
             self.assertGreaterEqual(row["rank"], 1)
             self.assertTrue(row["receipts"])
-        self.assertEqual(facts.read_snapshot(conn), facts.snapshot_from_rows(facts.ALL_REGISTRY, report["rows"]))
+        self.assertEqual(facts.read_snapshot(conn), facts.snapshot_from_rows(
+            facts.ALL_REGISTRY, report["rows"], coverage=facts.coverage_label(conn)))
 
     def test_receipts_round_trip_with_their_fact(self) -> None:
         conn, _ = self.store_all()
@@ -1895,7 +1932,7 @@ class EngineTests(StoreCase):
         conn, _ = self.store_all()
         snapshot = facts.read_snapshot(conn)
         self.assertEqual(
-            snapshot, facts.snapshot_from_rows(facts.REGISTRY, self.compute())
+            snapshot, facts.snapshot_from_rows(facts.REGISTRY, self.compute(), coverage=facts.coverage_label(self.conn))
         )
 
 
@@ -2675,14 +2712,16 @@ class PageTests(StoreCase):
         self.assertEqual(archive_path.read_text(encoding="utf-8"), published_archive)
 
     def test_methodik_states_the_floor_both_absolute_gates_and_every_caveat(self) -> None:
-        html = build.render_facts_methodik()
+        html = build.render_facts_methodik(coverage="seit Januar 2022")
+        self.assertNotIn(facts.COVERAGE_SLOT, html)
+        self.assertIn("in unserer Abdeckung seit Januar 2022", html)
         self.assertIn("50", html)
         self.assertIn(str(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"]), html)
         self.assertIn("Thema bestimmen lässt", html)
         for metric in facts.ALL_REGISTRY:
             self.assertIn(metric["title"], html)
             if metric["caveat"]:
-                self.assertIn(metric["caveat"], html)
+                self.assertIn(facts.fill_caveat(metric["caveat"], "seit Januar 2022"), html)
         self.assertIn("Wochen- und Monatskarten werden bei jedem Neubau", html)
         self.assertIn("Schwellen oder Mindestwerten", html)
         self.assertIn("geänderte Formulierungen", html)

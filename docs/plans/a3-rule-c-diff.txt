@@ -1,0 +1,103 @@
+######## full-old -> full-new
+persons 4165 -> 1942 (-2223); records 6380 -> 6380; bindings 481087 -> 481087
+voter records per WP: {18: '711 -> 711', 19: '761 -> 761', 20: '1558 -> 1558', 21: '639 -> 639'}
+shared bindings 481087 (A only 0, B only 0)
+B persons joining several A persons: 722 (absorbing 2947); A persons split in B: 2 (into 4)
+JOIN 6 | Lauterbach, Prof. Dr. Karl|SPD|profile#1048870@21 || Lauterbach, Prof. Dr. Karl|SPD|profile#857696@20 || Lauterbach, Prof. Dr. Karl|SPD|profile#857696@20 || Lauterbach, Prof. Dr. Karl|SPD|name-party@18,19 || Lauterbach, Dr. Karl|SPD|name-party@18 || Dr. Karl Lauterbach|SPD|aw
+JOIN 6 | Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#1046128@21 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#857750@20 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#857750@20 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|name-party@18,19 || Mihalic, Irene|BÜNDNIS 90/DIE GRÜNEN|name-party@18 || Dr. Irene Mihalic|BÜNDNIS 90/DIE GRÜNEN|aw; Dr. Irene Mihalic, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDNIS 90/DIE GRÜN
+JOIN 6 | Hofreiter, Dr. Anton|BÜNDNIS 90/DIE GRÜNEN|profile#1045040@21 || Hofreiter, Dr. Anton|BÜNDNIS 90/DIE GRÜNEN|profile#857482@20 || Hofreiter, Dr. Anton|BÜNDNIS 90/DIE GRÜNEN|profile#857482@20 || Hofreiter, Dr. Anton|BÜNDNIS 90/DIE GRÜNEN|name-party@18,19 || Hofreiter, Anton|BÜNDNIS 90/DIE GRÜNEN|name-party@18 || Dr. Anton Hofreiter|BÜNDNIS 90/DIE GRÜNEN|aw; Dr. Anton Hofreiter, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDN
+JOIN 5 | Bühl, Marcus|AfD|profile#1048474@21 || Bühl, Marcus|AfD|profile#857208@20 || Bühl, Marcus|AfD|profile#857208@20 || Bühl, Marcus|AfD|name-party@19 || Marcus Bühl|AfD|aw; Marcus Bühl, MdB, AfD|AfD|dip
+JOIN 5 | Lindh, Helge|SPD|profile#1045828@21 || Lindh, Helge|SPD|profile#857648@20 || Lindh, Helge|SPD|profile#857648@20 || Lindh, Helge|SPD|name-party@19 || Helge Lindh|SPD|aw; Helge Lindh, MdB, SPD|SPD|dip
+JOIN 5 | Bär, Dorothee|CDU/CSU|profile#1043526@21 || Bär, Dorothee|CDU/CSU|profile#857110@20 || Bär, Dorothee|CDU/CSU|profile#857110@20 || Bär, Dorothee|CDU/CSU|name-party@18,19 || Dorothee Bär|CDU/CSU|aw
+SPLIT 2 | Schmidt, Jan Wenzel|AfD|profile#1047146@21 || Jan Wenzel Schmidt, MdB, fraktionslos|fraktionslos|dip
+SPLIT 2 | Sekmen, Melis|BÜNDNIS 90/DIE GRÜNEN|profile#860156@20 || Melis Sekmen|BÜNDNIS 90/DIE GRÜNEN|aw
+######## pilot-old -> pilot-old-patch
+persons 4066 -> 4645 (+579); records 5800 -> 6191; bindings 204829 -> 204829
+voter records per WP: {18: '642 -> 639', 19: '731 -> 731', 20: '1555 -> 1555', 21: '637 -> 637'}
+shared bindings 204829 (A only 0, B only 0)
+B persons joining several A persons: 4 (absorbing 8); A persons split in B: 423 (into 1006)
+JOIN 2 | Dagdelen, Sevim|Die Linke|profile#857246@20 || Sevim Dagdelen, MdB, BSW (Gruppe)|Gruppe BSW|dip
+JOIN 2 | Steinbach, Erika|CDU/CSU|name-party@18 || Erika Steinbach, MdB, fraktionslos|fraktionslos|dip; Steinbach, Erika|fraktionslos|name-party@18; Erika Steinbach|fraktionslos|xml
+JOIN 2 | Fabritius, Dr. Bernd|CDU/CSU|name-party@18; Fabritius, Dr. Dr. h. c. Bernd|CDU/CSU|name-party@19; Dr. Bernd Fabritius|CDU/CSU|xml || Dr. Dr. h.c. Bernd Fabritius, MdB, CDU/CSU|CDU/CSU|dip; Fabritius, Dr. Dr. h.c. Bernd|CDU/CSU|name-party@18
+JOIN 2 | Weiler, Dr. h.c. Albert|CDU/CSU|name-party@18 || Albert H. Weiler, MdB, CDU/CSU|CDU/CSU|dip; Weiler, Albert|CDU/CSU|name-party@18,19; Dr. h. c. Albert Weiler|CDU/CSU|xml
+SPLIT 4 | Schäuble, Dr. Wolfgang|CDU/CSU|profile#857936@20 || Schäuble, Dr. Wolfgang|CDU/CSU|name-party#523184@19 || Schäuble, Dr. Wolfgang|CDU/CSU|profile#259036@18 || Dr. Wolfgang Schäuble|CDU/CSU|xml
+SPLIT 4 | Wadephul, Dr. Johann David|CDU/CSU|profile#858166@20 || Wadephul, Dr. Johann|CDU/CSU|name-party#858166@19 || Wadephul, Dr. Johann|CDU/CSU|profile#259168@18 || Dr. Johann David Wadephul|CDU/CSU|aw
+SPLIT 4 | Müller, Stefan|CDU/CSU|profile#857778@20 || Müller, Stefan|CDU/CSU|name-party#522218@19 || Müller, Stefan|CDU/CSU|profile#258770@18 || Stefan Müller|CDU/CSU|aw
+SPLIT 4 | Hennrich, Michael|CDU/CSU|profile#857406@20 || Hennrich, Michael|CDU/CSU|name-party#520300@19 || Hennrich, Michael|CDU/CSU|profile#258528@18 || Michael Hennrich|CDU/CSU|aw; Michael Hennrich, MdB, CDU/CSU|CDU/CSU|dip
+SPLIT 4 | Grötsch, Uli|SPD|profile#857364@20 || Grötsch, Uli|SPD|name-party#519882@19 || Grötsch, Uli|SPD|profile#258386@18 || Uli Grötsch|SPD|aw; Uli Grötsch, MdB, SPD|SPD|dip
+SPLIT 4 | Krischer, Oliver|BÜNDNIS 90/DIE GRÜNEN|profile#857624@20 || Krischer, Oliver|BÜNDNIS 90/DIE GRÜNEN|name-party#521322@19 || Krischer, Oliver|BÜNDNIS 90/DIE GRÜNEN|profile#258586@18 || Oliver Krischer|BÜNDNIS 90/DIE GRÜNEN|aw
+######## pilot-old -> pilot-new-patch
+persons 4066 -> 1872 (-2194); records 5800 -> 6191; bindings 204829 -> 204829
+voter records per WP: {18: '642 -> 639', 19: '731 -> 731', 20: '1555 -> 1555', 21: '637 -> 637'}
+shared bindings 204829 (A only 0, B only 0)
+B persons joining several A persons: 730 (absorbing 2972); A persons split in B: 48 (into 96)
+JOIN 6 | Lauterbach, Prof. Dr. Karl|SPD|profile#1048870@21 || Lauterbach, Prof. Dr. Karl|SPD|profile#857696@20 || Lauterbach, Prof. Dr. Karl|SPD|profile#857696@20 || Lauterbach, Prof. Dr. Karl|SPD|name-party@19 || Lauterbach, Dr. Karl|SPD|name-party@18 || Dr. Karl Lauterbach|SPD|aw
+JOIN 6 | Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#1046128@21 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#857750@20 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#857750@20 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|name-party@19 || Mihalic, Irene|BÜNDNIS 90/DIE GRÜNEN|name-party@18 || Dr. Irene Mihalic|BÜNDNIS 90/DIE GRÜNEN|aw; Dr. Irene Mihalic, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDNIS 90/DIE GRÜNEN|
+JOIN 5 | Bas, Bärbel|SPD|profile#1043554@21 || Bas, Bärbel|SPD|profile#857120@20 || Bas, Bärbel|SPD|profile#857120@20 || Bas, Bärbel|SPD|name-party@18,19 || Bärbel Bas|SPD|aw
+JOIN 5 | Lemke, Steffi|BÜNDNIS 90/DIE GRÜNEN|profile#1045786@21 || Lemke, Steffi|BÜNDNIS 90/DIE GRÜNEN|profile#857674@20 || Lemke, Steffi|BÜNDNIS 90/DIE GRÜNEN|profile#857674@20 || Lemke, Steffi|BÜNDNIS 90/DIE GRÜNEN|name-party@18,19 || Steffi Lemke|BÜNDNIS 90/DIE GRÜNEN|aw
+JOIN 5 | Junge, Frank|SPD|profile#1045238@21 || Junge, Frank|SPD|profile#857516@20 || Junge, Frank|SPD|profile#857516@20 || Junge, Frank|SPD|name-party@18,19 || Frank Junge|SPD|aw; Frank Junge, MdB, SPD|SPD|dip
+JOIN 5 | Bär, Dorothee|CDU/CSU|profile#1043526@21 || Bär, Dorothee|CDU/CSU|profile#857110@20 || Bär, Dorothee|CDU/CSU|profile#857110@20 || Bär, Dorothee|CDU/CSU|name-party@18,19 || Dorothee Bär|CDU/CSU|aw
+SPLIT 2 | Kruse, Rüdiger|CDU/CSU|name-party#521358@19 || Kruse, Rüdiger|CDU/CSU|profile#258588@18
+SPLIT 2 | Sekmen, Melis|BÜNDNIS 90/DIE GRÜNEN|profile#860156@20 || Melis Sekmen|BÜNDNIS 90/DIE GRÜNEN|aw
+SPLIT 2 | Özoguz, Aydan|SPD|profile#857820@20 || Aydan Özoguz, MdB, SPD|SPD|dip; Özoguz, Aydan|SPD|name-party#522462@19
+SPLIT 2 | Landgraf, Katharina|CDU/CSU|name-party#521472@19 || Landgraf, Katharina|CDU/CSU|profile#258682@18
+SPLIT 2 | Schmidt, Jan Wenzel|AfD|profile#1047146@21 || Jan Wenzel Schmidt, MdB, fraktionslos|fraktionslos|dip
+SPLIT 2 | Holmeier, Karl|CDU/CSU|name-party#520494@19 || Holmeier, Karl|CDU/CSU|profile#258454@18
+######## pilot-old -> pilot-new
+persons 4066 -> 1830 (-2236); records 5800 -> 5800; bindings 204829 -> 204829
+voter records per WP: {18: '642 -> 642', 19: '731 -> 731', 20: '1555 -> 1555', 21: '637 -> 637'}
+shared bindings 204829 (A only 0, B only 0)
+B persons joining several A persons: 727 (absorbing 2966); A persons split in B: 3 (into 6)
+JOIN 6 | Lauterbach, Prof. Dr. Karl|SPD|profile#1048870@21 || Lauterbach, Prof. Dr. Karl|SPD|profile#857696@20 || Lauterbach, Prof. Dr. Karl|SPD|profile#857696@20 || Lauterbach, Prof. Dr. Karl|SPD|name-party@19 || Lauterbach, Dr. Karl|SPD|name-party@18 || Dr. Karl Lauterbach|SPD|aw
+JOIN 6 | Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#1046128@21 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#857750@20 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|profile#857750@20 || Mihalic, Dr. Irene|BÜNDNIS 90/DIE GRÜNEN|name-party@19 || Mihalic, Irene|BÜNDNIS 90/DIE GRÜNEN|name-party@18 || Dr. Irene Mihalic|BÜNDNIS 90/DIE GRÜNEN|aw; Dr. Irene Mihalic, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDNIS 90/DIE GRÜNEN|
+JOIN 5 | Otten, Gerold|AfD|profile#1046446@21 || Otten, Gerold|AfD|profile#857834@20 || Otten, Gerold|AfD|profile#857834@20 || Otten, Gerold|AfD|name-party@19 || Gerold Otten|AfD|aw; Gerold Otten, MdB, AfD|AfD|dip
+JOIN 5 | Dröge, Katharina|BÜNDNIS 90/DIE GRÜNEN|profile#1044100@21 || Dröge, Katharina|BÜNDNIS 90/DIE GRÜNEN|profile#857250@20 || Dröge, Katharina|BÜNDNIS 90/DIE GRÜNEN|profile#857250@20 || Dröge, Katharina|BÜNDNIS 90/DIE GRÜNEN|name-party@18,19 || Katharina Dröge|BÜNDNIS 90/DIE GRÜNEN|aw; Katharina Dröge, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDNIS 90/DIE GRÜNEN|dip
+JOIN 5 | Metzler, Jan|CDU/CSU|profile#1046086@21 || Metzler, Jan|CDU/CSU|profile#857736@20 || Metzler, Jan|CDU/CSU|profile#857736@20 || Metzler, Jan|CDU/CSU|name-party@18,19 || Jan Metzler|CDU/CSU|aw; Jan Metzler, MdB, CDU/CSU|CDU/CSU|dip
+JOIN 5 | Polat, Filiz|BÜNDNIS 90/DIE GRÜNEN|profile#1046574@21 || Polat, Filiz|BÜNDNIS 90/DIE GRÜNEN|profile#857860@20 || Polat, Filiz|BÜNDNIS 90/DIE GRÜNEN|profile#857860@20 || Polat, Filiz|BÜNDNIS 90/DIE GRÜNEN|name-party@19 || Filiz Polat|BÜNDNIS 90/DIE GRÜNEN|aw; Filiz Polat, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDNIS 90/DIE GRÜNEN|dip
+SPLIT 2 | Sekmen, Melis|BÜNDNIS 90/DIE GRÜNEN|profile#860156@20 || Melis Sekmen|BÜNDNIS 90/DIE GRÜNEN|aw
+SPLIT 2 | Özoguz, Aydan|SPD|profile#857820@20 || Aydan Özoguz, MdB, SPD|SPD|dip; Özoguz, Aydan|SPD|name-party@19
+SPLIT 2 | Schmidt, Jan Wenzel|AfD|profile#1047146@21 || Jan Wenzel Schmidt, MdB, fraktionslos|fraktionslos|dip
+######## pilot-old-patch -> pilot-new-patch
+persons 4645 -> 1872 (-2773); records 6191 -> 6191; bindings 204829 -> 204829
+voter records per WP: {18: '639 -> 639', 19: '731 -> 731', 20: '1555 -> 1555', 21: '637 -> 637'}
+shared bindings 204829 (A only 0, B only 0)
+B persons joining several A persons: 863 (absorbing 3640); A persons split in B: 4 (into 8)
+JOIN 7 | Wadephul, Dr. Johann David|CDU/CSU|profile#1047914@21 || Wadephul, Dr. Johann David|CDU/CSU|profile#858166@20 || Wadephul, Dr. Johann David|CDU/CSU|profile#858166@20 || Wadephul, Dr. Johann|CDU/CSU|name-party#858166@19 || Wadephul, Dr. Johann David|CDU/CSU|name-party#524332@19 || Wadephul, Dr. Johann|CDU/CSU|profile#259168@18 || Dr. Johann David Wadephul|CDU/CSU|aw
+JOIN 6 | Rabanus, Martin|SPD|profile#1046646@21 || Rabanus, Martin|SPD|profile#857918@20 || Rabanus, Martin|SPD|profile#857918@20 || Rabanus, Martin|SPD|name-party#522760@19 || Rabanus, Martin|SPD|profile#258890@18 || Martin Rabanus|SPD|aw; Martin Rabanus, MdB, SPD|SPD|dip
+JOIN 6 | Nouripour, Omid|BÜNDNIS 90/DIE GRÜNEN|profile#1046368@21 || Nouripour, Omid|BÜNDNIS 90/DIE GRÜNEN|profile#857814@20 || Nouripour, Omid|BÜNDNIS 90/DIE GRÜNEN|profile#857814@20 || Nouripour, Omid|BÜNDNIS 90/DIE GRÜNEN|name-party#522404@19 || Nouripour, Omid|BÜNDNIS 90/DIE GRÜNEN|profile#258804@18 || Omid Nouripour|BÜNDNIS 90/DIE GRÜNEN|aw
+JOIN 6 | Donth, Michael|CDU/CSU|profile#1048526@21 || Donth, Michael|CDU/CSU|profile#857254@20 || Donth, Michael|CDU/CSU|profile#857254@20 || Donth, Michael|CDU/CSU|name-party#519112@19 || Donth, Michael|CDU/CSU|profile#258282@18 || Michael Donth|CDU/CSU|aw; Michael Donth, MdB, CDU/CSU|CDU/CSU|dip
+JOIN 6 | Rohde, Dennis|SPD|profile#1046814@21 || Rohde, Dennis|SPD|profile#857890@20 || Rohde, Dennis|SPD|profile#857890@20 || Rohde, Dennis|SPD|name-party#523006@19 || Rohde, Dennis|SPD|profile#259284@18 || Dennis Rohde|SPD|aw
+JOIN 6 | Haßelmann, Britta|BÜNDNIS 90/DIE GRÜNEN|profile#1044778@21 || Haßelmann, Britta|BÜNDNIS 90/DIE GRÜNEN|profile#857416@20 || Haßelmann, Britta|BÜNDNIS 90/DIE GRÜNEN|profile#857416@20 || Haßelmann, Britta|BÜNDNIS 90/DIE GRÜNEN|name-party#520132@19 || Haßelmann, Britta|BÜNDNIS 90/DIE GRÜNEN|profile#258448@18 || Britta Haßelmann|BÜNDNIS 90/DIE GRÜNEN|aw; Britta Haßelmann, MdB, BÜNDNIS 90/DIE GRÜNEN|BÜNDNIS 90/DIE
+SPLIT 2 | Dagdelen, Sevim|Die Linke|profile#857246@20 || Sevim Dagdelen, MdB, BSW (Gruppe)|Gruppe BSW|dip
+SPLIT 2 | Sekmen, Melis|BÜNDNIS 90/DIE GRÜNEN|profile#860156@20 || Melis Sekmen|BÜNDNIS 90/DIE GRÜNEN|aw
+SPLIT 2 | Schmidt, Jan Wenzel|AfD|profile#1047146@21 || Jan Wenzel Schmidt, MdB, fraktionslos|fraktionslos|dip
+SPLIT 2 | Fabritius, Dr. Dr. h.c. Bernd|CDU/CSU|profile#258328@18 || Dr. Dr. h.c. Bernd Fabritius, MdB, CDU/CSU|CDU/CSU|dip
+######## full-new -> hybrid-new-patch (full with the 5 linked pilot reports)
+persons 1942 -> 1956 (+14); records 6380 -> 7019; bindings 481087 -> 481087
+voter records per WP: {18: '711 -> 1350', 19: '761 -> 761', 20: '1558 -> 1558', 21: '639 -> 639'}
+shared bindings 481087 (A only 0, B only 0)
+B persons joining several A persons: 2 (absorbing 4); A persons split in B: 16 (into 32)
+JOIN 2 | Weiler, Dr. h.c. Albert|CDU/CSU|name-party@18 || Albert H. Weiler, MdB, CDU/CSU|CDU/CSU|dip; Weiler, Albert|CDU/CSU|name-party@18,19; Dr. h. c. Albert Weiler|CDU/CSU|xml
+JOIN 2 | Fabritius, Bernd|CDU/CSU|name-party@18; Fabritius, Dr. Bernd|CDU/CSU|name-party@18; Fabritius, Dr. Dr. h. c. Bernd|CDU/CSU|name-party@19; Dr. Dr. h. c. Bernd Fabritius|CDU/CSU|xml || Dr. Dr. h.c. Bernd Fabritius, MdB, CDU/CSU|CDU/CSU|dip; Fabritius, Dr. Dr. h.c. Bernd|CDU/CSU|name-party@18
+SPLIT 2 | Manderla, Gisela|CDU/CSU|name-party#521840@18,19 || Manderla, Gisela|CDU/CSU|profile#259342@18
+SPLIT 2 | Leyen, Dr. Ursula von der|CDU/CSU|name-party@18,19 || Leyen, Dr. Ursula von der|CDU/CSU|profile#258710@18
+SPLIT 2 | Fabritius, Bernd|CDU/CSU|name-party@18; Fabritius, Dr. Bernd|CDU/CSU|name-party@18; Fabritius, Dr. Dr. h. c. Bernd|CDU/CSU|name-party#829864@19; Dr. Dr. h. c. Bernd Fabritius|CDU/CSU|xml || Fabritius, Dr. Dr. h.c. Bernd|CDU/CSU|profile#258328@18
+SPLIT 2 | De Ridder, Dr. rer. pol. Daniela|SPD|profile#258290@18 || De Ridder, Dr. rer. pol. Daniela|SPD|name-party@18
+SPLIT 2 | Lammert, Prof. Dr. Norbert|CDU/CSU|profile#258676@18 || Lammert, Prof. Dr. Norbert|CDU/CSU|name-party@18
+SPLIT 2 | Träger, Carsten|SPD|name-party#524144@18,19 || Träger, Carsten|SPD|profile#259096@18
+SPLIT 2 | Bulmahn, Dr. h.c. Edelgard|SPD|profile#258178@18 || Bulmahn, Dr. h.c. Edelgard|SPD|name-party@18
+SPLIT 2 | Weiler, Dr. h.c. Albert|CDU/CSU|name-party@18 || Albert H. Weiler, MdB, CDU/CSU|CDU/CSU|dip; Weiler, Albert|CDU/CSU|name-party#524480@18,19; Weiler, Dr. h.c. Albert|CDU/CSU|profile#259304@18; Dr. h. c. Albert Weiler|CDU/CSU|xml
+SPLIT 2 | Erler, Dr. h.c. Gernot|SPD|profile#258308@18 || Erler, Dr. h.c. Gernot|SPD|name-party@18
+SPLIT 2 | Krüger-Leißner, Angelika|SPD|profile#495110@18 || Krüger-Leißner, Angelika|SPD|name-party@18
+SPLIT 2 | Wiese, Heinz|CDU/CSU|profile#259210@18 || Wiese, Heinz|CDU/CSU|name-party@18
+SPLIT 2 | Nüßlein, Dr. iur. Georg|CDU/CSU|profile#258802@18 || Nüßlein, Dr. iur. Georg|CDU/CSU|name-party@18
+SPLIT 2 | Hirte, Prof. Dr. iur. Heribert|CDU/CSU|profile#258444@18 || Hirte, Prof. Dr. iur. Heribert|CDU/CSU|name-party@18
+SPLIT 2 | Warken, Nina|CDU/CSU|name-party#583208@18,19 || Warken, Nina|CDU/CSU|profile#259300@18
+SPLIT 2 | Fabritius, Dr. Dr. h.c. Bernd|CDU/CSU|profile#258328@18 || Dr. Dr. h.c. Bernd Fabritius, MdB, CDU/CSU|CDU/CSU|dip; Fabritius, Dr. Dr. h.c. Bernd|CDU/CSU|name-party@18
+SPLIT 2 | Herdan, Marion Marga|CDU/CSU|profile#513646@18 || Herdan, Marion Marga|CDU/CSU|name-party@18
+######## composition
+full-old: persons 4165, voter-only 2306, with a DIP roster record 1561, two DIP ids 0, two trusted aw ids 0
+full-new: persons 1942, voter-only 83, with a DIP roster record 1561, two DIP ids 0, two trusted aw ids 0
+pilot-old: persons 4066, voter-only 2507, with a DIP roster record 1345, two DIP ids 0, two trusted aw ids 0
+pilot-old-patch: persons 4645, voter-only 3086, with a DIP roster record 1345, two DIP ids 0, two trusted aw ids 0
+pilot-new-patch: persons 1872, voter-only 313, with a DIP roster record 1345, two DIP ids 0, two trusted aw ids 0

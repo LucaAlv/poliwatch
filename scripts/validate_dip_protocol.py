@@ -27,7 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from html import unescape
 from html.parser import HTMLParser
@@ -75,6 +75,14 @@ class DipError(RuntimeError):
     def __init__(self, message: str, *, source_rejected: bool = False):
         super().__init__(message)
         self.source_rejected = source_rejected
+
+
+class SourceSlowError(RuntimeError):
+    """A source answered slower than the pacing allows: the run stops.
+
+    Deliberately not a DipError, which a build skips as one unavailable
+    sitting and goes on: a slow answer is dserver's first sign of a block.
+    """
 
 
 class DipShapeError(DipError):
@@ -153,6 +161,95 @@ def load_local_env(path: Path | None = None) -> None:
             os.environ[key] = value
 
 
+#: Set to a file path to append one line per outbound request attempt (UTC time,
+#: source, target, attempt, outcome, seconds), so the moment a source stops
+#: answering is known exactly (A3 pilot, Finding 2). The DIP key is never written.
+REQUEST_LOG_ENV = "DIP_REQUEST_LOG"
+_APIKEY_RE = re.compile(r"apikey=[^&\s]*")
+
+
+def _read_logged(req: urllib.request.Request, timeout: float, source: str, target: str, attempt: int) -> bytes:
+    """urlopen and read the body; with DIP_REQUEST_LOG set, log the attempt
+    whatever its outcome."""
+    started = time.monotonic()
+    outcome = "?"
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            body = res.read()
+            outcome = str(getattr(res, "status", "") or "ok")
+        return body
+    except urllib.error.HTTPError as exc:
+        outcome = f"HTTP {exc.code}"
+        raise
+    except BaseException as exc:
+        outcome = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        log_path = os.environ.get(REQUEST_LOG_ENV)
+        if log_path:
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            fields = [stamp, source, target, f"attempt {attempt + 1}", outcome, f"{time.monotonic() - started:.2f}s"]
+            line = _APIKEY_RE.sub("apikey=…", "\t".join(" ".join(f.split()) for f in fields))
+            # A log that cannot be written must not turn an answer into a retried failure.
+            try:
+                with open(log_path, "a", encoding="utf-8") as log:
+                    log.write(line + "\n")
+            except OSError as exc:
+                print(f"warning: {REQUEST_LOG_ENV} {log_path} is not writable: {exc}", file=sys.stderr)
+
+
+def page_count(page: dict[str, Any]) -> int | None:
+    """DIP's ``numFound`` for a cursor-paged list, or None when the page carries no
+    usable count."""
+    count = page.get("numFound")
+    return count if isinstance(count, int) and not isinstance(count, bool) else None
+
+
+def holds_all(documents: list[dict[str, Any]], count: int | None) -> bool:
+    """True once ``documents`` hold ``count`` distinct ids: the next cursor page
+    would only confirm the end (half of a sitting's Vorgang requests, 2026-10-23).
+    A repeated document across pages does not count twice, and without a count
+    or an id the cursor alone ends the list."""
+    if count is None or any(not d.get("id") for d in documents):
+        return False
+    return len({str(d["id"]) for d in documents}) >= count
+
+
+#: Consecutive DIP requests that may fail (after their retries) before the run
+#: stops asking DIP. A blocked DIP times out every attempt at 60 s, and on
+#: 2026-10-23 the run kept asking (a3-pilot.md, second attempt).
+DIP_FAILURE_LIMIT = 2
+
+
+class DipUnavailable(DipError):
+    """DIP failed DIP_FAILURE_LIMIT requests in a row; this run sends it no more."""
+
+
+@dataclass
+class DipBreaker:
+    """One per run, shared by every sitting's ApiClient: counts DIP requests that
+    failed in a row (timeouts, resets, 429/5xx, unreadable bodies; a 404 is an
+    answer) and, at ``limit``, stops the run's further DIP requests."""
+
+    limit: int = DIP_FAILURE_LIMIT
+    consecutive: int = 0
+    last_error: str = ""
+
+    def check(self) -> None:
+        if self.consecutive >= self.limit:
+            raise DipUnavailable(
+                f"DIP stopped answering: {self.consecutive} requests in a row failed (last: {self.last_error}); "
+                "this run sends it no more requests"
+            )
+
+    def failed(self, error: BaseException) -> None:
+        self.consecutive += 1
+        self.last_error = str(error)
+
+    def answered(self) -> None:
+        self.consecutive = 0
+
+
 @dataclass(frozen=True)
 class ApiClient:
     api_key: str
@@ -161,6 +258,7 @@ class ApiClient:
     timeout: int = 60
     retries: int = 2
     retry_delay_seconds: float = 1.5
+    breaker: DipBreaker | None = None
 
     def _retry_delay(self, path: str, exc: BaseException, attempt: int) -> None:
         delay = self.retry_delay_seconds * (attempt + 1)
@@ -176,23 +274,32 @@ class ApiClient:
         params["apikey"] = self.api_key
         params.setdefault("format", "json")
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params, doseq=True)}"
+        target = f"{path}?{urllib.parse.urlencode({k: v for k, v in params.items() if k != 'apikey'}, doseq=True)}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        if self.breaker is not None:
+            self.breaker.check()
         for attempt in range(self.retries + 1):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as res:
-                    data = json.loads(res.read().decode("utf-8"))
+                data = json.loads(_read_logged(req, self.timeout, "dip", target, attempt).decode("utf-8"))
                 break
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
-                if exc.code in {429, 500, 502, 503, 504} and attempt < self.retries:
+                transient = exc.code in {429, 500, 502, 503, 504}
+                if transient and attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
+                if self.breaker is not None and transient:
+                    self.breaker.failed(exc)
+                elif self.breaker is not None:
+                    self.breaker.answered()  # a 404 or 400 is DIP answering
                 raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
             except ValueError as exc:
                 # A 200 that is not JSON (an HTML bot-challenge page, a cut-off body): retried like a reset.
                 if attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
+                if self.breaker is not None:
+                    self.breaker.failed(exc)
                 raise DipError(f"DIP API returned an unreadable body for {path}: {exc}") from exc
             except (OSError, http.client.HTTPException) as exc:
                 # URLError and timeouts are OSErrors, and so is a connection
@@ -201,7 +308,11 @@ class ApiClient:
                 if attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
+                if self.breaker is not None:
+                    self.breaker.failed(exc)
                 raise DipError(f"DIP API request failed for {path}: {exc}") from exc
+        if self.breaker is not None:
+            self.breaker.answered()
         if self.sleep_seconds:
             time.sleep(self.sleep_seconds)
         return data
@@ -228,7 +339,7 @@ class ApiClient:
             malformed_rows |= any(not isinstance(d, dict) for d in batch)
             documents.extend(d for d in batch if isinstance(d, dict))
             cursor = page.get("cursor")
-            if not batch or not cursor or cursor == previous_cursor:
+            if not batch or not cursor or cursor == previous_cursor or holds_all(documents, page_count(page)):
                 break
             previous_cursor = cursor
             params["cursor"] = cursor
@@ -256,10 +367,11 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
     votes to partial.
     """
     req = urllib.request.Request(url, headers={"Accept": accept})
+    parts = urllib.parse.urlsplit(url)
+    target = parts.path + (f"?{parts.query}" if parts.query else "")
     for attempt in range(PAGE_FETCH_RETRIES + 1):
         try:
-            with urllib.request.urlopen(req, timeout=60) as res:
-                return res.read().decode("utf-8")
+            return _read_logged(req, 60, parts.netloc, target, attempt).decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
         except urllib.error.HTTPError as exc:
@@ -441,6 +553,46 @@ def fetch_drucksache_texts(client: ApiClient, ids: list[str], *, page_pause: flo
 
 def fetch_text(url: str) -> str:
     return _fetch_page(url, "application/xml,text/xml,*/*", "XML")
+
+
+@dataclass
+class XmlPacer:
+    """Paces Plenarprotokoll XML requests to dserver.bundestag.de across one run
+    (decision 9, docs/plans/a3-rule5-wp18-19-round2.md). dserver grants a request
+    budget per window, not a rate (docs/plans/a3-pilot.md, Finding 2): about 50
+    XML at 2 s spacing, then a 60-minute pause, and the first answer over 10 s
+    stops the run."""
+
+    spacing: float = 2.0
+    window_size: int = 50
+    window_pause: float = 3600.0
+    slow_stop: float = 10.0
+    clock: Callable[[], float] = field(default=time.monotonic, repr=False)
+    sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
+    in_window: int = 0
+    last: float | None = None
+
+    def fetch(self, url: str) -> str:
+        if self.in_window >= self.window_size:
+            print(f"[xml] {self.in_window} XML in this window; pausing {self.window_pause / 60:g} minutes.",
+                  file=sys.stderr, flush=True)
+            self.sleep(self.window_pause)
+            self.in_window, self.last = 0, None
+        elif self.last is not None:
+            wait = self.spacing - (self.clock() - self.last)
+            if wait > 0:
+                self.sleep(wait)
+        started = self.clock()
+        try:
+            return fetch_text(url)
+        finally:
+            self.last = self.clock()
+            self.in_window += 1
+            took = self.last - started
+            if took > self.slow_stop:
+                raise SourceSlowError(
+                    f"{url} took {took:.1f} s (over {self.slow_stop:g} s): stopping before dserver blocks. "
+                    "Resume after a pause; fetched XML is kept.")
 
 
 def fetch_html(url: str) -> str:
@@ -643,6 +795,49 @@ NESTED_GRANT_EVIDENCE = re.compile(
     r"|(?P<ack>\b(?:dank\w*|bedanke(?: mich)?)\b.{0,100}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,70}\b(?:zulass\w*|zugelassen haben)\b)",
     re.IGNORECASE,
 )
+# 6a: a nested MdB turn is a Zwischenfrage/-bemerkung when (1) the Redner's last
+# turn before it is a short consent that followed the chair's offer of a
+# question, or (2) the turn itself opens by thanking for being allowed to ask.
+NESTED_OFFER = re.compile(r"\b(?:Zwischen)?(?:Fragen?|Bemerkung(?:en)?)\b", re.IGNORECASE)
+# R1c: short offers that name no Frage or Bemerkung. They are an offer only
+# when the chair's turn names the would-be asker.
+NAMED_OFFER = re.compile(r"\bDarf (?:er|sie)(?: das)?\?|\bMögen Sie\?|\bGestatten Sie\?|\bZusatzfrage\b", re.IGNORECASE)
+# R1b: the Redner's short turn after an offer is consent unless it refuses.
+CONSENT_MAX_WORDS = 12
+# With a Frage/Bemerkung word, the chair asks for a (new) question: a new exchange.
+NEW_OFFER_WORDING = re.compile(r"\b(?:darf|dürfen|möchten?|wünscht|will|wollen)\b", re.IGNORECASE)
+CONSENT_REFUSAL = re.compile(r"\b(?:nein|nee|nicht|kein\w*|später)\b", re.IGNORECASE)
+# 6b: the chair gives the floor, with no question asked, to an MdB whose
+# turn says the Redner addressed them.
+ADDRESSED_MEMBER = re.compile(
+    r"\bangesprochen\b|\bSie haben (?:was |etwas )?(?:zu|über) mir gesagt\b|\bSie haben mich\b"
+    r"|\bweil Sie\b[^.!?]{0,40}\bzitiert\b", re.IGNORECASE)
+NESTED_OPENING_THANKS = re.compile(
+    r"\b(?:be)?dank\w*[^;–?!]{0,60}\b(?:Zulassen|Zulassung|Möglichkeit)\b[^;–?!]{0,40}\b(?:Zwischen)?(?:Frage|Bemerkung)"
+    r"|\b(?:be)?dank\w*[^;–?!]{0,40}\bdass Sie\b[^;–?!]{0,40}\b(?:Zwischen)?(?:Frage|Bemerkung)\s+zulassen\b"
+    r"|\bEs zeichnet Sie aus, dass Sie\b[^;–?!]{0,60}\b(?:Zwischen)?(?:Frage|Bemerkung)\s+zulassen\b",
+    re.IGNORECASE)
+
+
+def nested_consent(turn: list[str]) -> bool:
+    text = clean_text(" ".join(turn))
+    return 0 < len(text.split()) <= CONSENT_MAX_WORDS and not CONSENT_REFUSAL.search(text)
+
+
+# Matched against the role with whitespace removed ("Vizepräsident in").
+SITZUNGSLEITUNG_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
+# The elected Präsident's acceptance, answering the chair's question (6d).
+ELECTION_QUESTION = re.compile(r"\bNehmen Sie die Wahl an\?\s*$")
+ELECTION_ACCEPTANCE = re.compile(r"(?:(?:Herr|Frau) (?:Alters)?Präsident(?:in)?, )?[Ii]ch nehme die Wahl an\.")
+# The chair gives the floor in the form of the Rednerliste, and the turn opens
+# like a Rede (6c).
+NESTED_REDE_FLOOR = re.compile(
+    r"\b[Nn]ächste[rnm]? Redner(?:in)?\b|\b(?:[Ll]etzte|[Aa]bschließende)[rn]? Redner(?:in)?\b"
+    r"|\b[Dd]as Wort (?:hat|erhält)\b|\bhat (?:[^.!?]{1,80} )?das Wort\b"
+    r"|\b(?:gebe|erteile) (?:ich )?(?:[^.!?]{1,80} )?das Wort\b|\bspricht (?:jetzt|nun)\b"
+)
+NESTED_REDE_NOT_FLOOR = re.compile(r"Zwischenfrage|Zwischenbemerkung|Frage|Kurzintervention|Erwiderung|Bemerkung", re.IGNORECASE)
+REDE_SALUTATION = re.compile(r"Sehr (?:geehrte|verehrte)[rn]?\b|(?:Frau|Herr) (?:Vize|Alters)?Präsident(?:in)?\s*!")
 _NESTED_NAMED_ASKER = re.compile(
     r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
     r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)"
@@ -666,6 +861,135 @@ def nested_grant_names(announcement: str) -> set[str] | None:
     return {name for name in surnames if name not in {"kollege", "kollegen", "kollegin", "fraktion", "ihnen", "zwischenfrage", "zwischenfragen", "frau", "herr"}
             and not any(re.search(pattern.pattern, name, re.IGNORECASE)
                         for pattern in speech_kinds.FRAKTION_WORDING.values())} or None
+
+
+def asker_name(last_name: str | None) -> str:
+    """The surname the chair names an asker by: WP 18/19 prints some with a
+    middle initial inside ``<nachname>`` ("W. Birkwald"), the chair says
+    "Birkwald" (R4). The stored ``last_name`` keeps the initial."""
+    return re.sub(r"^[A-ZÄÖÜ]\.\s+", "", last_name or "").casefold()
+
+
+# The chair's own words: an offer to the Redner, or the floor to the next one.
+CHAIR_OFFER = re.compile(r"\b(?:gestatten|erlauben)\s+Sie\b[^.!?]{0,80}\b(?:Zwischen)?(?:frage|bemerkung)", re.IGNORECASE)
+
+
+def mark_roleless_chairs(root: ET.Element) -> None:
+    """WP 18/19 (and 21/17) can print the chair inside a member's ``<rede>`` as
+    a plain MdB marker, with no presidium role. Such a marker is Sitzungsleitung
+    when its person chairs this sitting (a ``<name>`` chair element ends with
+    their first and last name) and their turn is chair text. It is marked
+    ``sitzungsleitung="1"`` in place, so ``presidium_marker`` reads it as 6d.
+    A Vizepräsident(in) asking as an MdB says no chair text and stays a member.
+    """
+    verlauf = root.find("sitzungsverlauf")
+    if verlauf is None:
+        return
+    chairs = [elem_text(name) for name in verlauf.iter("name") if name.find("nachname") is None]
+    for rede in verlauf.iter("rede"):
+        own = redner_key(rede.find("./p[@klasse='redner']/redner"))
+        children = list(rede)
+        for index, child in enumerate(children):
+            if child.tag != "p" or child.get("klasse") != "redner":
+                continue
+            redner = child.find("redner")
+            if redner is None or redner_key(redner) in (own, None) or any(speech_kinds.effective_role(redner)):
+                continue
+            full = clean_text(f"{child_text(redner.find('name'), 'vorname') or ''} {child_text(redner.find('name'), 'nachname') or ''}")
+            if not any(re.search(rf"(?<![\w-]){re.escape(full)}\s*:?$", chair) for chair in chairs):
+                continue
+            turn = [clean_text((redner.tail or "").partition(":")[2])]
+            for following in children[index + 1:]:
+                if following.tag == "name" or following.get("klasse") == "redner":
+                    break
+                if following.tag == "p":
+                    turn.append(elem_text(following))
+            text = " ".join(filter(None, turn))
+            if CHAIR_OFFER.search(text) or (NESTED_REDE_FLOOR.search(text) and not NESTED_REDE_NOT_FLOOR.search(text)):
+                redner.set("sitzungsleitung", "1")
+
+
+# Matched against the role with whitespace removed, as SITZUNGSLEITUNG_ROLE.
+VIZEPRAESIDIUM_ROLE = re.compile(r"Vizepräsident(?:in)?", re.IGNORECASE)
+
+
+def mark_presidium_fraktionsreden(root: ET.Element) -> None:
+    """ADR 0004: a Vizepräsident(in) who owns a ``<rede>`` and is printed with a
+    ``<fraktion>`` gives that Fraktion's Rede (18/46 Pau). The presidium
+    ``<rolle>`` is removed from the owner's markers in that ``<rede>``, so the
+    Rede reads as an MdB's. Without a Fraktion (18/245) the role stays and no
+    Sprechrolle rule maps it; the Präsident and Alterspräsident are not covered.
+    """
+    for rede in root.iter("rede"):
+        first = rede.find("./p[@klasse='redner']/redner")
+        if first is None or not child_text(first.find("name"), "fraktion"):
+            continue
+        role = first.find("name/rolle")
+        if role is None or not VIZEPRAESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", child_text(role, "rolle_lang"))):
+            continue
+        own = redner_key(first)
+        for redner in rede.iter("redner"):
+            name = redner.find("name")
+            if redner_key(redner) == own and name is not None and name.find("rolle") is not None:
+                name.remove(name.find("rolle"))
+
+
+def presidium_marker(redner: ET.Element | None) -> bool:
+    if redner is not None and redner.get("sitzungsleitung") == "1":
+        return True
+    return redner is not None and bool(SITZUNGSLEITUNG_ROLE.fullmatch(re.sub(r"\s+", "", parse_redner(redner).get("role") or "")))
+
+
+def split_nested_reden(top: ET.Element) -> None:
+    """6c: WP 18/19 can print a whole Rede inside the previous ``<rede>``.
+
+    When the chair gives that speaker the floor in the form of the Rednerliste
+    and the turn opens with a salutation, the turn and everything after it
+    becomes a Rede of its own, ``<outer id>:<marker>``; the outer Rede ends at
+    the marker. The tree is changed in place.
+    """
+    work = list(top.findall("rede"))
+    while work:
+        rede = work.pop(0)
+        rid = rede.get("id")
+        if not rid:
+            continue
+        own = redner_key(rede.find("./p[@klasse='redner']/redner"))
+        children = list(rede)
+        marker = 0
+        chair = None
+        for index, child in enumerate(children):
+            if child.tag == "name":
+                chair = ""
+                continue
+            if child.tag != "p":
+                continue
+            if child.get("klasse") != "redner":
+                if chair is not None:
+                    chair += " " + elem_text(child)
+                continue
+            marker += 1
+            redner = child.find("redner")
+            key = redner_key(redner)
+            if key not in (own, None) and presidium_marker(redner):
+                chair = clean_text((redner.tail or "").partition(":")[2])
+                continue
+            last_name = (parse_redner(redner) or {}).get("last_name") or ""
+            if (key not in (own, None) and chair and last_name and NESTED_REDE_FLOOR.search(chair)
+                    and not NESTED_REDE_NOT_FLOOR.search(chair)
+                    and re.search(rf"(?<![\w-]){re.escape(last_name)}(?![\w-])", chair)):
+                tail = clean_text((redner.tail or "").partition(":")[2])
+                following = next((c for c in children[index + 1:] if c.tag == "p"), None)
+                opening = tail or (elem_text(following) if following is not None and following.get("klasse") != "redner" else "")
+                if REDE_SALUTATION.match(opening):
+                    split = ET.Element("rede", {"id": f"{rid}:{marker}"})
+                    for moved in children[index:]:
+                        rede.remove(moved)
+                        split.append(moved)
+                    top.insert(list(top).index(rede) + 1, split)
+                    work.insert(0, split)
+                    break
+            chair = None
 
 
 def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: bool = False) -> tuple[SpeechText, list[dict[str, Any]]]:
@@ -695,11 +1019,15 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
     floor_granted = False
     request_accepted = False
     declined_request = ""
-    candidates = {parse_redner(r)["last_name"].casefold(): r for r in rede.iter("redner")
+    last_text = ""
+    offer_open = False  # the chair offered a question and no MdB has taken it yet
+    exchange = 0  # counts the chair's offers; one asker's turns within one are one Zwischenfrage
+    consent_turn: list[str] | None = None  # the Redner's latest turn, if it followed an offer
+    candidates = {asker_name(parse_redner(r)["last_name"]): r for r in rede.iter("redner")
                   if redner_key(r) != own and parse_redner(r).get("last_name")}
 
     candidate_keys = {name: {redner_key(r) for r in rede.iter("redner")
-                             if redner_key(r) != own and parse_redner(r).get("last_name", "").casefold() == name}
+                             if redner_key(r) != own and asker_name(parse_redner(r).get("last_name")) == name}
                       for name in candidates}
 
     def recipients(context):
@@ -749,13 +1077,22 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 marker += 1
                 redner = child.find("redner")
                 speaker, segment = redner_key(redner), None
+                if speaker not in (own, None) and presidium_marker(redner):
+                    # WP 18/19 prints the chair inside a member's Rede as a
+                    # marker with a presidium role (ADR 0004): chair text, kept
+                    # as a segment only for its procedural diagnostic.
+                    speaker = _SITZUNGSLEITUNG
+                    segment = {"speaker": parse_redner(redner), "marker": marker, "paragraphs": [],
+                               "announcement": "", "sitzungsleitung": True}
+                    nested.append(segment)
                 if speaker == own:
                     preceding_chair_text = chair_text
-                if speaker != own:
+                    consent_turn = [] if offer_open else None
+                if speaker != own and speaker is not _SITZUNGSLEITUNG:
                     if speaker is not None:
                         candidate = parse_redner(redner)
                         named_in_grant = (candidate.get("last_name") and pending_nested_names
-                                          and candidate["last_name"].casefold() in pending_nested_names)
+                                          and asker_name(candidate["last_name"]) in pending_nested_names)
                         faction_matches = derive.zusammenschluss(candidate.get("fraktion")) in pending_factions
                         recipient_mismatch = ((pending_nested_names is not None or bool(pending_factions))
                                               and not (named_in_grant or faction_matches))
@@ -764,15 +1101,18 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                             chair_text = ""
                         else:
                             grant_context = pending_nested_announcement
-                        segment = {"speaker": candidate, "marker": marker, "paragraphs": [],
-                                   "grant_epoch": grant_epoch, "refused": refused,
+                        segment = {"speaker": candidate, "marker": marker, "paragraphs": [], "prompt": last_text,
+                                   "grant_epoch": grant_epoch, "refused": refused, "exchange": exchange,
                                    "recipient_mismatch": bool(recipient_mismatch),
+                                   "granted": consent_turn is not None and nested_consent(consent_turn),
+                                   "chair_floor": bool(chair_text.strip()) and not re.search(r"Kurzintervention|Erwiderung", chair_text, re.IGNORECASE),
                                    "authorized": bool(grant_context) and (not interrupted_request_pending or floor_granted),
                                    "incomplete_exchange": interrupted_request_pending and not (request_accepted and floor_granted),
                                    "announcement": " ".join(filter(None, (grant_context, chair_text)))}
                         nested.append(segment)
+                        offer_open, consent_turn = False, None
                         if named_in_grant:
-                            pending_nested_names.discard(candidate["last_name"].casefold())
+                            pending_nested_names.discard(asker_name(candidate["last_name"]))
                         elif faction_matches:
                             pending_factions.discard(derive.zusammenschluss(candidate.get("fraktion")))
                         if not pending_nested_names and not pending_factions:
@@ -795,16 +1135,29 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 text = elem_text(child)
             if not text:
                 continue
+            last_text = text
             if speaker is None:
                 unattributed += len(text)
             elif speaker is _SITZUNGSLEITUNG:
+                if segment is not None:
+                    segment["paragraphs"].append(text)
                 chair_text += " " + text
+                offer_open = offer_open or bool(NESTED_OFFER.search(text))
+                if NAMED_OFFER.search(text) and not NESTED_OFFER.search(chair_text):
+                    named = {name for name in candidates
+                             if re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", chair_text, re.IGNORECASE)}
+                    if named:
+                        offer_open, pending_nested_names = True, named
+                        exchange += 1
                 question_request = re.search(
                     r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", chair_text, re.IGNORECASE)
                 interrupted_request = re.search(r"Ich wollte Sie fragen:.*\bHerr\b.*würde gerne\s*[–-]", chair_text)
                 request_wording = re.search(
                     r"gestatt|erlaub|zulass|lassen.*\bzu\b|es gibt|es gäbe|es würde.*geben|wir haben|Sagen Sie Ja oder Nein|hat sich gemeldet|Fragewunsch|hat die Möglichkeit|Sind Sie bereit|würde[^.!?]{0,30}gerne?|geben Sie",
                     chair_text, re.IGNORECASE)
+                if ((question_request and request_wording) or interrupted_request
+                        or (NESTED_OFFER.search(text) and NEW_OFFER_WORDING.search(text))):
+                    exchange += 1
                 if (question_request and request_wording) or interrupted_request:
                     request_accepted = False
                     interrupted_request_pending = bool(interrupted_request)
@@ -831,6 +1184,8 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     pending_nested_announcement += " " + chair_text
             elif speaker == own:
                 paragraphs.append(text)
+                if consent_turn is not None:
+                    consent_turn.append(text)
                 if all_speakers and segment is not None:
                     segment["paragraphs"].append(text)
                 grant = NESTED_GRANT_EVIDENCE.search(text)
@@ -858,6 +1213,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     r"ich mache das sehr gerne|Die lasse ich doch zu|Eine Frage .*lasse ich gerne zu|"
                     r"Dann kann er gerne|Von der CDU/CSU\?\s*[–-]\s*Ja)\b", text, re.IGNORECASE)
                 if refusal:
+                    offer_open, consent_turn = False, None
                     declined_request = pending_request or preceding_chair_text
                     pending_nested_announcement = pending_request = ""
                     pending_nested_names = None
@@ -900,11 +1256,23 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     refused = False
             elif segment is not None:
                 segment["paragraphs"].append(text)
+    granted_key = None
     for nested_segment in nested:
         text = " ".join(nested_segment["paragraphs"])
         evidence = NESTED_GRANT_EVIDENCE.search(text)
         if evidence and evidence.group("ack") and not nested_segment.get("refused") and not speech_kinds.NOT_GRANTED.search(evidence.group("ack")):
             nested_segment["announcement"] = " ".join(filter(None, (nested_segment["announcement"], evidence.group("ack"))))
+        if "grant_epoch" in nested_segment:
+            # 6a (2): an opening thank-you that is not negated grants, over a carried
+            # refusal; the same speaker's next turn continues that grant.
+            speaker_grant = ((nested_segment["speaker"] or {}).get("xml_redner_id"), nested_segment["grant_epoch"])
+            thanks = NESTED_OPENING_THANKS.search(nested_segment["paragraphs"][0][:140]) if nested_segment["paragraphs"] else None
+            if nested_segment["granted"] or (thanks and not speech_kinds.NOT_GRANTED.search(thanks.group())):
+                nested_segment["granted"], granted_key = True, speaker_grant
+            elif speaker_grant[0] and speaker_grant == granted_key:
+                nested_segment["granted"] = True
+            else:
+                granted_key = None
     return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
 
 
@@ -996,10 +1364,12 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
+    mark_presidium_fraktionsreden(root)
     try:
         asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
     except ValueError as exc:
         raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}: {exc}") from exc
+    mark_roleless_chairs(root)
     for index, top in enumerate(root.findall("./sitzungsverlauf/tagesordnungspunkt"), start=1):
         heading_lines: list[str] = []
         zusatz_lines: list[str] = []
@@ -1023,7 +1393,12 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         # (20/143, 20/159) and no T_NaS/T_fett one: it is the heading then.
         heading = clean_text(" ".join(heading_lines or zusatz_lines))
         top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
+        split_nested_reden(top)
         redes = top.findall("rede")
+        for rede in redes:
+            outer = (rede.get("id") or "").partition(":")[0]
+            if outer != rede.get("id") and outer in rid_pages:
+                rid_pages.setdefault(rede.get("id"), rid_pages[outer])
         try:
             labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
         except ValueError as exc:
@@ -1079,6 +1454,12 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             for segment in nested:
                 key = derive.first_redner_id(segment["speaker"].get("xml_redner_id"))
                 text = clean_text(" ".join(segment["paragraphs"]))
+                if segment.get("sitzungsleitung"):
+                    diagnostic(rid, segment, "procedural", "Sitzungsleitung: " + (segment["speaker"].get("role") or ""))
+                    continue
+                if ELECTION_QUESTION.search(segment.get("prompt") or "") and ELECTION_ACCEPTANCE.fullmatch(text):
+                    diagnostic(rid, segment, "procedural", "election acceptance: " + segment["prompt"])
+                    continue
                 short_reply = re.fullmatch(r"(?:Nein\.|Nein, ich antworte nicht\.|Sehr gerne\.|Ja\.)", text)
                 invited = re.search(r"(?:möchten Sie|dürfen.*Sie|Sie dürfen).*?(?:antworten|erwidern)", segment["announcement"], re.IGNORECASE)
                 reply_evidence = re.search(r"(?:antworten|erwidern)", chair_evidence, re.IGNORECASE)
@@ -1134,6 +1515,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 own_text = SpeechText(clean_text(" ".join(merged)), merged, own_text.unattributed_chars)
             granted_nested_speaker = None
             grant_epoch = 0
+            open_exchange = None
             text, paragraphs, unattributed_chars = own_text
             page_ref = rid_pages.get(rid or "")
             if page_ref:
@@ -1153,25 +1535,40 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 raise ValueError(f"nested contribution needs a source rede id at {top.get('top-id')} sequence {sequence}")
             for segment in nested:
                 if segment["grant_epoch"] != grant_epoch:
-                    granted_nested_speaker = None
+                    granted_nested_speaker = open_exchange = None
                     grant_epoch = segment["grant_epoch"]
                 nested_kind = speech_kinds.ZWISCHENFRAGE
                 side = derive.sprechrolle(segment["speaker"])
                 speaker_id = (segment["speaker"] or {}).get("xml_redner_id")
-                announced = (segment.get("authorized") or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
-                             or NESTED_GRANT_EVIDENCE.search(segment["announcement"]))
+                announced = (segment.get("authorized") or segment.get("granted") or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
+                             or NESTED_GRANT_EVIDENCE.search(segment["announcement"])
+                             or (segment.get("chair_floor") and ADDRESSED_MEMBER.search(" ".join(segment["paragraphs"])[:300])))
                 continuation = speaker_id and speaker_id == granted_nested_speaker
                 if speech_kinds.BEFRAGUNG in top_format.formats:
                     if not side and not (segment["speaker"] or {}).get("fraktion"):
                         raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested question-format speaker at {rid} marker {segment['marker']}")
                     nested_kind = speech_kinds.BEFRAGUNG_ANTWORT if side else speech_kinds.BEFRAGUNG_FRAGE
                 elif (segment.get("recipient_mismatch") or segment.get("incomplete_exchange") or segment.get("unsupported_reply")
-                      or segment.get("refused")
+                      or (segment.get("refused") and not segment.get("granted"))
                       or side or not (segment["speaker"] or {}).get("fraktion")
                       or not (any("?" in p for p in segment["paragraphs"])
                               or announced or continuation)):
                     raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}")
                 granted_nested_speaker = speaker_id if nested_kind == speech_kinds.ZWISCHENFRAGE else None
+                exchange_identity = (speaker_id, segment.get("exchange")) if nested_kind == speech_kinds.ZWISCHENFRAGE else None
+                if exchange_identity and exchange_identity == open_exchange:
+                    # The same asker again, with no new chair offer since: one
+                    # Zwischenfrage, not one per marker.
+                    first = nested_units[-1]
+                    nested_units[-1] = contribution_unit(
+                        nested_kind, first["rede_id"], rid, 0, first["speaker"],
+                        first["paragraphs"] + segment["paragraphs"], first["source_page"])
+                    diagnostics.append({"source_rede_id": rid, "marker_ordinal": segment["marker"],
+                                        "speaker": segment["speaker"], "text": clean_text(" ".join(segment["paragraphs"])),
+                                        "evidence": "same asker, same exchange", "treatment": "merged_zwischenfrage",
+                                        "target_rede_id": first["rede_id"]})
+                    continue
+                open_exchange = exchange_identity
                 nested_units.append(contribution_unit(
                     nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
                     segment["speaker"], segment["paragraphs"], page_ref))
@@ -3147,6 +3544,10 @@ def write_text_atomic(path: Path, text: str) -> None:
     os.replace(temp, path)
 
 
+#: Consecutive failed /person lookups after which a sitting stops asking.
+PERSON_FAILURE_LIMIT = 3
+
+
 def enrich_with_api(
     client: ApiClient,
     protocol: dict[str, Any],
@@ -3156,7 +3557,16 @@ def enrich_with_api(
     roll_call_list_id: str | None = None,
     progress: Callable[[str], None] | None = None,
     roll_call_page_cache: dict[str, str] | None = None,
+    person_cache: dict[str, dict[str, Any]] | None = None,
+    vorgang_drucksachen_cache: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """``person_cache`` maps a DIP person id to its /person record for the whole
+    build, so a person seen in an earlier sitting costs no request (D5). Only
+    successful fetches are cached; a failed one is tried again next sitting.
+    ``vorgang_drucksachen_cache`` maps a Vorgang id to its Drucksache positions
+    (``compact_drucksache_position``, all the derivation reads of a Vorgang) and
+    the Wahlperiode of the sitting that fetched them, so a Vorgang met again
+    costs no request (two per Vorgang otherwise)."""
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
     if progress:
@@ -3192,23 +3602,23 @@ def enrich_with_api(
             )
     roll_call_cache: dict[str, dict[str, Any]] = {}
 
-    positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
-    linked_drucksachen_by_vorgang: dict[str, list[dict[str, Any]]] = {}
-
-    def load_vorgang_positions(vorgang_id: str) -> list[dict[str, Any]]:
-        if vorgang_id not in positions_by_vorgang:
-            positions_by_vorgang[vorgang_id] = client.list_all("/vorgangsposition", {"f.vorgang": vorgang_id})
-        return positions_by_vorgang[vorgang_id]
+    linked_drucksachen_by_vorgang: dict[str, dict[str, Any]] = (
+        vorgang_drucksachen_cache if vorgang_drucksachen_cache is not None else {}
+    )
 
     def linked_drucksachen_for_vorgang(vorgang_id: str) -> list[dict[str, Any]]:
         if vorgang_id not in linked_drucksachen_by_vorgang:
+            # A list that fails part-way raises here, so nothing partial is cached.
             drucksache_positions = [
                 compact_drucksache_position(position)
-                for position in load_vorgang_positions(vorgang_id)
+                for position in client.list_all("/vorgangsposition", {"f.vorgang": vorgang_id})
                 if position.get("dokumentart") == "Drucksache"
             ]
-            linked_drucksachen_by_vorgang[vorgang_id] = drucksache_positions
-        return linked_drucksachen_by_vorgang[vorgang_id]
+            linked_drucksachen_by_vorgang[vorgang_id] = {
+                "wahlperiode": protocol.get("wahlperiode"),
+                "drucksachen": drucksache_positions,
+            }
+        return linked_drucksachen_by_vorgang[vorgang_id]["drucksachen"]
 
     def vorgang_drucksache_numbers(vorgang_id: str) -> set[str]:
         return {str(doc.get("dokumentnummer")) for doc in linked_drucksachen_for_vorgang(vorgang_id) if doc.get("dokumentnummer")}
@@ -3301,13 +3711,26 @@ def enrich_with_api(
         progress(f"Fetching {len(people_to_fetch)} person record(s).")
     person_records: list[dict[str, Any]] = []
     person_fetch_errors: list[dict[str, str]] = []
+    consecutive_failures = 0
     for person_index, person_id in enumerate(people_to_fetch, start=1):
-        try:
-            person = client.get_json(f"/person/{person_id}")
-        except DipError as exc:
-            person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
+        if person_cache is not None and person_id in person_cache:
+            person_records.append(person_cache[person_id])
+        elif consecutive_failures >= PERSON_FAILURE_LIMIT:
+            # DIP stopped answering /person (a 2026-10-19 stall timed out every
+            # lookup for an hour): each further try costs three timed-out
+            # attempts, so the rest of this sitting's persons count as failed.
+            person_fetch_errors.append({"person_id": person_id, "error": f"skipped after {PERSON_FAILURE_LIMIT} consecutive failures"})
         else:
-            person_records.append(person)
+            try:
+                person = client.get_json(f"/person/{person_id}")
+            except DipError as exc:
+                person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
+                consecutive_failures += 1
+            else:
+                person_records.append(person)
+                consecutive_failures = 0
+                if person_cache is not None:
+                    person_cache[person_id] = person
         if progress and (person_index % 25 == 0 or person_index == len(people_to_fetch)):
             progress(
                 f"Processed person records: {person_index}/{len(people_to_fetch)} "
@@ -3539,7 +3962,10 @@ def build_report(
     if not api_key:
         raise DipError("Provide a DIP API key via --api-key or DIP_API_KEY.")
 
-    client = ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    breaker = getattr(args, "dip_breaker", None)
+    if breaker is not None:
+        breaker.check()  # after the run's stop, a sitting sends nothing, not even its XML request
+    client = ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=breaker)
     if protocol is None:
         protocol = find_protocol(client, args.protocol_id, args.document_number)
     document_number = str(protocol.get("dokumentnummer") or protocol.get("id") or "unknown")
@@ -3553,7 +3979,8 @@ def build_report(
         raise DipError(f"Protocol {protocol.get('id')} has no fundstelle.xml_url.")
 
     progress("Downloading XML transcript.")
-    xml_text = fetch_text(xml_url)
+    pacer = getattr(args, "xml_pacer", None)
+    xml_text = pacer.fetch(xml_url) if isinstance(pacer, XmlPacer) else fetch_text(xml_url)
     # The caller decides whether to keep the report; only then does its XML become
     # the cache, so a cached XML never outlives the report it was parsed into.
     xml_sink = getattr(args, "xml_sink", None)
@@ -3578,6 +4005,8 @@ def build_report(
         getattr(args, "roll_call_list_id", None),
         progress=progress,
         roll_call_page_cache=getattr(args, "roll_call_page_cache", None),
+        person_cache=getattr(args, "person_cache", None),
+        vorgang_drucksachen_cache=getattr(args, "vorgang_drucksachen_cache", None),
     )
 
     agenda_items = enrichment["agenda_items"]

@@ -24,6 +24,36 @@
     "editing": "First complete speaker marker for Klaus-Dieter Fritsche, redner 999990013; explicit structured and printed government role retained."
   },
   {
+    "fixture": "a3-wp18-18-150.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18150.xml",
+    "source_sha256": "a88563e7f2cb07e50ff4b9c0cee9a6c584189a52b8efd6737cf3f0da9d6f1d5d",
+    "editing": "A3 pilot: only the TOP with Reden of the Bundesminister der Justiz und für Verbraucherschutz; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-wp19-19-100.xml",
+    "url": "https://dserver.bundestag.de/btp/19/19100.xml",
+    "source_sha256": "4980eef52ea79e4788ac6130373ea23275945eb67fa09ab951c19c3645875341",
+    "editing": "A3 pilot: only the TOPs with Karliczek's Rede (role 'B undesministerin ...') and the spelling 'BÜNDNIS 90/DIE GRÜNE N'; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-rule5/18-70.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18070.xml",
+    "source_sha256": "64fb6a6ca70d0e00d5c851c9bbdf165cb344df50219c826294f8350a6e3b80d2",
+    "editing": "A3 rule 5 (WP 18/19): only the TOP with the blocker, and in it only the <rede> ID1807005100; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-rule5/18-100.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18100.xml",
+    "source_sha256": "0b2ed597cb2cb800ac9d7ced3fbb39184767269821954ac4a599934efbd91ee2",
+    "editing": "A3 rule 5 (WP 18/19): only the TOP with the blocker, and in it only the <rede> ID1810000300; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-rule5/18-71.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18071.xml",
+    "source_sha256": "bc9f3a72b9adce47aead0f2b7eacb8918b77372ff4fc59f66562f28167ca5a96",
+    "editing": "A3 rule 5 (WP 18/19): only the TOP with the blocker, and in it only the <rede> ID1807101000; J paragraphs without markup truncated to 300 characters."
+  },
+  {
     "fixture": "antrag-text/drucksache-2102234.txt",
     "url": "https://dserver.bundestag.de/btd/21/022/2102234.pdf",
     "source_sha256": "0ff58702fe719cd8c9242a64753ac6f370d0fbd0302c450e619f8ce31476904b",

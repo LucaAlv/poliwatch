@@ -9,7 +9,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **A. Get the counts right and the coverage in, in this order**
 1. What counts as a Rede: #68 (Kurzinterventionen) and #70 (Befragung and Fragestunde) are done (PR 1, branch `a1-what-counts-as-rede`, see Completed). A1 follow-ups are implemented in v0.15.0.0 (see Completed): nested Zwischenfragen, written submissions as their own kind, and source-backed historical classification. Final merged A1/A2 validation remains required before A3; ceremony addresses absent from sampled plenary XML remain a separate acquisition gap.
 2. "Stable ids for every row a release publishes" (done: A.2, see its Completed note).
-3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
+3. Done 2026-10-29 (see Completed): "v1 coverage: every Sitzung from WP 18 to the present". 716 Sitzungen of WP 18–21, 0 missing on a fresh catalog, 85 on the reviewed exclusion list.
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
 
 **B. Abstimmungen (daily view), independent of A**
@@ -29,11 +29,21 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **D. Before anything goes public**
 - Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Tag the abgeordnetenwatch MP columns with their real source".
 - The release: "Write the release script", "Public data changelog per release", "A DOI per release and a citation file". Codebook/recipe-CSV generation is implemented (2026-10-29; see Completed); uploading the artifacts still belongs to the release script.
-- Hosting: "Site hosting plan for the 2.5 GB generated site". WP 18 and 19 make it larger.
+- Hosting: "Site hosting plan for the 2.5 GB generated site". After A3 the site is 5.4 GB, 1.35 GB without `data/` (2026-10-29).
 
 **Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B/C, and the Puls and copy fixes, which stay at their own priorities. WP 1–17, which have no structured XML in the DIP catalog, come after v1.
 
 ## Daten
+
+### Unmatched roll-call votes never reach the report (`sitting_votes`)
+
+**What:** `enrich_with_api` returns the fetched roll-call votes that match no TOP as `sitting_votes`. But the report dict built at the end of `build_report` (`scripts/validate_dip_protocol.py`, near line 3520) does not copy that key; only `api_records.sitting_votes` keeps the votes. Persist (`derive.py`) and render ("TOP nicht zugeordnet") read the top-level key, so these votes are never stored or shown. Copy the key, then replay the cache offline with `--repersist`. No request is needed, because the cached reports hold the full vote details. Done when the 63 votes appear in the store and in their dossiers under "TOP nicht zugeordnet", with an old/new report.
+
+**Why:** A3 Phase 4 (2026-10-29): 63 votes in 41 sittings are fetched and then dropped. Examples: 261 EUFOR RCA, 510 MINUSMA, 1008 Jahresemissionsgesamtmengen-Verordnung. The Completed item "Match roll-call votes to a TOP when Drucksache numbers fail" (v0.10.0.0) promised this section; it has never shown a vote.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
 
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
@@ -42,6 +52,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Why:** Ungültig is an official Stimme value we cannot represent; if it ever occurs, the chart numbers either hide it or shift it into another category, silently. Bemerkung gives the stated reason for some uncast Stimmen (30 most recent votes, 2026-09-25: "gesetzlicher Mutterschutz" 42×, "Geburt eines Kindes" 1×), which the site could show next to "nicht abgegeben". The XLSX also carries Sitzungnr/Abstimmnr, a sturdier join to the Sitzung than matching by date.
 
 **Context:** Sample of 30 XLSX files (18,895 Stimmen) had zero ungültig, so today's counts are not wrong in practice; this is about not being able to tell. HTML scraping of the filterlist also breaks whenever bundestag.de changes its markup.
+
+**Prerequisite (A3 review D7, 2026-10-19): page the Namenslisten list.** What: page the Namenslisten list beyond offset 0 so every vote back to WP 18 gets its XLSX link. Why: 0 of 217 stored votes link an XLSX today, and no WP 18/19 vote will. Context: `validate_dip_protocol.py:1576` fetches only `offset=0&limit=200`; offsets 200 and 400 reach 2022 and 2019. Depends on: none.
 
 **Effort:** M
 **Priority:** P3
@@ -106,6 +118,12 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 ### Site hosting plan for the 2.5 GB generated site
 
 **What:** Make the HTML deployable under a capped static host (e.g. GitHub Pages' 1 GB limit). Measured 2026-09-19: 2.5 GB total; `data/` 1.4 GB (`plenarprotokoll-*.json` 607 MB, `bills.json` 386 MB, `exports/` 91 MB); `protocols/` 584 MB for 285 dossiers. **Without `data/` the site is still 1.11 GB**, so a deploy profile that only excludes `data/` does not fit; the dossiers have to shrink too. Pieces: (a) extend `--data-base-url`-style externalisation to the `data/plenarprotokoll-*.json` links on `puls.html`/dossiers and to `bills.json` (the base-URL pattern exists for the two export files); (b) shrink dossiers — see "Move the hidden dev-view API dump" below: ~952 KB of hidden markup per dossier × 285 ≈ 270 MB, so rendering it into a separate on-demand file roughly halves `protocols/`; (c) or pick a host without the cap.
+
+**Measured after A3 (2026-10-29, `~/agent-runs/a3/full`, 716 Sitzungen):**
+- 5.4 GB total; `data/` 4.1 GB (store 848 MB, XML 578 MB, `exports/` 426 MB).
+- **Without `data/` the site is 1.35 GB** in 6,750 HTML files: `bills/` 664 MB, `protocols/` 519 MB, `abgeordnete/` 139 MB.
+- Before A3 (`baseline`, 290 Sitzungen): 2.3 GB total and 616 MB without `data/`.
+- The rendered pages have more than doubled, and the cap problem is now about the pages, not only `data/`.
 
 **Why:** The Daten page and `--data-base-url` make the *data* shippable to a public audience; the *site* itself cannot go to a capped host today. Both outside voices in the `/autoplan` review flagged this; the user's go/no-go framing ("ship to a larger audience in a few weeks") depends on the site being public, not only the download.
 
@@ -177,6 +195,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### Validate final merged A1/A2 before the A3 backfill
 
+**Completed:** 2026-10-19 (A3 Phase 0). `scripts/validate_store_gate.py` on a clone of the reference store with `main` v0.20.0.0: replay, integrity, fresh vs. half-then-full grouping, unchanged replay, links, export and publication all pass; every moved figure is explained in [the gate record](docs/plans/a3-gate-validation.md).
+
 **What:** Finish Claude's paused A2 follow-ups on `right-counts`, review [the A1 identity/schema handoff](docs/plans/a1-a2-contract.md), merge the final A2 changes with `a1-followups`, and repeat combined suite, fresh/incremental grouping, unchanged replay, links and export checks. The current scratch overlay validates an uncommitted A2 snapshot; it is not final merged validation.
 
 **Why:** Claude reached its usage limit on 2026-10-05. The user explicitly requested completing A1 without waiting and recording this gate. A1 preserves schema 3/key version 1 and needs no new registry policy, but later A2 edits may affect grouping and page links.
@@ -185,6 +205,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Depends on:** A2 completion; must pass before A3 readiness is claimed. [A1 validation receipt](docs/plans/a1-validation.md).
 
 ### Cached report 21/50 no longer matches its XML
+
+**Not reproduced on the reference store (2026-10-19):** `--offline --repersist` of `.context/dip-pulse-site` accepts 21/50 ([A3 gate record](docs/plans/a3-gate-validation.md)). Still open for the `right-counts-a1/after` cache it was found on.
 
 **What:** On the A1 reference cache (`right-counts-a1/after`), `--offline --repersist` stops at 21/50: "plenarprotokoll-21-50.xml is not the Plenarprotokoll XML of 21/50: agenda item set changed; reacquire the sitting report". Seen on 2026-10-14 with both the 02 tree (`b9e7946`) and the 03 tree, so it is not caused by the A.2 registry changes. Reacquire the sitting, or find which change made the cached agenda items and the XML disagree.
 
@@ -204,6 +226,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### Harden the vote acquisition and catalog completeness paths (open review findings)
 
+**Partly done (A3, 2026-10-20):** (2) the backfill now prints its judged range and the selected sittings per Wahlperiode, and judges from the v1 floor; (5) every online build ends with a summary of the sittings it did not acquire and exits 1 when one was lost to an outage.
+
 **What:** Findings from the /ship review rounds of fix-votes-completeness (2026-09-29) that were accepted, not fixed:
 (1) `source_stale` (`validate_dip_protocol.enrich_with_api`) holds a genuinely vote-free sitting of the last 14 days partial when the list head is older, delaying its week's and month's vote Fakt by up to two weeks; (2) the judged range starts at the earliest stored sitting, so one old cached dossier turns `--backfill-incomplete` into a job of hundreds of sittings and nothing prints the range; (3) the `numFound` check in `fetch_protocols` hard-stops every build if DIP's count ever includes unretrievable documents, with no override; (4) report JSON, SQLite and the catalog file are written at different points, so a build interrupted between them leaves `--offline` judging completeness from new reports against an old store; (5) a build whose every refresh was skipped exits 0; (6) the build-wide roll-call page cache is a snapshot, and list pagination can shift under a long build (duplicates a boundary entry); (7) `namenslisten_entries()` has no outage cooldown, so an outage costs about 3 minutes per vote; (8) an empty list page after page 1 counts as the end of the list; (9) catalog entries in range with no usable number or date only warn instead of failing closed, and duplicate document numbers keep the last; (10) `api_records.matched_roll_call_votes` and `roll_call_vote_candidates` describe the fresh scan while `agenda_items[].votes` may be cached after a no-scan run; (11) some date checks use the wall clock, not `--today`; (12) a failed vote-detail page stops matching for the rest of that sitting; (13) an uncaught `JSONDecodeError` from the DIP API aborts a build; (14) the offline build trusts the cached catalog with no age check; (15) the in-progress ISO week can be judged complete.
 
@@ -213,33 +237,121 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** None
 
-### v1 coverage: every Sitzung from WP 18 to the present
+### Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)
 
-**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Measured on 2026-09-30 against the reference copy (`~/agent-runs/poliwatch/.context/dip-pulse-site/`), counting only Bundestag entries in the cached catalog:
+**What:** Detect and treat a turn given on behalf of the Bundestag or in exercise of the Sitzungsleitung when the XML gives it a `<rede>` of its own with a presidium `rolle_lang` (Präsident, Vizepräsident(in), Alterspräsident). Today such a `<rede>` is counted as a Rede of the speaker's Zusammenschluss. Found in the WP 18/19 rule-5 work ([validation record](docs/plans/a3-rule5-validation.md)):
+- 19/1: the Alterspräsident's Sitzungsleitung Reden (ID19100100, ID19100200, ID19101000, ID19101200) and Schäuble's inaugural address as the new Präsident (ID19101300), and his Sitzungsleitung ID19101900.
+- 18/1: the inaugural address after "ich nehme die Wahl an" (still refused at an earlier turn).
+- 18/245: Vizepräsidentin Bulmahn's farewell address (ID1824501400) and Vizepräsident Singhammer's announcement of an election result (ID1824502300).
 
-| WP | In the catalog | In the store | Missing |
-|---|---|---|---|
-| 18 | 245 (2013-10-22 to 2017-09-05) | 0 | all 245 |
-| 19 | 239 (2017-10-24 to 2021-09-07) | 0 | all 239 |
-| 20 | 214 | 201 | 13, from 2021-10-26 to 2022-01-26 |
-| 21 | 87 up to 2026-06-26 | 84 | 3, plus every Sitzung after the catalog snapshot |
+Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidium marker, 6d), an official address (its own kind, not a Fraktionsrede), or a debate Rede of an MdB who holds the office (counts for the Fraktion, ADR 0004). Until then 18/1 and 19/1 are excluded sittings (`--exclude-document-number`, owner decision 2026-10-20).
 
-The catalog itself is from 2026-08-25, and the store was last updated on 2026-06-22. A newer scratch copy (302 Sitzungen, backfilled 2026-09-29, per the fix-stored-values work) was not found; re-measure against the current reference store before starting. Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
+**Why:** ADR 0004 says Sitzungsleitung is never a Rede and official addresses are not counted as Fraktionsreden automatically; the parser has the nested half of that (6d) but not the `<rede>` half.
 
-**Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
+**Priority:** P1 (blocks counting 18/1 and 19/1, and moves 18/245)
+**Depends on:** an owner decision on the kinds; the full WP 18/19 download to list every case.
 
-**Context:**
-- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
-- Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
-- WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
-- Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
-- **B4 extractive descriptions (2026-10-28):** [plan](docs/plans/b4-extractive-antrag.md#a3-coordination). It needs no report field and no re-acquisition: the Antrag text is a third stage of `refresh_vorgang_cache`, keyed by Drucksache number, using A3's DIP pacing. If B4 lands before Phase 3, the Phase 3 Vorgang fill also fills the texts for WP 18–21; otherwise one online build afterwards does. Schema/export bumps: whichever branch merges second takes the next number. Add the text cache to `validate_store_gate.py`'s replay inputs, and the extraction states to the pilot metrics if B4 has merged.
+### WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns (rule 5, a later round)
 
-**Effort:** M (mostly running time and checking)
-**Priority:** P1
-**Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
+**What:** Three recurring kinds that WP 18/19 prints inside another speaker's `<rede>`, each needing its own rule. Until a rule lands, their sittings stay on the reviewed exclusion list; each leaves the list when its rule lands, with old/new figures (owner decision 5, 2026-10-22, [round 2](docs/plans/a3-rule5-wp18-19-round2.md)).
+- **erwiderung-nested:** the addressee answers a Kurzintervention nested, and the chair's wording ("möchte noch kurz erwidern", "wünschen Sie zu erwidern?") is outside `invited`. 18/11, 18/20, 18/42, 18/88, 18/127, 19/12, 19/14.
+- **erklaerung-nested:** a persönliche Erklärung, an Erklärung zur Aussprache (§ 30) or zur Abstimmung (§ 31) printed nested. 18/29, 18/97, 18/98, 18/117, 18/118. In 18/29, R3's wider floor wording now splits Groth's § 31 Erklärung (`ID1802902700:2`) as a Rede of its own; DIP lists it as "Mündliche Erklärung gem. § 31", so the rule must keep an Erklärung out of 6c.
+- **go-debate:** Geschäftsordnung statements or motions printed nested. 18/2, 18/3, 18/67, 18/89.
+
+**Why:** Each kind blocks 4–7 sittings; together they are about a quarter of the remaining WP 18/19 exclusions ([audit](docs/plans/a3-wp18-19-audit.md), [round-2 result](docs/plans/a3-wp18-19-round2-result.md)).
+
+**Priority:** P2
+**Depends on:** an owner yes per rule, then a test-first build and a new-rule unit review, as in round 2.
+
+### 20/11: the chair's handover exchange with the next speaker, filed inside the previous `<rede>`
+
+**What:** In 20/11 TOP 2 the XML keeps, inside Miersch's `<rede id="ID201100900">` after his "Vielen Dank.", the chair's "Nächster Redner: … Karsten Hilse", a remark to Hilse, Hilse's "Das freut mich sehr." and "Jetzt erteile ich Ihnen das Wort für Ihre Rede." The validator refuses the sitting (`unresolved nested contribution at ID201100900 marker 2`), rightly: Hilse's line is no Zwischenfrage. A rule would treat a nested exchange between the chair and the speaker of the next `<rede>`, after a floor grant to that speaker, as Sitzungsleitung, not a nested contribution. Then 20/11 leaves the exclusion list, with old/new figures. The source error is E1 in [docs/source-errors.md](docs/source-errors.md).
+
+**Why:** 20/11 (2022-01-13; TOP 2 is a climate and energy debate with Minister Habeck) is excluded since 2026-10-28 ([a3-phase3.md](docs/plans/a3-phase3.md), 4.4).
+
+**Priority:** P2
+**Depends on:** an owner yes on the rule, then test-first, and a check that no WP 18–21 sitting moves except 20/11.
+
+### Check that the identity merge joins the MdBs WP 18/19 prints with an initial
+
+**What:** WP 18/19 XML prints seven MdBs with a middle initial inside `<nachname>`: W. Birkwald, G. Lämmel, G. Wöhrl, S. Neu, M. Huber, E. Fischer, A. Lamers. R4 strips the initial only for the chair's recipient match; the stored `last_name` keeps it (decision 4). After the pilot re-run, check whether the identity merge (name+party pass) joins each of them across WP 18/19 and WP 20/21, and fix `last_name` or the merge if it does not.
+
+**Why:** One person split into two Abgeordnete would halve their counts on both pages.
+
+**Priority:** P2
+**Depends on:** the pilot re-run (A3 Phase 1).
+
+### `audit_offline_turns.py` stops on a non-locator ValueError
+
+**What:** `scripts/audit_offline_turns.py` raises out of the whole run on the first `ValueError` that names no `at <rede> marker <n>` locator (for example "conflicting roles"), so one such sitting ends the audit of a directory. Record such a file as a hard error in its result and go on, as the scratch harness `~/agent-runs/a3/tools/rule5/audit_all.py` does. Test-first.
+
+**Why:** The WP 18/19 audit had to run around it twice (18/101 in round 1; 18/124, 18/136, 18/173 in round 2).
+
+**Priority:** P3
+**Depends on:** none.
+
+### A3 pre-landing review: deferred findings (2026-11-01)
+
+**What:** Findings of the /gstack-review of `worktree-a3-plan` (tip 41a7781) that are not correctness defects for any current input, so they were recorded instead of fixed (CLAUDE.md). The review fixed the literal `{abdeckung}` in the stored and exported `fact_metrics.caveat` and README rows 163/164; everything below is open. Found by reading the code (specialist, adversarial and red-team passes); none was reproduced as a wrong published figure.
+- **Exclusion record (D2):** (a) `--exclude-document-number` with a number the catalog does not list is silently dropped (not recorded, nothing printed), and with `--offline`/`--fetch-xml` the flag is ignored without an error; reject both, as `--include-document-number` already is. (b) A malformed `data/coverage-exclusions.json` (non-list `exclusions`, a non-dict entry, a missing `document_number`) ends every run, offline included, in a traceback; turn it into an `ERROR [cached input]` exit 1. (c) The exclusion is applied after `load_existing_detail_entries`, whose `require_vote_shape` still raises for a stored-then-excluded sitting with an outdated report, so the exclusion cannot rescue that sitting. (d) `protocols/` dossier pages are never pruned (bills, Abgeordnete and Fakt pages are), so a stored-then-excluded sitting keeps an unlinked page on disk. (e) `dossier_failure_reasons` (`excluded`, `source_unavailable`) is set on the catalog dicts and written into `plenarprotokoll-catalog.json` (85 keys on `~/agent-runs/a3/full`); with `fetch_catalog` reusing closed Wahlperioden for 7 days, a sitting taken back with `--include-document-number` but not re-acquired keeps `presentation_state="unavailable"`/`excluded` in the publication manifest while the Daten list no longer names it. Strip the key in `catalog_payload`, or keep the reasons apart (offline renders currently read them back from the file; decide that too).
+- **DIP request budget:** (a) `XmlPacer.fetch` raises `SourceSlowError` from `finally`, which discards a complete XML that took over 10 s and replaces an in-flight `DipError` (including `source_rejected`); nothing catches it, so the run ends in a traceback without the `[summary]`. Deliver the body and stop on the next call, and catch it in `main()`. (b) The pacer counts one request per `fetch()`, while `_fetch_page` retries up to twice more. (c) The per-sitting `/person` loop counts a 404 toward `PERSON_FAILURE_LIMIT`, while the breaker treats a 404 as DIP answering; with `DIP_FAILURE_LIMIT = 2` the person limit of 3 is rarely reachable anyway. (d) `DipBreaker` resets on 401/403, so a revoked key or a WAF 403 never stops the run. (e) After a breaker trip, `--enrich mp-roster` fails the rebuild (`DatabaseRebuildError`) before the `[summary]` prints; `ingest_mdb_roster` does not use the person cache `prefetch_dip_bulk --persons` fills. (f) `DipCache.save` rewrites both cache files after every sitting even when nothing changed. (g) The 2.0 s pace is defined three times (`BACKFILL_SLEEP_SECONDS`, `prefetch_dip_bulk.SLEEP_SECONDS`, `XmlPacer.spacing`).
+- **Caches and catalog:** (a) `fetch_catalog` accepts the cached merge when the distinct-id count equals DIP's total, so a swap (one sitting gone, one added) in a closed Wahlperiode serves stale rows for up to 7 days. (b) A Vorgang cached from a closed-WP sitting (`linked_drucksachen_for_vorgang` labels it with the sitting's WP) never expires even if it is still extended in the current WP; a build between the WP 18 and WP 19 bulk prefetch embeds partial Drucksache lists in its reports. (c) `prefetch_dip_bulk._merge_vorgaenge` swallows an unreadable other-WP `vorgaenge.json` (`except (OSError, ValueError): pass`), which silently skips the cross-WP drop.
+- **Identity and attribution:** (a) `_mp_external_ids` gives a record's one bundestag.de member number to every Wahlperiode it voted in, so a WP 19+20 record carrying its WP 20 number "conflicts" in WP 19 with a WP-19-only record of the same person (false split, not false merge); check against the gate store. (b) `person_registry._vote_evidence` takes a vote's Wahlperiode from `votes.protocol_id`, the recipes from `_VOTE_PROTOCOL_SQL` (agenda item first); share one rule. (c) A Rede split out by 6c cites the start page of its enclosing printed Rede (`rid_pages` from the table of contents), not the page it starts on.
+- **Facts and pages:** (a) `write_facts_pages` rewrites `facts/methodik.html` on a `--no-persist` render with `coverage=None`, overwriting the published "seit …" caveat with the neutral one; guard it like the archive page. (b) `coverage_label` names the earliest stored sitting, which can claim "seit Beginn der 18. Wahlperiode" mid-backfill while later Wahlperioden have gaps.
+- **Performance:** `agenda_item_votes` has no index led by `vote_id`; `_VOTE_PROTOCOL_SQL` (r3, r4, r6) is a correlated scan per row (22 s on a synthetic 154k-row shape). Add `idx_agenda_item_votes_vote`.
+- **Stderr and tests:** `ingest_mdb_roster` stats (`fetched`, `skipped_no_id`) count a person once per Wahlperiode; `audit_offline_turns.py` skips `mark_presidium_fraktionsreden`; untested: the `CatalogCountMismatch` fallback, `_profiles_conflict`'s mixed number/link branches, the 6c page carry-over, `prefetch_dip_bulk` exit 2 and `--persons`; `if __name__ == "__main__"` sits mid-file in `tests/test_a3_round2.py` and `tests/test_validate_dip_protocol.py`; unused imports in `tests/test_dip_request_log.py` (`re`) and `tests/test_validate_store_gate.py` (`hashlib`); `test_xml_pacing.test_backfill_dip_api_spacing_is_two_seconds` duplicates the backfill test.
+
+**Why:** Each is a place where a later edge case, operator typo or DIP outage could cost a run or publish a stale state; the review sorted them out of the A3 landing per the fix-now-or-defer rule.
+
+**Effort:** M
+**Priority:** P2 (exclusion record, budget (a)/(e), catalog (e)); P3 for the rest
+**Depends on:** A3 merged
+
+### A3 /gstack-ship review: deferred findings (2026-11-01)
+
+**What:** Findings of the /gstack-ship review of `worktree-a3-plan` (after the main v0.26.1.0 merge 752684f) that are not correctness defects for any current input (CLAUDE.md). The same review fixed the stale "gemessen über 58 vergleichbare Wochen" in the knappste-abstimmung caveat, the Abgeordnete index copy for the former-MdB table, the `mps.wahlperiode` dictionary source and five README/PRODUCT.md/stable-ids sentences. Open:
+- **Exclusion record (D2), continued:** (f) `update_coverage_exclusions` runs right after the dossier loop (`build_dip_pulse_site.py`, before `reparse_cached_xml`/`require_parsed_reports` and the store rebuild) and also under `--no-persist`, so a run that then fails with "The previous store is untouched" leaves the record listing a sitting the store still holds; a plain `--offline` render then says "nicht erfasst (ausgeschlossen)" beside counts that include it, until the next rebuild. Write the record after the store swap, skip it under `--no-persist`. (Also raised by the 2026-10-31 adversarial pass.) (g) `validate_manifest` does not check `coverage.excluded` (list of strings), so a malformed `--data-manifest` crashes `render_daten_datenstand`. (h) Untested cells of the exclusion state matrix: `--include-document-number` for a sitting not on the record (stored, unstored, rejected source), excluding an already-excluded sitting (recorded_at kept), and the plain `--offline` render of a recorded sitting (stored, unstored, already excluded: dossier dropped, store kept, `coverage.excluded` lists it); `test_backfill.py:527` stubs the store rebuild.
+- **Publication guard:** the `local-path` lookbehind in `publication_state.py` (added for `www.sr.de/sr/home/` in 19/41) no longer flags `/Volumes/Data/Users/…`, `/mnt/c/Users/…` or `/System/Volumes/Data/home/…`. Exempt only matches inside an http(s) URL instead.
+- **Gate and prefetch robustness:** `validate_store_gate.audit_links` raises on a href with `%00` or an over-long path, and resolves `..` outside the site; `_data_clone` `rmtree`s any `fresh`/`half` in `--scratch` without a marker; `prefetch_dip_bulk` and a build rewrite the same `data/dip-*-cache.json` without the writer lock; `dip_cache._closed` accepts non-dict `drucksachen` items (AttributeError later).
+- **Parser:** `split_nested_reden` searches the chair text for the raw `last_name`, not `asker_name(last_name)`, so a WP 18/19 name printed with a middle initial ("W. Birkwald") misses a 6c split (no case found in the 716 cached sittings). `audit_offline_turns` looks up `mark_roleless_chairs`/`split_nested_reden` with `getattr` no-op defaults; call them directly. No test fails if the audit drops `mark_roleless_chairs` (18-100 audits the same without it).
+- **One key, one rule:** the Wahlperiode of a document number is parsed in `build_dip_pulse_site.wahlperiode_of`, `prefetch_dip_bulk._wahlperiode_of`, `person_registry._vote_evidence`, `facts.coverage_label` and `_wahlperiode_sql`, beside the strict `facts.wahlperiode`; they disagree on malformed input ("21/x", stray whitespace). `compare_store_values` calls the private `registry._vote_evidence`. R3/R6 switched to an inner join on `protocols`, so a vote with NULL `protocol_id` would drop out (persist always sets it today; R4's method text says so, R3/R6 do not).
+- **Cleanup (advisory):** `prefetch_dip_bulk.staged_positions` is test-only; `_catalog_list` repeats the cursor-paging loop of `counted_list`/`fetch_protocols`/`list_all`; the export manifest's `split_rede_ids` has no reader. Gate coverage: `validate_store_gate.store_counts`/`_store_identity`/`_persist_clone` run only in the real gate.
+- **Adversarial pass leftovers:** (a) `DIP_REQUEST_LOG` logs `parts.netloc` and the full query of a non-DIP URL, so userinfo or a foreign token would land in the log (only DIP-supplied XML/roll-call URLs reach it today); log `hostname` and drop the query. (b) `prefetch_dip_bulk` never refreshes `total.json`, so with `--overlap-only` on the current Wahlperiode a grown DIP count makes every run stop on the final count check until the staging directory is deleted; and early in a Wahlperiode one month chunk can hold every position, which the `below=` guard rejects. Both stop the run; nothing wrong is written. (c) The Daten scope line says "jede Sitzung ab der 18. Wahlperiode, für die der DIP-Katalog ein XML-Protokoll führt" while 85 such sittings are excluded; the next line names them, but the sentence could say "bis auf die ausgeschlossenen".
+- **Roster Wahlperioden, rule edges (adversarial pass on 8f13bf1):** (a) `land_office_wahlperioden` trusts `wahlperiode_nummer` to be a list of ints: an int raises TypeError and aborts the whole roster ingest, "²" raises ValueError, "19" becomes {1, 9} (no real record has these shapes); check `isinstance(list)` and `isinstance(n, int)`. (b) The cut is per whole Wahlperiode and only ~200 of 1,360 MdB records carry a Fraktion role, so an MdB who takes a Land office mid-period (e.g. after a 2026 Landtag election) loses that whole period, and with no other period, the roster row; none on today's cache. Require sitting evidence (a vote or speech in that period) before cutting, or accept and document it. (c) Stores keep the old lists until `--enrich mp-roster` runs again (`preserve_roster`).
+- **Roster Wahlperioden, residue:** `land_office_wahlperioden` drops the Wahlperioden DIP gives only a Land-government role (fixed in this review: 11 of the 1,360 cached MdB records, e.g. Scholz, Habeck, Högl). An office without a `bundesland` still counts: Eva Högl keeps WP 20, when she was Wehrbeauftragte and no MdB. DIP's `person_roles` mark Fraktion membership for only some periods, so a full rule needs another source (the Bundestag's MdB Stammdaten) or per-WP vote/speech evidence.
+- **Plan item 1.5 (Deferred from plan: docs/plans/a3-coverage.md):** the share of WP 18/19 Redner whose redner-id finds an abgeordnetenwatch `ext_id_bundestagsverwaltung` was never measured (a3-pilot.md: "not measured"; Phase 3 ran no aw-profiles). Measure it with `--enrich aw-profiles` on a clone of the A3 store and record it in the A3 Completed entry.
+
+**Why:** Recorded by the ship review so the PR could land; each is a latent edge, a guard gap no current input reaches, or test hygiene.
+
+**Effort:** M
+**Priority:** P1 (plan item 1.5); P2 (exclusion record (f), publication guard); P3 for the rest
+**Depends on:** A3 merged
 
 ## Protokoll-Dossier
+
+### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
+
+**What:**
+- The card shows `validation_summary.xml_drucksache_count`. It is 0 on every WP 18/19 dossier and on 118 of 213 WP 20 dossiers, because the older XML does not tag Drucksachen. 19/29 shows 0 while its TOPs link 37 documents through DIP. Count the documents the page actually lists, or label the card as XML-only.
+- DIP has no `verteildatum` for any WP 18 sitting, and the header then ends in "verteilt am". Omit the phrase when the date is missing.
+
+**Why:** A3 Phase 4 spot checks (2026-10-29).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Split or filter overview.html by Wahlperiode
+
+**What:** Split or filter `overview.html` by Wahlperiode instead of one page with every card.
+
+**Why:** A3 (v1 coverage) takes the page from about 290 to about 800 cards (A3 review D8, 2026-10-19). Page weight after A3: measured in the A3 Phase 4 check.
+
+**Context:** `render_overview` (`scripts/build_dip_pulse_site.py:8748`) renders one card per generated dossier.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** A3 (v1 coverage)
 
 ### Say when a count covers only Sitzungen mit Dossier
 
@@ -257,6 +369,8 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 **Priority:** P3
 **Depends on:** `worktree-a3-plan` merged
 
+
+
 ## Puls
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
@@ -272,7 +386,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Effort:** S
 **Priority:** P3
 **Depends on:** `worktree-a3-plan` merged (it rewrites r2)
-
 ### "Nächste Sitzungswoche" in the puls.html header
 
 **What:** Show the next planned sitting week from the Bundestag Sitzungskalender when the page is opened during a non-sitting week.
@@ -386,6 +499,60 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Abgeordnete
 
+### Bundesrat members are ingested as MdBs (`_has_mdb_funktion` matches "MdBR")
+
+**What:** `_has_mdb_funktion` (`scripts/build_dip_pulse_site.py`) tests `"mdb" in value.lower()`, so DIP's `MdBR` and `Stellv. MdBR` count as MdB. Match the role exactly (`MdB`), and report roster rows, Abgeordnete list rows and pages old/new.
+
+**Why:** A3 Phase 4 (2026-10-29), `~/agent-runs/a3/full`:
+- 352 of the 1,712 roster persons are Bundesrat members (`MdBR` 158, `Stellv. MdBR` 194).
+- The Abgeordnete index lists them as MdBs: 201 of the 972 former-MdB rows, and at least 84 of the 740 current-MdB rows (e.g. "Albert Füracker, Stellv. MdBR …, Bayern").
+- It first shows with A3, because the pre-A3 base stored no roster.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
+### The carried-forward registry diverges from a fresh build after A3
+
+**What:** The A3 Phase 4 gate failed `replayed_store_groups_like_fresh` on a clone of `~/agent-runs/a3/full` (4,168 vs. 4,165 groups on the fresh store's bindings). Details are in [the Phase 4 record](docs/plans/a3-phase4.md), Step 1. There are two parts:
+1. **Köstering/Krampe split.** One person, Jan Krampe (formerly Köstering, Die Linke, WP 21), is a single person with 121 bindings in a fresh build. In the replayed store he is four persons: `dip:8257`, `aw:178656`, and the profiles `koestering_jan-1045564` and `krampe_jan-1045564`. `baseline` had `aw:178656` and the Köstering profile as one person. So A3 newly separates his speeches from his votes, and a replay does not heal it. `full` shows the same split. The cause is not the URL rule. DIP holds two person records for him (8054 Köstering, 8257 Krampe), and the store keeps `dip:8054` as a roster record. An in-memory `match_rows` on `full` joins all five records once `dip:8054` is stale. Why a replay still matches it is untraced. It is part 2's defect.
+2. **Orphan persons.** 295 persons hold only retired bindings. Each holds one `roster-v1-…` binding of a `dip:` record that the roster no longer produces: 295 of the 307 retired roster bindings. The other 12, and the 187 retired contribution bindings of speech rule v6, sit on persons that also hold live bindings. 282 of the orphans render an Abgeordnete page and are listed on the index. They raise the store's person count from 4,165 (fresh) to 4,463.
+
+**Re-measured at the branch tip, 2026-10-31** (the "Gate at the branch tip" section of the [Phase 4 record](docs/plans/a3-phase4.md); rule C plus 0f59729 and a508cfa):
+- **Part 1 is healed.** The replayed store groups like the fresh one: 1,942 = 1,942 persons on live bindings, the same fingerprint. Krampe is one live person.
+- **Part 2 is open:**
+  - 302 persons hold only retired bindings, and 289 of them render a page with no Reden and no votes.
+  - The index links only 8 of them, down from 282.
+  - 281 of the 302 are Bundesrat members. So the fix likely goes with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+
+**Re-measured on the merged tree, 2026-11-01** (09b7c5d, A3 plus main v0.26.0.0; complete gate, `all_passed`; "Gate on the merged tree" in the [Phase 4 record](docs/plans/a3-phase4.md)): unchanged.
+- Replayed 1,942 = fresh 1,942 on live bindings, the same fingerprint.
+- The replayed store has 2,244 persons.
+- 302 persons are retired-only, 289 of them with a page, 8 of those linked from the index.
+- 494 retired bindings (307 roster / 187 contribution).
+
+Decide whether retired-only persons render a page. Report persons and pages old/new.
+
+**Owner decision, 2026-11-01:** A3 ships with part 2 open. It is fixed after the merge, likely together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+
+**Why:** 289 pages for persons with no live occurrence, reachable by URL.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Group MP pages by Wahlperiode and write abgeordnete.json without indent
+
+**What:** Group or page the speech and vote rows on each MP page by Wahlperiode, and write `data/abgeordnete.json` without `indent=2`.
+
+**Why:** After A3 a long-serving MdB shows up to twelve years of Reden and roll-call votes in one list, and the JSON grows with them (A3 review D9, 2026-10-19). Sizes after A3: measured in the A3 Phase 4 check.
+
+**Context:** MP detail page `scripts/build_dip_pulse_site.py:7652-7740`; JSON dump `:7833`.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** A3 (v1 coverage)
+
 ### Store DIP `person_roles` so a Rede without a Zusammenschluss uses the Zugehörigkeit of its Wahlperiode
 
 **What:** ADR 0001 says a Rede whose Plenarprotokoll names no Zusammenschluss counts for the speaker's Zugehörigkeit on the date of the Sitzung. The store keeps no membership history: `mps.person_roles_json` is DIP's `funktion` list, and `compact_person` drops DIP's `person_roles` (fraktion and Wahlperiode per role). The Rede therefore counts for the speaker's party as the store holds it. Keep `person_roles`, and let `derive` pick the role of the Rede's Wahlperiode.
@@ -416,11 +583,46 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **Context:** A.2 registry territory: needs a registry reviewer. Measure first how many person records carry `ever_mdb` with only Bundesrat funktion evidence on the reference store.
 
+**Measured on the A3 merged-tree gate store, 2026-11-01:**
+- `mps` rows with `is_mdb = 1`: 1,360. The 352 Bundesrat roster rows dropped on repersist.
+- The registry still holds 302 retired-only persons. 281 of them are Bundesrat members ("MdBR" in the display name), and 289 of the 302 render a page with no Reden and no votes. Only 8 are linked from the index.
+- These are the persons this evidence most likely keeps page-eligible. See "The carried-forward registry diverges from a fresh build after A3".
+
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
 
+### Apply the voter-link patch after refetching the WP 18/19 roll-call lists
+
+**What:** `docs/plans/a3-voter-profile-links.patch` (`derive.person_profile_url` plus tests) accepts bundestag.de's WP 19 archive biographies and `/redirect/<n>` links as voter profile links, so pass 3 can key WP 18/19 voters by member number. It changes nothing on the A3 store until the roll-call lists are fetched again: `full`'s reports were written after #107 dropped the WP 18/19 links. Steps:
+1. Refetch about 306 roll-call lists from bundestag.de (WP 18 127, WP 19 179).
+2. Apply the patch.
+3. Repersist and report persons old/new.
+
+**Why:**
+- WP 18/19 voter pages would link to the archived biography.
+- WP 18 title variants would become one voter record.
+- A partial refetch makes things worse. A hybrid measurement with only 5 linked reports split 16 persons and joined 2 (1,942 → 1,956), because it mixes `/redirect/N` keys with name+party keys. So refetch all 306 lists or none.
+
+**Context:** "The voter-link patch (not applied)" in [the Phase 4 record](docs/plans/a3-phase4.md). Owner decision 2026-11-01: deferred, not part of the A3 merge.
+
+**Effort:** M (mostly fetch time)
+**Priority:** P3
+**Depends on:** A3 merged
+
 ## Design
+
+### Dark mode and overflow defects found in the A3 spot checks
+
+**What:**
+- `overview.html`: the "Neueste API-Sitzung" card (`.latest`) hard-codes `background:white` (`scripts/build_dip_pulse_site.py`, three copies of the rule), so its light text is nearly invisible in dark mode.
+- Profile pages: single-word vote titles ("Asylverfahrensbeschleunigungsgesetz") push the vote column 24 px past a 1280 px viewport. Add `overflow-wrap:anywhere` or hyphenation.
+
+**Why:** A3 Phase 4 spot checks (2026-10-29). Both predate A3; WP 18 titles make the overflow common.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### DESIGN.md, tokens and a typeface decision via /design-consultation
 
@@ -587,7 +789,7 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 ### Settle the roll-call source for redistribution
 
 **What:**
-- Check whether the Plenarprotokoll's „Endgültiges Ergebnis" also lists non-voters, or only Ja/Nein/Enthalten.
+- Check whether the Plenarprotokoll's „Endgültiges Ergebnis" also lists non-voters, or only Ja/Nein/Enthalten. **Answered 2026-10-31:** 0 of the 232 „Endgültiges Ergebnis" blocks in the cached WP 20/21 protocol XML list non-voters, so only the XLSX roll-call lists carry them.
 - Ask parlamentsdokumentation@bundestag.de whether the roll-call XLSX lists may be redistributed.
 - If the answer is no, or only the XLSX carries the non-voters, source per-member votes from the protocol XML or from abgeordnetenwatch (CC0) instead.
 
@@ -773,7 +975,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 4. Tests: the "Hintergrund oder" row in `test_a_conjunction_glued_to_a_truncated_compound_is_not_quoted` cannot match the pattern (it has a space), so it proves nothing about real words; no boundary row for `_WHOLE_WORD_LENGTH` (4 vs 5 letters) or the other `_WORD_ENDINGS`; `test_engine_refuses_a_distribution_copy_and_leaves_it_untouched` imports shutil inside its loop.
 5. The comment "A word a line-end hyphen leaves standing" now sits above `_WORD_ENDINGS` instead of `_KEEPS_HYPHEN`, and the `_join` docstring has one over-long line.
 
-**P1 gate before the fallback runs on any Drucksache cache larger than the saved corpus (resumed /ship of v0.25.2.0, 2026-10-31).** Three review sources (red team, Codex adversarial, Claude adversarial) independently found inputs that would publish a wrong verbatim quote. All of them are synthetic: none occurs in the saved 91 documents, and the only cache on the machine (`.context/b4-local-20261029-163417/working/data/dip-drucksache-text-cache.json.gz`) holds those documents alone. The extractor widened in v0.25.2.0 exposes items 1-3 to more openings: Codex reproduced items 2 and 3 under the new „zum Schutz der … auf,“ opening, which the base refused. Before a larger cache (WP 21, A3 backfill) is extracted, fix these or measure them on that cache. Each new quote should be checked against `pdftotext -layout`, as in Run 4.
+**P1 gate before the fallback runs on any Drucksache cache larger than the saved corpus (resumed /ship of v0.25.2.0, 2026-10-31).** Three review sources (red team, Codex adversarial, Claude adversarial) independently found inputs that would publish a wrong verbatim quote. All of them are synthetic: none occurs in the saved 91 documents, and the only cache on the machine (`.context/b4-local-20261029-163417/working/data/dip-drucksache-text-cache.json.gz`) holds those documents alone. The extractor widened in v0.25.2.0 exposes items 1-3 to more openings: Codex reproduced items 2 and 3 under the new „zum Schutz der … auf,“ opening, which the base refused. Before a larger cache (WP 21, A3 backfill) is extracted, fix these or measure them on that cache. Each new quote should be checked against `pdftotext -layout`, as in Run 4. The A3 store (merged-tree gate, 2026-11-01) has no Drucksache text cache yet. 114 of its 619 votes are `not_fetched` (WP 19: 15, WP 20: 63, WP 21: 36) and 505 are `not_applicable`; no vote quotes a passage. That fill is the online build this gate guards.
 6. A lowercase line-end hyphen after a part the text never prints elsewhere joins silently (synthetic `türkisch-` + `syrischen` gives „türkischsyrischen“; `deutsch-` + `französischen` gives „deutschfranzösischen“). Absence from the lexicon proves nothing; candidate rule: refuse a 5+ letter adjective-suffix part (-isch, -lich, -ig) without lexicon support, then re-measure coverage.
 7. The dropped-bullet refusal in `_lines` fires only after a line ending in „.“ or „;“. Indented items ending in „,“ or „:“ are flattened into one sentence, and the first dropped bullet after „auf,“ is never caught. Fix: widen the predecessor test, or refuse on two or more indented non-item lines.
 8. Fail-closed coverage loss: a Vorabfassung watermark after a full stop leaves a leading space after `_WATERMARK.sub("\n", …)`. A line starting with NBSP does the same. The new dropped-bullet check then refuses a passage that extractor 7 quoted. Measured: 0 of 112 replayed texts change with the fix, and the cached texts contain no watermark. Fix before any WP 21 advance-copy cache: make the substitution swallow trailing `[ \t]*`.
@@ -787,6 +989,18 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Effort:** M (remaining source fidelity and measured anchor follow-ups)
 **Priority:** P2
 **Depends on:** Saved local corpus; no new backfill required
+
+### Fill the Drucksache text cache for the WP 18–21 store
+
+**What:** The A3 store has no Drucksache text cache, so the Antrag extractor (`EXTRACTOR_VERSION` 9) quotes no passage on it. On the merged-tree gate store (2026-11-01): 114 votes are `not_fetched`, 505 are `not_applicable`, and 0 passages are quoted. Fill the cache through DIP with A3's request pacing (the third stage of `refresh_vorgang_cache`), then repersist and report quoted passages old/new.
+
+**Why:** Votes on an Antrag get no extractive description until the cache exists. #122's "196 → 206 of 217" applies only to the saved 91-document corpus, not to this store.
+
+**Context:** Owner decision 2026-11-01: left out of the A3 merge. First clear the P1 item in "B4 extractive fallback: finish validation locally" above, which says to gate the fallback before it runs on any cache larger than the saved corpus. Also add the text cache to `validate_store_gate.py`'s replay inputs (see the A3 entry's B4 note). "Gate on the merged tree" in [the Phase 4 record](docs/plans/a3-phase4.md).
+
+**Effort:** M (DIP request time plus the quote audit)
+**Priority:** P2
+**Depends on:** The P1 extractor gate above; A3 merged
 
 ### Mitberatende Ausschüsse on the vote panel
 
@@ -851,7 +1065,6 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Effort:** S
 **Priority:** P3
 **Depends on:** `worktree-a3-plan` merged (it rewrites the backfill block of `main()`)
-
 ### Politikfelder: findings deferred from the B3 review
 
 **What:** Nine findings of the /ship review (2026-10-09) that B3 does not fix:
@@ -901,7 +1114,6 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Effort:** S
 **Priority:** P3
 **Depends on:** `worktree-a3-plan` merged
-
 
 ### A.2 follow-up ship review: deferred findings
 
@@ -972,7 +1184,6 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Effort:** M
 **Priority:** P2
 **Depends on:** None
-
 ### A.2 second-round review leftovers
 
 **What:** Findings of the second A.2 ship round that were deferred by decision (2026-10-01): (1) done 2026-10-16: r1 and r3 pick each person's row once (`REPRESENTATIVE_SQL`: roster, then speaker, then `identity_key`), and `collect_abgeordnete` orders a person's rows the same way, so the label is the Personenseite's; r1 0.26 s to 0.15 s, r3 stays at 0.12 s because its cost is the vote aggregation (the 1.61 s below did not reproduce on SQLite 3.52, and no available store has roster rows); rows and figures are unchanged, 496 r1 labels lose a DIP ", MdB, ..." title or a roll-call "surname, given name", 16 r1 parties move to the speaker row's, all 16 to an older one (Robert Farle fraktionslos to AfD, Klaus Ernst Gruppe BSW to Die Linke), 25 r3 labels change, one page heading ("Özoguz, Aydan" to "Aydan Özoguz"); open: the speaker record's party is the registry's smallest pair, not its newest (`_representative_pair` has no chronology), so the Personenseite and now r1 show those 16 persons under a former party while their DIP row names the current one; was: the r1/r3 Daten recipes choose each person's representative record with a correlated subquery (`JOIN mps m ON m.id = (SELECT m2.id ... ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)`), about 15x slower than a plain join (r3 1.61 s against 0.11 s on the reference store), run at every export and again in `compare_store_values`; precompute a representative column in `mp_canonical` and join on it (the `m2.id` tie-break is now a hash, so choose by a content key); (2) done 2026-10-16: `_content_digests` sums per-row sha256 values modulo 2**256 with the column names and row count, in storage order; 28 s to 16-17 s per repeat replay (two digests); was: `_content_digests` orders every table by its text primary key, about 3 s more per store and 6-7 s per rebuild than rowid order; fold per-row hashes with a commutative sum instead; (3) advisory simplifications: drop `AbgeordneteComponent.after_persist` and call `collect_abgeordnete` directly, build the `collect_abgeordnete` lookup in one pass, replace the `ensure_canonical` temp copy by a view over `mps(id, person_id)`, drop the `mp_canonical` table if it is not a published contract, one `has_page` predicate instead of three, done 2026-10-15: one `valid_person_key` helper for the key checks; (4) done 2026-10-15: `write_abgeordnete_pages` re-checks every page key, removes whatever sits at the target and creates the file with `O_EXCL|O_NOFOLLOW`, so it never writes through a symlink; (5) a person whose only occurrence moved to another identity loses its page without a redirect (decided: accepted, see docs/stable-ids.md).
@@ -1102,6 +1313,54 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ## Completed
 
+### v1 coverage: every Sitzung from WP 18 to the present
+
+**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Re-measured on 2026-10-19 against the post-v0.20 replay of the reference store (`~/agent-runs/b3-review-replay/site`, a replay of `.context/dip-pulse-site`; catalog from 2026-10-06), counting only Bundestag entries:
+
+| WP | In the catalog | In the store | Missing |
+|---|---|---|---|
+| 18 | 245 (2013-10-22 to 2017-09-05) | 0 | all 245 |
+| 19 | 239 (2017-10-24 to 2021-09-07) | 0 | all 239 |
+| 20 | 214 | 201 (from 20/14, 2022-01-27) | 13 |
+| 21 | 97 with XML | 89 (to 2026-09-11) | 8, plus every Sitzung after the catalog snapshot |
+
+About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3-coverage.md). Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
+
+**Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
+
+**Context:**
+- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including sittings with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
+- Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
+- WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
+- Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
+- **B4 extractive descriptions (2026-10-28):** [plan](docs/plans/b4-extractive-antrag.md#a3-coordination). It needs no report field and no re-acquisition: the Antrag text is a third stage of `refresh_vorgang_cache`, keyed by Drucksache number, using A3's DIP pacing. If B4 lands before Phase 3, the Phase 3 Vorgang fill also fills the texts for WP 18–21; otherwise one online build afterwards does. Schema/export bumps: whichever branch merges second takes the next number. Add the text cache to `validate_store_gate.py`'s replay inputs, and the extraction states to the pilot metrics if B4 has merged.
+
+**Effort:** M (mostly running time and checking)
+**Priority:** P1
+**Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
+
+**Completed:** 2026-10-29 (A3 Phases 0–4, branch `worktree-a3-plan`; [Phase 4 record](docs/plans/a3-phase4.md)). Measured on a fresh DIP catalog (2026-10-29) against `~/agent-runs/a3/full`:
+
+| WP | In the catalog | In the store | Excluded (reviewed) | Missing |
+|---|---:|---:|---:|---:|
+| 18 | 245 | 194 | 51 | 0 |
+| 19 | 239 | 206 | 33 | 0 |
+| 20 | 214 | 213 | 1 (20/11) | 0 |
+| 21 | 103 | 103 | 0 | 0 |
+
+- **Store:** 716 Sitzungen, 18/4 to 21/103 (2013-12-17 to 2026-10-16).
+  - 556 namentliche Abstimmungen (WP 18–21: 127, 179, 171, 79); 382,441 Einzelstimmen.
+  - 54,718 Reden and 42,465 other Beiträge; 529 publishable Fakten.
+  - Baseline before A3: 290 Sitzungen, 217 Abstimmungen, 26,267 Reden.
+- **Gate ([receipt](docs/plans/a3-phase4-gate.json)):** 9 of 10 checks pass. `replayed_store_groups_like_fresh` fails. The carried-forward registry splits Jan Köstering/Krampe into 4 persons, where a fresh build has 1, and it keeps 295 persons with only retired bindings. See "The carried-forward registry diverges from a fresh build after A3".
+- **Gate on the merged tree (09b7c5d, 2026-11-01, [receipt](docs/plans/a3-merged-gate.json)):** all 11 checks pass. 619 namentliche Abstimmungen (was 556: the 63 votes of 41 sittings that matched no TOP now reach the report) and 425,322 Einzelstimmen; 1,942 persons in a fresh and a replayed build; 1,360 roster MdBs (was 1,712: the 352 Bundesrat rows left); "Frühere Abgeordnete" 771 (was 972); 530 publishable Fakten (was 529). Köstering/Krampe is one person. Not re-run after the v0.26.1.0 merge and the ship review fixes (ac2bca7 caveat text, 8f13bf1 roster Land-office periods), which change no count above but the roster periods of 11 people and the knappste-abstimmung caveat once the store is rebuilt with `--enrich mp-roster`.
+- **Still open:**
+  - 302 persons hold only retired bindings (281 Bundesrat members); owner decision 2026-11-01: they ship open.
+  - 21/103 waits for the roll-call list (`source_stale`); the next backfill after 2026-10-30 retakes it.
+- **Excluded sittings:** the 85 come back through "WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns" and "20/11: the chair's handover exchange".
+- **Covered range stated** in README, PRODUCT.md and the Daten page (scope line).
+- **DIP cost:** about 6,000 requests in Phase 3, 3 in Phase 4.
+
 ### Global header nav links to a page a build didn't write when its feature is off
 
 **Done (2026-10-31):** moot. `render_global_header` never used its `features` argument, and `publication_selection()` returns `all_selection()`, so every build writes every nav target. The unused `features` parameter and its 17 call arguments are removed; the nav stays unconditional.
@@ -1166,7 +1425,7 @@ Done 2026-10-30. The vote panel's lead sentence links "namentliche Abstimmung" t
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 
-Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. A store built before the fix keeps its Bundesrat roster rows until the roster is fetched again (`--enrich mp-roster`); no migration path, per the pre-release rule. DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden and Beiträge, and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede or Beitrag counts for a Zusammenschluss (ADR 0001) or they cast a namentliche Abstimmung (not "früheres": MdBs in a government office are not in the roster yet, and a build without the roster has none). The Fraktion stays shown when the protocols record a Mandat; the index lists them under "Weitere Rednerinnen und Redner". A page kept only by registry evidence (no Rede, no Beitrag) reads "Keine Reden erfasst" and claims no Redner role. Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. A store built before the fix drops its Bundesrat roster rows on the next rebuild (`--offline --repersist` or an online build), because the carried-forward roster re-derives `is_mdb` from the stored function (A3 store, 2026-10-31: 1,712 → 1,360); only a build that does not rewrite the store still shows them. No migration path, per the pre-release rule. DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden and Beiträge, and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede or Beitrag counts for a Zusammenschluss (ADR 0001) or they cast a namentliche Abstimmung (not "früheres": MdBs in a government office are not in the roster yet, and a build without the roster has none). The Fraktion stays shown when the protocols record a Mandat; the index lists them under "Weitere Rednerinnen und Redner". A page kept only by registry evidence (no Rede, no Beitrag) reads "Keine Reden erfasst" and claims no Redner role. Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
 ### "So arbeitet der Bundestag" explainer page
 
@@ -1350,6 +1609,7 @@ Done when the 14 votes above render the inversion legend, a test pins one WP 20 
 ### Document `--protocol-wahlperiode` in the README
 
 **Completed:** v0.20.6.2 (2026-10-22). README's update section now documents the default `21`, filtering only with positive `--limit`, older-Wahlperiode and all-Wahlperioden examples, the separate `--detail-limit`, and explicit/backfill selection. The former TODO's catalog-filter claim was stale: online builds always fetch the whole catalog; the Wahlperiode filter applies only to acquisition. Verified against `parse_args()`, `main()`, `select_acquisition_protocols()` and offline parser/selection checks of the examples.
+
 
 ### Fakt der Woche, copy fixes from the glossary review
 

@@ -26,7 +26,6 @@
     "tests/_daten_fixture.py": ["tests/test_daten_export.py"],
     "tests/fixtures/roll_call_detail_869.html": ["tests/test_roll_call_scraping.py"],
     "tests/fixtures/antrag-text/*": ["tests/test_antrag_text.py"],
-    "tests/fixtures/a1-source-manifest.json": ["tests/test_antrag_text.py"],
     "docs/research/b4-local-audit-2026-10-29.csv": ["tests/test_antrag_text.py"],
     "tests/fixtures/vote_debate_906.html": ["tests/test_roll_call_scraping.py"],
     "tests/fixtures/vote_debate_994.html": ["tests/test_roll_call_scraping.py"],
@@ -40,6 +39,20 @@
     "tests/recipe_copy_browser_check.js": ["tests/test_daten_page.py"],
     "tests/week_comparison_browser_check.js": ["tests/test_build_dip_pulse_site.py"],
     "tests/run_bills_browser_check.mjs": ["tests/test_bills.py"],
-    "tests/run_pregate.py": ["tests/test_bills.py"]
-  }
+    "tests/run_pregate.py": ["tests/test_bills.py"],
+    "scripts/abgeordnetenwatch.py": ["tests/test_abgeordnetenwatch.py"],
+    "scripts/compare_store_values.py": ["tests/test_compare_store_values.py"],
+    "scripts/dip_cache.py": ["tests/test_dip_request_budget.py", "tests/test_prefetch_dip_bulk.py"],
+    "scripts/person_registry.py": ["tests/test_registry_evidence.py", "tests/test_stable_ids.py", "tests/test_namensabgleich.py"],
+    "scripts/prefetch_dip_bulk.py": ["tests/test_prefetch_dip_bulk.py"],
+    "scripts/speech_kinds.py": ["tests/test_a1_followups.py", "tests/test_a3_rule5.py", "tests/test_validate_dip_protocol.py"],
+    "scripts/validate_store_gate.py": ["tests/test_validate_store_gate.py"],
+    "tests/fixtures/a1-source-manifest.json": ["tests/test_a3_rule5.py", "tests/test_antrag_text.py"],
+    "tests/fixtures/a3-rule5/18-100.xml": ["tests/test_a3_rule5.py"],
+    "tests/fixtures/a3-rule5/18-70.xml": ["tests/test_a3_rule5.py"],
+    "tests/fixtures/a3-rule5/18-71.xml": ["tests/test_a3_rule5.py"],
+    "tests/fixtures/a3-wp18-18-150.xml": ["tests/test_wp18_19_pipeline.py"],
+    "tests/fixtures/a3-wp19-19-100.xml": ["tests/test_wp18_19_pipeline.py"]
+  },
+  "empty_lanes": ["docs/plans/*.json", "docs/plans/*.txt", "docs/plans/*.tsv", "docs/plans/*.patch"]
 }

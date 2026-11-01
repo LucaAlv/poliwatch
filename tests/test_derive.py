@@ -355,7 +355,7 @@ class CommitteeRecipeParityTests(unittest.TestCase):
         )
         recipe = build.RECIPES_BY_ID["r6-ausschuss"]
         self.assertEqual(recipe["depends_on"], "votes")
-        self.assertEqual([column["name"] for column in recipe["columns"]], ["beschlussempfehlung_urheber", "abstimmungen"])
+        self.assertEqual([column["name"] for column in recipe["columns"]], ["wahlperiode", "beschlussempfehlung_urheber", "abstimmungen"])
         with tempfile.TemporaryDirectory() as tmp:
             conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
             try:
@@ -368,7 +368,9 @@ class CommitteeRecipeParityTests(unittest.TestCase):
             finally:
                 conn.close()
         self.assertEqual({row["beschlussempfehlung_urheber"]: row["abstimmungen"] for row in rows}, dict(panel))
-        self.assertEqual(rows[0], {"beschlussempfehlung_urheber": "Haushaltsausschuss", "abstimmungen": 2})
+        self.assertEqual({row["wahlperiode"] for row in rows}, {int(report["protocol"]["dokumentnummer"].split("/")[0])})
+        self.assertEqual(rows[0]["beschlussempfehlung_urheber"], "Haushaltsausschuss")
+        self.assertEqual(rows[0]["abstimmungen"], 2)
 
 
 

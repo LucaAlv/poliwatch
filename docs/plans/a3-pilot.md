@@ -1,0 +1,421 @@
+# A3 Phase 1: WP 18/19 pilot (2026-10-19/20)
+
+Plan: [a3-coverage.md](a3-coverage.md), Phase 1. Status: **stopped early**. Two findings break the plan's assumptions and need decisions before Phase 3 (end of this file).
+
+## What ran
+
+- Clone `~/agent-runs/a3/pilot` of the gate-validated `~/agent-runs/a3/gate` ([gate record](a3-gate-validation.md)).
+- Batch 1, code 43ab74d (= v0.20.0.0 plus the gate script): the 11 WP 18 sittings of the sample, `--vote-scan-pages 90 --sleep 0.5`. 5 acquired (18/245, 18/217, 18/200, 18/154, 18/150), then 18/100 stopped the run with `SprechrolleError: no Sprechrolle rule maps the role "Präsident"`. Nothing was persisted.
+- Batch 2, code e547eae (lanes A–D), `--sleep 1.0`, the other 18 sittings: DIP timed out on the very first catalog request for 32 minutes. I stopped it; no data.
+- Census without DIP: the 23 sample XML files plus the budget weeks 18/68–71 (Nov 2014) and 19/63–66 (Nov 2018), downloaded once from dserver.bundestag.de (public, 1 s apart), parsed with the current parser and read for roles, Fraktion strings and Einzelplan headings.
+
+## Finding 1: the parser rejects a fifth to a third of WP 18/19 sittings (D4)
+
+**Measured** on 175 WP 18/19 XML files: the 31 sample and budget-week files, plus a download of the newest WP 19 sittings, which dserver.bundestag.de stopped serving us after about 150 files. Census: `~/agent-runs/a3/wp18-19-census.json`. The current parser (speech rule 5) refuses:
+
+| | Files | Refused | Share |
+|---|---:|---:|---:|
+| WP 19 (19/79–19/239 and the sample) | 160 | 31 | 19% |
+| WP 18 (sample and budget weeks only) | 15 | 6 | 40% |
+
+The WP 18 share comes from a biased sample: the A1 picks favour question formats. Extrapolated:
+- WP 19: about 45 of 239 sittings;
+- WP 18: somewhere between 50 and 100 of 245;
+- together, roughly 100–150 sittings that stop the backfill.
+
+The A3 TODO recorded that 18/1, 18/100, 19/1 and 19/239 parsed on 2026-09-30. They are refused now, so the refusals arrived with speech rules 3–5. Their audit ([offline-v5-validation.md](offline-v5-validation.md)) covered only the 290 WP 20/21 files.
+
+**What blocks.** In every refusal, a member's turn is nested inside another member's `<rede>` and rule 5 cannot classify it (`unresolved nested contribution at <Rede> marker <n>`). The blocking turn is an ordinary MdB in 34 of the 37 cases, and a presidium or government role in the other 3. Read from the XML, four kinds:
+1. **A whole Rede printed inside the previous one**, after the chair's "Als nächste Rednerin spricht …" (18/10 Bartz, 18/70 Binder). These are Reden with no `<rede>` of their own, so counting them is a structural decision.
+2. **Zwischenfragen and Zwischenbemerkungen whose grant rule 5 does not read.** The grant reads "Ja.", "Aber ja.", "Immer, ja.", or is a thank-you afterwards ("dass Sie die Zwischenbemerkung zulassen"), often with no question mark (18/50, 18/71, 19/101, 19/104, 19/108, 19/118).
+3. **A minister answering inside such an exchange** (18/50 Hendricks).
+4. **Chair and election turns.** The elected Präsident's "ich nehme die Wahl an" (18/1, 19/1), the Präsident's own floor-giving encoded as a nested `<redner>` with `<rolle_lang>Präsident` (18/100), and an answer to a Rückfrage from the chair (19/102).
+
+The reviewed exclusion list (D2) was designed for rare refusals. Listing 100–150 sittings would leave a large part of WP 18/19 uncovered. The fix is an extension of rule 5 to the WP 18/19 encodings, with its own audit record like offline-v5-validation.md, showing whether the 290 WP 20/21 files stay unchanged. That is a counting-rule change (A1 territory), so it is a decision.
+
+**Unmapped presidium roles.** Präsident (18/100, 19/1), Vizepräsident(in) (18/245) and Alterspräsident (19/1) occur in this census only on nested chair markers (kind 4). A first mapping of them to "weitere Sprechrolle" (2532c59) was reverted in 806a2f1: chairing is never a Rede (CONTEXT.md, Sitzungsleitung), and a Präsident speaking from the lectern speaks "like any other Redner". They stay unmapped (fail-fast) until rule 5 is extended.
+
+## Finding 2: unexplained DIP timeouts
+
+- Batch 1 sent 487 requests in 9,269 s:
+  - `/person/{id}` 301 (196 distinct);
+  - bundestag.de 66 (roll-call list and votes);
+  - `/vorgangsposition` 54;
+  - `/plenarprotokoll` 48 (the whole catalog);
+  - `/aktivitaet` 12;
+  - dserver 6.
+- After about 250 requests at 0.5 s spacing, every `/person` lookup timed out: 26 persons × 3 attempts × 60 s. As a result, 18/154 took 3,058 s and 18/150 took 1,857 s, against 27–45 s for the three sittings before.
+- Spot probes of two of the failed ids later answered in 0.1–0.35 s.
+- Batch 2, hours later at 1.0 s spacing, stalled on its very first catalog request, right after curl probes had answered quickly. A rate limit does not explain a stall on the first request.
+- On 2026-10-20 one request through the project's `ApiClient` and one through curl both answered in under 0.2 s, so it is not the request's shape: DIP itself stopped answering for periods, for a reason not visible from here.
+- So a safe sustained rate is not known, and 0.5 s is not shown to be safe.
+
+Changes made from this:
+- **e547eae:** after 3 consecutive `/person` failures, a sitting stops looking up persons.
+- **D5 cache:** it removes the 35% repeat lookups (301 vs 196).
+- The backfill default sleep stays 0.5 s in code until a rate is measured.
+
+### DIP `/person` probe, 2026-10-22 (pilot re-run, step 1)
+
+The planned measurement was small bursts of `/person/{id}` at 2 s and then 1 s spacing, with a stop on the first failure or answer over 10 s and no retry (`~/agent-runs/a3/round2/person_probe.py`, log `person-probe.log`).
+- dserver answered the first probe: `19/19001.xml`, 200 in 0.39 s.
+- DIP did not. The first request, `/person?f.wahlperiode=18` at 14:01 UTC, timed out after 30 s, so no `/person/{id}` request was sent.
+- The same API had answered all 17 `/aktivitaet` sittings of the 6c check, at 2 s spacing and at most 0.25 s, about an hour earlier.
+- That makes 63 DIP requests that day before the timeout, all with the project key.
+
+So DIP stopped answering after a few dozen requests at 2 s, not after hundreds. As in batch 2 (2026-10-19), a rate limit does not explain it. The pilot re-run stopped here, as its brief says, and nothing was retried. A sustainable DIP rate is still not known.
+
+### DIP `/person` probe, 2026-10-22 evening (pilot re-run)
+
+The probe ran at 18:26 UTC, about 4.5 h after the timeout above.
+- **Single probes:**
+  - dserver `19/19001.xml`: 200 in 0.39 s.
+  - DIP `/plenarprotokoll?f.dokumentnummer=19/1`: 200 in 0.32 s.
+- **`person_probe.py`:**
+  - 1 `/person` list request;
+  - 20 `/person/{id}` at 2 s spacing (18:26);
+  - after a pause of about 1 min, 20 more at 1 s spacing (18:27).
+- **Result:** all 41 answered 200. The slowest took 0.21 s and the mean was 0.10 s. There were no failures and nothing was retried.
+
+So at this hour DIP answered `/person` normally at 1 s spacing. The pilot run that followed timed out on its first request (see "Result" below), so this probe does not settle the question of a request-count limit.
+
+### Rate measurement, 2026-10-20 (dserver.bundestag.de)
+
+The WP 18/19 XML download (`~/agent-runs/a3/tools/fetch_wp18_19.py`; one line per request in `~/agent-runs/a3/wp18-19-fetch.log`, probes in `dserver-probes.log`). Each request is one plenary XML of about 0.7 MB.
+
+| Window (CEST) | Spacing | Requests answered | Then |
+|---|---:|---:|---|
+| 15:52–15:53 | 3 s | 20 of 20, ≤ 0.36 s | burst ended as planned |
+| 15:53–15:57 | 2 s | 73 of 73; the last one took 35 s | 3 timeouts of 60 s; stopped |
+| 16:20 | probe | none | still blocked (30 s timeout) |
+| 18:51–18:59 | 5 s | 70 (one stop was a bug in my script, the UTF-8 BOM check); the last three took 19–35 s | 1 timeout; stopped |
+| 19:15 | probe | none | still blocked |
+| 20:39–20:45 | 5 s | 63; the last one took 19 s | stopped on the slow answer, before a timeout |
+| 21:11, 21:31 | probe | none | still blocked |
+| 21:52–21:58 | 5 s | 61, no slow answer first | 1 timeout; stopped |
+| 22:18 | probe | none | still blocked |
+| 22:38–22:39 | 5 s | 2; the second took 36 s | stopped on the slow answer |
+| 22:59–23:01 | 5 s | 20 of 20 | download complete (484 files) |
+
+DIP (`search.dip.bundestag.de`) and `www.bundestag.de` answered normally (0.2–0.3 s) whenever dserver was blocked.
+
+What it shows:
+- **The block is a budget, not a rate.** dserver stops answering after about 60–90 requests, roughly 45–65 MB, within a few minutes. That holds at 2 s and at 5 s spacing. Slower spacing did not buy more requests per window.
+- **Warning sign:** answers usually slow to 19–36 s just before the cutoff, though not always (21:58). Stopping at the first answer over 10 s (`--slow-stop 10`) ended two windows before a timeout.
+- **Block length:** 20 to about 65 min. Probes were still blocked 33 and 46 min after the 20:45 stop, and dserver answered again at 66 min. After the 21:58 cutoff it answered at 40 min, but only 2 files went through before it slowed. The budget seems to refill gradually, not reset all at once. 20 more files went through after another 20 min.
+
+**Proposal for the backfill `--sleep` (not changed in code):** keep spacing at 2 s for dserver, because spacing does not matter within a window. What matters is a per-window cap: about 50 XML downloads, then a pause of about 60 min, and a stop on the first answer over 10 s. For DIP, nothing in today's runs re-measures Finding 2's `/person` timeouts. The 6c cross-check sent 6 DIP requests at 2 s, all under 0.2 s. A WP 18/19 backfill of ~484 sittings needs about 10 such windows for the XML alone, so it spans hours, not minutes.
+
+## Census
+
+**Roles** (`<rolle_lang>`, 31 files): 46 mapped, plus:
+- the presidium roles above, deliberately left unmapped;
+- "B undesministerin für Bildung und Forschung" (19/100 Karliczek, a typo in the XML), now mapped to the Bundesregierung (2532c59).
+
+**Fraktion strings** and what `derive.zusammenschluss` makes of them:
+- Mapped already: AfD, CDU/CSU, DIE LINKE → Die Linke, FDP, SPD, fraktionslos / Fraktionslos → fraktionslos, `BÜNDNIS\xa090/DIE GRÜNEN` (no-break space).
+- New, added in 2532c59: `BÜNDNIS 90/DIE GRÜNE N` (19/100) and `BÜNDNIS 90/ DIE GRÜNEN`. The second occurs in 8 WP 18 files, but in the samples only in the Inhaltsverzeichnis.
+- None unknown after that.
+- No dotted "DIE LINKE." was seen.
+
+**Einzelplan tables:**
+- Taken from the Einzelplan headings of the two budget weeks; now in `EINZELPLAN_TO_POLITIKFELDER` (2532c59).
+- Ministry cuts that differ from WP 20/21:
+  - WP 18: Bau sits in Einzelplan 16 (Umwelt, Naturschutz, Bau und Reaktorsicherheit);
+  - WP 19: Bau sits in 06 (Innern, für Bau und Heimat);
+  - both WPs: 12 is Verkehr und digitale Infrastruktur.
+- WP 18 Einzelplan 21 (BfDI, its own plan from 2016) is not in the Nov 2014 evidence and stays `einzelplan_unknown`.
+- A3 Phase 4 checks the full store against the table (the real-store test now reads every WP).
+
+**Roll-call votes:**
+- In the 5 acquired sittings, each scan ended `date_passed` at a budget of 90 pages, and 2 votes matched 2 TOPs.
+- No vote-page Fraktion strings beyond the ones above.
+
+**abgeordnetenwatch:** not measured. `aw-profiles` is not a default enrichment, and the pilot did not enable it.
+
+**Identity:** in 19/1 Schäuble's chair markers carry Solms's Redner-ID 11002190. That is another shared-id case like 11005304; it is to be checked when 19/1 is acquired.
+
+## Time and memory
+
+- Not measurable as planned: nothing reached persist or render.
+- Batch 1 peak RSS was 1.33 GB, from acquisition only.
+- From the gate run on 290 Sitzungen ([gate record](a3-gate-validation.md)):
+  - `--offline --repersist` 453 s and 2.6 GB;
+  - a plain `--offline` render 335 s and 1.5 GB.
+- At about 800 Sitzungen and linear growth that is about 21 min and 7 GB for a repersist. This is an estimate, and above the plan's 3.6 GB.
+- Disk: 22 GB free on 2026-10-20. A full store and site is estimated at 8 GB, plus clones.
+
+## Known limit of the exclusion list (D2)
+
+Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatever the parser says, so an unmapped role in it no longer ends the run. Since 517ecee, offline runs and `--fetch-xml` also leave out every sitting `data/coverage-exclusions.json` lists, so a report cached before its sitting was listed stays out of the store.
+
+## What is open before Phase 3
+
+1. **Extend speech rule 5 to the WP 18/19 encodings** (Finding 1, four kinds). Without it, D4 stops roughly 100–150 WP 18/19 sittings. This is a counting-rule change (A1 territory) and needs a decision.
+2. **A sustainable request rate** (Finding 2). Both DIP and dserver.bundestag.de stopped answering us after a few hundred requests: dserver after about 150 XML downloads at 1 s spacing on 2026-10-20. Re-measure with a smaller burst before choosing the backfill default, and finish the WP 18 census when dserver answers again.
+3. **Pilot re-run** with 1 and 2 settled, to measure seconds per sitting, peak RSS of persist and render, and the abgeordnetenwatch share.
+
+## Pilot re-run, 2026-10-22
+
+### Setup
+
+- **Clone:** `~/agent-runs/a3/pilot` is a copy-on-write clone (`cp -c`, APFS) of `.context/dip-pulse-site`. It costs almost no disk until files change. Free disk was 8–9 GB before the run and 5.1 GB after the repersist.
+- **Repersist:** `--offline --repersist` with speech rules v6, at 5cc5982.
+  - Exit 0, 290 reports persisted, store replaced.
+  - **Time:** 665 s (the gate took 453 s).
+  - **Peak RSS:** 2.36 GB (the gate took 2.6 GB).
+- **Probes:** see Finding 2, 2026-10-22 evening.
+- **Sample (27 sittings):**
+  - the 21 of `a1-turn-investigation.md:17`;
+  - first and last of each WP: 18/1, 18/245, 19/1, 19/239;
+  - the nearest that parse with mapped roles: 18/4, 18/244, 19/2, 19/238.
+  - 8 of the 27 are on the 84-number list and test the D2 skip: 18/1, 18/10, 18/50, 18/245, 19/1, 19/13, 19/32, 19/239.
+  - Befragung, Fragestunde and Aktuelle Stunde occur in each WP: 18/154, 18/217, 19/10, 19/79, 19/100, 19/145.
+- **Settings:** `--sleep 2`, `--vote-scan-pages 90`, the 84 numbers via `--exclude-document-number`, and the default enrichment. A disk watchdog stops the run below 1.5 GB free. The argument list is `~/agent-runs/a3/pilot-args.txt` and the log is `~/agent-runs/a3/pilot-run.log`.
+
+### Result: stopped by DIP before the first sitting
+
+- The run started at 18:37:21 UTC. Its first DIP request was the catalog (`/plenarprotokoll`, page 1). It timed out three times (60 s each, with the client's 2 built-in retries) and the run ended at 18:40:41 with exit 1.
+- **Nothing was acquired.** No sitting was fetched and the store was not touched; it is still the repersisted v6 store. The run took 185 s with a peak RSS of 97 MB.
+- **What DIP answered before:**
+  - 41 `/person` requests at 18:26–18:27, at 2 s and 1 s spacing, all fast;
+  - one curl `/plenarprotokoll` at 18:26.
+  - About 10 minutes later the first request of the run did not answer.
+- **This is the third time,** with the same shape each time:
+
+| When | Requests answered first | Spacing | Then |
+|---|---:|---|---|
+| 2026-10-19, batch 2 | many earlier in batch 1 | 1 s | the first catalog request stalled |
+| 2026-10-22, 14:01 | 63 | 2 s | the first `/person` list request timed out |
+| 2026-10-22, 18:37 | 43 | 2 s and 1 s, then a pause of about 10 min | the first catalog request timed out |
+
+- **A hypothesis, not established:** DIP stops answering this key or IP for a while after roughly 40–60 requests in a window of unknown length. Batch 1's ~250 requests at 0.5 s before its timeouts do not fit a plain count. The window and the recovery time are both still unmeasured.
+- **What a re-run needs:**
+  1. Leave DIP idle for several hours.
+  2. Start the pilot directly, with no probe burst that spends the budget first.
+  3. Log every DIP request with its time, so the point where DIP stops is known exactly.
+- **Not a local fault:** at 18:43 UTC, three minutes after the timeout, dserver answered `19/19002.xml` with 200 in 0.29 s.
+- The full catalog fetch opens every run, so it counts against any DIP budget.
+- **Open before Phase 3:** the scan found 9 Vizepräsident(in) markers with a Fraktion inside someone else's `<rede>`. They are read as Sitzungsleitung. Five are in sittings that will be counted: 18/79, 18/85, 18/91, 18/96 and 18/109. In 18/62 and 18/90 the same presidium reading misclassified a Vizepräsidentin acting as an MdB, so these 9 need one read: if any is her own Zwischenfrage, it is silently dropped.
+- **Not done:** the Phase 1 measurements (Sprechrollen, Fraktion strings, Einzelplan, abgeordnetenwatch share, roll-call match rate, rate and seconds per sitting, render RSS, extrapolation) and the identity check.
+
+## Presidium markers inside a `<rede>`, read 2026-10-22
+
+- **Scan:** `~/agent-runs/a3/review/round2/vp_scan.py` lists every Präsident(in) or Vizepräsident(in) marker that prints a `<fraktion>`. WP 18/19 has 12 markers inside a `<rede>` that is not their own: the nine Vizepräsident(in) markers already known, plus three for Lammert (Präsident): 18/41, 18/74 and 18/100. WP 20/21 has none.
+- **Read:** one Sonnet reader (`inside-markers.tsv`). I re-checked the non-chair verdicts myself with `dump_rede.py`.
+  - **Chair text (9):** 18/41, 18/60, 18/74, 18/79, 18/82, 18/85, 18/89, 18/91 and 18/100. Each one gives the floor or announces the next speaker.
+  - **18/96 Pau, inside de Maizière's Befragung answer:** her own Nachfrage ("Herr Minister, genau da will ich anknüpfen…"). Bulmahn presides and gives her the floor. **Silent miscount:** one Befragung question is dropped. 18/96 is counted.
+  - **18/109 Bulmahn, second marker of her own Rede:** after Ulla Schmidt's "Sie müssen zum Schluss kommen", Bulmahn finishes her Rede ("Ich plädiere deshalb ausdrücklich dafür, dieser Mission zuzustimmen…"). The Rede is counted (ADR 0004 rule), but **its closing text is dropped.** 18/109 is counted.
+  - **18/113 Pau, inside Castellucci's Rede:** her own Zwischenfrage. 18/113 is on the list.
+- **Presiding signal** (`presiding.py`, the last chair `<name>` line before the marker):
+  - **Own person presiding (8):** 18/41, 18/74, 18/79, 18/82, 18/85, 18/89, 18/91 and 18/100. All are chair text.
+  - **Someone else presiding (4):** 18/96, 18/109 and 18/113, which are own contributions, and 18/60.
+  - **The signal sorts 11 of 12 correctly.** The miss is 18/60: Lammert presides, and Singhammer's marker is chair text. That is a chair handover with no printed `<name>` line.
+
+### Rule proposals (owner decision, nothing built)
+
+- **(a) Continuation of the owner's own Rede.**
+  - **When it fires:** a later presidium marker inside a `<rede>` has the same redner id as the `<rede>`'s owner, and the owner was mapped by the ADR 0004 rule.
+  - **What it does:** it continues that Rede, as for any MdB who resumes after an interruption.
+  - **Reach:** exact, with no counterexample. In WP 18/19 it only touches 18/109, where the Rede gains its closing text. The unit count is unchanged. WP 20/21 has 0.
+- **(b) A presidium member's own contribution while another member presides.**
+  - **When it fires:** a presidium marker with a Fraktion sits inside someone else's `<rede>`, and the last chair `<name>` line names a different person.
+  - **What it does:** the marker is that MdB's Zwischenfrage, or in a Befragung a `befragung_frage`, for the printed Fraktion.
+  - **Reach:**
+    - 18/96: +1 `befragung_frage`, counted.
+    - 18/113: listed. It would leave the list only if its other refusal goes too.
+    - 18/60: **wrong.** The chair handover would become a contribution. 18/60 is listed, for other reasons.
+  - **Risk:** a handover with no printed name line. The scan above is the whole population for WP 18/19 (12 markers), so every case the rule would reach is known, and 18/60 is the only wrong one.
+  - The alternative to (b) is to put 18/96 on the list. That costs every unit in it, to keep out one missed question.
+
+## Pilot re-run, second attempt, 2026-10-23: DIP stopped after 104 requests
+
+- **Setup:** as on 2026-10-22, plus `DIP_REQUEST_LOG` (`~/agent-runs/a3/pilot-requests.log`, 134 lines, no key in it). DIP had been idle for 17 h (last request 2026-10-22 18:40 UTC). There was no probe first. 29 GB were free.
+- **Timeline (UTC):**
+
+| Window | Requests | What |
+|---|---:|---|
+| 11:45:54–11:47:37 | 48 DIP | `/plenarprotokoll`, the whole catalog (48 pages) |
+| 11:48:02 | 1 dserver | `19/19238.xml`, the first sitting of 19 (8 listed sittings skipped) |
+| 11:48:03–11:48:09 | 4 DIP | `/vorgangsposition?f.plenarprotokoll`, `/aktivitaet` (2 pages each) |
+| 11:48:11–11:48:16 | 28 bundestag.de | roll-call list |
+| 11:48:16–11:49:50 | 46 DIP | `/vorgangsposition?f.vorgang=…`, 23 Vorgänge × 2 pages |
+| 11:49:52–11:50:03 | 6 DIP | `/person/{id}`, all 200 in 0.10–0.11 s |
+| 11:50:05 on | 5 DIP | `/person/309` × 3 and `/person/1500` × 2: each timed out at 60 s |
+
+- **DIP stopped abruptly** after **104** answered requests in 249 s (one every 2.4 s on average). The last good answer took 0.10 s, so there was no slowdown first, unlike dserver.
+- **Stopped by hand at 11:55:53** (SIGTERM, exit 143). The run took 598 s, with a peak RSS of 1.45 GB.
+  - No sitting was acquired, and the store is untouched (mtime 2026-10-22 20:31). No exclusion record was written.
+  - **Runner bug:** the first SIGINT had no effect, because a background job of a non-interactive zsh ignores SIGINT. The disk watchdog had the same flaw. `run-pilot.sh` now sends SIGTERM.
+- **The four stops so far:**
+
+| When | DIP requests answered first | Then |
+|---|---:|---|
+| 2026-10-19 batch 1 | ~250 at 0.5 s | `/person` timeouts |
+| 2026-10-22 14:01 | 63 over the day | timeout |
+| 2026-10-22 18:37 | 43, then a 10 min pause | timeout on the first request |
+| 2026-10-23 11:50 | 104 after 17 h idle | timeout |
+
+- **What this shows:**
+  - The cutoff is not a fixed count. That fits a budget shared with others, such as the public DIP key that README.md §1 points to, or a per-IP limit with slow refill. Neither is established.
+  - **DIP cost per sitting is far higher than assumed.** 19/238 alone took 58 DIP requests before its persons: 4 for the sitting, 46 for 23 Vorgänge and 6+ for persons.
+  - On top of that, the 48-page catalog opens every run. At ~60 per sitting (one sitting measured), the ~400 WP 18/19 sittings need about 24,000 DIP requests. At ~100 per window, Phase 3 is not feasible as built.
+- **Ways to cut DIP requests (proposals, nothing built):**
+  1. Stop paging when a page holds all of `numFound`. Each of the 23 Vorgänge took exactly 2 pages. That suggests the second page is only the end-of-list check, which would make 23 of the 46 avoidable. Not verified: the log has no document counts.
+  2. Cache `/vorgangsposition?f.vorgang` across sittings and runs. A Vorgang recurs across sittings, as the D5 person cache already does for persons within one build.
+  3. Persist the person cache across runs.
+  4. Reuse the cached catalog in a backfill, or fetch it by Wahlperiode, instead of 48 pages per run.
+  5. A personal DIP API key, if the shared public key is what is limited. Ask the Bundestag's DIP team; that is the owner's call.
+- **The Phase 1 measurements are still not taken.** The identity check needs pilot data too.
+
+### DIP request reductions 1–4, built 2026-10-23
+
+| Commit | Change | Saving |
+|---|---|---|
+| e0632e3 | Stop paging once the distinct ids reach `numFound` | the end-of-list page of every list: 23 of 19/238's 46 Vorgang requests |
+| 33ab996, fa56e27 | Closed Wahlperioden and Sonderdrucke from the cached catalog. Full fetch after 7 days, on a missing cache, or when the merge doesn't add up to DIP's total | **48 → 2** per run between full fetches. The first run after 7 days, or after a cache miss, still pays 48. Replay on the 4,677-entry reference catalog: same protocols, same order. The reference catalog is from 2026-10-06, so the next pilot run pays 48. |
+| c7c5d3c | A Vorgang's Drucksachen cached per Vorgang across sittings, and across runs for closed Wahlperioden. `/person` cached across runs for 30 days. Both saved after every sitting | repeats cost nothing; a restarted run does not pay twice |
+
+- **Estimate for a WP 18/19 backfill.** It is not measured against DIP, and its inputs are proxies:
+  - **Vorgang repetition**, from the 290 cached WP 20/21 reports: 3,548 Vorgang references, 2,842 distinct, so about 20% are repeats. 19/238 needed 23 Vorgänge, which means about 18 new ones per sitting.
+  - **Person lookups:** 1,061 distinct persons over 290 sittings, about 4 new per sitting.
+  - **Per sitting:** about 2 (positions, Aktivitäten) + 18 (Vorgänge, one page each) + 4 (persons) ≈ **26 DIP requests**. This is a proxy: the 20% repeat rate counts only Vorgänge that link a Drucksache, 19/238 is one sitting, and a sitting with many Aktivitäten may need more pages. Before these changes it was about 60, plus repeat persons.
+  - **For ~400 sittings:** about **10,000 DIP requests**, against about 24,000 before.
+- **Not enough on its own.** At the ~100 answered requests per window seen so far, that is still on the order of 100 windows. Phase 3 depends on a higher DIP allowance (the owner is asking for a personal key) or on a window pacer.
+- **Proposed, not built:**
+  - a run-level stop after N consecutive DIP failures. The 2026-10-23 run kept sending 60 s timeouts after DIP had stopped;
+  - a per-window DIP cap like `XmlPacer`, once the window and the recovery are known.
+- **The 19-sitting pilot itself:** about 19 × 26 + 48 ≈ 540 DIP requests, roughly 5 windows at the rates seen so far. Each sitting saves its caches, so a re-run after a stop pays only for what is new. The `--document-number` sittings are re-acquired, but cached Vorgänge and persons make that cheap.
+
+### Workaround while the personal key is pending: the drip runner (started 2026-10-23)
+
+- **Run-level stop (2921e1c):** after 2 DIP requests in a row fail, the run sends DIP nothing more, and the remaining sittings cost no request.
+- **Batching is not possible.** The DIP spec (OpenAPI 1.2) marks only `f.id`, `f.wahlperiode`, `f.dokumentnummer` and `f.frage_nummer` as repeatable. `f.vorgang` and `f.plenarprotokoll` take one value per request, and pages hold at most 100 entries.
+- **Option B, sizing only:** a bulk download of a Wahlperiode's Drucksache positions (`/vorgangsposition?f.wahlperiode=N&f.dokumentart=Drucksache`) could replace the ~18 per-Vorgang requests per sitting. The drip sends the two count requests once, and records `numFound` in `drip-state.json`.
+- **`~/agent-runs/a3/drip.py`** (outside the repo; started with `nohup`, PID in `drip.out`):
+  - It runs the pilot arguments on the sittings not yet acquired, taken from the run's `[summary]`.
+  - When the run's last DIP request failed, it waits `--wait-hours` (3, the owner's starting value) and runs again.
+  - It also rests 3 h after the request log's last DIP failure before its first cycle.
+  - A source refusal, a crash, the disk watchdog, or a run that fails without a DIP block stops it for a human. So does a cap of 20 cycles.
+  - **Files:** `drip.log` holds one line per event, `drip-state.json` the state, `pilot-run-<n>.log` each run, and `pilot-requests.log` every request.
+- **What it will measure:** requests per window, and how long DIP needs to recover, read from the request log across cycles.
+
+### Option B, the bulk prefetch (built 2026-10-23, handoff [a3-option-b-handoff.md](a3-option-b-handoff.md))
+
+- **Built (64b064d, f273495, 1ae2807), test-first, no live request yet:** `scripts/prefetch_dip_bulk.py --output-dir OUT --wahlperiode N [--drucksachen] [--persons] [--max-chunks K]`.
+  - Month chunks over the Wahlperiode's sittings, newest first, the first and last chunk open. Each chunk is staged under `data/dip-bulk/wp<N>/` once it matches its `numFound`.
+  - The Vorgang cache is merged only when the chunk counts, the distinct ids and the WP total all agree. Entries are grouped per Vorgang in date, then position id, order.
+  - Only Vorgänge the bulk saw are written. A differing cached entry is kept and reported. A Vorgang in two Wahlperioden is dropped.
+  - Persons are cached as fetched now, with the 30-day expiry unchanged. Owner, 2026-10-23: re-run `--persons` at the start of each backfill session.
+  - Exit codes: 0 done, 2 `--max-chunks` reached, 3 DIP silent (rest), 1 needs a human.
+- **Owner decisions 2026-10-23:** the separate prefetch; stop the drip once the code is ready; the drip's `--wait-hours` is now 6 (restarted 20:48 UTC); the person refresh as above.
+- **Reference data for the match checks** is frozen in `~/agent-runs/a3/bulk-reference/` (the 23 Vorgänge, the 12 persons, the 19/238 report), copied before any bulk write. The checker is `~/agent-runs/a3/tools/compare_bulk.py`.
+- **Runner:** `~/agent-runs/a3/bulk_drip.py` runs one prefetch stage after another. On exit 3 it rests 6 h. It first rests until 6 h after the last DIP failure in either request log. Its files are `bulk.log`, `bulk-run-<n>.log` and `bulk-requests.log`.
+- **First window: purpose and expected cost, written before sending.**
+  1. WP 19 Drucksachen, `--max-chunks 3`: the open chunk from 2021-09-01, then August and July 2021.
+     - These cover all 23 reference Vorgänge (their Drucksachen run from 2021-07-23 to 2021-09-29).
+     - The WP total is not re-asked: the 73,849 measured at 17:55 UTC is seeded in `total.json`.
+     - About 15 pages per month at the WP average of ~1,540 positions, so roughly 30–60 requests.
+  2. WP 19 persons, `--persons`: size unknown, roughly 10–30 pages. Its `differing` output is the step-4 comparison against the cache, which still equals the reference for those 12 persons.
+  3. Stop, and run `compare_bulk.py`. The rest of WP 19, then WP 18, follow only if both comparisons match.
+- **First window, 2026-10-24 09:23–09:25 UTC: both checks match.**
+  - **The runner's first rest never ended.** `time.sleep` on macOS does not count the Mac's own sleep. Both runners now wait on the wall clock in one-minute steps, and the bulk runner runs under `caffeinate -i`.
+  - **Requests:** 46, all answered. 36 went to the three chunks (1,591 + 829 + 1,093 positions, 100 per page) and 10 to the WP 19 persons (973 records).
+  - **Drucksachen:** 22 of the 23 reference Vorgänge are identical, same entries in the same order. The 23rd, 281379, is absent from the bulk list, as expected: it has no Drucksache, so the build fetches it one at a time.
+    - None of the 2,724 bulk Vorgänge repeats a `(dokumentnummer, url)`. So far, order changes only the list order, never a value.
+  - **Persons:** all 12 reference persons are in the bulk list, equal in every field apart from `aktualisiert`, including `person_roles`.
+  - **Next, started 09:25 UTC:** the rest of WP 19, then WP 18 Drucksachen and persons, in 6 h windows. The drip stays stopped until these are done.
+- **Bulk complete, 2026-10-25 11:28 UTC.**
+  - **Counts:** both Wahlperioden check out. The chunk counts, the distinct ids and DIP's total agree for each: WP 19 has 73,849, WP 18 has 40,865.
+  - **Written:** 51,103 + 27,515 Vorgänge. The 22 Vorgänge already cached match the bulk answers. None differ.
+  - **Persons:** 973 for WP 19 and 871 for WP 18, with no differing field. The person cache now holds 1,273.
+  - **Vorgang cache:** 78,424 entries, 50 MB. Staging takes another 54 MB.
+  - **Requests:** 1,233 answered DIP requests (1,214 for the Drucksachen, against an estimate of ~1,150; 19 for the persons), plus 7 failed attempts.
+- **217 Vorgänge appear in both WP 18 and WP 19.** They are dropped, so they take the one-at-a-time query.
+  - **What they are:** Entlastung der Bundesregierung, Bundesrat Verordnungen and Empfehlungen, Unterrichtungen.
+  - **Positions:** 499 on the WP 18 side and 344 on the WP 19 side. The WP 19 side runs up to 2021-03-30 and is 199 BR and 145 BT.
+  - **The same must happen at WP 17→18 and WP 19→20, and those are not detected.**
+    - A WP 18 Vorgang that began in WP 17, or a WP 19 one that runs on into WP 20, is now cached without its other-WP positions. The one-at-a-time query has no Wahlperiode filter and would list them.
+    - At the 18↔19 rate (~0.8 % of a WP's Vorgänge), that is on the order of 200 WP 18 and 400 WP 19 Vorgänge.
+    - So the cache is not yet safe for the "no figure moves" rule. The drip stays stopped until the owner decides.
+- **DIP was far more generous than before:**
+  - **First window:** 129 answered within 5 minutes (46 in the first window's stages, 83 in the next run), then timeouts at 09:28.
+  - **After the rest:** 698 answered across one run (15:48–22:35 UTC, a single connection reset), then 452 in 17 minutes on 10-25, with no DIP block.
+  - **The one-hour gaps inside the 10-24 run** have no request logged. The Mac most likely slept despite `caffeinate -i`.
+  - **The 23:20 "stop" was not DIP.** It was a DNS failure ("nodename nor servname"), so the network was down. The runner took it for DIP and rested 6 h.
+- **Owner decision 2026-10-25:** bulk WP 17 and WP 20 too, to find the 17↔18 and 19↔20 overlaps.
+  - Both run with `--overlap-only`: they cache nothing of their own and only drop the shared Vorgänge from the cache. Their own Vorgänge may run on into a Wahlperiode not downloaded, WP 16 or the open WP 21.
+  - **Purpose and cost, written before sending:** one count request each, then the month chunks. WP 20 has 42 chunks, WP 17 has 48; sizes are unknown, so roughly 400–800 requests each.
+  - WP 20 runs first, since 19→20 touches the larger set of pilot Vorgänge. The drip stays stopped until both are done.
+- **Hypothesis from the owner, 2026-10-25: the network changed.** The owner moved to another WiFi network on 2026-10-24, after 1½ weeks on the previous one.
+  - That fits a DIP limit per IP address rather than per key. Either the old public IP was shared with other DIP users, or it was under a long penalty from earlier bursts.
+  - Then a personal key may not raise the limit, and the ~110-window backfill estimate does not hold on the new network.
+  - **Not established:** the request log does not record the network. Whether the 2026-10-24 09:28 UTC block came before the move is still open.
+- **WP 20 and WP 17 overlap runs, 2026-10-25 18:21–19:04 UTC.**
+  - **Requests:** 1,024 answered and 1 dropped connection, with no DIP block.
+  - **Counts:** WP 20 has 48,822 positions and WP 17 has 48,729. Each matches DIP's total.
+  - **Shared Vorgänge:** 216 with WP 20 and 232 with WP 17, all dropped.
+  - **The Vorgang cache now holds 77,977** (WP 19: 50,909 → 50,693; WP 18: 27,515 → 27,284).
+    - That is 447 dropped. WP 17 reported 232 against 231 removed from WP 18, so one WP 17 Vorgang was already gone, most likely one of the 217 that also spans WP 19.
+  - **Overlaps per neighbour:** 216–232, about 0.4–0.8 % of a Wahlperiode's Vorgänge, consistent with the 217 between WP 18 and WP 19.
+  - **Still not covered:** a Vorgang that spans three Wahlperioden, and a WP 19 Vorgang that runs into WP 21. Both are rarer still.
+- **Next:** the drip restarts on the 18 remaining pilot sittings, with a 6 h wait, under `caffeinate -i`, to measure the new requests per sitting.
+- **Pilot finished, 2026-10-25 19:05–19:20 UTC: all 18 remaining sittings acquired in one cycle, 902 s.**
+  - **DIP cost:** 145 requests, all answered, with zero `/person/{id}` lookups.
+  - **Per sitting:** 2–6 requests, about 4 on average: 1 positions list, 1–3 activity pages, and 0–2 Vorgänge the bulk lacks. Before option B it was about 26, and about 60 before reductions 1–4.
+  - **The Politikfelder step:** 71 `/vorgang` requests (43 by `f.id`, 28 by `f.dokumentnummer`), all sent after the last sitting (19:10–19:13 UTC), by `refresh_vorgang_cache`.
+    - Part of this grows with the sittings. Vorgang records come 100 ids per request, and each Drucksache number with no known Vorgang costs its own lookup.
+    - Part does not: cached Vorgänge with no Sachgebiet yet are asked again on every run.
+    - **All-in, at most about 8 DIP requests per sitting** (145 / 18). For ~400 WP 18/19 sittings that is about **3,200 requests at most**, against ~10,000 before option B.
+  - **The catalog:** 4 requests.
+  - **None of the 18 target sittings failed.** The summary's 84 "not acquired" are the D2 exclusion list, by design.
+  - **Peak RSS was 2.5 GB**, against 1.45 GB on 2026-10-23. The 78k-entry Vorgang cache (50 MB) is likely the cause, and it is re-serialized after every sitting. Watch both for a ~400-sitting run.
+- **Checked against one-at-a-time answers.** 18/150, 18/154, 18/200 and 18/217 were acquired one at a time on 2026-10-19.
+  - **People:** the old 18/150 and 18/154 had lost 10 and 16 person lookups to DIP timeouts. The new ones have all of them: 42/42 and 66/66.
+  - **Drucksachen:** 18/200's TOP 1 and TOP 2 held the same entries in a different order. DIP's per-Vorgang order is not date, then position id: 153898 comes before 153790, and 159206 before 159203, each pair on the same day.
+- **DIP's order, found offline.**
+  - **Test set:** every one-at-a-time sequence in the pilot store, 1,609 Vorgänge with 2+ Drucksachen, mostly WP 20/21. They were compared against the staged positions.
+  - **Keys from the fields:** date, then id, reproduces 1,405. The best (position date, BR before BT, numeric number) reproduces 1,511.
+  - **DIP's bulk listing order** (oldest chunk first, DIP's order within a chunk) reproduces **1,599**, including all 100 sequences that fall in one chunk and all 32 WP 18/19 ones.
+  - **The 10 misses** are 4 WP 20 budget Vorgänge (Beschlussempfehlungen 20/8601 ff.), whose one-at-a-time order is not by date at all, so they cross chunks out of order.
+- **Fix (ba52438): grouping keeps the listing order.** The pilot cache was re-merged from staging. 2 DIP requests re-checked the WP totals, and the old cache was kept in `bulk-reference/vorgang-cache-date-id-order-20261025.json`.
+  - **Result:** 598 of 77,993 entries changed order, and none changed content.
+  - **Checks:** the 22 reference Vorgänge are identical, and so are all 40 one-at-a-time WP 18/19 Vorgänge in the older reports, ids and order.
+  - **What order changes downstream:** the display order of linked Drucksachen, and the first-seen order of `derive` document numbers. No value moved in any compared case.
+  - **The 18 bulk-backed pilot reports** were built before this fix, so up to 598 Vorgänge in them may show the old order. A re-run of those sittings costs about 70 DIP requests.
+- **Bulk requests per Wahlperiode** (`bulk-requests.log`, answered and failed attempts):
+
+| WP | Drucksachen | Persons |
+|---|---:|---:|
+| 17 (overlap only) | 514 | – |
+| 18 | 437 | 9 |
+| 19 | 786 | 10 |
+| 20 (overlap only) | 511 | – |
+
+- **Order reaches one value.** `politikfelder._vorgaenge_of_numbers` breaks ties by first-seen document number, and `derive.item_document_numbers` lists the linked Drucksachen in their stored order. So on the Drucksache fallback path, a different order can change which Politikfeld leads an agenda item.
+  - The listing order reproduces DIP for every WP 18/19 Vorgang tested (32 sequences, 40 report Vorgänge).
+  - **Residual risk:** budget-shaped Vorgänge like the 4 WP 20 misses surely exist in WP 18/19 too, and these small samples would not catch them.
+- **Phase 3 must reuse the bulk, not download it again.**
+  - Copy into Phase 3's output dir from `~/agent-runs/a3/pilot/data/`:
+    - `dip-vorgang-drucksachen-cache.json`;
+    - `dip-person-cache.json`;
+    - `dip-bulk/wp17` … `wp20`. Their `vorgaenge.json` and the staged chunks are what a re-merge and the overlap drops read.
+  - A fresh download would repeat about 2,250 requests.
+  - **The bulk persons expire 30 days after their fetch,** around 2026-11-23/24. Re-run `--persons` for WP 18 and 19 at the start of each backfill session (owner decision 2026-10-23).
+- **Open for the owner:**
+  - re-run the 18 bulk-backed pilot sittings (~70 DIP requests), so their reports carry the fixed order;
+  - Phase 3;
+  - the network/IP question (when the switch happened, and whether the runners may log the public IP);
+  - pushing the branch.
+- **Re-run of the 19 bulk-backed pilot sittings on the fixed order, 2026-10-25 21:09–21:21 UTC.** These are the 18 plus 19/238; owner go 2026-10-25.
+  - **Run:** exit 0, 714 s, peak RSS 2.66 GB.
+  - **DIP:** 100 requests, all answered, and no `/person/{id}`.
+    - 20 positions lists and 36 activity pages, about 3 per sitting.
+    - 41 `/vorgang` from the Politikfelder step and 3 catalog requests.
+    - All-in, about 5.3 per sitting.
+  - **Against the reports before the re-run** (`~/agent-runs/a3/rerun-before/`, checker `tools/compare_rerun.py`):
+    - 8 TOPs in 5 sittings changed link order only.
+    - Positions, activity counts, votes and people are unchanged everywhere except 19/238.
+    - 19/238's people are now complete: 84/84 records, where its first cycle had 72 of 84 failed lookups. Its warning is gone.
+  - **Against one-at-a-time answers:** the Drucksache links of 18/150, 18/154, 18/200 and 18/217 (2026-10-19) and of 19/238 (2026-10-23) are now **identical in ids and order**.
+  - **XML:** an online acquisition always fetches it, and only writes `data/xml/` afterwards. So the census copy `~/agent-runs/a3/wp18-19-xml/` saves no dserver request in Phase 3.

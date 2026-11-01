@@ -1,0 +1,88 @@
+diff --git a/scripts/derive.py b/scripts/derive.py
+index 2a62449..185613e 100644
+--- a/scripts/derive.py
++++ b/scripts/derive.py
+@@ -355,11 +355,14 @@ def member_profile_url(member: Mapping[str, Any]) -> str | None:
+ 
+ 
+ _UNSAFE_URL_CHARS = re.compile(r"[\\\s\x00-\x1f\x7f]")
++_REDIRECT_PATH = re.compile(r"/redirect/\d+")
+ 
+ 
+ def person_profile_url(url: Any) -> str | None:
+     """``url`` when it is a page about one person: an MdB biography on
+-    https on bundestag.de (``/abgeordnete/…``) or abgeordnetenwatch (``/profile/…``); else None.
++    https on bundestag.de (``/abgeordnete/…``, the WP 19 web archive
++    ``/webarchiv/abgeordnete/…``, or WP 18's ``/redirect/<person number>``, which
++    resolves to the archived biography) or abgeordnetenwatch (``/profile/…``); else None.
+     bundestag.de links an MP without a biography back to the Abstimmung itself
+     (77 rows on the reference cache); that page names nobody. A URL a browser
+     could read as another host (a backslash, user info, a port, whitespace or a
+@@ -374,7 +377,9 @@ def person_profile_url(url: Any) -> str | None:
+         return None
+     if parts.scheme != "https" or port is not None or parts.username is not None or parts.password is not None:
+         return None
+-    if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
++    if host in {"www.bundestag.de", "bundestag.de"} and (
++        parts.path.startswith(("/abgeordnete/", "/webarchiv/abgeordnete/")) or _REDIRECT_PATH.fullmatch(parts.path)
++    ):
+         return str(url)
+     if host in {"www.abgeordnetenwatch.de", "abgeordnetenwatch.de"} and parts.path.startswith("/profile/"):
+         return str(url)
+@@ -385,12 +390,14 @@ def vote_member_identity(member: Mapping[str, Any]) -> str:
+     """The identity key persist hands ``upsert_mp`` for a roll-call member, built
+     as ``persist_dip_pulse_store.mp_identity`` builds it from what a vote row
+     carries: a trusted abgeordnetenwatch id, else the profile URL, else name and
+-    Zusammenschluss. Merges the identity registry makes later are not seen here."""
++    Zusammenschluss. A web-archive link is shown but keys nothing: the WP 19
++    archive links one MdB under two person numbers (517852-517852 and
++    akbulut_goekay-857082). Merges the identity registry makes later are not seen here."""
+     aw_id = trusted_aw_id(member.get("abgeordnetenwatch"))
+     if aw_id:
+         return f"aw:{aw_id}"
+     profile_url = member_profile_url(member)
+-    if profile_url:
++    if profile_url and not urlsplit(profile_url).path.startswith("/webarchiv/"):
+         return f"profile:{profile_url}"
+     name = _clean(member.get("name")) or "Unbekannt"
+     return f"name-party:{name}|{zusammenschluss(member.get('faction')) or 'Unbekannt'}"
+diff --git a/tests/test_derive.py b/tests/test_derive.py
+index 2086046..df42fa2 100644
+--- a/tests/test_derive.py
++++ b/tests/test_derive.py
+@@ -137,6 +137,23 @@ class VoteAbweichlerTests(unittest.TestCase):
+         result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=1, no=1), fraction("AfD", no=2)]))
+         self.assertEqual({group: row["state"] for group, row in result.items()}, {"SPD": "partial", "AfD": "complete"})
+ 
++    # Value: protects=a WP 19 MdB whom the web archive links under two person numbers (517852-517852, akbulut_goekay-857082) is one member, keyed by name and party, and keeps a link; fails_when=an archive URL becomes the identity and splits ~450 WP 19 voters in two; why_new=Phase 3 step 5 (2026-10-28): pilot 1,176 WP 19 voter identities by URL against 761 by name+party; seam=none
++    def test_web_archive_links_are_shown_but_do_not_key_the_member(self) -> None:
++        archive = "https://www.bundestag.de/webarchiv/abgeordnete/biografien19/A/"
++        rows = [{**member("Akbulut, Gökay", "DIE LINKE", "no"), "profile_url": archive + "517852-517852?subview=na"},
++                {**member("Akbulut, Gökay", "DIE LINKE", "no"), "profile_url": archive + "akbulut_goekay-857082?subview=na"}]
++        self.assertEqual(derive.vote_member_identity(rows[0]), derive.vote_member_identity(rows[1]))
++        self.assertTrue(derive.vote_member_identity(rows[0]).startswith("name-party:"))
++        self.assertEqual(derive.member_profile_url(rows[1]), rows[1]["profile_url"])
++
++    # Value: protects=a WP 18 MdB's /redirect/<person number> link (it resolves to that person's biography, one number per person in the pilot) keys the member, so title variants ("Dr." / "Dr. Dr. h.c.") stay one voter; fails_when=the redirect is dropped and WP 18 voters fall back to name+party (639 -> 711 identities); why_new=Phase 3 step 5 (2026-10-28); seam=none
++    def test_a_wp18_redirect_link_keys_the_member(self) -> None:
++        link = "https://www.bundestag.de/redirect/258328?subview=na"
++        rows = [{**member(name, "CDU/CSU", "yes"), "profile_url": link}
++                for name in ("Fabritius, Dr. Bernd", "Fabritius, Dr. Dr. h.c. Bernd")]
++        self.assertEqual(derive.vote_member_identity(rows[0]), f"profile:{link}")
++        self.assertEqual(derive.vote_member_identity(rows[0]), derive.vote_member_identity(rows[1]))
++
+     def test_no_member_rows_at_all_is_none(self) -> None:
+         vote = json.loads((FIXTURES / "roll_call_1002.json").read_text(encoding="utf-8"))
+         result = derive.vote_abweichler(vote)
+@@ -340,6 +357,11 @@ class VoteMemberIdentityTests(unittest.TestCase):
+         for url, expected in (
+             ("https://www.bundestag.de/abgeordnete/biografien/A/abdi_sanae-861028?subview=na", True),
+             ("https://www.bundestag.de/abgeordnete/biografien20/A/x-1?subview=na", True),
++            # WP 18 roll calls link /redirect/<person number>; WP 19 the web archive (Phase 3 step 5).
++            ("https://www.bundestag.de/redirect/258124?subview=na", True),
++            ("https://www.bundestag.de/webarchiv/abgeordnete/biografien19/A/akbulut_goekay-857082?subview=na", True),
++            ("https://www.bundestag.de/redirect/parlament?subview=na", False),
++            ("https://www.bundestag.de/webarchiv/parlament/plenum/abstimmung/abstimmung?id=853", False),
+             ("https://www.abgeordnetenwatch.de/profile/ada-beispiel", True),
+             ("https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853", False),
+             ("https://evil.example/abgeordnete/x", False),

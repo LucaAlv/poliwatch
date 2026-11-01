@@ -36,6 +36,10 @@ USER_AGENT = "bundestag-pulse/1.0 (+https://www.abgeordnetenwatch.de/api)"
 # v2 adds biographical fields to cached profiles and a separate mandate (bio)
 # cache, so the v1 cache is rebuilt on first run after the upgrade.
 CACHE_VERSION = 2
+# The rule cached bios were picked by. 2: Bundestag mandates only (A3); a bio
+# picked by an older rule may hold a Landtag Wahlkreis and is fetched again,
+# while the profile lookups of the same cache stay.
+BIO_VERSION = 2
 
 # abgeordnetenwatch sits behind an nginx burst limiter (~12 quick requests before
 # it answers HTTP 429). A steady minimum interval between requests keeps us under
@@ -157,9 +161,17 @@ def _bundesland_from_list_label(label: Any) -> str | None:
     return (match.group(1).strip() if match else None) or None
 
 
+def _is_bundestag_mandate(mandate: dict[str, Any]) -> bool:
+    label = str((mandate.get("parliament_period") or {}).get("label") or "")
+    return label.startswith("Bundestag")
+
+
 def _bio_from_mandates(mandates: list[dict[str, Any]] | None) -> dict[str, Any]:
-    """Pick the most recent mandate and extract Wahlkreis + Bundesland."""
+    """Pick the most recent Bundestag mandate and extract Wahlkreis +
+    Bundesland. A Landtag or EU mandate never supplies them: a former MdB who
+    moved to a Landtag keeps the Bundestag Wahlkreis."""
     bio: dict[str, Any] = {"wahlkreis": None, "bundesland": None}
+    mandates = [mandate for mandate in mandates or [] if _is_bundestag_mandate(mandate)]
     if not mandates:
         return bio
     # The latest legislative period carries the highest parliament_period id.
@@ -221,7 +233,7 @@ class AbgeordnetenwatchResolver:
             return
         self._by_ext_id = dict(data.get("by_ext_id") or {})
         self._by_name = dict(data.get("by_name") or {})
-        self._by_bio = dict(data.get("by_bio") or {})
+        self._by_bio = dict(data.get("by_bio") or {}) if data.get("bio_version") == BIO_VERSION else {}
 
     def save(self) -> None:
         if not self.cache_path or not self._dirty:
@@ -229,6 +241,7 @@ class AbgeordnetenwatchResolver:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "version": CACHE_VERSION,
+            "bio_version": BIO_VERSION,
             "by_ext_id": self._by_ext_id,
             "by_name": self._by_name,
             "by_bio": self._by_bio,

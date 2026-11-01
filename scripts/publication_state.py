@@ -29,6 +29,7 @@ SOURCE_IDS = {
 }
 FAILURE_CODES = {
     "source_unavailable",
+    "excluded",
     "provider_timeout",
     "invalid_payload",
     "invalid_citations",
@@ -354,7 +355,8 @@ DENYLIST = {
     "developer-feature": re.compile(r"data-(?:feature-)?dev-view"),
     "retired-feature-state": re.compile(r"data-feature(?:-|=)"),
     "file-url": re.compile(r"file://", re.IGNORECASE),
-    "local-path": re.compile(r"(?:/Users/|/home/|[A-Za-z]:\\\\Users\\\\)"),
+    # Not after a word, dot or hyphen: www.sr.de/sr/home/... in a quoted speech is a URL, not a path.
+    "local-path": re.compile(r"(?:(?<![\w.-])(?:/Users/|/home/)|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)"),
     "raw-payload": re.compile(r'"(?:raw_api_response|build_command)"\s*:'),
 }
 

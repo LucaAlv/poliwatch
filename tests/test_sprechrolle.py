@@ -177,6 +177,19 @@ class RoleTableTests(unittest.TestCase):
             derive.sprechrolle({"role": "Präsident des Bundesrates"})
         self.assertIsNone(derive.sprechrolle({"role": "Präsident des Bundesrates"}, strict=False))
 
+    # Value (A3 pilot census, docs/plans/a3-pilot.md): protects=the 19/100 typo counts for the
+    # Bundesregierung, while presidium roles stay unmapped (they mark Sitzungsleitung inside
+    # another Rede in WP 18/19 XML; how to count them is open, so nothing is guessed);
+    # fails_when=the typo is unmapped or a presidium role is silently given a side;
+    # seam=derive.side_of_role.
+    def test_the_wp18_19_roles_of_the_pilot_census(self) -> None:
+        for role in ("Präsident", "Vizepräsidentin", "Alterspräsident"):
+            with self.subTest(role):
+                self.assertIsNone(derive.side_of_role(role))
+        # 19/100 Karliczek: the XML splits the first letter off.
+        self.assertEqual(derive.side_of_role("B undesministerin für Bildung und Forschung"), "bundesregierung")
+        self.assertIsNone(derive.side_of_role("Präsident des Bundesrates"))
+
     def test_a_land_in_brackets_is_the_bundesrat_even_for_a_staatsminister(self) -> None:
         self.assertEqual(derive.side_of_role("Staatsminister (Hessen)"), "bundesrat")
         self.assertEqual(derive.side_of_role("Staatsminister beim Bundeskanzler"), "bundesregierung")

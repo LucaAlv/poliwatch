@@ -157,5 +157,19 @@ class OfflineAuditCliTests(unittest.TestCase):
                     self.assertIsNone(report["baseline_accepted"])
 
 
+class AuditSeesTheRedenTheParserSees(unittest.TestCase):
+    # Value: protects=the offline audit reports the turns of a WP 18/19 sitting under the Reden the parser builds (a Rede printed inside another is its own Rede), so a counting comparison does not abort; fails_when=audit() stops splitting nested Reden before looking up turns (18-70 then aborts on the split Rede id; verified by removing the hunk); why_new=the existing audit tests use flat XML with no nested Rede; seam=none; no_claim=role-less chair marking in audit (18-100 passes without it) and the parser's own classification, which test_a3_rule5 covers
+    def audit(self, stem):
+        return audit_offline_turns.audit(dip, _support.FIXTURES / "a3-rule5" / f"{stem}.xml")
+
+    def turns(self, result):
+        return [(t["source_rede_id"], t["marker_ordinal"], t["treatment"], t["target_rede_id"]) for t in result["turns"]]
+
+    def test_a_rede_printed_inside_another_is_audited_under_its_own_id(self):
+        result = self.audit("18-70")
+        self.assertTrue(result["accepted"])
+        self.assertEqual(self.turns(result), [("ID1807005100:2", 3, "zwischenfrage", "nested:ID1807005100:2:3")])
+
+
 if __name__ == "__main__":
     unittest.main()

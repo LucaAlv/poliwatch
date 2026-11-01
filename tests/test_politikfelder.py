@@ -62,6 +62,10 @@ DIP_SACHGEBIETE = (
 EINZELPLAENE_IN_THE_CACHE = (
     [("20", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 21 22 23 25 30 32 60".split()]
     + [("21", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 21 22 23 24 25 30 32 60".split()]
+    # The Einzelplan headings of the budget weeks 18/68-71 (Nov 2014) and 19/63-66
+    # (Nov 2018), A3 pilot census (docs/plans/a3-pilot.md).
+    + [("18", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 23 30 32 60".split()]
+    + [("19", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 21 23 30 32 60".split()]
 )
 
 
@@ -118,7 +122,7 @@ class ClosedListTests(unittest.TestCase):
 
     def test_every_einzelplan_of_the_real_store_is_mapped(self) -> None:
         data = Path(__file__).resolve().parent.parent / ".context" / "dip-pulse-site" / "data"
-        reports = sorted(data.glob("plenarprotokoll-2*.json"))
+        reports = sorted(path for path in data.glob("plenarprotokoll-*.json") if path.name != "plenarprotokoll-catalog.json")
         if not reports:
             self.skipTest("no cached store in this checkout")
         seen = set()

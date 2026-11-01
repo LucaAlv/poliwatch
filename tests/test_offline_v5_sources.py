@@ -75,6 +75,15 @@ def source_markers(sitting, rede_id):
     return markers
 
 
+def unit_paragraphs(sitting, agenda, source_id, marker):
+    """A Zwischenfrage unit's source paragraphs: its own marker's, then those of
+    the same asker's later markers merged into it (one unit per exchange)."""
+    merged = [d["marker_ordinal"] for d in agenda["xml_turn_diagnostics"]
+              if d["treatment"] == "merged_zwischenfrage" and d.get("target_rede_id") == f"nested:{source_id}:{marker}"]
+    markers = source_markers(sitting, source_id)
+    return [p for m in [marker, *merged] for p in markers[m - 1]["paragraphs"]]
+
+
 def assert_counts(test, unit):
     test.assertEqual(unit["text"], " ".join(unit["paragraphs"]))
     test.assertEqual(unit["paragraph_count"], len(unit["paragraphs"]))
@@ -94,7 +103,7 @@ class OfflineV5SourceTests(unittest.TestCase):
     def test_extra_named_markers_keep_their_native_nested_speaker(self):
         cases = {
             "20-136": [("ID2013612000", 3, "11004159")],
-            "20-28": [("ID202810900", 3, "11004395"), ("ID202810900", 5, "11004395")],
+            "20-28": [("ID202810900", 3, "11004395")],
             "20-86": [("ID208602900", 3, "11004116")],
             "20-44": [("ID204403100", 3, "11003578")],
         }
@@ -148,7 +157,7 @@ class OfflineV5SourceTests(unittest.TestCase):
                         self.assertEqual(unit["kind"], "zwischenfrage")
                         self.assertEqual(unit["speaker"], source["speaker"])
                         self.assertEqual(unit["speaker"]["xml_redner_id"], source["speaker_id"])
-                        self.assertEqual(unit["paragraphs"], source["paragraphs"])
+                        self.assertEqual(unit["paragraphs"], unit_paragraphs(sitting, agenda, source_id, marker))
                         assert_counts(self, unit)
                         occurrence_id = contribution_occurrence_id(
                             f"offline-v5:{sitting}", agenda["index"], unit["sequence"], unit["rede_id"])
@@ -263,7 +272,7 @@ class OfflineV5SourceTests(unittest.TestCase):
             ("20-113", "ID2011305000", 3, "procedural"),
             ("20-119", "ID2011904400", 5, "zwischenfrage"),
             ("20-144", "ID2014405100", 3, "zwischenfrage"),
-            ("20-144", "ID2014405100", 4, "zwischenfrage"),
+            ("20-144", "ID2014405100", 4, "merged_zwischenfrage"),
             ("20-191", "ID2019101000", 2, "procedural"),
             ("20-208", "ID2020801600", 3, "zwischenfrage"),
             ("20-51", "ID205104600", 4, "zwischenfrage"),
@@ -274,9 +283,9 @@ class OfflineV5SourceTests(unittest.TestCase):
             ("21-47", "ID214708400", 3, "zwischenfrage"),
             ("21-47", "ID214708400", 5, "zwischenfrage"),
             ("21-56", "ID215612200", 4, "zwischenfrage"),
-            ("21-56", "ID215612200", 5, "zwischenfrage"),
-            ("21-56", "ID215612200", 6, "zwischenfrage"),
-            ("21-56", "ID215612200", 7, "zwischenfrage"),
+            ("21-56", "ID215612200", 5, "merged_zwischenfrage"),
+            ("21-56", "ID215612200", 6, "merged_zwischenfrage"),
+            ("21-56", "ID215612200", 7, "merged_zwischenfrage"),
             ("21-93", "ID219311800", 5, "zwischenfrage"),
             ("21-93", "ID219311800", 8, "zwischenfrage"),
         ]
@@ -299,7 +308,7 @@ class OfflineV5SourceTests(unittest.TestCase):
                 diagnostics = [d for d in item["xml_turn_diagnostics"]
                                if d.get("source_rede_id") == source_id and d.get("marker_ordinal") == marker]
                 self.assertEqual(len(nested) + len(diagnostics), 1)
-                if treatment == "procedural":
+                if treatment in ("procedural", "merged_zwischenfrage"):
                     diagnostic = diagnostics[0]
                     self.assertEqual(diagnostic["treatment"], treatment)
                     self.assertEqual(diagnostic["speaker"], source["speaker"])
@@ -312,10 +321,8 @@ class OfflineV5SourceTests(unittest.TestCase):
                 self.assertEqual(unit["speaker"], source["speaker"])
                 self.assertEqual(unit["parent_rede_id"], source_id)
                 self.assertEqual(unit["speaker"]["xml_redner_id"], source["speaker_id"])
-                self.assertEqual(unit["paragraphs"], source["paragraphs"])
-                self.assertEqual(unit["text"], text)
+                self.assertEqual(unit["paragraphs"], unit_paragraphs(sitting, item, source_id, marker))
                 assert_counts(self, unit)
-                self.assertEqual(len(unit["text"]), len(text))
                 occurrence_id = contribution_occurrence_id(
                     f"offline-v5:{sitting}", item["index"], unit["sequence"], unit["rede_id"])
                 self.assertEqual(unit["rede_id"], f"nested:{source_id}:{marker}")
