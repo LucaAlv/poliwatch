@@ -540,6 +540,38 @@ class FollowUpReleaseTests(ReleaseTestCase):
         self.assertIn("Endergebnis", (release / "CHANGES.md").read_text(encoding="utf-8"))
         self.assert_nothing_dangerous_ran()
 
+    # Value: protects=the release that follows an export-format bump accepts the older previous manifest and reports the format change in its changelog, while a previous manifest with unusable counts is refused naming the field; fails_when=previous_manifest_problem demands the current export format (the first release after any bump is refused), lets a boolean or text total_rows through, or lets a votes block without members through; why_new=the shapeless-file row only pins the first message of a manifest that is wrong everywhere; seam=main with a previous datenstand.json file; no_claim=changelog rules (tested in test_release_changes)
+    def test_an_older_format_previous_manifest_is_usable_and_unusable_counts_are_named(self) -> None:
+        def previous_with(**changes) -> str:
+            path = self.work / "previous-variant.json"
+            path.write_text(json.dumps({**self.manifest, "tag": "2026.10.01", **changes}), encoding="utf-8")
+            return str(path)
+
+        refusals = (
+            ("protocols without count", {"protocols": {"first": "21/1"}}, "protocols needs count"),
+            ("votes without members", {"votes": {"count": 1}}, "votes needs count/members"),
+            ("boolean total_rows", {"total_rows": True}, "total_rows is not an integer"),
+            ("text total_rows", {"total_rows": "12"}, "total_rows is not an integer"),
+        )
+        for label, changes, fragment in refusals:
+            with self.subTest(label):
+                code, _, stderr = self.run_script("--previous-manifest", previous_with(**changes), "--changes", str(self.work / "unused.json"))
+                self.assert_refused(code, stderr, "is not a usable datenstand.json", fragment)
+        older = previous_with(export_format=self.manifest["export_format"] - 1, schema_hash="0" * 64)
+        code, _, stderr = self.run_script("--previous-manifest", older, "--changes", self.write_changes({"summary": "Formatwechsel."}))
+        self.assert_refused(code, stderr, "the schema changed since 2026.10.01", "export_format")
+        changes = {"summary": "Formatwechsel.", "schema_changes": [{"table": "votes", "column": None, "change": "added", "description": "Neue Tabelle."}]}
+        code, _, stderr = self.run_script("--previous-manifest", older, "--changes", self.write_changes(changes))
+        self.assertEqual(code, 0, stderr)
+        result = json.loads((self.out / f"data-{VERSION}" / "changes.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["previous_version"], "2026.10.01")
+        self.assertEqual(result["schema_changes"][0]["description"], "Neue Tabelle.")
+
+    def write_changes(self, content: dict) -> str:
+        path = self.work / "changes-variant.json"
+        path.write_text(json.dumps(content), encoding="utf-8")
+        return str(path)
+
 
 if __name__ == "__main__":
     unittest.main()

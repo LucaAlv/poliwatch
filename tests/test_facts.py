@@ -2564,6 +2564,13 @@ class PageTests(StoreCase):
         # week falls outside it.
         self.assertNotIn("2025-W03", series)
 
+    # Value: protects=a Fakt-Woche page ends in the Impressum/Datenschutz links with the "../" prefix of its fakt/ directory; fails_when=render_facts_week loses the legal span or links impressum.html relative to fakt/ (a 404 from every week page); why_new=the demo build posts no Fakt, so test_demo_site never renders a week page and no other test asserts this footer; seam=write_facts_pages; no_claim=the archive and Methodik footers, which the demo build covers
+    def test_a_week_page_links_the_legal_pages_one_directory_up(self) -> None:
+        output_dir, _ = self.write_pages(week_specs(9))
+        footer = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8").split("<footer")[-1]
+        self.assertIn('<span class="legal-links"><a href="../impressum.html">Impressum</a>', footer)
+        self.assertIn('<a href="../datenschutz.html">Datenschutz</a>', footer)
+
     def test_the_archive_links_a_posted_cell_to_its_week_page_anchor(self) -> None:
         output_dir, _ = self.write_pages(week_specs(9))
         archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
