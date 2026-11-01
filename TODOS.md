@@ -776,6 +776,16 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** Vote outcome badge
 
+### Impressum/licence build: deferred polish (2026-11-01)
+
+**What:** Non-correctness findings from building `docs/plans/impressum-datenschutz-licence.md`: (1) the Datenschutz drift test reads localStorage keys only from `page_head()`/`page_scripts()`; a key written by a page-specific inline script (dossier runtime, Fakt pages) would slip past, so scan the built HTML for `localStorage`/`sessionStorage`/`document.cookie` instead. (2) In the placeholder state the legal pages show doubled punctuation („Angabe folgt.., Anschrift wie oben“); gone once the operator file is complete. (3) On `sources.html#lizenz` the row labels of the licence table inherit the page's uppercase table-header style. (4) The D5 footer comparison covers the 16 pages the demo builds; Abgeordnete detail, Fakt week/month and bill detail footers are checked only by the reference-store footer walk, not by a unit test.
+
+**Why:** Deferred under the CLAUDE.md fix-now-or-defer rule: none changes what a page says today.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Impressum, Datenschutz and licence files before the site goes public
 
 **What:** Implement [ADR 0003](docs/adr/0003-licences-and-impressum.md):
