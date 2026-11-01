@@ -11,6 +11,8 @@ The bug classes `/gstack-ship` kept finding between v0.6 and v0.26 after earlier
 
 Done means every class below is either answered for this diff, with the file and line that answers it, or marked not touched by the diff. A class answered "probably fine" is not answered.
 
+**Small diffs** (under 200 changed lines in `git diff --shortstat`, red team's own threshold) answer only the classes whose trigger the diff hits, with no list of untouched ones, and skip the adversarial lenses below. A diff that changes only documentation answers class 11 alone. Ship's small-fix runs have logged no findings, so the full pass there costs more than it finds.
+
 ## Diff classes
 
 1. **Sibling path.** A new guard, refusal or invariant was added to one entry point. Grep every other caller and write path that reaches the same state, and state why each is covered: online, `--offline`, `--no-persist`, `--repersist`, facts engine, release script. _Example: `run_facts_engine` skipped the distribution-copy refusal that `persist_dip_pulse_store.connect` applies (PR #91)._
@@ -47,7 +49,7 @@ Run these before `/gstack-ship` whenever the diff can reach them:
 - **Fresh vs incremental:** a from-scratch build and an incremental build give identical CSVs and pages.
 - **Inline JS and layout:** open the page in a browser and click through it, at 375px and in dark mode. String-assertion tests missed that a running smooth scroll made Chrome drop 13 of 17 rapid sidebar clicks; a live DevTools check caught it (PR #72).
 - **Python patch level:** html.parser behaviour changed in 2025 patch releases. Local `python3` (the miniconda 3.13.2 AGENTS.md names) predates them; CI installs the newest patch of 3.11, 3.12 and 3.13. Run the suite on a current 3.13 patch too: `uv run --python 3.13.12 python -m unittest discover -s tests`, raising the patch when CI's setup-python step reports a newer one.
-- **Adversarial lenses:** red team and a Codex review find most of ship's critical findings; run both on the branch before ship. Codex: `/gstack-codex review`. Red team: `/gstack-review` dispatches it for diffs over 200 lines or after a CRITICAL security finding; otherwise give a subagent `~/.claude/skills/gstack/review/specialists/red-team.md` as its prompt, plus the diff command and the commit list.
+- **Adversarial lenses:** red team and a Codex review find most of ship's critical findings. Ship runs both again in its own review and never accepts an earlier run in their place, so a run before ship pays only where it saves ship a fix cycle: run both once on the tip you hand to ship, for diffs of 200 changed lines or more, and not again after each fix. Codex: `/gstack-codex review`. Red team: `/gstack-review` dispatches it for diffs over 200 lines or after a CRITICAL security finding; otherwise give a subagent `~/.claude/skills/gstack/review/specialists/red-team.md` as its prompt, plus the diff command and the commit list.
 
 ## Settled, do not re-file
 
