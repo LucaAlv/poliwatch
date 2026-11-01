@@ -3298,18 +3298,44 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
-            "       CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
-            "                          WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
-            "                          ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
-            "       COUNT(*) AS reden,\n"
-            "       ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
+            "WITH sitting AS (\n"
+            "  SELECT DISTINCT " + _wahlperiode_sql("p") + " AS wahlperiode, p.date FROM protocols p\n"
+            "),\n"
+            "daily AS (\n"
+            "  SELECT si.wahlperiode, si.date, pa.name AS fraktion, ps.seats\n"
+            "  FROM sitting si\n"
+            "  JOIN party_seats ps ON ps.wahlperiode = si.wahlperiode AND ps.valid_from <= si.date\n"
+            "                     AND (ps.valid_until IS NULL OR si.date < ps.valid_until)\n"
+            "  JOIN parties pa ON pa.id = ps.party_id\n"
+            "),\n"
+            "complete AS (\n"
+            "  SELECT d.wahlperiode, SUM(d.seats) AS seat_days FROM daily d GROUP BY d.wahlperiode\n"
+            "  HAVING COUNT(DISTINCT d.date) = (SELECT COUNT(*) FROM sitting si WHERE si.wahlperiode = d.wahlperiode)\n"
+            "),\n"
+            "seat_share AS (\n"
+            "  SELECT d.wahlperiode AS seat_wahlperiode, d.fraktion AS seat_fraktion, 100.0 * SUM(d.seats) / c.seat_days AS sitzanteil\n"
+            "  FROM daily d JOIN complete c ON c.wahlperiode = d.wahlperiode\n"
+            "  GROUP BY d.wahlperiode, d.fraktion, c.seat_days\n"
+            "),\n"
+            "speech_share AS (\n"
+            "  SELECT " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
+            "         CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
+            "                            WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
+            "                            ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
+            "         COUNT(*) AS reden,\n"
+            "         ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
             + _wahlperiode_sql("p") + "), 1) AS anteil_prozent\n"
-            "FROM speeches s\n"
-            "JOIN protocols p ON p.id = s.protocol_id\n"
-            "JOIN mps m ON m.id = s.mp_id\n"
-            "LEFT JOIN parties pa ON pa.id = m.party_id\n"
-            "GROUP BY 1, 2\n"
+            "  FROM speeches s\n"
+            "  JOIN protocols p ON p.id = s.protocol_id\n"
+            "  JOIN mps m ON m.id = s.mp_id\n"
+            "  LEFT JOIN parties pa ON pa.id = m.party_id\n"
+            "  GROUP BY 1, 2\n"
+            ")\n"
+            "SELECT r.wahlperiode, r.fraktion, r.reden, r.anteil_prozent,\n"
+            "       CASE WHEN r.fraktion NOT IN ('Bundesregierung', 'Bundesrat', 'weitere Sprechrolle')\n"
+            "            THEN ROUND(ss.sitzanteil, 1) END AS sitzanteil_prozent\n"
+            "FROM speech_share r\n"
+            "LEFT JOIN seat_share ss ON ss.seat_wahlperiode = r.wahlperiode AND ss.seat_fraktion = r.fraktion\n"
             "ORDER BY wahlperiode DESC, reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
@@ -3318,7 +3344,15 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "fraktion", "meaning": "Gruppe der Rede: Bundesregierung, Bundesrat oder weitere Sprechrolle nach speeches.sprechrolle, sonst speeches.fraktion, ersatzweise die Partei der Redneraufzeichnung.", "align": "text"},
             {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe in dieser Wahlperiode mit Redneraufzeichnung.", "align": "num"},
             {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an den Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle.", "align": "num"},
+            {"name": "sitzanteil_prozent", "meaning": (
+                "Mittlerer Sitzanteil des Zusammenschlusses (oder der Fraktionslosen) über die Sitzungstage der "
+                "Wahlperiode im Store: Summe seiner Sitze an diesen Tagen (party_seats) geteilt durch die Summe aller "
+                "Sitze an denselben Tagen, Prozent mit einer Nachkommastelle. An Tagen ohne Sitz zählt er 0. Leer "
+                "für Sprechrollen, für Gruppen ohne Sitzzahl und für eine Wahlperiode, in der an einem Sitzungstag "
+                "keine Sitzzahl vorliegt."
+            ), "align": "num"},
         ),
+        "seat_caveat": True,
         "depends_on": None,
         "caveat": (
             "Anteile je Wahlperiode, die jüngste zuerst: Fraktionen gleichen Namens aus verschiedenen Wahlperioden "
@@ -3328,8 +3362,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
         ),
         "method": (
             "Der Nenner ist je Wahlperiode SUM(char_count) über dieselben Reden, die gezählt werden: Reden mit "
-            "Redneraufzeichnung in mps (innerer Join). Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann "
-            "Gruppenname. " + _WP_LIMIT_METHOD
+            "Redneraufzeichnung in mps (innerer Join). Der Sitzanteil mittelt über alle Sitzungstage der Wahlperiode "
+            "im Store (verschiedene protocols.date), dieselben Sitzungen mit Dossier, aus denen die Reden stammen; "
+            "die Sitze eines Tages sind die party_seats-Zeilen derselben Wahlperiode, die ihn abdecken. Der Nenner "
+            "enthält alle Zusammenschlüsse mit Sitzen und die Fraktionslosen, auch ohne Rede, sodass die gezeigten "
+            "Sitzanteile zusammen weniger als 100 % ergeben können. Ein Zusammenschluss, den es nur einen Teil der "
+            "Wahlperiode gab, zählt an den übrigen Tagen 0: Sein Wert ist der Mittelwert über die ganze Wahlperiode, "
+            "nicht sein Anteil, solange er bestand. Die Gruppe wird über den Namen zugeordnet (parties.name). "
+            "Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann Gruppenname. " + _WP_LIMIT_METHOD
         ),
     },
     {
@@ -3475,6 +3515,29 @@ RECIPES: tuple[dict[str, Any], ...] = (
 )
 RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
 
+
+def stammdaten_stand_day(source: Mapping[str, Any]) -> str:
+    """The Stand of the manifest's ``stammdaten`` as TT.MM.JJJJ (UTC)."""
+    return f"{datetime.fromisoformat(source['stand']).astimezone(timezone.utc):%d.%m.%Y}"
+
+
+def recipe_caveat(recipe: Mapping[str, Any], source: Mapping[str, Any] | None) -> str | None:
+    """The caveat a recipe is published with. A recipe with seat figures adds
+    the MdB-Stammdaten's Stand and that later sittings carry the composition at
+    the Stand forward (C1 D6 (a)), or that it has no seats without the file.
+    The export writes it to the manifest and DATA.md, and the Daten page builds
+    it here from the manifest's ``stammdaten``, so the two never disagree."""
+    caveat = recipe.get("caveat")
+    if not recipe.get("seat_caveat"):
+        return caveat
+    if source:
+        seats = (f"Sitzanteile aus den MdB-Stammdaten, Stand {stammdaten_stand_day(source)}: Spätere Wechsel "
+                 "fehlen dort, daher gilt für spätere Sitzungstage die Zusammensetzung am Stand.")
+    else:
+        seats = "sitzanteil_prozent ist leer: keine MdB-Stammdaten geladen."
+    return " ".join(part for part in (caveat, seats) if part)
+
+
 _NUMBER_WORDS = ("null", "eine", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf")
 
 
@@ -3510,6 +3573,7 @@ def _recipes_hash(recipes: tuple[dict[str, Any], ...]) -> str:
             "title": recipe["title"],
             "sql": recipe["sql"],
             "caveat": recipe.get("caveat"),
+            "seat_caveat": bool(recipe.get("seat_caveat")),
             "method": recipe.get("method"),
             "depends_on": recipe.get("depends_on"),
             "columns": [{"name": column["name"], "meaning": column["meaning"]} for column in recipe["columns"]],
@@ -4491,6 +4555,8 @@ def _run_export(
         ]
         _check_license_layers(manifest_tables, dictionary)
 
+        stammdaten_row = snapshot_conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+        stammdaten_source = {"stand": stammdaten_row["stand"], "sha256": stammdaten_row["sha256"]} if stammdaten_row else None
         recipe_rows: list[dict[str, Any]] = []
         for recipe in recipes:
             try:
@@ -4527,7 +4593,7 @@ def _run_export(
                     "sql": recipe["sql"],
                     "columns": columns,
                     "column_definitions": {name: definitions[name] for name in columns},
-                    "caveat": recipe.get("caveat"),
+                    "caveat": recipe_caveat(recipe, stammdaten_source),
                     "method": recipe.get("method"),
                     "file": csv_name,
                     "rows": rows,
@@ -4536,7 +4602,6 @@ def _run_export(
             )
 
         protocols_count = int(snapshot_conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0])
-        stammdaten_row = snapshot_conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
         first_protocol = snapshot_conn.execute(
             "SELECT document_number, date FROM protocols ORDER BY date ASC, document_number ASC LIMIT 1"
         ).fetchone()
@@ -4587,7 +4652,7 @@ def _run_export(
             "to": last_protocol["date"] if last_protocol else None,
         },
         # The MdB-Stammdaten file the seat tables come from; None without one (C1).
-        "stammdaten": {"stand": stammdaten_row["stand"], "sha256": stammdaten_row["sha256"]} if stammdaten_row else None,
+        "stammdaten": stammdaten_source,
         "tables": manifest_tables,
         "relationships": relationships_count,
         "total_rows": total_rows,
@@ -4771,8 +4836,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
     source = manifest.get("stammdaten")
     if source:
-        stand = datetime.fromisoformat(source["stand"]).astimezone(timezone.utc)
-        stammdaten_line = (f"Sitzzahlen: MdB-Stammdaten des Bundestages, Stand {stand:%d.%m.%Y} &middot; sha256 "
+        stammdaten_line = (f"Sitzzahlen: MdB-Stammdaten des Bundestages, Stand {stammdaten_stand_day(source)} &middot; sha256 "
                            f"<code>{pulse_html.esc(source['sha256'])}</code>")
     else:
         stammdaten_line = "Sitzzahlen: keine (MdB-Stammdaten nicht geladen)"
@@ -4865,7 +4929,8 @@ def render_daten_recipes(
                 </table>
               </div>
             """
-        caveat = f'<p class="caveat">{pulse_html.esc(recipe.get("caveat"))}</p>' if recipe.get("caveat") else ""
+        caveat_text = recipe_caveat(recipe, manifest.get("stammdaten"))
+        caveat = f'<p class="caveat">{pulse_html.esc(caveat_text)}</p>' if caveat_text else ""
         title_id = f"recipe-{pulse_html.esc(recipe_row['id'])}-title"
         csv_link = (
             f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, recipe_row["file"]))}">Ergebnis als CSV</a></p>'

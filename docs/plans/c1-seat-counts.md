@@ -168,6 +168,7 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
    - The replay test.
    - A new test: the column sums to 100 over the groups with seats in each WP, and is NULL for the Sprechrollen.
    - Re-check `tests/test_daten_export.py:34, 1299, 1340, 1433` and `tests/test_sprechrolle.py:266`.
+   - Done (2026-11-01), see "Step 7 result".
 8. **Docs and TODOS.**
    - README and `docs/stable-ids.md`: schema 9, export format 12 (done in steps 3 and 4; recheck only).
    - `docs/data-methods.md`: add R2's `sitzanteil_prozent` only (the seat section is step 6's).
@@ -470,6 +471,72 @@ Step 3 had already brought most of the export forward. Step 6 adds the three pie
     - E4 spans WP 19 and 20 (`docs/source-errors.md`, votes 756–757).
 12. **Loop cost.** Not touched.
 13. **Last commit.** The wording fixes (E4's WPs, the size-check clause) were made before the test run.
+
+## Step 7 result (2026-11-01)
+
+R2 has the column `sitzanteil_prozent` and the D6 caveat line. Both were built test-first.
+
+**What changed**
+- **SQL.** R2 is now a CTE query, still ending in `LIMIT 5;` and still ordered `wahlperiode DESC, reden DESC, fraktion`, so the tests that rewrite the limit still apply.
+  - `sitting`: the distinct `(wahlperiode, protocols.date)` pairs in the store, which are the same Sitzungen mit Dossier the Reden come from.
+  - `daily`: the `party_seats` rows covering each sitting date under the lookup rule, keyed by the date's own WP.
+  - `complete`: the WPs that have a seat count on every sitting date, with their summed seat-days.
+  - `seat_share`: 100 × the group's seat-days ÷ the WP's seat-days. Mean seats over mean size is the same ratio.
+  - The old query becomes `speech_share`. The two join on WP and on the name (`parties.name` = R2's label), with the seat side's columns renamed to avoid an ambiguous `ORDER BY`.
+- **NULL cases:**
+  - the Sprechrollen, explicitly by label;
+  - labels without seat rows (`Unbekannt`, NULL, stray names);
+  - every row of a WP in which one sitting date has no seat count. The alternative, averaging over the covered dates, would quietly change the base.
+- **Days with no seat:** a group counts 0 on them, so WP 20 "Die Linke" and the Gruppen show whole-WP means. The column meaning and the method say this.
+- **The denominator** is every seated group, fraktionslos included, whether or not it has a Rede.
+- **Caveat (D6).** `recipe_caveat(recipe, manifest["stammdaten"])` adds one line to a recipe flagged `seat_caveat`:
+  - with a file: "Sitzanteile aus den MdB-Stammdaten, Stand TT.MM.JJJJ: Spätere Wechsel fehlen dort, daher gilt für spätere Sitzungstage die Zusammensetzung am Stand.";
+  - without one: "sitzanteil_prozent ist leer: keine MdB-Stammdaten geladen."
+- **Where the caveat is used.** The export writes it to the manifest and DATA.md, and the Daten page builds it with the same function from the manifest's `stammdaten`. Until now the page read the static `RECIPES` caveat. `stammdaten_stand_day` is shared with the Datenstand line. `_recipes_hash` includes the flag; the generation also changes with the Stand through the store's sha256.
+- **`export_distribution_data`** reads the Stand before the recipes. The local is named `stammdaten_source`, because `stammdaten` would shadow the module.
+
+**Tests** (`tests/test_daten_export.py`, on the step 6 fixture)
+- **Mean share:** SPD 50.0 and CDU/CSU 37.5. A denominator of only R2's groups would give 57.1/42.9. With a fraktionslos Rede added, the three are 50.0 + 37.5 + 12.5 = 100.
+- **Carry-forward:** a sitting on 2024-07-03, after the Stand, counts with the open rows: 41.7 / 41.7 / 16.7. A WP 20 sitting before the first Mandat empties the whole WP's column.
+- **Sprechrolle:** a Bundesregierung Rede gets NULL, while SPD and CDU/CSU keep 50.0 and 37.5. `test_sprechrolle`'s store has no seats, so it could not tell.
+- **Caveat:** the Stand line and the no-file line, the same text in the manifest, DATA.md and the Daten page.
+- **Per-WP pin:** the existing per-WP test now also pins WP 18 (no Stammdaten) as NULL and WP 20 as 50.0.
+- **Rechecked and unchanged:** the `LIMIT 5` → `LIMIT 4` rewrites (`_r2_limited_to_4` and its siblings), `test_sprechrolle`'s `removesuffix("LIMIT 5;")`, and the CSV replay test, which replays the new column too.
+- **Full suite:** 1976 tests, OK (2 skipped).
+
+**Real-data check (not the step 9 gate).** The real Stammdaten file was run through `seat_rows` into a temp table, and the recipe SQL ran against the A3 reference store's protocols, speeches, mps and parties (read-only). The script is `r2_real.py` in this session's scratchpad.
+- Every WP is complete, and every party name resolves to an existing `parties` row.
+- The WP shares sum to 100.
+- WP 21 CDU/CSU is 33.0 (208/630), and WP 18 CDU/CSU is 49.2 (311/631).
+- WP 20: SPD 28.1, CDU/CSU 26.8, Grüne 16.0, FDP 12.5, AfD 10.6, Die Linke 3.5 (39 seats until 2023-12-06, then 0), Gruppe Die Linke 1.1, fraktionslos 1.0, Gruppe BSW 0.4.
+
+Step 9 should reproduce these through the build.
+
+**Figures.** No existing value moves. R2 gains one column, and its caveat gains one line. `reden` and `anteil_prozent` are computed exactly as before.
+
+**Left open**
+- `validate_manifest` does not check the `stammdaten` key's shape. A published override manifest with a malformed `stand` would make `stammdaten_stand_day` raise on the Daten page. This dates from step 4's Datenstand line, and no current input reaches it: the export writes the key from the store.
+- D5 (the Textanteil rename) is not folded in. It stays the TODOS item.
+- Step 8 should check whether `docs/data-methods.md` still needs an R2 paragraph, since the recipe's column meaning and method already reach DATA.md.
+
+### Step 7 review checklist
+
+1. **Sibling path.** The caveat now has one source, `recipe_caveat`, for the manifest, DATA.md (which reads the manifest) and the Daten page. The other recipes are unchanged, because the flag is off.
+2. **Stale beats fresh.** The generation key covers the store's sha256 and the recipes hash, and a reused generation carries its own caveat text.
+3. **Order and history.** The `ORDER BY` is unchanged, and the seat side is per WP, so the share does not depend on row order.
+4. **One key, one function.** The group joins by `parties.name`, the same name `upsert_party` keys every party by. The Stand date comes from `stammdaten_stand_day` only.
+5. **Absent vs zero.** A WP without full seat coverage is NULL, not a partial mean. A missing group on a covered day is 0, which is what the lookup rule means. Without Stammdaten the column is NULL and the caveat says why.
+6. **Derived columns.** The new column is documented as derived from `party_seats`. Its denominator is stated.
+7. **Neighbour binding.** Not touched.
+8. **Hostile text.** Not touched.
+9. **Input shape.** See "Left open" (override manifest).
+10. **Interrupted run.** Not touched.
+11. **Claims.**
+    - The column meaning matches the SQL: the sitting dates, 0 on days without a seat, and the three NULL cases.
+    - The method's "auch ohne Rede" claim is pinned by the 50.0/37.5 test.
+    - "Spätere Wechsel fehlen dort" is D6.
+12. **Loop cost.** Sitting dates times seat rows is about 300 × 15 per WP. The real-data run takes well under a second.
+13. **Last commit.** The variable rename and the docstring fix came before the full-suite run.
 
 ## Decisions
 
