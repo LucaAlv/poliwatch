@@ -496,6 +496,8 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 Decide whether retired-only persons render a page. Report persons and pages old/new.
 
+**Owner decision, 2026-11-01:** A3 ships with part 2 open. It is fixed after the merge, likely together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+
 **Why:** 289 pages for persons with no live occurrence, reachable by URL.
 
 **Effort:** M
@@ -552,6 +554,24 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+### Apply the voter-link patch after refetching the WP 18/19 roll-call lists
+
+**What:** `docs/plans/a3-voter-profile-links.patch` (`derive.person_profile_url` plus tests) accepts bundestag.de's WP 19 archive biographies and `/redirect/<n>` links as voter profile links, so pass 3 can key WP 18/19 voters by member number. It changes nothing on the A3 store until the roll-call lists are fetched again: `full`'s reports were written after #107 dropped the WP 18/19 links. Steps:
+1. Refetch about 306 roll-call lists from bundestag.de (WP 18 127, WP 19 179).
+2. Apply the patch.
+3. Repersist and report persons old/new.
+
+**Why:**
+- WP 18/19 voter pages would link to the archived biography.
+- WP 18 title variants would become one voter record.
+- A partial refetch makes things worse. A hybrid measurement with only 5 linked reports split 16 persons and joined 2 (1,942 → 1,956), because it mixes `/redirect/N` keys with name+party keys. So refetch all 306 lists or none.
+
+**Context:** "The voter-link patch (not applied)" in [the Phase 4 record](docs/plans/a3-phase4.md). Owner decision 2026-11-01: deferred, not part of the A3 merge.
+
+**Effort:** M (mostly fetch time)
+**Priority:** P3
+**Depends on:** A3 merged
 
 ## Design
 
@@ -946,6 +966,18 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Effort:** M (remaining source fidelity and measured anchor follow-ups)
 **Priority:** P2
 **Depends on:** Saved local corpus; no new backfill required
+
+### Fill the Drucksache text cache for the WP 18–21 store
+
+**What:** The A3 store has no Drucksache text cache, so the Antrag extractor (`EXTRACTOR_VERSION` 9) quotes no passage on it. On the merged-tree gate store (2026-11-01): 114 votes are `not_fetched`, 505 are `not_applicable`, and 0 passages are quoted. Fill the cache through DIP with A3's request pacing (the third stage of `refresh_vorgang_cache`), then repersist and report quoted passages old/new.
+
+**Why:** Votes on an Antrag get no extractive description until the cache exists. #122's "196 → 206 of 217" applies only to the saved 91-document corpus, not to this store.
+
+**Context:** Owner decision 2026-11-01: left out of the A3 merge. First clear the P1 item in "B4 extractive fallback: finish validation locally" above, which says to gate the fallback before it runs on any cache larger than the saved corpus. Also add the text cache to `validate_store_gate.py`'s replay inputs (see the A3 entry's B4 note). "Gate on the merged tree" in [the Phase 4 record](docs/plans/a3-phase4.md).
+
+**Effort:** M (DIP request time plus the quote audit)
+**Priority:** P2
+**Depends on:** The P1 extractor gate above; A3 merged
 
 ### Mitberatende Ausschüsse on the vote panel
 
