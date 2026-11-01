@@ -3093,16 +3093,18 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 11
+EXPORT_FORMAT = 12
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
 CODEBOOK_INPUT_FILES = {
     "dictionary": "scripts/data_dictionary.json",
     "methods": "docs/data-methods.md",
-    "license": "docs/data-license.md",
+    "license": "LICENSE-DATA.md",
 }
-# The attribution name docs/data-license.md uses; PRODUCT.md has not settled the product name.
+# The data licence file: a codebook input, and a file of every generation.
+LICENSE_FILE_NAME = Path(CODEBOOK_INPUT_FILES["license"]).name
+# The attribution name LICENSE-DATA.md uses; PRODUCT.md has not settled the product name.
 ATTRIBUTION_NAME = "Bundestag-Puls"
 # Per-Wahlperiode counts in DATA.md, in table order.
 COVERAGE_COUNT_TABLES = ("agenda_items", "speeches", "contributions", "votes", "vote_members")
@@ -3520,9 +3522,9 @@ def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
     return manifest if isinstance(manifest, dict) else None
 
 
-# The small text files (DATA.md, recipe CSVs) are also hashed: DATA.md tells
-# readers to check every file's SHA-256, and these cost nothing to verify.
-_REUSE_HASHED_KINDS = ("codebook", "recipe_csv")
+# The small text files (DATA.md, LICENSE-DATA.md, recipe CSVs) are also hashed:
+# DATA.md tells readers to check every file's SHA-256, and these cost nothing to verify.
+_REUSE_HASHED_KINDS = ("codebook", "license", "recipe_csv")
 
 
 # F1.1: a manifest is only reusable when it parses, matches the current
@@ -3898,8 +3900,8 @@ def _demote_headings(text: str) -> str:
     return "\n".join(lines)
 
 
-# The release-facing part of docs/data-license.md starts at its first "## "
-# heading; the operator notes above it stay out of DATA.md.
+# DATA.md quotes LICENSE-DATA.md from its first "## " heading on; the file's
+# own preamble, which says what the file is, stays out.
 def _license_notice(text: str) -> str:
     start = re.search(r"^## ", text, flags=re.MULTILINE)
     if start is None:
@@ -4031,7 +4033,7 @@ def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
 def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -> list[str]:
     path = CODEBOOK_INPUT_FILES["license"]
     return ["## Quellen, Bedingungen und Transformationen", "",
-            f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch:", "",
+            f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch. Die vollständige Datei liegt diesem Export als `{LICENSE_FILE_NAME}` bei:", "",
             _license_notice(license_doc), "",
             "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
             "## Diesen Export zitieren", "",
@@ -4063,9 +4065,8 @@ def _render_codebook(manifest: dict[str, Any], dictionary: dict[str, Any], input
 #                            previous one is deleted only after datenstand.json
 #                            points at the new one
 #     DATA.md               snapshot codebook
+#     LICENSE-DATA.md        the data licence, the bytes the codebook input hashed
 #     recipe-<id>-<tag>.csv  SQL results, including hidden IDs in SQL order
-#   published.json           written by the (separate) publish script; never
-#   LICENSE-DATA.md          touched by this function
 # The lock, the store copies, the temp files and the generation being built
 # live in export_work_dir(exports_dir), on the same file system.
 def export_distribution_data(
@@ -4540,6 +4541,13 @@ def _run_export(
             "wahlperioden": wahlperioden,
         },
     }
+    # The bytes _read_codebook_inputs hashed, so the listed sha256 equals
+    # codebook_inputs["LICENSE-DATA.md"], which a release checks against its
+    # commit. Before DATA.md, whose file table lists it.
+    license_path = gen_dir / LICENSE_FILE_NAME
+    license_path.write_bytes(codebook.license.encode("utf-8"))
+    files.append({"name": license_path.name, "kind": "license", "bytes": license_path.stat().st_size,
+                  "sha256": _hash_file(license_path)})
     codebook_path = gen_dir / "DATA.md"
     codebook_path.write_text(_render_codebook(manifest, dictionary, codebook), encoding="utf-8")
     files.append({"name": codebook_path.name, "kind": "codebook", "bytes": codebook_path.stat().st_size,
@@ -4629,14 +4637,16 @@ def generation_file_href(manifest: dict[str, Any], data_base_url: str, name: str
 
 
 # The manifest was written by export_distribution_data or passed
-# validate_manifest: its files list the sqlite first and exactly one codebook.
+# validate_manifest: its files list the sqlite first, exactly one codebook and one licence file.
 def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_remote: bool) -> str:
     sqlite_file = manifest["files"][0]
     href = generation_file_href(manifest, data_base_url, sqlite_file["name"])
     csv_files = [file for file in manifest["files"] if file["kind"] == "table_csv"]
     (codebook,) = [file for file in manifest["files"] if file["kind"] == "codebook"]
+    (license_file,) = [file for file in manifest["files"] if file["kind"] == "license"]
     codebook_link = (
-        f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, codebook["name"]))}">Datenwörterbuch (DATA.md)</a></p>'
+        f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, codebook["name"]))}">Datenwörterbuch (DATA.md)</a>'
+        f' &middot; <a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, license_file["name"]))}">Datenlizenz ({pulse_html.esc(license_file["name"])})</a></p>'
     )
     csv_rows = "".join(
         f"""
@@ -12929,7 +12939,7 @@ def validate_manifest(
 def _manifest_inventory_problems(manifest: dict[str, Any], files: list[Any]) -> list[str]:
     problems: list[str] = []
     inventory: dict[str, dict[str, Any]] = {}
-    kinds: dict[str, list[str]] = {"sqlite": [], "table_csv": [], "recipe_csv": [], "codebook": []}
+    kinds: dict[str, list[str]] = {"sqlite": [], "table_csv": [], "recipe_csv": [], "codebook": [], "license": []}
     for index, entry in enumerate(files):
         if not isinstance(entry, dict):
             continue
@@ -12955,6 +12965,8 @@ def _manifest_inventory_problems(manifest: dict[str, Any], files: list[Any]) -> 
         problems.append("files[0].unpacked_bytes must be a nonnegative integer")
     if kinds["codebook"] != ["DATA.md"]:
         problems.append("codebook needs exactly one typed DATA.md")
+    if kinds["license"] != [LICENSE_FILE_NAME]:
+        problems.append(f"license needs exactly one typed {LICENSE_FILE_NAME}")
     recipe_refs, recipe_ids = set(), set()
     for index, recipe in enumerate(manifest.get("recipes", []) if isinstance(manifest.get("recipes"), list) else []):
         if not isinstance(recipe, dict):

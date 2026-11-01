@@ -389,6 +389,18 @@ class ExportDistributionDataTests(unittest.TestCase):
         entry = next(file for file in manifest["files"] if file["kind"] == "codebook")
         self.assertEqual(entry["sha256"], b._hash_file(codebook_path))
         self.assertNotIn(entry["sha256"], codebook)
+        # O3: every generation carries the licence file DATA.md's short string
+        # points to, as the bytes the codebook input hashed.
+        self.assertNotIn("docs/data-license.md", codebook)
+        self.assertNotIn("This file states the terms", codebook)
+        self.assertIn("Die vollständige Datei liegt diesem Export als `LICENSE-DATA.md` bei", codebook)
+        (licence,) = [file for file in manifest["files"] if file["kind"] == "license"]
+        licence_path = codebook_path.parent / "LICENSE-DATA.md"
+        self.assertEqual(licence["name"], "LICENSE-DATA.md")
+        self.assertEqual(licence["bytes"], licence_path.stat().st_size)
+        self.assertEqual(licence["sha256"], b._hash_file(licence_path))
+        self.assertEqual(licence["sha256"], manifest["codebook_inputs"]["LICENSE-DATA.md"])
+        self.assertEqual(licence_path.read_bytes(), (b.REPO_ROOT / "LICENSE-DATA.md").read_bytes().replace(b"\r\n", b"\n"))
 
     def test_missing_dictionary_entries_fail_by_name_and_preserve_publication(self) -> None:
         self.export()
@@ -510,7 +522,7 @@ class ExportDistributionDataTests(unittest.TestCase):
 
     def test_missing_or_truncated_new_assets_trigger_regeneration(self) -> None:
         manifest = self.export()
-        for name in ("DATA.md", manifest["recipes"][0]["file"]):
+        for name in ("DATA.md", "LICENSE-DATA.md", manifest["recipes"][0]["file"]):
             for damage in ("missing", "truncated", "same size, altered"):
                 with self.subTest(name=name, damage=damage):
                     path = self.exports_dir / manifest["generation"] / name
@@ -722,7 +734,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             [[cells[0].split("](")[0].lstrip("["), *cells[1:]] for cells in listed],
             [[file["name"], file["kind"], str(file.get("rows", "\u2014")), str(file["bytes"]), file["sha256"]] for file in files],
         )
-        self.assertEqual({file["kind"] for file in files}, {"sqlite", "table_csv", "recipe_csv"})
+        self.assertEqual({file["kind"] for file in files}, {"sqlite", "table_csv", "recipe_csv", "license"})
         for file in files:
             self.assertEqual(b._hash_file(self.exports_dir / manifest["generation"] / file["name"]), file["sha256"])
 
@@ -753,7 +765,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             dictionary, methods, license_doc = (root / b.CODEBOOK_INPUT_FILES[field] for field in ("dictionary", "methods", "license"))
             originals = {path: path.read_bytes() for path in (dictionary, methods, license_doc)}
             cases = [
-                ("missing licence file", license_doc, None, "codebook input .*data-license.md"),
+                ("missing licence file", license_doc, None, "codebook input .*LICENSE-DATA.md"),
                 ("not UTF-8", methods, b"\xff\xfe\x00", "codebook input .*data-methods.md"),
                 ("empty methods", methods, b"", "data-methods.md is empty"),
                 ("whitespace-only methods", methods, b" \n\t\n", "data-methods.md is empty"),
@@ -1065,7 +1077,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 11)
+        self.assertEqual(manifest["export_format"], 12)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):

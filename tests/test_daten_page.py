@@ -172,8 +172,8 @@ class DatenPageTests(unittest.TestCase):
         for base in ("data/exports/", "https://example.org/releases/v-test/"):
             with self.subTest(base=base):
                 page = b.render_database_page(self.manifest, data_base_url=base, is_remote=base.startswith("https"))
-                artifacts = [file for file in self.manifest["files"] if file["kind"] in ("codebook", "recipe_csv")]
-                self.assertEqual(len(artifacts), 7)
+                artifacts = [file for file in self.manifest["files"] if file["kind"] in ("codebook", "license", "recipe_csv")]
+                self.assertEqual(len(artifacts), 8)
                 for file in artifacts:
                     self.assertIn(f'href="{base}{self.manifest["generation"]}/{file["name"]}"', page)
                     self.assertTrue((self.tmp / "exports" / self.manifest["generation"] / file["name"]).is_file())
@@ -212,9 +212,15 @@ class DatenPageTests(unittest.TestCase):
         def recipe_file(manifest):
             return next(file for file in manifest["files"] if file["kind"] == "recipe_csv")
 
+        def licence(manifest):
+            return next(file for file in manifest["files"] if file["kind"] == "license")
+
         cases = [
             ("missing codebook", "codebook", lambda m: m["files"].remove(codebook(m))),
             ("mistyped codebook", "codebook", lambda m: codebook(m).update(kind="table_csv")),
+            ("missing licence file", "license needs exactly one", lambda m: m["files"].remove(licence(m))),
+            ("two licence files", "license needs exactly one", lambda m: m["files"].append({**licence(m), "name": "LICENSE-DATA-2.md"})),
+            ("misnamed licence file", "license needs exactly one", lambda m: licence(m).update(name="LICENSE.md")),
             ("missing recipe", "recipe_csv reference", lambda m: m["files"].remove(recipe_file(m))),
             ("mistyped recipe", "recipe_csv reference", lambda m: recipe_file(m).update(kind="table_csv")),
             ("missing kind", "kind unsupported", lambda m: codebook(m).pop("kind")),

@@ -1,11 +1,11 @@
 {
   "licenses": {
-    "dip": "DIP-Nutzungsbedingungen für DIP-Daten; Protokollangabe „Deutscher Bundestag/Bundesrat – DIP“ und zitierte Plenarprotokolle gemäß docs/data-license.md.",
-    "dip-quellenangabe": "DIP-Nutzungsbedingungen und Quellenangabe gemäß docs/data-license.md.",
-    "bundestag-abstimmungen": "Quelle Deutscher Bundestag; namentliche Abstimmungen gemäß der bestehenden Layerbeschreibung in docs/data-license.md und ADR 0003.",
-    "dip-oder-bundestag-abstimmungen": "Je nach Zeile DIP-Nutzungsbedingungen (DIP-Personenliste, XML-Rednerangabe) oder Quelle Deutscher Bundestag (Mitgliederliste der namentlichen Abstimmungen) gemäß docs/data-license.md; die Zeile sagt nicht, welche Quelle griff.",
-    "abgeordnetenwatch": "Abgeordnetenwatch-Profildaten: CC0 1.0; Attribution als Courtesy gemäß docs/data-license.md.",
-    "abgeordnetenwatch-mit-bundestag-fallback": "Bestehender Manifest-Layer abgeordnetenwatch: CC0 1.0 für aw-Profildaten. Ein Bundestags-Fallback bleibt Bundestagsquelle; der grobe Tag ist kein Nachweis ausschließlicher aw-Herkunft (docs/data-license.md/ADR 0003).",
+    "dip": "DIP-Nutzungsbedingungen für DIP-Daten; Protokollangabe „Deutscher Bundestag/Bundesrat – DIP“ und zitierte Plenarprotokolle gemäß LICENSE-DATA.md.",
+    "dip-quellenangabe": "DIP-Nutzungsbedingungen und Quellenangabe gemäß LICENSE-DATA.md.",
+    "bundestag-abstimmungen": "Quelle Deutscher Bundestag; namentliche Abstimmungen gemäß der bestehenden Layerbeschreibung in LICENSE-DATA.md und ADR 0003.",
+    "dip-oder-bundestag-abstimmungen": "Je nach Zeile DIP-Nutzungsbedingungen (DIP-Personenliste, XML-Rednerangabe) oder Quelle Deutscher Bundestag (Mitgliederliste der namentlichen Abstimmungen) gemäß LICENSE-DATA.md; die Zeile sagt nicht, welche Quelle griff.",
+    "abgeordnetenwatch": "Abgeordnetenwatch-Profildaten: CC0 1.0; Attribution als Courtesy gemäß LICENSE-DATA.md.",
+    "abgeordnetenwatch-mit-bundestag-fallback": "Bestehender Manifest-Layer abgeordnetenwatch: CC0 1.0 für aw-Profildaten. Ein Bundestags-Fallback bleibt Bundestagsquelle; der grobe Tag ist kein Nachweis ausschließlicher aw-Herkunft (LICENSE-DATA.md/ADR 0003).",
     "eigene-auswertung": "Eigene Auswertung CC BY 4.0 (Bundestag-Puls, Luca Veh); verwendete Quelldaten behalten ihre jeweiligen Bedingungen.",
     "eigene-auswertung-uebernommene-quelldaten": "Eigene Auswertung CC BY 4.0 (Bundestag-Puls, Luca Veh); zugrunde liegende Quellenbedingungen gelten für übernommene Quelldaten weiter.",
     "eigene-metadaten": "Eigene Projektmetadaten und Schlüssel: CC BY 4.0 (Bundestag-Puls, Luca Veh); verwendete Eingangsquellen behalten ihre jeweiligen Bedingungen.",

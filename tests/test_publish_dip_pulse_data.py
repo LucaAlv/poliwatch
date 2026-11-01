@@ -410,28 +410,57 @@ class LineEndingTests(unittest.TestCase):
 
 
 class PublishTests(ReleaseTestCase):
-    # Value: protects=--publish refuses while LICENSE-DATA.md is missing (ADR 0003 not implemented), before any gh call and before writing anything; fails_when=a release can be created without the data licence file, or a gh call precedes the refusal; why_new=nothing may be published without the licence layers in the release; seam=main; no_claim=licence content
-    def test_publish_refuses_without_license_data_before_any_gh_call(self) -> None:
-        code, _, stderr = self.run_script("--initial", "--publish")
-        self.assert_refused(code, stderr, "LICENSE-DATA.md", "ADR 0003")
-        self.assertFalse(self.out.exists())
-        self.assertEqual([call for call in self.runner.calls if call[0] == "gh"], [])
-        self.assert_nothing_dangerous_ran()
+    # Value: protects=a release refuses an export whose manifest lists no LICENSE-DATA.md, an empty one, or one that is not the file the manifest commit holds, before any gh call and before writing anything; fails_when=a release can be created without the data licence, with an empty one (deferred item 6), or with bytes that differ from the commit; why_new=the licence file moved from a working-tree copy into every export (O3); seam=main; no_claim=licence content
+    def test_a_release_refuses_a_missing_empty_or_foreign_licence_file(self) -> None:
+        manifest = json.loads((self.exports_copy / "datenstand.json").read_text(encoding="utf-8"))
+        generation = self.exports_copy / manifest["generation"]
+        (licence,) = [entry for entry in manifest["files"] if entry["kind"] == "license"]
 
-    def licensed_repo(self):
-        repo = self.work / "licensed"
+        def drop_entry() -> None:
+            (generation / "LICENSE-DATA.md").unlink()
+            self.edit_manifest(files=[entry for entry in manifest["files"] if entry["kind"] != "license"])
+
+        def rewrite(content: bytes) -> None:
+            (generation / "LICENSE-DATA.md").write_bytes(content)
+            self.edit_manifest(files=[
+                {**entry, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()} if entry is licence else entry
+                for entry in manifest["files"]
+            ])
+
+        cases = [
+            ("not listed", drop_entry, "license needs exactly one typed LICENSE-DATA.md"),
+            ("empty", lambda: rewrite(b""), "is empty or not the LICENSE-DATA.md of commit"),
+            ("not the commit's", lambda: rewrite(b"# Andere Lizenz\n\n## Short string\n\n> frei\n"), "is empty or not the LICENSE-DATA.md of commit"),
+        ]
+        for label, tamper, fragment in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.exports_copy)
+                shutil.copytree(self.exports, self.exports_copy)
+                runner = Runner()
+                tamper()
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+                self.assert_refused(code, stderr, fragment)
+                self.assertFalse(self.out.exists())
+                self.assertEqual(runner.gh("release", "create"), [])
+
+    # Value: protects=the release's LICENSE-DATA.md is the export's (the bytes the manifest commit holds), not a copy of the working tree; fails_when=an edited, uncommitted LICENSE-DATA.md in the checkout reaches the release (deferred item 6); why_new=the release script copied the file from the repository root; seam=main; no_claim=the export's own copy (tested in test_daten_export)
+    def test_the_release_licence_comes_from_the_export_not_the_working_tree(self) -> None:
+        repo = self.work / "edited"
         shutil.copytree(self.repo, repo)
-        (repo / "LICENSE-DATA.md").write_text("# Datenlizenz\nGeschichtet.\n", encoding="utf-8")
-        return repo
+        (repo / "LICENSE-DATA.md").write_text("# Uncommitted edit\n", encoding="utf-8")
+        code, _, stderr = self.run_script("--initial", "--publish", repo_root=repo)
+        self.assertEqual(code, 0, stderr)
+        release = self.out / f"data-{VERSION}"
+        self.assertEqual([path.relative_to(release).as_posix() for path in release.rglob("LICENSE-DATA.md")], [f"{self.manifest['generation']}/LICENSE-DATA.md"])
+        self.assertEqual((release / self.manifest["generation"] / "LICENSE-DATA.md").read_bytes(), (b.REPO_ROOT / "LICENSE-DATA.md").read_bytes().replace(b"\r\n", b"\n"))
 
     # Value: protects=with the licence file present --publish checks the remote for existing releases, ships LICENSE-DATA.md in the directory and in SHA256SUMS, and calls gh release create exactly once with exact arguments; fails_when=the licence file is not shipped or checksummed, the gh check is skipped, or the create arguments differ; why_new=the one real-upload path; seam=main with a recorded gh; no_claim=gh's behaviour (mocked)
     def test_publish_with_the_licence_file_creates_the_release_through_gh(self) -> None:
-        repo = self.licensed_repo()
-        code, stdout, stderr = self.run_script("--initial", "--publish", repo_root=repo)
+        code, stdout, stderr = self.run_script("--initial", "--publish")
         self.assertEqual(code, 0, stderr)
         release = self.out / f"data-{VERSION}"
-        self.assertTrue((release / "LICENSE-DATA.md").is_file())
-        self.assertIn("LICENSE-DATA.md", (release / "SHA256SUMS").read_text(encoding="utf-8"))
+        self.assertTrue((release / self.manifest["generation"] / "LICENSE-DATA.md").is_file())
+        self.assertIn(f"{self.manifest['generation']}/LICENSE-DATA.md", (release / "SHA256SUMS").read_text(encoding="utf-8"))
         self.assertEqual(len(self.runner.gh("release", "list")), 1)
         (create,) = self.runner.gh("release", "create")
         files = sorted(
@@ -448,34 +477,31 @@ class PublishTests(ReleaseTestCase):
 
     # Value: protects=a failing gh release create exits 1 with gh's message, keeps the finished release directory, and a retry is refused rather than overwriting it; fails_when=the failure is reported as success, the directory is deleted or half-written, or the retry overwrites it; why_new=only the successful create was exercised; seam=main with a recorded gh; no_claim=gh's real failure modes (mocked)
     def test_a_failed_gh_create_keeps_the_release_directory_and_the_retry_is_refused(self) -> None:
-        repo = self.licensed_repo()
         runner = Runner(gh_create_fails=True)
-        code, stdout, stderr = self.run_script("--initial", "--publish", repo_root=repo, runner=runner)
+        code, stdout, stderr = self.run_script("--initial", "--publish", runner=runner)
         self.assertEqual(code, 1)
         self.assertIn("gh release create failed", stderr)
         self.assertIn("HTTP 422", stderr)
         self.assertNotIn("published:", stdout)
         release = self.out / f"data-{VERSION}"
         self.assertIn(str(release), stderr)
-        self.assertTrue((release / "SHA256SUMS").is_file() and (release / "LICENSE-DATA.md").is_file())
+        self.assertTrue((release / "SHA256SUMS").is_file() and (release / self.manifest["generation"] / "LICENSE-DATA.md").is_file())
         self.assertEqual(len(runner.gh("release", "create")), 1)
         before = sorted(path.relative_to(release).as_posix() for path in release.rglob("*") if path.is_file())
-        code, _, stderr = self.run_script("--initial", "--publish", repo_root=repo, runner=Runner())
+        code, _, stderr = self.run_script("--initial", "--publish", runner=Runner())
         self.assertEqual(code, 1)
         self.assertIn("already exists", stderr)
         self.assertEqual(sorted(path.relative_to(release).as_posix() for path in release.rglob("*") if path.is_file()), before)
 
-    # Value: protects=--publish refuses an export built without a licence string even when LICENSE-DATA.md exists; fails_when=an empty manifest licence passes; why_new=docs/data-license.md promises the publish step refuses on an empty string; seam=main; no_claim=string content
+    # Value: protects=--publish refuses an export built without a licence string even though it carries LICENSE-DATA.md; fails_when=an empty manifest licence passes; why_new=the project documentation promises the publish step refuses on an empty string; seam=main; no_claim=string content
     def test_publish_refuses_an_export_without_a_licence_string(self) -> None:
-        repo = self.licensed_repo()
         self.edit_manifest(license="")
-        code, _, stderr = self.run_script("--initial", "--publish", repo_root=repo)
+        code, _, stderr = self.run_script("--initial", "--publish")
         self.assert_refused(code, stderr, "licence string")
         self.assertEqual(self.runner.gh("release", "create"), [])
 
     # Value: protects=--publish refuses when gh already lists the version, lists any release for --initial, or cannot be asked; fails_when=the remote check is skipped or its failure is read as "no releases"; why_new=local tags miss releases of a clone that has not fetched; seam=main with a recorded gh; no_claim=gh behaviour (mocked)
     def test_publish_checks_the_remote_for_existing_releases(self) -> None:
-        repo = self.licensed_repo()
         cases = {
             "version exists": (Runner(gh_tags=[f"data-{VERSION}"]), "already exists"),
             "initial but releases exist": (Runner(gh_tags=["data-2026.10.01"]), "--initial"),
@@ -486,7 +512,7 @@ class PublishTests(ReleaseTestCase):
         for label, (runner, fragment) in cases.items():
             with self.subTest(label):
                 self.runner = runner
-                code, _, stderr = self.run_script("--initial", "--publish", repo_root=repo, runner=runner)
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
                 self.assert_refused(code, stderr, fragment)
                 self.assertEqual(runner.gh("release", "create"), [])
                 shutil.rmtree(self.out, ignore_errors=True)
