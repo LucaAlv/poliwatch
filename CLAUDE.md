@@ -31,6 +31,10 @@ GitHub Issues (LucaAlv/poliwatch) hold specced work; TODOS.md holds gstack's sma
 
 Default five labels. See `docs/agents/triage-labels.md`.
 
+### Review checklist
+
+Before `/gstack-ship`, and in every review of a branch or diff, apply `docs/agents/review-checklist.md`: the bug classes ship kept finding late, plus the replay and browser checks no diff review replaces.
+
 ### Domain docs
 
 Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
