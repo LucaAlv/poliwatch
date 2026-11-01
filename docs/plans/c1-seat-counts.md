@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS party_seats (
 
 - **Traceability.** A seat count resolves to the named members behind it: the `mdb_zugehoerigkeiten` rows that cover that day. That covers principle 1 without a vote id. A recipe can recount any figure from the export.
 - **Personal fields:** the Stammdaten id and the display name only. No biography: birth dates, professions and the rest stay out.
-- **fraktionslos** is a NULL `party_id`, not a party row. CONTEXT.md says it is the absence of a Zugehörigkeit, not an organisation. Step 3 checks whether SQLite's handling of a NULL in a composite primary key needs a sentinel instead. If it does, a fixed `fraktionslos` party row, the one `parties` already has, is the fallback, with the dictionary saying it is not a Zusammenschluss.
+- **fraktionslos** is a NULL `party_id`, not a party row. The step-2 derivation names it `"fraktionslos"`; step 3 maps that name to whatever this bullet settles. CONTEXT.md says it is the absence of a Zugehörigkeit, not an organisation. Step 3 checks whether SQLite's handling of a NULL in a composite primary key needs a sentinel instead. If it does, a fixed `fraktionslos` party row, the one `parties` already has, is the fallback, with the dictionary saying it is not a Zusammenschluss.
 - **Lookup rule (C2–C5 depend on it).** The seats of group G at date d are the row with `valid_from <= d` and (`valid_until IS NULL` or `d < valid_until`) in d's WP. No row means no seat count, shown as such. Dates after the Stand follow D6.
 - **Not in C1:** linking `mdb_id` to `mps.xml_redner_id`, which would put Mandat dates on the MP pages.
 
@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS party_seats (
 
 0. **Merge function duplicates.** Rows with the same `(INS_LANG, MDBINS_VON, MDBINS_BIS)` are one membership (S2).
 1. **End dates.** When the next membership starts on a membership's `MDBINS_BIS` (a handover day), that day belongs to the next one. Otherwise `valid_until` = `MDBINS_BIS` + 1 day (S2).
+   **Mandat ends.** `MDBWP_BIS` is the Mandat's last day, so a Mandat ends on `MDBWP_BIS` + 1. When another Mandat of the same WP and Zusammenschluss starts on a leaver's `MDBWP_BIS`, that day belongs to the new Mandat, one new Mandat per leaver (S5).
 2. **Clip to the Mandat.** A membership is clipped to its Mandat for the Wahlperiode. A membership that starts before the Mandat, for example from the Fraktion's founding, starts with the Mandat.
 3. **Gaps are fraktionslos.** A Mandat day that no Fraktion or Gruppe membership covers is fraktionslos.
 4. **No overlaps.** Two memberships covering the same day fail the build by name. CONTEXT.md allows at most one Zugehörigkeit per day.
@@ -192,6 +193,23 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
 - No `party_seats` row exists for `Unbekannt` or the stray party rows ("Bremen", "CDU/CSU: Ich glaube…").
 - A build with no cached file says so in the warning, the Daten page and the manifest.
 - Both tables are in the Daten export with complete dictionary entries and the Stand and sha256 in the manifest. R2 shows `sitzanteil_prozent`.
+
+## Step 2 result (2026-11-01)
+
+The derivation lives in `scripts/derive.py`: `mdb_zugehoerigkeiten(mdbs, since_wahlperiode=...)`, `party_seats(rows)` and `check_seat_totals(seats)`, with `STAMMDATEN_ZUSAMMENSCHLUESSE`, `BUNDESTAG_SIZES` and `StammdatenError`. `tests/test_seat_counts.py` pins rules 0–7, the Linke split, a switcher, a rejoin, a vacancy and both failures. The input is one dict per `MDB` element, keyed by the XML element names, with dates as the file writes them, so the step-4 reader only turns XML into dicts.
+
+### S5. The real file needed one more rule
+
+Run against the real file through a throwaway reader, the first version failed rule 6: WP 20 had 737 seats on two days. `MDBWP_BIS` is a Mandat's last day: of the 41 successors who start within a day of a leaver, 39 start the day after (measured per WP: 5, 17, 17, 2 such cases). Two start on the leaver's last day itself:
+
+| Day | Leaver | Successor | Group |
+|---|---|---|---|
+| 2023-08-07 | Alexander Graf Lambsdorff (NW list) | Katharina Willkomm (NW list) | FDP |
+| 2024-03-04 | Nina Stahr (Berlin list) | Franziska Krumwiede-Steiner (NRW list) | Grüne |
+
+The second case is the Berlin repeat election moving a Grünen seat to another Land's list, so the rule cannot require the same Land. **Rule (Mandat ends, under rule 1):** the day belongs to the new Mandat, as a handover day between groups does. Only the Bundestag total changes; no group count does, because both Mandate belong to the same group. The rule trims exactly these two Mandate in the file.
+
+After the rule, the file gives 2,914 `mdb_zugehoerigkeiten` rows and 171 `party_seats` rows (WP 18: 29, WP 19: 66, WP 20: 62, WP 21: 14). The size check passes in all four WPs. Every S3 pin and first-day composition is reproduced exactly. The last WP 20 day is 733 (SPD 207, CDU/CSU 196, Grüne 117, FDP 90, AfD 76, Gruppe Die Linke 28, Gruppe BSW 10, fraktionslos 9). The Stand day 2026-04-29 is 630 (CDU/CSU 208, AfD 150, SPD 120, Grüne 85, Die Linke 64, fraktionslos 3).
 
 ## Decisions
 

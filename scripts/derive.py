@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from datetime import date, timedelta
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
@@ -818,3 +819,228 @@ def fraction_position(counts: Mapping[str, Any] | None, inverted: bool | None = 
             return "geteilt"
         return None
     return {"yes": "Ja", "no": "Nein", "abstain": "Enthaltung"}.get(leading)
+
+
+# --- Zugehörigkeit and seats from the MdB-Stammdaten ---------------------------
+
+#: Stammdaten ``INS_LANG`` -> the Zusammenschluss a parties row names, for
+#: every name WP 18-21 uses (C1 plan S2). The map is closed: a name outside it
+#: fails the build, where ``zusammenschluss`` would pass it through and the
+#: seats would land on a group no other table names.
+STAMMDATEN_ZUSAMMENSCHLUESSE = {
+    "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union": "CDU/CSU",
+    "Fraktion der Sozialdemokratischen Partei Deutschlands": "SPD",
+    "Fraktion BÜNDNIS 90/DIE GRÜNEN": "BÜNDNIS 90/DIE GRÜNEN",
+    "Fraktion DIE LINKE.": "Die Linke",
+    "Fraktion Die Linke": "Die Linke",
+    "Fraktion Alternative für Deutschland": "AfD",
+    "Fraktion der Freien Demokratischen Partei": "FDP",
+    "Gruppe Die Linke": GRUPPE_DIE_LINKE,
+    "Gruppe BSW - Bündnis Sahra Wagenknecht - Vernunft und Gerechtigkeit": GRUPPE_BSW,
+    "Fraktionslos": "fraktionslos",
+}
+
+#: The ``INSART_LANG`` of a Fraktion or Gruppe membership; WP 21 also lists
+#: committees, ministries and other bodies, which are no Zugehörigkeit.
+STAMMDATEN_FRAKTION_ART = "Fraktion/Gruppe"
+
+
+
+
+class StammdatenError(Exception):
+    """The MdB-Stammdaten break a rule the seat counts rest on."""
+
+
+def _stammdaten_date(text: Any, where: str, *, required: bool = False) -> date | None:
+    """A ``TT.MM.JJJJ`` date of the Stammdaten; StammdatenError naming
+    ``where`` when it is malformed, or blank and ``required``."""
+    value = _clean(text)
+    if not value and not required:
+        return None
+    try:
+        day, month, year = value.split(".")
+        return date(int(year), int(month), int(day))
+    except ValueError:
+        raise StammdatenError(f"{where}: date {value!r} is not TT.MM.JJJJ") from None
+
+
+def _stammdaten_name(names: Iterable[Mapping[str, Any]], day: date, where: str) -> str:
+    """The display name in force on ``day``: the ``NAME`` whose history starts
+    last on or before it, else the earliest. The history has gaps and
+    overlapping ends, so the start date alone decides."""
+    dated = sorted(((_stammdaten_date(item.get("HISTORIE_VON"), where) or date.min, index), item) for index, item in enumerate(names))
+    if not dated:
+        return ""
+    chosen = next((item for (von, _), item in reversed(dated) if von <= day), dated[0][1])
+    return _clean(" ".join(_clean(chosen.get(part)) for part in ("VORNAME", "ADEL", "PRAEFIX", "NACHNAME", "ORTSZUSATZ")))
+
+
+def _mandate_stretches(mdb_id: str, names: list[Mapping[str, Any]], wahlperiode: int, period: Mapping[str, Any]) -> list[dict[str, Any]]:
+    where = f"MdB {mdb_id}, WP {wahlperiode}"
+    mandate_from = _stammdaten_date(period.get("MDBWP_VON"), where, required=True)
+    mandate_bis = _stammdaten_date(period.get("MDBWP_BIS"), where)
+    # MDBWP_BIS is the Mandat's last day; a whole Wahlperiode's ends on the
+    # next Bundestag's constituent day, which so lies in both.
+    mandate_until = mandate_bis + timedelta(days=1) if mandate_bis else None
+    # Rule 0: the Stammdaten repeats a membership once per Fraktion function
+    # (FKT_LANG); the same name and dates are one membership.
+    records = {
+        (_clean(item.get("INS_LANG")), _clean(item.get("MDBINS_VON")), _clean(item.get("MDBINS_BIS")))
+        for item in period.get("INSTITUTIONEN") or []
+        if _clean(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART
+    }
+    memberships = sorted(
+        ((record, _stammdaten_date(record[1], where, required=True), _stammdaten_date(record[2], where)) for record in records),
+        key=lambda membership: membership[1],
+    )
+    stretches = []
+    for record, von, bis in memberships:
+        # Rule 1: on a handover day the old membership's MDBINS_BIS is the new
+        # one's MDBINS_VON, and the day belongs to the new one.
+        handover = any(other_von == bis for other, other_von, _ in memberships if other != record)
+        until = None if bis is None else bis if handover else bis + timedelta(days=1)
+        # Rule 2: a membership counts only within its Mandat.
+        von = max(von, mandate_from)
+        if mandate_until and (until is None or until > mandate_until):
+            until = mandate_until
+        stretches.append((record, von, until))
+
+    covered: list[tuple[str, date, date | None]] = []
+
+    def cover(party: str, von: date, until: date | None) -> None:
+        # One row per unbroken stretch of one Zugehörigkeit.
+        if covered and covered[-1][0] == party and covered[-1][2] == von:
+            covered[-1] = (party, covered[-1][1], until)
+        else:
+            covered.append((party, von, until))
+
+    cursor: date | None = mandate_from
+    previous = None
+    for record, von, until in stretches:
+        # Rule 4: at most one Zugehörigkeit per day (CONTEXT.md).
+        if previous and (cursor is None or von < cursor):
+            raise StammdatenError(
+                f"{where}: two memberships on the same day: "
+                f"{previous[0]} {previous[1]}-{previous[2]} and {record[0]} {record[1]}-{record[2]}"
+            )
+        # Rule 3: a Mandat day no membership covers is fraktionslos.
+        if cursor is not None and von > cursor:
+            cover("fraktionslos", cursor, von)
+        if record[0] not in STAMMDATEN_ZUSAMMENSCHLUESSE:
+            raise StammdatenError(
+                f"{where}: Fraktion/Gruppe {record[0]!r} is not in "
+                "STAMMDATEN_ZUSAMMENSCHLUESSE; add it there with the Zusammenschluss it names"
+            )
+        cover(STAMMDATEN_ZUSAMMENSCHLUESSE[record[0]], von, until)
+        cursor, previous = until, record
+    if cursor is not None and (mandate_until is None or cursor < mandate_until):
+        cover("fraktionslos", cursor, mandate_until)
+    return [
+        {
+            "mdb_id": mdb_id,
+            "name": _stammdaten_name(names, von, where),
+            "wahlperiode": wahlperiode,
+            "party": party,
+            "valid_from": von.isoformat(),
+            "valid_until": until.isoformat() if until else None,
+        }
+        for party, von, until in covered
+    ]
+
+
+def mdb_zugehoerigkeiten(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode: int) -> list[dict[str, Any]]:
+    """One row per MdB, Wahlperiode and unbroken stretch of one Zugehörigkeit
+    or of fraktionslos days, from MdB-Stammdaten records (C1 plan, "Interval
+    rules").
+
+    Each record is one ``MDB`` element as a dict keyed by its element names,
+    with ``NAMEN`` and ``WAHLPERIODEN`` lists and each ``WAHLPERIODE`` holding
+    its ``INSTITUTIONEN`` list; dates stay as the file writes them
+    (``TT.MM.JJJJ``). A row's ``party`` is the Zusammenschluss or
+    ``"fraktionslos"``; ``valid_from`` is its first day and ``valid_until`` the
+    first day it no longer covers, None while the Mandat is open. Wahlperioden
+    before ``since_wahlperiode`` are skipped unread (rule 7).
+
+    Raises StammdatenError on two memberships on one day or a Fraktion/Gruppe
+    name outside STAMMDATEN_ZUSAMMENSCHLUESSE.
+    """
+    mandates = []
+    for mdb in mdbs:
+        for period in mdb.get("WAHLPERIODEN") or []:
+            wahlperiode = int(period["WP"])
+            if wahlperiode >= since_wahlperiode:
+                mandates.append(_mandate_stretches(_clean(mdb["ID"]), list(mdb.get("NAMEN") or []), wahlperiode, period))
+    # A Mandat's MDBWP_BIS is its last day, and a Nachrücker's normally starts
+    # the day after. Where a Mandat of the same Zusammenschluss starts on that
+    # last day itself (Lambsdorff and Willkomm, 07.08.2023; the Berlin repeat
+    # election moving a seat to another Land's list, 04.03.2024), the day is
+    # the new Mandat's, as a handover day between two groups belongs to the new
+    # one (rule 1); otherwise the seat counts twice that day. Each new Mandat
+    # takes the last day of one leaver only, the leavers taken in id order.
+    starts = Counter((rows[0]["wahlperiode"], rows[0]["party"], rows[0]["valid_from"]) for rows in mandates if rows)
+    for rows in sorted(mandates, key=lambda rows: rows[0]["mdb_id"] if rows else ""):
+        last = rows[-1] if rows else None
+        if not last or last["valid_until"] is None:
+            continue
+        last_day = (date.fromisoformat(last["valid_until"]) - timedelta(days=1)).isoformat()
+        key = (last["wahlperiode"], last["party"], last_day)
+        if last_day != last["valid_from"] and starts[key]:
+            starts[key] -= 1
+            last["valid_until"] = last_day
+    return [row for rows in mandates for row in rows]
+
+
+def party_seats(zugehoerigkeiten: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One row per Zusammenschluss (or fraktionslos), Wahlperiode and unbroken
+    seat count, from ``mdb_zugehoerigkeiten`` rows: the seats of a group on a
+    day are the rows of its party that cover the day. Days with no seat get no
+    row. Ordered by Wahlperiode, party and first day."""
+    changes: dict[tuple[int, str], Counter] = {}
+    for row in zugehoerigkeiten:
+        steps = changes.setdefault((row["wahlperiode"], row["party"]), Counter())
+        steps[row["valid_from"]] += 1
+        if row["valid_until"] is not None:
+            steps[row["valid_until"]] -= 1
+    rows: list[dict[str, Any]] = []
+    for (wahlperiode, party), steps in sorted(changes.items()):
+        count, open_row = 0, None
+        for day in sorted(steps):
+            count += steps[day]
+            if open_row and open_row["seats"] == count:
+                continue
+            if open_row:
+                open_row["valid_until"] = day
+            open_row = None
+            if count:
+                open_row = {"party": party, "wahlperiode": wahlperiode, "valid_from": day, "valid_until": None, "seats": count}
+                rows.append(open_row)
+    return rows
+
+
+#: Each Wahlperiode's legal number of seats, overhang and balance seats
+#: included (C1 plan rule 6). A Wahlperiode missing here fails the size check.
+BUNDESTAG_SIZES = {18: 631, 19: 709, 20: 736, 21: 630}
+
+
+def check_seat_totals(seats: Iterable[Mapping[str, Any]], sizes: Mapping[int, int] = BUNDESTAG_SIZES) -> None:
+    """Rule 6: on no day do a Wahlperiode's ``party_seats`` add up to more than
+    its legal size, and on some day they reach it (its first, when the
+    Stammdaten are whole). Raises StammdatenError naming the Wahlperiode."""
+    changes: dict[int, Counter] = {}
+    for row in seats:
+        steps = changes.setdefault(row["wahlperiode"], Counter())
+        steps[row["valid_from"]] += row["seats"]
+        if row["valid_until"] is not None:
+            steps[row["valid_until"]] -= row["seats"]
+    for wahlperiode, steps in sorted(changes.items()):
+        size = sizes.get(wahlperiode)
+        if size is None:
+            raise StammdatenError(f"WP {wahlperiode} has no legal size in BUNDESTAG_SIZES; add it there")
+        total = largest = 0
+        for day in sorted(steps):
+            total += steps[day]
+            if total > size:
+                raise StammdatenError(f"WP {wahlperiode}: {total} seats on {day}, more than the legal {size}")
+            largest = max(largest, total)
+        if largest < size:
+            raise StammdatenError(f"WP {wahlperiode}: at most {largest} seats on any day, never the legal {size}")
