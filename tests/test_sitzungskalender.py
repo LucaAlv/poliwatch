@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import _support  # noqa: F401
+import build_demo_site as demo
 import build_dip_pulse_site
 import sitzungskalender as cal
 import test_build_dip_pulse_site as page_tests
@@ -317,6 +318,92 @@ class NextSittingLineTests(unittest.TestCase):
         )
 
 
+class CacheFileTests(unittest.TestCase):
+    """load_cache and the due-ness of a cache file that is damaged, odd or unchanged."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.out = Path(tmp.name)
+        self.cache_file = self.out / "data" / cal.CACHE_NAME
+        self.cache_file.parent.mkdir(parents=True)
+
+    def load(self) -> tuple[dict | None, str]:
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+            return cal.load_cache(self.out), stderr.getvalue()
+
+    # Value: protects=a damaged, truncated or wrongly shaped data/sitzungskalender.json leaves the line out with one warning and is not deleted, while a missing file is silent; fails_when=load_cache raises on bad JSON or on a week that is not an ISO date pair, trusts a cache of another version, or warns for a first build; why_new=only valid caches were ever loaded in the tests, and puls.html reads this file on every build; seam=none; no_claim=the real Bundestag file
+    def test_a_damaged_or_odd_cache_is_left_out_with_one_warning(self) -> None:
+        self.assertEqual(self.load(), (None, ""))  # no file: a first build, nothing to say
+        good = {"version": 1, "years": {"2026": [["2026-11-02", "2026-11-06"]]}}
+        self.cache_file.write_text(json.dumps(good), encoding="utf-8")
+        self.assertEqual(self.load(), (good, ""))
+        bad_texts = {
+            "truncated": '{"version": 1, "years": {"2026": [[',
+            "not utf-8": None,
+            "a list": "[]",
+            "other version": json.dumps({**good, "version": 2}),
+            "years a list": json.dumps({"version": 1, "years": []}),
+            "year key": json.dumps({"version": 1, "years": {"26": [["2026-11-02", "2026-11-06"]]}}),
+            "weeks not a list": json.dumps({"version": 1, "years": {"2026": "x"}}),
+            "triple": json.dumps({"version": 1, "years": {"2026": [["2026-11-02", "2026-11-06", "x"]]}}),
+            "not a date": json.dumps({"version": 1, "years": {"2026": [["2026-11-02", "bald"]]}}),
+            "null date": json.dumps({"version": 1, "years": {"2026": [[None, "2026-11-06"]]}}),
+        }
+        for label, text in bad_texts.items():
+            with self.subTest(case=label):
+                if text is None:
+                    self.cache_file.write_bytes(b"\xff\xfe{")
+                else:
+                    self.cache_file.write_text(text, encoding="utf-8")
+                before = self.cache_file.read_bytes()
+                cache, log = self.load()
+                self.assertIsNone(cache)
+                self.assertEqual(log.count("warning: [sitzungskalender]"), 1, log)
+                self.assertEqual(self.cache_file.read_bytes(), before)
+                self.assertEqual(cal.page_weeks(cache, (2026, 45)), [])
+
+    # Value: protects=a damaged cache does not stay damaged: the next online build is due, refetches and replaces it, and an identical refetch logs "unverändert"; fails_when=a cache that fails validation or lacks fetched_at counts as fresh, so the line stays missing for a week, or the refresh trusts the damaged years; why_new=_is_due's unreadable-timestamp branch and the damaged-file recovery the load_cache docstring promises had no test; seam=refresh_if_due; no_claim=none
+    def test_a_damaged_cache_is_replaced_by_the_next_refresh(self) -> None:
+        self.cache_file.write_text("{kaputt", encoding="utf-8")
+        source = FakeSource()
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
+            cal.refresh_if_due(self.out, now=NOW, fetch_html=source.fetch, fetch_text=source.fetch)
+        self.assertEqual(len(source.calls), 3)
+        cache, log = self.load()
+        self.assertEqual(sorted(cache["years"]), ["2026", "2027"])
+        self.assertEqual(log, "")
+        # A valid cache whose fetched_at is missing or garbage is due; a naive timestamp reads as UTC.
+        for stamp in (None, "gestern", ""):
+            with self.subTest(fetched_at=stamp):
+                broken = {k: v for k, v in cache.items() if k != "fetched_at"}
+                if stamp is not None:
+                    broken["fetched_at"] = stamp
+                self.assertTrue(cal._is_due(broken, NOW))
+        self.assertFalse(cal._is_due({**cache, "fetched_at": "2026-11-01T11:00:00"}, NOW))
+        self.assertTrue(cal._is_due({**cache, "fetched_at": "2026-10-20T11:00:00"}, NOW))
+        # The same calendar again, a week later: rewritten, and the log says nothing moved.
+        again = FakeSource()
+        log = refresh(self.out, again, now=datetime(2026, 11, 10, 12, tzinfo=timezone.utc))
+        self.assertEqual(len(again.calls), 3)
+        self.assertIn("[sitzungskalender] unverändert: 30 Sitzungswochen", log)
+        self.assertEqual(self.load()[0]["fetched_at"], "2026-11-10T12:00:00+00:00")
+
+    # Value: protects=a one-day Sitzungswoche, which parse_ics accepts (DTEND the next day), reads as a single date with one <time> element and no range separator; fails_when=the single-day branch is dropped, so the line shows "–" with an empty start or a doubled date; why_new=every other range test spans several days; seam=parse_ics, page_weeks, render_next_sitting; no_claim=that the Bundestag plans one-day weeks
+    def test_a_one_day_week_reads_as_one_date(self) -> None:
+        (week,) = cal.parse_ics(calendar(event("20261104", "20261105")))
+        self.assertEqual(week, (date(2026, 11, 4), date(2026, 11, 4)))
+        cache = {"version": 1, "years": {"2026": [["2026-11-04", "2026-11-04"]]}}
+        weeks = cal.page_weeks(cache, (2026, 43))
+        self.assertEqual((weeks[0]["start"], weeks[0]["sep"], weeks[0]["end"]), ("", "", "4. November 2026"))
+        markup = cal.render_next_sitting(weeks, shown_week=(2026, 43), today=date(2026, 10, 28))
+        self.assertEqual(re.findall(r'<time datetime="([^"]+)"', markup), ["2026-11-04"])
+        self.assertIn(
+            'data-next-sitting-range><time datetime="2026-11-04">4. November 2026</time></span>', markup
+        )
+        self.assertEqual(cal.range_text(week[0], week[1]), "4. November 2026")
+
+
 class FrontPageTests(unittest.TestCase):
     TODAY = date(2026, 9, 15)
 
@@ -372,6 +459,33 @@ class FrontPageTests(unittest.TestCase):
             self.assertNotIn(forbidden, script)
         self.assertIn("textContent", script)
         self.assertIn("Europe/Berlin", script)
+
+
+class RenderSiteWiringTests(unittest.TestCase):
+    """render_site reads data/sitzungskalender.json of its own output directory into puls.html."""
+
+    def _build(self, cache_text: str | None) -> tuple[str, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "site"
+            if cache_text is not None:
+                (output / "data").mkdir(parents=True)
+                (output / "data" / cal.CACHE_NAME).write_text(cache_text, encoding="utf-8")
+            with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+                demo.build_demo(output)
+            return (output / "puls.html").read_text(encoding="utf-8"), stderr.getvalue()
+
+    # Value: protects=a cache file in the build's output directory reaches puls.html through render_site, and a damaged one gives the plain page with a warning instead of a failed build; fails_when=render_site stops passing load_cache(output_dir) to render_front_page (or reads another path), so the cached calendar never shows on the real site, or a damaged file aborts the build; why_new=the front-page tests hand the cache to render_front_page directly and main() is stubbed, so the one line that connects file and page was untested; seam=render_site via build_demo_site.build_demo; no_claim=the line's text (NextSittingLineTests)
+    def test_the_cache_file_in_the_output_directory_reaches_puls_html(self) -> None:
+        far = {"version": 1, "years": {"2099": [["2099-01-12", "2099-01-16"]]}}
+        markup, log = self._build(json.dumps(far))
+        self.assertEqual(markup.count('<p class="next-sitting"'), 1)
+        self.assertIn("12.–16. Januar 2099", re.sub(r"<[^>]+>", "", markup))
+        self.assertNotIn("[sitzungskalender]", log)
+        plain, _ = self._build(None)
+        self.assertNotIn("next-sitting", plain)
+        damaged, damaged_log = self._build("{kaputt")
+        self.assertNotIn("next-sitting", damaged)
+        self.assertEqual(damaged_log.count("warning: [sitzungskalender]"), 1, damaged_log)
 
 
 class MainWiringTests(unittest.TestCase):

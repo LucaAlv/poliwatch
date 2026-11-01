@@ -289,6 +289,28 @@ class RssTests(unittest.TestCase):
         self.assertEqual(list(item.find("description")), [])
 
 
+    # Value: protects=an item whose Antrag titles carry markup characters stays a parseable feed with the titles escaped inside the description, a four-plus equal-weight group names only three titles plus "und N weitere", a lone sitting reads "Plenarprotokoll", and a week with no ranked row still gets the plain "Wochenübersicht" title; fails_when=a title with "<" or "&" reaches the description unescaped (broken XML or injected markup in a reader), the group list grows past RADAR_SIBLINGS, the singular noun is lost, or an empty week raises on rows[0]; why_new=the other RSS tests use plain titles, two sittings and a ranked first row; seam=render_rss; no_claim=feed-reader rendering
+    def test_item_edge_shapes_stay_valid_and_escaped(self) -> None:
+        group = make_item(
+            1, [("SPD", 100)] * 6, [pos(f"A{i}", f"Antrag <b>{i}</b> & Co") for i in range(5)]
+        )
+        payload = build([make_entry("2026-06-10", "21/82", [group])], today=date(2026, 7, 1))
+        text, root = self.rss(payload)
+        (item,) = root.iter("item")
+        description = item.find("description").text
+        self.assertNotIn("<b>", description)
+        self.assertIn("Antrag &lt;b&gt;0&lt;/b&gt; &amp; Co", description)
+        self.assertEqual(description.count(" · Antrag &lt;b&gt;"), 2)  # three titles shown, the first after the label
+        self.assertIn("· und 2 weitere", description)
+        self.assertIn("Quelle: Deutscher Bundestag, Plenarprotokoll <a ", description)
+        self.assertNotIn("Plenarprotokolle", description)
+        self.assertNotIn("<b>", text.replace("&lt;b&gt;", ""))
+        payload["weeks"][0]["rows"] = []
+        _text, root = self.rss(payload)
+        self.assertEqual(next(root.iter("item")).find("title").text, "KW 24/2026: Wochenübersicht")
+        self.assertNotIn("<ul>", next(root.iter("item")).find("description").text)
+
+
 class WriteTests(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
