@@ -800,7 +800,14 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 9. A release `--data-tag` with `$BUNDESTAG_PULSE_DATA_MANIFEST` is refused only after `run_facts_engine` wrote the facts tables (idempotent, a wasted pass); move the check before it.
 10. A blob committed with CRLF is exported as LF, so the shipped `LICENSE-DATA.md` is not byte-identical to "the one that commit holds" (docstring and docs); add `.gitattributes` `eol=lf` for the three codebook inputs or soften the claim.
 11. Smaller: `_read_codebook_inputs` normalises CRLF and `text_sha256` normalises again; the `os.chdir` in `test_relative_directories_reach_gh_as_absolute_paths_and_a_hash_is_refused` should be `contextlib.chdir`; README, `CONTEXT.md` and `docs/stable-ids.md` still name "export format 11" in sentences that stay true but cite an old number; the C1 seat-count work also plans export format 12, so whichever lands second takes 13.
-12. Not run in the review: the 375px / dark-mode browser check of `impressum.html`, `datenschutz.html` and `sources.html#lizenz` (the sandbox refused a local server), and the reference-store export replay (format 12, one re-export, no moved figures).
+12. Not run in the review: the reference-store export replay (format 12, one re-export, no moved figures).
+13. Browser check (375px, dark, 2026-11-01, demo build plus both legal pages rendered from a dummy operator file): no horizontal scroll, dark tokens apply, links and the `cdn.example.net` host sentence correct, no operator marker left when the file is complete. Cosmetic only:
+    - the Impressum heading wraps between „§“ and „18“ (use `&nbsp;` after each `§`);
+    - the placeholder state reads „Angabe folgt., Anschrift wie oben.“ and „Angabe folgt..“ (doubled punctuation; publication refuses these pages anyway);
+    - Datenschutz grammar breaks on some operator values: „erhält dessen Server“ after a feminine provider („die … GmbH“) and „etwa bei Berliner Beauftragte für …“ (needs a dative article/ending); rephrase so the inserted names stand alone („Server des Hosters“, „Aufsichtsbehörde: …“);
+    - the footer Impressum/Datenschutz links are 14px tall, below the 24px touch-target minimum;
+    - in `sources.html#lizenz` the intro sentence renders at 16px while the layer texts render at 14px.
+    The demo build has no export, so its Daten page lacks the `LICENSE-DATA.md` link that sources.html mentions; a build with an export renders it (`render_daten_downloads`), and the release gate never publishes without one.
 
 **Why:** Deferred under the CLAUDE.md fix-now-or-defer rule. The review fixed the crashes (operator-file lone surrogate, deep nesting and unparseable URL host; a malformed or host-less `--data-base-url`), the Datenschutz download host for a protocol-relative base URL, the Datenschutz source sentence (roll-call results were credited to abgeordnetenwatch.de too), „LICENSE-DATA.md in jedem Download“ (only the export carries it), and two stale claims.
 
