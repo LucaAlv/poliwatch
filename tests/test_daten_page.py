@@ -181,7 +181,7 @@ class DatenPageTests(unittest.TestCase):
                 self.assertIn(f"CSV-Tabellen ({table_count})", page)
                 self.assertEqual(page.count("Ergebnis als CSV"), 6)
         r5_block = re.search(r'id="recipe-r5-vorgaenge-meiste-reden-title"(.*?)</section>', self.html, re.S).group(1)
-        self.assertEqual(re.findall(r'<th scope="col">(.*?)</th>', r5_block), ["title", "typ", "erste_drucksache", "reden", "sitzungen"])
+        self.assertEqual(re.findall(r'<th scope="col">(.*?)</th>', r5_block), ["wahlperiode", "title", "typ", "erste_drucksache", "reden", "sitzungen"])
         self.assertIn("BT-PlPr. 20/100", r5_block)
 
     def test_manifest_of_another_export_format_is_rejected(self) -> None:

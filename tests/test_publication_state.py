@@ -93,6 +93,39 @@ class PublicationStateContractTests(unittest.TestCase):
         self.assertEqual(publication.validate_manifest(payload), payload)
         self.assertEqual(payload["domains"]["votes"]["presentation_state"], "domain_empty")
 
+    # Value (D2): protects=a sitting skipped by --exclude-document-number publishes as an
+    # unavailable dossier and survives the manifest read-back; fails_when="excluded" is not
+    # in the failure vocabulary, so the render after a long backfill raises; seam=manifest.
+    def test_an_excluded_dossier_is_an_unavailable_item(self) -> None:
+        item = publication.DossierItem("18/245", "unavailable", failure_reasons=("excluded",))
+        domains = [
+            publication.DomainFacts("catalog", "complete", "bundestag-dip", 2),
+            publication.DomainFacts(
+                "dossiers",
+                "complete",
+                "bundestag-xml",
+                1,
+                items=(
+                    publication.DossierItem(
+                        "21/84", "ready", "data/plenarprotokoll-21-84.json", "protocols/plenarprotokoll-21-84.html"
+                    ),
+                    item,
+                ),
+            ),
+            publication.DomainFacts("votes", "complete", "bundestag-roll-call", 0),
+            publication.DomainFacts("profiles", "complete", "abgeordnetenwatch", 0),
+            publication.DomainFacts("roster", "complete", "bundestag-dip", 630),
+            publication.DomainFacts("bills", "complete", "derived-dip", 0),
+            publication.DomainFacts("summaries", "not_requested", "llm-with-bundestag-citations", 0,
+                                    counters={"eligible": 0, "generated": 0, "omitted": 0, "failed": 0, "fallbacks": 0}),
+        ]
+        payload = publication.manifest(
+            generated_at="2026-10-22T10:00:00Z", version="0.3.0", development_output=False, domains=domains
+        )
+        self.assertEqual(publication.validate_manifest(payload), payload)
+        self.assertEqual(payload["domains"]["dossiers"]["items"][1]["failure_reasons"], ["excluded"])
+        self.assertEqual(payload["domains"]["dossiers"]["presentation_state"], "ready")
+
     def test_output_paths_reject_traversal_and_platform_separators(self) -> None:
         for value in ("../secret", "%2e%2e/secret", "data\\secret.json", "/absolute"):
             with self.subTest(value=value):
@@ -128,6 +161,28 @@ class PublicationStateContractTests(unittest.TestCase):
             self.assertTrue(
                 any("retired-feature-state" in finding for finding in publication.validate_public_output(root))
             )
+
+    def test_local_path_rule_ignores_url_segments_in_quoted_speech(self) -> None:
+        # 19/41: a Fragestunde question quotes www.sr.de/sr/home/nachrichten/...
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for text in (
+                "<p>( www.sr.de/sr/home/nachrichten/politik_wirtschaft/rag_grubenwasser102.html )?</p>",
+                '<a href="https://example.test/Users/list">x</a>',
+            ):
+                with self.subTest(text=text):
+                    (root / "index.html").write_text(text, encoding="utf-8")
+                    self.assertEqual(publication.validate_public_output(root), [])
+            for text in (
+                "<p>/home/runner/work/poliwatch</p>",
+                '<a href="file:///Users/example/site">x</a>',
+                '<code>"/Users/example"</code>',
+                r"<p>C:\\Users\\example</p>",
+            ):
+                with self.subTest(text=text):
+                    (root / "index.html").write_text(text, encoding="utf-8")
+                    findings = publication.validate_public_output(root)
+                    self.assertTrue(any("local-path" in finding for finding in findings))
 
 
     # Value: protects=a local path or developer marker pasted into an authored export document ships with CI red, not green; fails_when=data/exports/**/DATA.md or data/exports/datenstand.json stops being scanned, or an unrelated exports file starts to be; why_new=the validator scanned only HTML and three presentation JSON files; seam=validate_public_output; no_claim=CSV and SQLite content

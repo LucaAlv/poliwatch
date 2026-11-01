@@ -287,9 +287,9 @@ class ExportDistributionDataTests(unittest.TestCase):
                     self.assertEqual(entry["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
                     self.assertEqual(entry["bytes"], path.stat().st_size)
         r5 = manifest["recipes"][4]
-        self.assertEqual(r5["columns"], ["proceeding_id", "title", "typ", "reden", "sitzungen", "erste_drucksache"])
+        self.assertEqual(r5["columns"], ["proceeding_id", "wahlperiode", "title", "typ", "reden", "sitzungen", "erste_drucksache"])
         with (gen_dir / r5["file"]).open(newline="", encoding="utf-8") as handle:
-            self.assertEqual(list(csv.reader(handle))[1][3:], ["7", "2", "20/100"])
+            self.assertEqual(list(csv.reader(handle))[1][4:], ["7", "2", "20/100"])
 
     def test_recipe_csv_keeps_quotes_newlines_unicode_formula_text_and_nulls(self) -> None:
         text = '=1,"Grüße"\nzweite Zeile'
@@ -831,6 +831,76 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(spd_row["reden"], 3)
         self.assertEqual(cdu_row["reden"], 3)
 
+    # Value (Fraktion stopgap, plan 2.7): protects=no Daten recipe blends Wahlperioden while
+    # parties stay keyed by name; fails_when=a recipe row lacks its Wahlperiode, or r2 pools
+    # an SPD of WP 18 with the SPD of WP 20 in one share; seam=export_distribution_data.
+    def test_every_recipe_row_names_its_wahlperiode_and_r2_shares_are_per_wahlperiode(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                now = pulse_store.utc_now()
+                conn.execute("INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)"
+                             " VALUES ('1805', '18/5', '2013-12-18', 'Alt', '{}', ?, ?)", (now, now))
+                conn.execute("INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)"
+                             " VALUES ('ai-1805', '1805', 1, 'T1', 'TOP 1', ?, ?)", (now, now))
+                mp_id = conn.execute("SELECT mp_id FROM speeches WHERE fraktion = 'SPD' LIMIT 1").fetchone()[0]
+                conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count,"
+                             " text, fraktion, created_at, updated_at) VALUES ('s-1805', '1805', 'ai-1805', 'R1805', 1, ?,"
+                             " 500, 'Alt', 'SPD', ?, ?)", (mp_id, now, now))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION,))
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertEqual(manifest["export_format"], b.EXPORT_FORMAT)
+        for recipe in manifest["recipes"]:
+            with self.subTest(recipe=recipe["id"]):
+                self.assertIn("wahlperiode", recipe["columns"])
+                self.assertTrue(all(isinstance(row["wahlperiode"], int) for row in recipe["rows"]), recipe["rows"])
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        spd = {row["wahlperiode"]: row for row in r2["rows"] if row["fraktion"] == "SPD"}
+        self.assertEqual((spd[18]["reden"], spd[18]["anteil_prozent"]), (1, 100.0))
+        self.assertEqual(spd[20]["reden"], 3)
+
+    # Value (rule 5, 6c): protects=a Rede the parser split out of the <rede> it was printed
+    # in is counted in the manifest like a synthetic id; fails_when=the split id goes uncounted
+    # or is taken for a synthetic one; seam=export_distribution_data.
+    def test_a_split_rede_id_is_counted_in_the_manifest(self) -> None:
+        before = self.export(force=True)["coverage"]
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                now = pulse_store.utc_now()
+                row = conn.execute("SELECT protocol_id, agenda_item_id, mp_id FROM speeches LIMIT 1").fetchone()
+                conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count,"
+                             " text, fraktion, created_at, updated_at) VALUES ('s-split', ?, ?, 'ID1801002600:2', 99, ?,"
+                             " 500, 'Geteilt', 'SPD', ?, ?)", (*row, now, now))
+        finally:
+            conn.close()
+        after = self.export(force=True)["coverage"]
+        self.assertEqual(after["split_rede_ids"], before["split_rede_ids"] + 1)
+        self.assertEqual(after["synthetic_rede_ids"], before["synthetic_rede_ids"])
+
+    # Value (D2): protects=a sitting kept out by the reviewed exclusion list is a visible,
+    # counted coverage gap on the Daten page; fails_when=the export forgets it or the page
+    # does not name it; seam=export_distribution_data + render_daten_datenstand.
+    def test_an_excluded_sitting_is_counted_as_not_covered(self) -> None:
+        manifest = self.export(excluded_sittings=["18/84"])
+        self.assertEqual(manifest["coverage"]["excluded"], ["18/84"])
+        self.assertNotIn("source_rejected", manifest["coverage"])
+        html = b.render_daten_datenstand(manifest)
+        self.assertIn("1 nicht erfasst (ausgeschlossen): 18/84", html)
+        self.assertNotIn("ausgeschlossen", b.render_daten_datenstand(self.export(force=True)))
+
+    # Value (A3): protects=the Daten page states the v1 scope beside the measured
+    # range, so a reader can tell a gap inside the scope from history outside it;
+    # fails_when=the line is dropped or names another first Wahlperiode;
+    # seam=render_daten_datenstand.
+    def test_datenstand_states_the_v1_scope(self) -> None:
+        html = b.render_daten_datenstand(self.export(force=True))
+        self.assertIn(f"ab der {b.V1_FIRST_WAHLPERIODE}. Wahlperiode", html)
+        self.assertIn('class="scope-line"', html)
+
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
             {**recipe, "sql": "SELECT * FROM speeches_does_not_exist LIMIT 5;"}
@@ -995,7 +1065,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 10)
+        self.assertEqual(manifest["export_format"], 11)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1585,17 +1655,23 @@ class RecipeRepresentativeTests(unittest.TestCase):
             CREATE TABLE mps (id TEXT PRIMARY KEY, identity_key TEXT, person_id TEXT, display_name TEXT,
                               party_id TEXT, is_mdb INTEGER, xml_redner_id TEXT);
             CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY, canonical_id TEXT, has_page INTEGER);
-            CREATE TABLE speeches (mp_id TEXT, char_count INTEGER);
+            CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT);
+            CREATE TABLE votes (id TEXT PRIMARY KEY, protocol_id TEXT);
+            CREATE TABLE agenda_items (id TEXT PRIMARY KEY, protocol_id TEXT);
+            CREATE TABLE agenda_item_votes (agenda_item_id TEXT, vote_id TEXT);
+            CREATE TABLE speeches (mp_id TEXT, protocol_id TEXT, char_count INTEGER);
             CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT, party_id TEXT, vote TEXT);
             CREATE TABLE vote_fractions (vote_id TEXT, party_id TEXT, leading_vote TEXT);
             INSERT INTO parties VALUES ('spd', 'SPD');
             INSERT INTO vote_fractions VALUES ('v1', 'spd', 'yes');
+            INSERT INTO protocols VALUES ('pp-1', '21/1');
+            INSERT INTO votes VALUES ('v1', 'pp-1');
             """
         )
         for mp_id, (person, identity, name, is_mdb, xml) in members:
             conn.execute("INSERT INTO mps VALUES (?, ?, ?, ?, 'spd', ?, ?)", (mp_id, identity, person, name, is_mdb, xml))
             conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1)", (mp_id, person))
-            conn.execute("INSERT INTO speeches VALUES (?, 100)", (mp_id,))
+            conn.execute("INSERT INTO speeches VALUES (?, 'pp-1', 100)", (mp_id,))
             conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no')", (mp_id,))
         try:
             return {
@@ -1616,14 +1692,14 @@ class RecipeRepresentativeTests(unittest.TestCase):
                 # The speaker row over a DIP title; identity_key over the id hash;
                 # the roster row over a speaker row. Every row's Reden pool.
                 self.assertEqual(rows["r1-meiste-reden"], {
-                    "p-1": ("Ada Lovelace", "SPD", 2, 200),
-                    "p-2": ("Bea Zwei", "SPD", 2, 200),
-                    "p-3": ("Dr. Cem Drei", "SPD", 2, 200),
+                    "p-1": (21, "Ada Lovelace", "SPD", 2, 200),
+                    "p-2": (21, "Bea Zwei", "SPD", 2, 200),
+                    "p-3": (21, "Dr. Cem Drei", "SPD", 2, 200),
                 })
                 self.assertEqual(rows["r3-abweichler"], {
-                    "p-1": ("Ada Lovelace", "SPD", 1),
-                    "p-2": ("Bea Zwei", "SPD", 1),
-                    "p-3": ("Dr. Cem Drei", "SPD", 1),
+                    "p-1": (21, "Ada Lovelace", "SPD", 1),
+                    "p-2": (21, "Bea Zwei", "SPD", 1),
+                    "p-3": (21, "Dr. Cem Drei", "SPD", 1),
                 })
 
     def test_the_personenseite_takes_its_heading_from_the_same_row(self) -> None:

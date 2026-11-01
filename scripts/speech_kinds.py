@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 5
+VERSION = 6
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -145,15 +145,26 @@ MEMBER = "member"
 OFFICIAL = "official"
 
 
+def _role_text(elem: ET.Element | None) -> str | None:
+    return _text(elem).replace("\xad", "") or None
+
+
+def _same_role(structured: str, printed: str) -> bool:
+    """The structured role is the bare title of the printed "(Land)" one (R2).
+    A ministry abbreviation and its long form need no reconciling: a Sprechrolle
+    rule maps both to the Bundesregierung."""
+    return printed.startswith(f"{structured} (") and derive.side_of_role(printed) == "bundesrat"
+
+
 def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
     """Occurrence-specific structured or printed role; never a person's job."""
     if redner is None:
         return None, None
-    long = _text(redner.find("name/rolle/rolle_lang")) or None
-    short = _text(redner.find("name/rolle/rolle_kurz")) or None
+    long = _role_text(redner.find("name/rolle/rolle_lang"))
+    short = _role_text(redner.find("name/rolle/rolle_kurz"))
     printed = None
     # A role follows the printed name and a comma, before the label's colon.
-    label = _clean(redner.tail).split(":", 1)[0]
+    label = _clean(redner.tail).replace("\xad", "").split(":", 1)[0]
     for match in re.finditer(",", label):
         suffix = label[match.end():].strip()
         if derive.side_of_role(suffix):
@@ -161,7 +172,10 @@ def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
             break
     structured = long or short
     if structured and printed and derive.side_of_role(structured) != derive.side_of_role(printed):
-        raise ValueError(f"conflicting roles at redner {redner.get('id')}: {structured!r} / {printed!r}")
+        if not _same_role(structured, printed):
+            raise ValueError(f"conflicting roles at redner {redner.get('id')}: {structured!r} / {printed!r}")
+        # The printed spelling is the one a Sprechrolle rule maps.
+        return printed, short
     return (long, short) if structured else (printed, None)
 
 

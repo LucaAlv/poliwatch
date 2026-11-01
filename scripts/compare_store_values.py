@@ -130,6 +130,8 @@ class Measured:
     has_roster: bool = False
     facts_snapshot: dict[str, list[list[Any]]] | None = None
     facts_rows: dict[tuple[str, str, str], tuple[int, int, str | None]] | None = None
+    #: (period_kind, period_key, metric_id) -> (value, denominator, percentile)
+    fact_values: dict[tuple[str, str, str], tuple[Any, Any, Any]] | None = None
     #: Zusammenführung of the store's mps rows by the rules of this tree (rows,
     #: entries, merges per provenance, name buckets left split).
     zusammenfuehrung: dict[str, int] | None = None
@@ -290,6 +292,13 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
                 "SELECT period_kind, period_key, metric_id, complete, publishable, withheld FROM facts"
             )
         }
+    if store.has("facts", "metric_id", "period_kind", "period_key", "value", "denominator", "percentile"):
+        measured.fact_values = {
+            (str(kind), str(key), str(metric)): (value, denominator, percentile)
+            for kind, key, metric, value, denominator, percentile in conn.execute(
+                "SELECT period_kind, period_key, metric_id, value, denominator, percentile FROM facts"
+            )
+        }
 
     measured.zusammenfuehrung = _zusammenfuehrung(store)
     measured.bill_pages = _count_pages(store.directory, "bills")
@@ -318,12 +327,12 @@ def _zusammenfuehrung(store: Store) -> dict[str, int] | None:
     conn.row_factory = sqlite3.Row
     try:
         rows = [dict(row) for row in conn.execute("SELECT m.*, p.name AS party FROM mps m LEFT JOIN parties p ON p.id=m.party_id")]
-        vote_ids = {}
+        vote_ids, wahlperioden = {}, {}
         if store.has("vote_members", "mp_id", "vote_id"):
-            for member in conn.execute("SELECT mp_id, vote_id FROM vote_members"):
-                vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
+            vote_ids, wahlperioden = registry._vote_evidence(conn)
         for row in rows:
             row["vote_ids"] = vote_ids.get(row["id"], set())
+            row["vote_wahlperioden"] = wahlperioden.get(row["id"], set())
         components, totals = registry.match_rows(rows)
         return dict(rows=len(rows), entries=len(components), merges_ext_id=totals["ext_id"],
                     merges_corroborated_name=totals["corroborated_name"], merges_unique_name=totals["unique_name"],
@@ -605,6 +614,7 @@ def compare(
 
     report.heading("stored facts [whole store]")
     _facts_rows(report, old, new)
+    _fact_value_rows(report, old, new)
 
 
 def _party_rows(report: Report, old: Measured, new: Measured) -> None:
@@ -647,6 +657,36 @@ def _vote_rows(report: Report, old: Measured, new: Measured, scope: set[str] | N
     new_count, new_max = summarise(new)
     report.row("votes", old_count, new_count)
     report.row("newest vote date", old_max, new_max)
+
+
+def _number(value: Any) -> str:
+    if value is None:
+        return UNAVAILABLE
+    return f"{round(float(value), 6):g}" if isinstance(value, (int, float)) else str(value)
+
+
+def _fact_value_rows(report: Report, old: Measured, new: Measured) -> None:
+    """D6: value, denominator and percentile of every (period, metric) both
+    stores hold, so a shift behind an unchanged winner is listed too."""
+    if old.fact_values is None or new.fact_values is None:
+        report.row("fakt values", None, None)
+        return
+    shared = sorted(set(old.fact_values) & set(new.fact_values))
+    moved = [key for key in shared if old.fact_values[key] != new.fact_values[key]]
+    report.line(f"fakt values moved: {len(moved)} of {len(shared)} shared (period, metric)")
+    for kind, period, metric in moved[:LIST_LIMIT]:
+        parts = []
+        for name, before, after in zip(("value", "denominator", "percentile"),
+                                       old.fact_values[(kind, period, metric)], new.fact_values[(kind, period, metric)]):
+            if before == after:
+                continue
+            change = ""
+            if isinstance(before, (int, float)) and isinstance(after, (int, float)):
+                change = " " + f"{round(float(after) - float(before), 6):+g}"
+            parts.append(f"{name} {_number(before)} -> {_number(after)}{change}")
+        report.line(f"  {kind} {period} {metric}: {'; '.join(parts)}")
+    if len(moved) > LIST_LIMIT:
+        report.line(f"  ... {len(moved) - LIST_LIMIT} more")
 
 
 def _facts_rows(report: Report, old: Measured, new: Measured) -> None:

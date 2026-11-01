@@ -335,6 +335,38 @@ class BackfillSelectionTests(unittest.TestCase):
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/5", "21/3", "21/2"])
         self.assertEqual([p["dokumentnummer"] for p in waiting], ["21/4"])
 
+    # Value: protects=the backfill reaches WP 18/19 although no WP 18 sitting is stored (D3);
+    # fails_when=selection still starts at the earliest stored sitting; why_new=no test selects
+    # WP 18; seam=incomplete_sitting_protocols; no_claim=live DIP catalog.
+    def test_the_v1_floor_selects_wp18_sittings_before_any_is_stored(self) -> None:
+        catalog = [
+            catalog_protocol("21/1", "pp-1", "2026-06-11"),
+            catalog_protocol("20/9", "pp-20-9", "2020-01-01"),
+            catalog_protocol("18/2", "pp-18-2", "2013-10-28"),
+            catalog_protocol("18/1", "pp-18-1", "2013-10-22"),
+            catalog_protocol("17/253", "pp-17", "2013-09-03", xml=False),
+        ]
+        stored = self.entries(report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
+        for entries, expected in ((stored, ["20/9", "18/2", "18/1"]), ([], ["21/1", "20/9", "18/2", "18/1"])):
+            with self.subTest(stored=bool(entries)):
+                acquirable, waiting, _vote_only, _structural = build.incomplete_sitting_protocols(entries, catalog)
+                self.assertEqual([p["dokumentnummer"] for p in acquirable], expected)
+                self.assertEqual(waiting, [])
+
+    # Value (Former-MPs answer): protects=the roster spans every v1 period by default;
+    # fails_when=the default stays WP 21; seam=roster_periods.
+    def test_the_roster_spans_every_v1_wahlperiode_unless_given(self) -> None:
+        catalog = [catalog_protocol("21/3", "a", "2026-06-13"), catalog_protocol("18/1", "b", "2013-10-22")]
+        self.assertEqual(build.roster_periods(SimpleNamespace(roster_wahlperiode=None), catalog), [18, 19, 20, 21])
+        self.assertEqual(build.roster_periods(SimpleNamespace(roster_wahlperiode=[21, 20, 21]), catalog), [20, 21])
+
+    def test_the_v1_floor_is_the_first_wp18_sitting_of_the_catalog(self) -> None:
+        catalog = [catalog_protocol("18/2", "a", "2013-10-28"), catalog_protocol("18/1", "b", "2013-10-22"),
+                   catalog_protocol("17/253", "c", "2013-09-03")]
+        self.assertEqual(build.V1_FIRST_WAHLPERIODE, 18)
+        self.assertEqual(build.v1_coverage_floor(catalog), "2013-10-22")
+        self.assertIsNone(build.v1_coverage_floor([catalog_protocol("21/1", "d", "2026-06-11")]))
+
     def test_with_votes_off_sittings_held_back_only_by_votes_are_skipped(self) -> None:
         entries = self.entries(
             report_for(1, acquisition=COMPLETE_VOTES),
@@ -408,6 +440,249 @@ class BackfillSelectionTests(unittest.TestCase):
         self.assertEqual([p["dokumentnummer"] for p in build_dossiers.call_args.args[0]], ["21/4", "21/2"])
         self.assertIn("[backfill] 2 incomplete or missing sitting(s) to acquire", stderr.getvalue())
         self.assertIn("1 not acquirable yet (DIP has no XML): 21/3", stderr.getvalue())
+
+    def run_backfill_main(self, output_dir: Path, catalog: list[dict], *extra: str):
+        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir), *extra]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(build, "fetch_protocols", return_value=catalog),
+            mock.patch.object(build, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
+            mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+            mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
+            mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+        ):
+            code = build.main()
+        return code, [p["dokumentnummer"] for p in build_dossiers.call_args.args[0]], stderr.getvalue()
+
+    # Value (D4): protects=a WP-by-WP backfill acquires exactly that WP, and --limit without
+    # the flag takes the newest N overall; fails_when=the scope flag is ignored by the backfill
+    # or its default narrows --limit to WP 21 again; seam=main (argv), fixture catalog.
+    def test_protocol_wahlperiode_scopes_the_backfill_and_defaults_to_all(self) -> None:
+        catalog = [
+            catalog_protocol("21/2", "pp-2", "2026-06-12"),
+            catalog_protocol("21/1", "pp-1", "2026-06-11"),
+            catalog_protocol("20/9", "pp-20-9", "2021-12-15"),
+            catalog_protocol("19/1", "pp-19-1", "2017-10-24"),
+            catalog_protocol("18/2", "pp-18-2", "2013-10-28"),
+            catalog_protocol("18/1", "pp-18-1", "2013-10-22"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            for name in ("protocols", "data"):
+                (output_dir / name).mkdir(parents=True)
+            write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
+            code, acquired, stderr = self.run_backfill_main(
+                output_dir, catalog, "--backfill-incomplete", "--protocol-wahlperiode", "18")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(acquired, ["18/2", "18/1"])
+            self.assertIn("judged from 2013-10-22", stderr)
+            self.assertIn("WP 18: 2", stderr)
+            code, acquired, stderr = self.run_backfill_main(output_dir, catalog, "--backfill-incomplete")
+            self.assertEqual(acquired, ["21/2", "20/9", "19/1", "18/2", "18/1"])
+            self.assertIn("WP 18: 2, WP 19: 1, WP 20: 1, WP 21: 1", stderr)
+            code, acquired, stderr = self.run_backfill_main(output_dir, catalog, "--limit", "3")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(acquired, ["21/2", "21/1", "20/9"])
+
+    # Value (plan 2.3, TODOS "Harden the vote acquisition" item 5): protects=an unattended
+    # backfill that lost sittings to a DIP outage fails loudly and says which; fails_when=a
+    # skipped sitting still exits 0 or goes unnamed; seam=main (argv), DIP calls stubbed.
+    def test_a_skipped_sitting_is_summarised_and_exits_nonzero(self) -> None:
+        catalog = [catalog_protocol("21/3", "pp-3", "2026-06-13"), catalog_protocol("21/2", "pp-2", "2026-06-12"),
+                   catalog_protocol("21/1", "pp-1", "2026-06-11")]
+
+        def fake_write(protocol, **_kwargs):
+            if protocol["dokumentnummer"] == "21/2":
+                raise build.dip.DipError("DIP answered 403 (bot challenge)")
+            return {"report": report_for(int(protocol["dokumentnummer"].split("/")[1]), acquisition=COMPLETE_VOTES)}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            for name in ("protocols", "data"):
+                (output_dir / name).mkdir(parents=True)
+            write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
+            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir),
+                    "--backfill-incomplete"]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(build, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build, "write_report_and_page", side_effect=fake_write),
+                mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+                mock.patch.object(build, "render_site", return_value=output_dir / "index.html") as render,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build.main()
+        self.assertEqual(code, 1, stderr.getvalue())
+        render.assert_called_once()  # the site is still written from what was acquired
+        self.assertIn("[summary] 1 of 2 sitting(s) not acquired", stderr.getvalue())
+        self.assertIn("source_unavailable: 21/2", stderr.getvalue())
+
+    # Value (D2, owner decision 2026-10-22): protects=a listed sitting stays out of the store
+    # whatever the parser says, and an unreviewed refusal still stops the run (D4);
+    # fails_when=a listed sitting is fetched, persisted from its cached report, or ends the
+    # run on an unmapped role, an unlisted refusal is passed, or the record loses the entry;
+    # seam=main (argv), DIP calls stubbed.
+    def test_a_listed_sitting_is_skipped_before_acquisition(self) -> None:
+        catalog = [catalog_protocol("21/3", "pp-3", "2026-06-13"), catalog_protocol("21/2", "pp-2", "2026-06-12"),
+                   catalog_protocol("21/1", "pp-1", "2026-06-11")]
+        rejected = {"21/2"}
+        written: list[str] = []
+
+        def fake_write(protocol, **_kwargs):
+            number = protocol["dokumentnummer"]
+            written.append(number)
+            if number in rejected:
+                raise build.dip.DipError("21/2: protocol source rejected: 21/2 T4 marker 3", source_rejected=True)
+            if number == "21/3":
+                raise build.derive.SprechrolleError('no Sprechrolle rule maps the role "Vizepräsidentin"')
+            return {"report": report_for(int(number.split("/")[1]), acquisition=COMPLETE_VOTES)}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            for name in ("protocols", "data"):
+                (output_dir / name).mkdir(parents=True)
+            write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
+            record = output_dir / "data" / "coverage-exclusions.json"
+
+            def run(*extra):
+                written.clear()
+                argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
+                        "--backfill-incomplete", "--sleep", "0", *extra]
+                with (
+                    mock.patch.object(sys, "argv", argv),
+                    mock.patch.object(build, "fetch_protocols", side_effect=lambda *_a: copy.deepcopy(catalog)),
+                    mock.patch.object(build, "write_report_and_page", side_effect=fake_write),
+                    mock.patch.object(build, "refresh_vorgang_cache"),
+                    mock.patch.object(build, "rebuild_database_from_entries") as rebuild,
+                    mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+                    mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
+                    mock.patch.object(build, "collect_abgeordnete", return_value=([], {})),
+                    mock.patch.object(build.facts, "open_readonly"),
+                    mock.patch.object(build.pulse_store, "require_current_schema"),
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                    mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+                ):
+                    try:
+                        code = build.main()
+                    except build.derive.SprechrolleError as exc:
+                        code = repr(exc)
+                persisted = sorted(
+                    entry["report"]["protocol"]["dokumentnummer"] for entry in rebuild.call_args.args[1]
+                ) if rebuild.called else None
+                excluded_for_rebuild[:] = sorted(rebuild.call_args.kwargs["excluded_document_numbers"]) if rebuild.called else []
+                return code, persisted, stderr.getvalue()
+
+            # The rebuild is told which sittings are listed, so a listed sitting that is
+            # already stored leaves the store instead of reading as missing evidence.
+            excluded_for_rebuild: list[str] = []
+
+            # An unlisted refusal still stops the run before the store is rebuilt (D4).
+            code, persisted, stderr = run("--exclude-document-number", "21/3")
+            self.assertEqual(code, 1, stderr)
+            self.assertIsNone(persisted)
+            self.assertIn("21/2 T4 marker 3", stderr)
+            self.assertNotIn("21/3", written)
+
+            # Listed: 21/3 (unmapped role) and 21/1 (parses, cached) are neither fetched nor
+            # persisted; 21/2's refusal is never reached.
+            code, persisted, stderr = run("--exclude-document-number", "21/3", "--exclude-document-number", "21/2",
+                                          "--exclude-document-number", "21/1")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(written, [])
+            self.assertEqual(persisted, [])
+            self.assertEqual(excluded_for_rebuild, ["21/1", "21/2", "21/3"])
+            entries = json.loads(record.read_text(encoding="utf-8"))["exclusions"]
+            self.assertEqual([(e["document_number"], e["date"], e["reason"]) for e in entries],
+                             [("21/1", "2026-06-11", "excluded"), ("21/2", "2026-06-12", "excluded"),
+                              ("21/3", "2026-06-13", "excluded")])
+            self.assertIn("excluded: 21/3, 21/2, 21/1", stderr)
+
+            # The record is the durable list (owner decision 2026-10-23, option A): a run that
+            # forgets the flag still skips every recorded sitting, refusal or not.
+            rejected.clear()
+            code, persisted, stderr = run()
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(written, [])
+            self.assertEqual(persisted, [])
+            self.assertIn("excluded: 21/3, 21/2, 21/1", stderr)
+            self.assertIn("[backfill] 0 incomplete or missing sitting(s) to acquire", stderr)
+
+            # Only --include-document-number takes a sitting off the list: it is acquired and
+            # leaves the record.
+            code, persisted, stderr = run("--include-document-number", "21/2", "--include-document-number", "21/1")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(written, ["21/2"])
+            self.assertEqual(persisted, ["21/1", "21/2"])
+            self.assertEqual(excluded_for_rebuild, ["21/3"])
+            self.assertEqual([e["document_number"] for e in json.loads(record.read_text(encoding="utf-8"))["exclusions"]],
+                             ["21/3"], stderr)
+
+    # Value (D2 option A): protects=a number cannot be both excluded and included, and an
+    # inclusion needs an online run that can acquire it; fails_when=the conflict is resolved
+    # silently one way; seam=parse_args.
+    def test_include_document_number_conflicts_are_refused(self) -> None:
+        for argv in (["build", "--exclude-document-number", "21/2", "--include-document-number", "21/2"],
+                     ["build", "--offline", "--include-document-number", "21/2"]):
+            with self.subTest(argv=argv), mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                build.parse_args()
+        with mock.patch.object(sys, "argv", ["build", "--include-document-number", "21/2"]):
+            self.assertEqual(build.parse_args().include_document_number, ["21/2"])
+
+    def test_a_backfill_waits_between_dip_requests_unless_told_otherwise(self) -> None:
+        cases = (
+            (["--backfill-incomplete"], build.BACKFILL_SLEEP_SECONDS),
+            (["--backfill-incomplete", "--sleep", "0"], 0.0),
+            ([], 0.0),
+            (["--sleep", "1.5"], 1.5),
+        )
+        self.assertGreater(build.BACKFILL_SLEEP_SECONDS, 0)
+        for extra, expected in cases:
+            with self.subTest(extra=extra), mock.patch.object(sys, "argv", ["build", *extra]):
+                self.assertEqual(build.parse_args().sleep, expected)
+
+    # Value (plan 2.4): protects=a WP 18 backfill's vote scan reaches 2013 instead of leaving
+    # every old sitting partial, while each sitting's scan still ends at its own date;
+    # fails_when=the backfill keeps the 30-page default or a deep budget scans past the target;
+    # seam=apply_to_args and fetch_roll_call_vote_candidates; no_claim=live list depth.
+    def test_a_backfill_scans_the_roll_call_list_down_to_its_oldest_target(self) -> None:
+        selection = build.EnrichmentSelection(frozenset({"votes"}), ())
+        for backfill, given, expected in ((True, None, build.BACKFILL_VOTE_SCAN_PAGES), (True, 40, 40),
+                                          (False, None, 30)):
+            args = SimpleNamespace(vote_scan_pages=given, backfill_incomplete=backfill)
+            build.apply_to_args(args, selection)
+            self.assertEqual(args.vote_scan_pages, expected)
+        self.assertGreaterEqual(build.BACKFILL_VOTE_SCAN_PAGES, 90)  # 2013 sat at list offset 720 (2026-10-19)
+
+        def page(index: int) -> list[dict]:
+            # Ten entries a page, one day apart, newest first from 2026-01-01.
+            return [{"date": (date(2026, 1, 1).toordinal() - (index * 10 + n)), "title": f"v{index}-{n}"}
+                    for n in range(10)]
+
+        fetched: list[int] = []
+
+        def fake_parse(html: str) -> list[dict]:
+            index = int(html)
+            return [{**entry, "date": date.fromordinal(entry["date"]).isoformat()} for entry in page(index)] if index < 120 else []
+
+        def fake_fetch(url: str) -> str:
+            index = int(url.split("offset=")[1].split("&")[0]) // 10
+            fetched.append(index)
+            return str(index)
+
+        target = date.fromordinal(date(2026, 1, 1).toordinal() - 755).isoformat()  # on page 75
+        with mock.patch.object(build.dip, "fetch_html", side_effect=fake_fetch), \
+                mock.patch.object(build.dip, "parse_roll_call_list_page", side_effect=fake_parse):
+            deep = build.dip.fetch_roll_call_vote_candidates(target, build.BACKFILL_VOTE_SCAN_PAGES, include_diagnostics=True)
+            fetched.clear()
+            shallow = build.dip.fetch_roll_call_vote_candidates(target, 30, include_diagnostics=True)
+        self.assertEqual(deep.scan_end, "date_passed")
+        self.assertEqual(deep.pages_fetched, 76)
+        self.assertEqual(len(deep.candidates), 1)
+        self.assertEqual(shallow.scan_end, "budget_exhausted")
+        self.assertEqual(len(fetched), 30)
 
     def test_backfill_incomplete_cannot_be_combined_with_document_number_or_offline(self) -> None:
         for extra, message in (
@@ -703,6 +978,21 @@ class GapPrimitiveTests(unittest.TestCase):
         self.assertEqual(gaps["21/1"]["reasons"], {"votes": "votes partial (scan_budget_exhausted)"})
         self.assertEqual(gaps["21/2"]["reasons"], {"dossier": "no_report"})
         self.assertEqual(gaps["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})
+
+    # Value (CRITICAL, D3): protects=Fakt completeness keeps one meaning whatever the backfill
+    # floor; fails_when=the floor leaks into expected_sittings/build_periods; seam=facts.
+    def test_the_backfill_floor_reaches_gaps_but_not_the_fakt_periods(self) -> None:
+        listed = [{"document_number": "18/1", "date": "2013-10-22"}, *self.LISTED]
+        catalog = facts.sitting_catalog(listed, authoritative=True)
+        self.assertNotIn("18/1", facts.sitting_gaps(self.PERSISTED, self.completeness(), catalog))
+        floored = facts.sitting_gaps(self.PERSISTED, self.completeness(), catalog, lower_bound="2013-10-22")
+        self.assertEqual(floored["18/1"], {"date": "2013-10-22", "reasons": {"dossier": "not_persisted"}})
+        self.assertEqual(floored["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})
+        weeks, months = facts.build_periods(self.PERSISTED, catalog)
+        self.assertEqual(min(week.key for week in weeks), (2025, 1))
+        self.assertEqual(min(month.key for month in months), (2025, 1))
+        self.assertEqual(facts.sitting_gaps([], {}, catalog, lower_bound="2013-10-22")["18/1"]["reasons"],
+                         {"dossier": "not_persisted"})
 
     def test_without_an_authoritative_catalog_nothing_can_be_listed(self) -> None:
         for catalog in (None, facts.sitting_catalog(self.LISTED, authoritative=False)):

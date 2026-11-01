@@ -186,7 +186,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
                 conn.execute(
                     "UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'FDP')"
                 )
-                self.assertEqual([row[2:] for row in self.r3_rows(conn)], [("FDP", 1)])
+                self.assertEqual([row[3:] for row in self.r3_rows(conn)], [("FDP", 1)])
             finally:
                 conn.close()
 
@@ -208,7 +208,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
                 conn.execute(f"UPDATE vote_fractions SET leading_vote = 'yes' WHERE vote_id LIKE '%-b' AND party_id = {spd}")
                 conn.execute(f"UPDATE vote_members SET party_id = {spd} WHERE vote_id LIKE '%-b' AND party_id = {fdp}")
                 rows = self.r3_rows(conn)
-                self.assertEqual([row[2:] for row in rows], [("FDP", 1), ("SPD", 1)])
+                self.assertEqual([row[3:] for row in rows], [("FDP", 1), ("SPD", 1)])
                 self.assertEqual(rows[0][0], rows[1][0])
             finally:
                 conn.close()

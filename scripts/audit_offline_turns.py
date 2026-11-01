@@ -23,6 +23,11 @@ def audit(parser, path):
     source = path.read_text(encoding="utf-8")
     source_sha256 = current.xml_source_sha256(source)
     root = ET.fromstring(source)
+    # Look up turns in the Reden the parser sees (role-less chair markers,
+    # and 6c splits nested Reden).
+    getattr(parser, "mark_roleless_chairs", lambda _root: None)(root)
+    for top in root.iter("tagesordnungspunkt"):
+        getattr(parser, "split_nested_reden", lambda _top: None)(top)
     unresolved = []
     while True:
         try:

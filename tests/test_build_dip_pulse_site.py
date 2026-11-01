@@ -6,6 +6,7 @@ import itertools
 import json
 import os
 import re
+import sqlite3
 import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -92,7 +93,27 @@ class DossierProgressTests(unittest.TestCase):
         self.assertIn("Completed 1/2 dossier(s)", stderr.getvalue())
 
 
+    # Value (D4): protects=the abort for any source refusal that reaches acquisition (listed
+    # sittings never do, D2); fails_when=a refusal is skipped; seam=build_dossiers_with_progress.
+    def test_a_rejected_source_aborts_the_build(self) -> None:
+        protocols = [
+            {"id": "5805", "dokumentnummer": "18/84"},
+            {"id": "5806", "dokumentnummer": "18/85"},
+        ]
+
+        def build(protocol: dict[str, Any], _existing: dict[str, Any] | None) -> dict[str, Any]:
+            if protocol["id"] == "5805":
+                raise build_dip_pulse_site.dip.DipError("18/84: protocol source rejected: 18/84 T1", source_rejected=True)
+            return {"report": {"protocol": protocol}}
+
+        with mock.patch("sys.stderr", io.StringIO()):
+            with self.assertRaises(build_dip_pulse_site.dip.DipError):
+                build_dip_pulse_site.build_dossiers_with_progress(
+                    [dict(p) for p in protocols], load_existing=lambda _p: None, build_dossier=build)
+
+
 class CollectAbgeordneteTests(unittest.TestCase):
+    # Value: protects=offline replay clears a stale BR is_mdb flag but retains its registry identity and biography, while MdB and role-less legacy rows stay roster members; fails_when=all preserved rows are forced is_mdb or a corrected BR row disappears on the next unchanged replay; why_new=prior test only seeded a role-less positive row; seam=none; no_claim=synthetic local store, not a live roster response
     def test_database_rebuild_preserves_cached_roster_unless_refreshing_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database_path = Path(tmp) / "pulse.sqlite"
@@ -102,25 +123,59 @@ class CollectAbgeordneteTests(unittest.TestCase):
                 now = pulse_store.utc_now()
                 with conn:
                     party_id = pulse_store.upsert_party(conn, "SPD", now)
-                    pulse_store.upsert_mp(
-                        conn,
-                        now=now,
-                        display_name="Ada Lovelace",
-                        party_id=party_id,
-                        identity_key="dip:ada",
-                        occurrence_id="fixture:dip:ada",
-                        dip_person_id="ada",
-                        is_mdb=True,
-                    )
+                    for person_id, name, function, profile_url, wahlkreis in (
+                        ("ada", "Ada Lovelace", ["MdB"], None, None),
+                        ("legacy", "Lee Legacy", None, None, None),
+                        ("br", "Berta Bundesrat", ["MdBR"], "https://example.test/br", "Bundesrat I"),
+                    ):
+                        pulse_store.upsert_mp(
+                            conn,
+                            now=now,
+                            display_name=name,
+                            party_id=party_id,
+                            identity_key=f"dip:{person_id}",
+                            occurrence_id=f"fixture:dip:{person_id}",
+                            dip_person_id=person_id,
+                            function=function,
+                            profile_url=profile_url,
+                            wahlkreis=wahlkreis,
+                            is_mdb=True,
+                        )
             finally:
                 conn.close()
 
             build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
-            conn = pulse_store.connect(database_path)
-            try:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE is_mdb = 1").fetchone()[0], 1)
-            finally:
-                conn.close()
+
+            def snapshot():
+                conn = pulse_store.connect(database_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    return (
+                        {row["identity_key"]: dict(row) for row in conn.execute("SELECT * FROM mps")},
+                        {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM person_bindings")},
+                        {row["identity_key"]: row["home_person_id"] for row in conn.execute(
+                            "SELECT identity_key, home_person_id FROM person_records")},
+                    )
+                finally:
+                    conn.close()
+
+            mps, bindings, home = snapshot()
+            self.assertEqual({key: row["is_mdb"] for key, row in mps.items()},
+                             {"dip:ada": 1, "dip:legacy": 1, "dip:br": 0})
+            self.assertEqual(mps["dip:br"]["identity_key"], "dip:br")
+            self.assertEqual(mps["dip:br"]["profile_url"], "https://example.test/br")
+            self.assertEqual(mps["dip:br"]["wahlkreis"], "Bundesrat I")
+            self.assertEqual(bindings["fixture:dip:br"], home["dip:br"])
+
+            before = database_path.read_bytes()
+            before_stat = database_path.stat()
+            rebuilt = build_dip_pulse_site.rebuild_database_from_entries(
+                database_path, [], keep_if_unchanged=True,
+            )
+            self.assertFalse(rebuilt.replaced)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertEqual(database_path.stat().st_ino, before_stat.st_ino)
+            self.assertEqual(snapshot()[0]["dip:br"]["is_mdb"], 0)
 
             build_dip_pulse_site.rebuild_database_from_entries(
                 database_path,
@@ -1260,8 +1315,8 @@ class CurrentPulseOrderTests(unittest.TestCase):
     # Value: protects=only a roster MdB is shown as an Abgeordnete; anyone else who spoke is a Redner with the Sprechrolle they spoke in, the Fraktion stays visible when the protocols record a Mandat, and a page kept by registry evidence alone claims no Rede; fails_when=a minister's page shows a Fraktion metric again, a roster-less build hides every MdB's Fraktion, an orphan page says "Redner", or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite) and review 2026-10-30; seam=none
     def test_only_mdbs_are_called_abgeordnete(self) -> None:
         base = {"speeches": [], "votes": [], "vote_tally": {}, "contribution_counts": {}, "contribution_count": 0}
-        mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "speech_count": 3,
-               "sprechrollen": [], "mandat_in_protocols": True}
+        mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "current_mdb": True,
+               "speech_count": 3, "sprechrollen": [], "mandat_in_protocols": True}
         minister = {**base, "id": "p2", "name": "Bea Minister", "party": None, "is_mdb": False, "speech_count": 5,
                     "sprechrollen": ["Bundesregierung"], "mandat_in_protocols": False}
         spoke_as_mdb = {**base, "id": "p3", "name": "Cem Protokoll", "party": "CDU/CSU", "is_mdb": False, "speech_count": 2,

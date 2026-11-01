@@ -63,7 +63,7 @@ An identifier a source assigns to exactly one Person and keeps for them, such as
 _Avoid_: treating a name, a Zusammenschluss or a profile link as proof of identity
 
 **Namensabgleich**:
-Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. Roster and speaker records may join only when exactly one component on each side matches and no Personenkennung contradicts it. Roll-call records form a third source: surname-first names are compared in given-name order, and vote records may join exactly one unambiguous roster/speaker component. Different profile versions may join it, but distinct records present in the same roll call, conflicting Personenkennungen and ambiguous namesakes stay separate.
+Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. Roster and speaker records may join only when exactly one component on each side matches and no Personenkennung contradicts it. Roll-call records form a third source: surname-first names are compared in given-name order, and vote records may join exactly one unambiguous roster/speaker component. Different profile versions may join it (the Bundestag gives an MdB a new biography number in each Wahlperiode), but distinct records present in the same roll call, two biography numbers in one Wahlperiode, conflicting Personenkennungen and ambiguous namesakes stay separate.
 _Avoid_: name match as identity, merging every record in a group of namesakes
 
 **Zusammenführung**:
@@ -141,7 +141,7 @@ DIP's record of one Person's contribution in a Plenarprotokoll or Drucksache, ty
 _Avoid_: Aktivität as a synonym for Rede, counting Aktivitäten as Reden
 
 **Sitzungsleitung**:
-What the presiding Präsident or Vizepräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede; a Präsident who speaks from the lectern gives a Rede like any other Redner.
+What the presiding Präsident, Vizepräsident or Alterspräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede, including where the Plenarprotokoll XML of Wahlperiode 18 and 19 prints it inside another speaker's `<rede>`; a Präsident who speaks from the lectern gives a Rede like any other Redner, counted for their Zusammenschluss (ADR 0004).
 _Avoid_: attributing chairing remarks to the Redner or counting them as speeches
 
 **Gastansprache**:
@@ -387,4 +387,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 8 / export format 10 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 8 / export format 11 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

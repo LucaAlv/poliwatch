@@ -168,7 +168,10 @@ class ContributionTests(unittest.TestCase):
         rede = root.find(".//rede[@id='ID205104600']")
         for p in rede.findall('p'):
             if dip.elem_text(p) == 'Von der CDU/CSU? – Ja.':
-                p.text = 'Vielen Dank.'
+                # A turn that carries on is no consent; a short one would be (R1b).
+                p.text = 'Ich fahre mit meinem Gedanken fort, denn die Zeit ist knapp und das Thema wichtig.'
+            # The asker's opening thanks would be grant evidence of its own (rule 5, 6a).
+            p.text = (p.text or '').replace(', dass Sie die Zwischenfrage zulassen', '')
         with self.assertRaisesRegex(ValueError, 'ID205104600 marker 4'):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
@@ -456,7 +459,9 @@ class ContributionTests(unittest.TestCase):
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         parsed = dip.parse_protocol_xml(xml)
         nested = parsed['agenda_items'][0]['contributions']
-        self.assertEqual([c['rede_id'] for c in nested], ['nested:R:2', 'nested:R:4'])
+        # One exchange, one Zwischenfrage: the chair's "zum Schluss Ihrer Frage" offers no new one.
+        self.assertEqual([(c['rede_id'], c['text']) for c in nested],
+                         [('nested:R:2', 'Eine Bemerkung ohne Fragezeichen. Erklären Sie uns doch mal.')])
 
     def test_question_mark_evidence_carries_through_chair_interruption(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -472,8 +477,8 @@ class ContributionTests(unittest.TestCase):
                '<fraktion>Grüne</fraktion></name></redner></p><p>Das war der Punkt.</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         parsed = dip.parse_protocol_xml(xml)
-        self.assertEqual([c['rede_id'] for c in parsed['agenda_items'][0]['contributions']],
-                         ['nested:R:2', 'nested:R:4'])
+        self.assertEqual([(c['rede_id'], c['text']) for c in parsed['agenda_items'][0]['contributions']],
+                         [('nested:R:2', 'Was meinen Sie? Das war der Punkt.')])
 
     def test_nested_grant_does_not_cross_rede_boundary(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -618,13 +623,13 @@ class ReplayAndGuardTests(unittest.TestCase):
         self.assertEqual(r, before)
 
     def test_missing_and_stale_provenance_refuse_facts_and_export_before_writes(self):
-        self.assertEqual(sk.VERSION, 5)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'store.sqlite'
             parsed = dip.parse_protocol_xml(source('a1-written-18-100.xml'))
             r = report(parsed)
             conn = store.connect(path)
             store.persist_report(conn, r)
+            self.assertEqual(sk.VERSION, 6)
             self.assertEqual(store.SCHEMA_VERSION, 8)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:

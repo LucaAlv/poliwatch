@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.0.0] - 2026-11-01
+
+### Added
+
+- **Coverage from Wahlperiode 18 on (v1).** The site and the Daten export now cover every Sitzung the DIP catalog lists with Plenarprotokoll XML for WP 18 to 21, from 18/1 (2013-10-22) on. On the reference store that is 716 Sitzungen (WP 18: 194 of 245, WP 19: 206 of 239, WP 20: 213 of 214, WP 21: 103 of 103), up from 290. With the branch tip, 619 namentliche Abstimmungen and 54,718 Reden are counted, up from 217 and 26,267. The 85 Sitzungen not covered are on a reviewed exclusion list (below). README, PRODUCT.md and the Daten page state the covered range.
+- **A reviewed exclusion list.** `--exclude-document-number N` keeps a Sitzung out of every later build, online or offline, and records it in `data/coverage-exclusions.json`. Use it only after reading the parser's rejection diagnostic. `--include-document-number N` takes it back. The Daten page counts these Sitzungen as "nicht erfasst (ausgeschlossen)". Any other rejected source still stops the build before the store is replaced.
+- **An unattended WP-by-WP backfill.**
+  - `--backfill-incomplete` judges from the first Sitzung of WP 18, so an empty store finds every WP 18 and 19 Sitzung. `--protocol-wahlperiode N` limits a run to one Wahlperiode. The run prints the judged range per Wahlperiode before it acquires anything.
+  - It waits 2 s between DIP requests and scans the roll-call list down to its oldest target (at most 200 pages).
+  - Every online build ends with a `[summary]` of the Sitzungen it did not acquire, and exits 1 when one was lost to an outage.
+- **Fewer DIP requests.**
+  - Closed Wahlperioden come from the cached catalog for 7 days.
+  - Vorgang-Drucksachen and `/person` records are cached across runs and saved after every Sitzung.
+  - Paging stops once a page holds the whole result.
+  - After 2 failed DIP requests in a row a run asks DIP nothing more.
+  - XML downloads are paced per window.
+  - Together this took the backfill from about 26 to about 4 DIP requests per Sitzung.
+  - `DIP_REQUEST_LOG=<file>` writes one line per request attempt, without the API key.
+- **Bulk prefetch, `scripts/prefetch_dip_bulk.py`.** It fills the Drucksache and person caches for a closed Wahlperiode in month chunks, checked against DIP's own counts. `--overlap-only` serves the current Wahlperiode.
+- **The store gate, `scripts/validate_store_gate.py`.** It checks a store clone with a repersist and integrity checks, a fresh build against a half-then-full build, a byte-identical unchanged replay, a link audit and the export against its manifest, and writes a JSON receipt. On the merged tree it passed all 11 checks.
+- **Former Abgeordnete.** The MdB roster spans WP 18 to the present (`--roster-wahlperiode`, repeatable). Members of earlier Wahlperioden keep their pages and appear in a "Frühere Abgeordnete seit der 18. Wahlperiode" table on the Abgeordnete index. The index lists the newest Wahlperiode's members.
+- `scripts/compare_store_values.py` lists moved Fakt values per period and metric (value, denominator, percentile).
+
+### Changed
+
+- **Daten recipes are counted per Wahlperiode.** Each recipe now has a `wahlperiode` column. Fraktionen are keyed by name, so a whole-store figure would have pooled four Wahlperioden. The export format moves to 11.
+- **WP 18/19 Plenarprotokolle are read correctly** (speech rules v6).
+  - A whole Rede printed inside the previous one is its own Rede.
+  - Presidium markers and an election acceptance are Sitzungsleitung, and a role-less marker of the sitting's chair is Sitzungsleitung too.
+  - An addressed MdB given the floor makes a Zwischenbemerkung.
+  - One exchange is one Zwischenfrage, not one per marker. On WP 20/21 this merges some Zwischenfragen that were counted per marker.
+  - A Vizepräsident(in)'s own Rede counts for the Fraktion (ADR 0004).
+  - WP 18/19 role spellings, Fraktion spellings and Einzelplan tables are mapped.
+- **Who counts as an MdB, and when.**
+  - A roll-call voter's bundestag.de link is compared by its member number, and two numbers conflict only within one Wahlperiode.
+  - Bundesrat roles no longer count as Bundestag membership.
+  - A Wahlperiode in which DIP records only a Land-government office is no MdB period. On the reference DIP data this corrects 11 people, for example Olaf Scholz (WP 18–21 becomes 20–21) and Eva Högl (no longer listed as a WP 21 member).
+- The erste-reden Fakt caveat names the store's real coverage start ("seit Beginn der 18. Wahlperiode") instead of a fixed "seit Januar 2022". The stored and exported `fact_metrics.caveat` carry the filled text.
+- The knappste-abstimmung caveat no longer claims "gemessen über 58 vergleichbare Wochen". The store now has 110.
+- abgeordnetenwatch biographies come from Bundestag mandates only, never a Landtag mandate. Biographies cached by the old rule are fetched again.
+- The publication guard no longer flags `/home/` inside a quoted web address.
+
+### Fixed
+
+- A DIP `/person` stall stops a Sitzung's person lookups after 3 failures instead of hanging the run.
+- Excluding a Sitzung that is already in the store no longer makes every rebuild fail with "Missing cached evidence".
+
 ## [0.26.1.0] - 2026-11-01
 
 ### Changed
@@ -101,7 +148,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- The Abgeordnete list no longer includes members of the Bundesrat. The roster took every DIP person whose function contained „MdB“, which matched „MdBR“ and „Stellv. MdBR“: on WP 21 (DIP, 2026-10-30) the list showed 740 people, 151 of them Bundesrat members; it now shows the 589 with the function MdB. A store built before this keeps those rows until the roster is fetched again (`--enrich mp-roster`). 48 MdBs whose current office is a government one are still missing (DIP lists them without the MdB function), a known gap with its own TODO; adding them now would split 29 of them into two Personen.
+- The Abgeordnete list no longer includes members of the Bundesrat. The roster took every DIP person whose function contained „MdB“, which matched „MdBR“ and „Stellv. MdBR“: on WP 21 (DIP, 2026-10-30) the list showed 740 people, 151 of them Bundesrat members; it now shows the 589 with the function MdB. A store built before this drops them on its next rebuild: an `--offline --repersist` or an online build re-derives the MdB flag from each carried-forward roster row's stored function, with no roster refetch (A3 store, 2026-10-31: 1,712 → 1,360 roster MdBs, the 352 Bundesrat rows dropped). Only a build that does not rewrite the store (`--offline` without `--repersist`, or `--no-persist`) still shows them. 48 MdBs whose current office is a government one are still missing (DIP lists them without the MdB function), a known gap with its own TODO; adding them now would split 29 of them into two Personen.
 - A Personenseite of someone who is not in the Abgeordnete list says „Redner“ with the Sprechrolle they spoke in, from Reden and Beiträge (Bundesregierung, Bundesrat, weitere Sprechrolle), and „Mitglied des Bundestages laut Plenarprotokoll“ with the Fraktion when a Rede or Beitrag counts for a Fraktion or they cast a namentliche Abstimmung, instead of an empty Fraktion and Wahlkreis. A page kept without any Rede or Beitrag says „Keine Reden erfasst“. The Abgeordnete index lists the Redner under „Weitere Rednerinnen und Redner“, which the search filters but the Fraktion filter does not, so their pages are reachable.
 - „Der meistdiskutierte Vorgang des Monats“ (metric version 3) counts a Tagesordnungspunkt only when it debates exactly one Vorgang; the Reden of a verbundene Beratung of several Vorgänge count for none, where version 2 credited them all to the Vorgang DIP listed first. An Entschließungsantrag debated with its Gesetzentwurf does not make a second Vorgang. On WP 21 sittings 21/87–21/103, 3 of 4 monthly winners change: June from „Infrastruktur-Zukunftsgesetz“ (16 Reden) to „Empfehlungen der Rentenkommission …“ (13), July from „… Straßenverkehrsgesetzes (Tempolimit)“ (17) to „Deutschland braucht echte Reformen …“ (14), September from „Haushaltsgesetz 2027“ (16) to „Das Solidarprinzip stärken“ (13); October stays „Nachhaltigkeit und Zukunftsfragen“ (26). Each old winner was debated together with other Anträge. When the one Vorgang is a co-advised (mitberatener) one, it is named by its own title. The card and the Methodik state the rule in full.
 - A roll-call profile link with a `.` or `..` path segment, also percent-encoded, is no longer taken as a person's profile (it could resolve to the Abstimmung page itself). No stored link had one.

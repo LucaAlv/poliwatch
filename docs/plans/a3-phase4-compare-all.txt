@@ -1,0 +1,217 @@
+compare_store_values: old=~/agent-runs/a3/baseline new=~/agent-runs/a3/full
+cohort: all (whole-store coverage; 290 old, 716 new protocols)
+
+== Row counts per table [whole store]
+  agenda_item_documents                                16.111 -> 33.841         +17.730
+  agenda_item_politikfelder                             4.768 -> 11.460         +6.692
+  agenda_item_votes                                       246 -> 590            +344
+  agenda_items                                          2.912 -> 7.131          +4.219
+  contributions                                        16.787 -> 42.465         +25.678
+  documents                                             8.117 -> 20.557         +12.440
+  fact_metrics                                              8 -> 8              =
+  fact_sources                                          1.538 -> 2.992          +1.454
+  facts                                                   710 -> 1.908          +1.198
+  mps                                                   4.298 -> 7.457          +3.159
+  parties                                                   9 -> 11             +2
+  person_aliases                                            0 -> 0              =
+  person_bindings                                     198.186 -> 481.581        +283.395
+  person_records                                        4.298 -> 7.470          +3.172
+  persons                                               4.298 -> 6.687          +2.389
+  proceeding_positions                                  3.879 -> 10.018         +6.139
+  proceedings                                           3.111 -> 8.306          +5.195
+  protocols                                               290 -> 716            +426
+  schema_migrations                                         1 -> 1              =
+  speech_rule_inputs                                      290 -> 716            +426
+  speeches                                             26.267 -> 54.718         +28.451
+  vote_documents                                          512 -> 1.403          +891
+  vote_fractions                                        1.498 -> 3.491          +1.993
+  vote_members                                        154.078 -> 382.441        +228.363
+  vote_politikfelder                                      371 -> 957            +586
+  vote_proceedings                                        260 -> 644            +384
+  votes                                                   217 -> 556            +339
+
+== parties [whole store]: mps rows, MdB, Reden naming it
+  AfD: mps rows                                           654 -> 932            +278
+  AfD: MdB                                        unavailable -> 198
+  AfD: Reden                                            4.043 -> 6.744          +2.701
+  Bremen: mps rows                                     no row -> 0
+  Bremen: MdB                                          no row -> 0
+  Bremen: Reden                                        no row -> 1
+  BÜNDNIS 90/DIE GRÜNEN: mps rows                         588 -> 858            +270
+  BÜNDNIS 90/DIE GRÜNEN: MdB                      unavailable -> 158
+  BÜNDNIS 90/DIE GRÜNEN: Reden                          3.819 -> 7.638          +3.819
+  CDU/CSU: mps rows                                     1.111 -> 2.154          +1.043
+  CDU/CSU: MdB                                    unavailable -> 425
+  CDU/CSU: Reden                                        6.503 -> 14.952         +8.449
+  CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –: mps rows         no row -> 0
+  CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –: MdB         no row -> 0
+  CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –: Reden         no row -> 0
+  Die Linke: mps rows                                     255 -> 543            +288
+  Die Linke: MdB                                  unavailable -> 119
+  Die Linke: Reden                                      1.963 -> 5.611          +3.648
+  FDP: mps rows                                           374 -> 573            +199
+  FDP: MdB                                        unavailable -> 113
+  FDP: Reden                                            2.204 -> 4.377          +2.173
+  Gruppe BSW: MdB                                 unavailable -> 10
+  Gruppe Die Linke: MdB                           unavailable -> 16
+  SPD: mps rows                                           971 -> 1.622          +651
+  SPD: MdB                                        unavailable -> 303
+  SPD: Reden                                            5.555 -> 11.612         +6.057
+  fraktionslos: mps rows                                   64 -> 90             +26
+  fraktionslos: MdB                               unavailable -> 18
+  fraktionslos: Reden                                     434 -> 589            +155
+
+== vote_fractions.leading_vote [all]
+  NULL                                                     31 -> 91             +60
+  abstain                                                  65 -> 205            +140
+  no                                                      724 -> 1.568          +844
+  yes                                                     853 -> 1.831          +978
+
+== votes [all]
+  votes                                                   217 -> 556            +339
+  newest vote date                                 2026-06-12 -> 2026-10-15
+
+== speeches.char_count sum [all]
+  sum over protocols                              109.984.442 -> 253.280.655    +143.296.213
+  426 protocols changed; largest moves:
+  18/46                                                     0 -> 820.336        +820.336
+  19/107                                                    0 -> 780.418        +780.418
+  19/98                                                     0 -> 751.523        +751.523
+  19/118                                                    0 -> 744.969        +744.969
+  19/83                                                     0 -> 737.546        +737.546
+  19/127                                                    0 -> 732.409        +732.409
+  18/39                                                     0 -> 719.201        +719.201
+  19/121                                                    0 -> 717.114        +717.114
+  19/29                                                     0 -> 715.809        +715.809
+  19/115                                                    0 -> 707.796        +707.796
+  19/218                                                    0 -> 705.044        +705.044
+  19/104                                                    0 -> 700.589        +700.589
+  19/58                                                     0 -> 695.691        +695.691
+  19/52                                                     0 -> 693.643        +693.643
+  19/26                                                     0 -> 691.872        +691.872
+  ... 411 more changed
+
+== unattributed characters per protocol [all]
+  sum over protocols                                        0 -> 6.180          +6.180
+  19/2                                                      0 -> 6.180          +6.180
+
+== speeches per Sprechrolle [all]
+  bundesrat                                                58 -> 95             +37
+  bundesregierung                                       1.209 -> 2.836          +1.627
+  keine                                                24.992 -> 51.765         +26.773
+  weitere                                                   8 -> 22             +14
+
+== contributions (Beiträge that are no Rede) per kind [all]
+  befragung_antwort                                     3.901 -> 7.442          +3.541
+  befragung_frage                                       3.961 -> 7.559          +3.598
+  erwiderung                                              598 -> 1.127          +529
+  fragestunde_antwort                                   2.687 -> 9.300          +6.613
+  fragestunde_frage                                     2.701 -> 9.378          +6.677
+  kurzintervention                                        647 -> 1.275          +628
+  zu_protokoll                                            859 -> 3.326          +2.467
+  zwischenfrage                                         1.433 -> 3.058          +1.625
+
+== Redeanteil: Reden and share per Zusammenschluss and Sprechrolle [all]
+  CDU/CSU (Reden)                                       6.503 -> 14.822         +8.319
+    CDU/CSU (Anteil %)                                     24.8 -> 27.1           +2.3
+  SPD (Reden)                                           5.555 -> 11.515         +5.960
+    SPD (Anteil %)                                         21.1 -> 21.0           -0.1
+  BÜNDNIS 90/DIE GRÜNEN (Reden)                         3.819 -> 7.638          +3.819
+    BÜNDNIS 90/DIE GRÜNEN (Anteil %)                       14.5 -> 14.0           -0.5
+  AfD (Reden)                                           4.043 -> 6.744          +2.701
+    AfD (Anteil %)                                         15.4 -> 12.3           -3.1
+  Die Linke (Reden)                                     1.963 -> 5.611          +3.648
+    Die Linke (Anteil %)                                    7.5 -> 10.3           +2.8
+  FDP (Reden)                                           2.204 -> 4.374          +2.170
+    FDP (Anteil %)                                          8.4 -> 8.0            -0.4
+  Sprechrolle bundesregierung (Reden)                   1.209 -> 2.836          +1.627
+    Sprechrolle bundesregierung (Anteil %)                  4.6 -> 5.2            +0.6
+  fraktionslos (Reden)                                    434 -> 589            +155
+    fraktionslos (Anteil %)                                 1.7 -> 1.1            -0.6
+  Gruppe Die Linke (Reden)                                328 -> 328            =
+    Gruppe Die Linke (Anteil %)                             1.2 -> 0.6            -0.6
+  Gruppe BSW (Reden)                                      143 -> 143            =
+    Gruppe BSW (Anteil %)                                   0.5 -> 0.3            -0.2
+  Sprechrolle bundesrat (Reden)                            58 -> 95             +37
+    Sprechrolle bundesrat (Anteil %)                        0.2 -> 0.2            =
+  Sprechrolle weitere (Reden)                               8 -> 22             +14
+    Sprechrolle weitere (Anteil %)                          0.0 -> 0.0            =
+  (ohne Zuordnung) (Reden)                                  0 -> 1              +1
+    (ohne Zuordnung) (Anteil %)                             0.0 -> 0.0            =
+
+== Reden with no Zusammenschluss in the Plenarprotokoll, no Sprechrolle [all]
+  no Zusammenschluss                                        0 -> 1              +1
+
+== Daten recipe r3-abweichler [whole store]
+  rows without LIMIT (recipe of this tree)                363 -> 1.328          +965
+
+== Zusammenführung of the mps rows, by the rules of this tree [whole store]
+  mps rows                                              4.298 -> 7.457          +3.159
+  Personen after Zusammenführung                        3.127 -> 4.526          +1.399
+  merges by Personenkennung (ext_id)                        1 -> 784            +783
+  merges by corroborated name-found id (corroborated_name)              6 -> 6              =
+  merges by unique name + party (unique_name)           1.164 -> 2.141          +977
+  name buckets left split: two on one side                  2 -> 4              +2
+  name buckets left split: 3+ records                       0 -> 11             +11
+
+== generated pages [whole store]
+  bills/ pages                                            562 -> 1.381          +819
+  abgeordnete/ pages (Personenseiten)                   1.039 -> 2.005          +966
+
+== stored facts [whole store]
+  publishable weeks                                        75 -> 182            +107
+  publishable months                                       29 -> 60             +31
+  changed winners: 182
+    2016-01: kein Fakt -> meistdiskutierter-vorgang (15) [agenda_item 18/152 S. 14885 https://dserver.bundestag.de/btp/18/18152.pdf]
+    2016-11: kein Fakt -> meistdiskutierter-vorgang (22) [agenda_item 18/198 S. 19697 https://dserver.bundestag.de/btp/18/18198.pdf]
+    2017-04: kein Fakt -> meistdiskutierter-vorgang (15) [agenda_item 18/232 S. 23434 https://dserver.bundestag.de/btp/18/18232.pdf]
+    2017-11: kein Fakt -> aktivste-abgeordnete (5) [speech 19/3 ID19300100 https://dserver.bundestag.de/btp/19/19003.pdf]
+    2019-02: kein Fakt -> meistdiskutierter-vorgang (15) [agenda_item 19/83 S. 9631 https://dserver.bundestag.de/btp/19/19083.pdf], aktivste-abgeordnete (5) [speech 19/78 ID197807200 https://dserver.bundestag.de/btp/19/19078.pdf]
+    2019-03: kein Fakt -> aktivste-abgeordnete (6) [speech 19/86 ID198608300 https://dserver.bundestag.de/btp/19/19086.pdf], meistdiskutierter-vorgang (20) [agenda_item 19/86 S. 10079 https://dserver.bundestag.de/btp/19/19086.pdf]
+    2019-06: kein Fakt -> meistdiskutierter-vorgang (24) [agenda_item 19/106 S. 13006 https://dserver.bundestag.de/btp/19/19106.pdf]
+    2019-09: kein Fakt -> aktivste-abgeordnete (7) [speech 19/113 ID1911300500 https://dserver.bundestag.de/btp/19/19113.pdf], meistdiskutierter-vorgang (16) [agenda_item 19/110 S. 13526 https://dserver.bundestag.de/btp/19/19110.pdf]
+    2019-10: kein Fakt -> meistdiskutierter-vorgang (18) [agenda_item 19/118 S. 14481 https://dserver.bundestag.de/btp/19/19118.pdf]
+    2019-11: kein Fakt -> meistdiskutierter-vorgang (21) [agenda_item 19/124 S. 15294 https://dserver.bundestag.de/btp/19/19124.pdf], aktivste-abgeordnete (6) [speech 19/132 ID1913200500 https://dserver.bundestag.de/btp/19/19132.pdf]
+    2019-12: kein Fakt -> aktivste-abgeordnete (6) [speech 19/135 ID1913504600 https://dserver.bundestag.de/btp/19/19135.pdf]
+    2020-01: kein Fakt -> meistdiskutierter-vorgang (24) [agenda_item 19/140 S. 17430 https://dserver.bundestag.de/btp/19/19140.pdf]
+    2020-03: kein Fakt -> meistdiskutierter-vorgang (17) [agenda_item 19/153 S. 19064 https://dserver.bundestag.de/btp/19/19153.pdf]
+    2020-04: kein Fakt -> meistdiskutierter-vorgang (16) [agenda_item 19/156 S. 19296 https://dserver.bundestag.de/btp/19/19156.pdf]
+    2020-06: kein Fakt -> meistdiskutierter-vorgang (34) [agenda_item 19/167 S. 20874 https://dserver.bundestag.de/btp/19/19167.pdf]
+    2020-10: kein Fakt -> aktivste-abgeordnete (7) [speech 19/185 ID1918508100 https://dserver.bundestag.de/btp/19/19185.pdf], meistdiskutierter-vorgang (21) [agenda_item 19/181 S. 22753 https://dserver.bundestag.de/btp/19/19181.pdf]
+    2021-01: kein Fakt -> meistdiskutierter-vorgang (18) [agenda_item 19/203 S. 25503 https://dserver.bundestag.de/btp/19/19203.pdf]
+    2021-02: kein Fakt -> meistdiskutierter-vorgang (18) [agenda_item 19/210 S. 26506 https://dserver.bundestag.de/btp/19/19210.pdf]
+    2021-04: kein Fakt -> meistdiskutierter-vorgang (38) [agenda_item 19/223 S. 28262 https://dserver.bundestag.de/btp/19/19223.pdf], aktivste-abgeordnete (6) [speech 19/224 ID1922415900 https://dserver.bundestag.de/btp/19/19224.pdf]
+    2021-06: kein Fakt -> aktivste-abgeordnete (6) [speech 19/237 ID1923701900 https://dserver.bundestag.de/btp/19/19237.pdf], meistdiskutierter-vorgang (21) [agenda_item 19/233 S. 29938 https://dserver.bundestag.de/btp/19/19233.pdf]
+    2021-08: kein Fakt -> meistdiskutierter-vorgang (19) [agenda_item 19/238 S. 31049 https://dserver.bundestag.de/btp/19/19238.pdf]
+    2021-11: kein Fakt -> meistdiskutierter-vorgang (31) [agenda_item 20/3 S. 115 https://dserver.bundestag.de/btp/20/20003.pdf]
+    2021-12: kein Fakt -> meistdiskutierter-vorgang (17) [agenda_item 20/6 S. 228 https://dserver.bundestag.de/btp/20/20006.pdf]
+    2022-02: kein Fakt -> meistdiskutierter-vorgang (26) [agenda_item 20/19 S. 1350 https://dserver.bundestag.de/btp/20/20019.pdf]
+    2022-03: kein Fakt -> aktivste-abgeordnete (9) [speech 20/21 ID202102800 https://dserver.bundestag.de/btp/20/20021.pdf], meistdiskutierter-vorgang (29) [agenda_item 20/22 S. 1712 https://dserver.bundestag.de/btp/20/20022.pdf]
+    ... 157 more
+  fakt values moved: 492 of 710 shared (period, metric)
+    month 2022-02 aktivste-abgeordnete: percentile unavailable -> 0.108108
+    month 2022-02 meistdiskutierter-vorgang: percentile unavailable -> 0.891892
+    month 2022-03 meistdiskutierter-vorgang: percentile 1 -> 0.894737 -0.105263
+    month 2022-04 aktivste-abgeordnete: percentile 0.5 -> 0.461538 -0.038462
+    month 2022-04 meistdiskutierter-vorgang: percentile 0 -> 0.487179 +0.487179
+    month 2022-05 aktivste-abgeordnete: percentile 0.666667 -> 0.833333 +0.166667
+    month 2022-05 meistdiskutierter-vorgang: percentile 0.333333 -> 0.5 +0.166667
+    month 2022-06 aktivste-abgeordnete: percentile 0.25 -> 0.571429 +0.321429
+    month 2022-06 meistdiskutierter-vorgang: percentile 0.5 -> 0.571429 +0.071429
+    month 2022-07 aktivste-abgeordnete: percentile 0.2 -> 0.5 +0.3
+    month 2022-07 meistdiskutierter-vorgang: percentile 0 -> 0.125 +0.125
+    month 2022-10 aktivste-abgeordnete: percentile 0.428571 -> 0.6 +0.171429
+    month 2022-10 meistdiskutierter-vorgang: percentile 0.571429 -> 0.6 +0.028571
+    month 2022-11 aktivste-abgeordnete: percentile 0.75 -> 0.818182 +0.068182
+    month 2022-11 meistdiskutierter-vorgang: percentile 0.25 -> 0.363636 +0.113636
+    month 2022-12 aktivste-abgeordnete: percentile 0.555556 -> 0.666667 +0.111111
+    month 2022-12 meistdiskutierter-vorgang: percentile 0.888889 -> 0.916667 +0.027778
+    month 2023-01 aktivste-abgeordnete: percentile 0.3 -> 0.461538 +0.161538
+    month 2023-01 meistdiskutierter-vorgang: percentile 0.2 -> 0.307692 +0.107692
+    month 2023-02 aktivste-abgeordnete: percentile 0 -> 0.071429 +0.071429
+    month 2023-02 meistdiskutierter-vorgang: percentile 0.181818 -> 0.285714 +0.103896
+    month 2023-03 aktivste-abgeordnete: percentile 0.75 -> 0.8 +0.05
+    month 2023-03 meistdiskutierter-vorgang: percentile 0.25 -> 0.333333 +0.083333
+    month 2023-04 aktivste-abgeordnete: percentile 0.538462 -> 0.625 +0.086538
+    month 2023-04 meistdiskutierter-vorgang: percentile 0.230769 -> 0.3125 +0.081731
+    ... 467 more

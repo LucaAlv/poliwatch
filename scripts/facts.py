@@ -215,9 +215,8 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "requires_topic": False,
         "caveat": (
             "Verglichen werden nur die namentlichen Abstimmungen. Je mehr eine Woche davon "
-            "hat, desto knapper fällt die knappste im Schnitt aus (gemessen über 58 "
-            "vergleichbare Wochen), ein hoher Prozentwert sagt also auch etwas über die "
-            "Zahl der Abstimmungen."
+            "hat, desto knapper fällt die knappste im Schnitt aus, ein hoher Prozentwert "
+            "sagt also auch etwas über die Zahl der Abstimmungen."
         ),
     },
     {
@@ -437,8 +436,10 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # absolute floor would be a claim with nothing behind it.
         "min_value": None,
         "requires_topic": False,
+        # COVERAGE_SLOT becomes " seit <start>" of the store's coverage when the
+        # caveat is shown (card_caveat), so it never names a stale start.
         "caveat": (
-            "Erste Rede in unserer Abdeckung seit Januar 2022, nicht zwingend die erste "
+            "Erste Rede in unserer Abdeckung{abdeckung}, nicht zwingend die erste "
             "Rede im Bundestag."
         ),
     },
@@ -740,7 +741,9 @@ def load_sitting_catalog(path: Path) -> SittingCatalog | None:
     )
 
 
-def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None) -> list[dict[str, str]]:
+def expected_sittings(
+    protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None, *, lower_bound: str | None = None
+) -> list[dict[str, str]]:
     """The catalog sittings a store is judged against.
 
     The DIP catalog reaches back to 1949; judging all of it would add
@@ -748,18 +751,25 @@ def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCa
     judged range runs from the start of the week or month of the store's
     earliest sitting to the catalog's newest, so a gap inside the range or a sitting after it counts, and the
     history before the first dossier does not.
+
+    ``lower_bound`` (an ISO date) moves the start earlier, never later, and
+    applies with an empty store too. Only the backfill selection passes it (the
+    v1 coverage floor, D3); the facts periods keep the earliest-stored rule.
     """
     if catalog is None or not catalog.authoritative:
         return []
     days = [str(p.get("date") or "")[:10] for p in protocols if p.get("date")]
-    if not days:
+    if not days and not lower_bound:
         return []
-    # From the start of the first stored sitting's week or month, whichever is
-    # earlier: an earlier listed sitting of that period is missing, not out of
-    # range, and judging the period on the sittings we happen to hold would
-    # call it complete.
-    first = date.fromisoformat(min(days))
-    lower = min(first - timedelta(days=first.weekday()), first.replace(day=1)).isoformat()
+    bounds = [lower_bound] if lower_bound else []
+    if days:
+        # From the start of the first stored sitting's week or month, whichever is
+        # earlier: an earlier listed sitting of that period is missing, not out of
+        # range, and judging the period on the sittings we happen to hold would
+        # call it complete.
+        first = date.fromisoformat(min(days))
+        bounds.append(min(first - timedelta(days=first.weekday()), first.replace(day=1)).isoformat())
+    lower = min(bounds)
     return [dict(sitting) for sitting in catalog.sittings if sitting["date"] >= lower]
 
 
@@ -1042,6 +1052,8 @@ def sitting_gaps(
     protocols: Sequence[Mapping[str, Any]],
     completeness: Mapping[str, Mapping[str, Any]],
     catalog: SittingCatalog | None,
+    *,
+    lower_bound: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """document_number -> {"date", "reasons": {domain: reason}} for every judged
     sitting that is missing or not fully acquired.
@@ -1050,12 +1062,12 @@ def sitting_gaps(
     (``not_persisted``) or none to judge (``no_report``), else "votes" or
     "speeches" with the report's own reason. This is the list a backfill
     works through. Empty without an authoritative catalog: nothing can be
-    judged then, and the caller says so.
+    judged then, and the caller says so. ``lower_bound``: see expected_sittings.
     """
     if catalog is None or not catalog.authoritative:
         return {}
     persisted = {str(p["document_number"]): p for p in protocols}
-    listed = {s["document_number"]: s for s in expected_sittings(protocols, catalog)}
+    listed = {s["document_number"]: s for s in expected_sittings(protocols, catalog, lower_bound=lower_bound)}
     # Dates are compared against the whole catalog, not the judged range: DIP
     # may have moved a stored sitting to before the range starts.
     dated = {s["document_number"]: s["date"] for s in catalog.sittings}
@@ -1923,7 +1935,9 @@ def tables_exist(conn: sqlite3.Connection) -> bool:
     )
 
 
-def metric_row(metric: Mapping[str, Any]) -> list[Any]:
+def metric_row(metric: Mapping[str, Any], coverage: str | None = None) -> list[Any]:
+    """One fact_metrics row. ``coverage`` (coverage_label of the store) fills the
+    caveat's coverage slot, so the stored and exported caveat reads as the cards do."""
     return [
         str(metric["id"]),
         int(metric["version"]),
@@ -1936,7 +1950,7 @@ def metric_row(metric: Mapping[str, Any]) -> list[Any]:
         int(metric["min_history_weeks"]),
         int(metric["tie_rank"]),
         metric.get("depends_on"),
-        metric.get("caveat"),
+        fill_caveat(metric.get("caveat"), coverage),
     ]
 
 
@@ -1968,7 +1982,7 @@ def _source_values(receipt: Mapping[str, Any]) -> list[Any]:
 
 
 def snapshot_from_rows(
-    registry: Iterable[Mapping[str, Any]], rows: Iterable[Mapping[str, Any]]
+    registry: Iterable[Mapping[str, Any]], rows: Iterable[Mapping[str, Any]], *, coverage: str | None = None
 ) -> dict[str, list[list[Any]]]:
     """The three tables as one comparable value.
 
@@ -1986,7 +2000,7 @@ def snapshot_from_rows(
         for receipt in sorted(row.get("receipts") or [], key=lambda r: int(r["position"])):
             source_rows.append(key + _source_values(receipt))
     return {
-        "fact_metrics": [metric_row(metric) for metric in sorted(registry, key=lambda m: str(m["id"]))],
+        "fact_metrics": [metric_row(metric, coverage) for metric in sorted(registry, key=lambda m: str(m["id"]))],
         "facts": facts_rows,
         "fact_sources": source_rows,
     }
@@ -2277,7 +2291,7 @@ def compute_and_store(
     rows = compute(
         conn, registry, completeness if completeness is not None else {}, catalog=catalog, built=built, today=today
     )
-    snapshot = snapshot_from_rows(registry, rows)
+    snapshot = snapshot_from_rows(registry, rows, coverage=coverage_label(conn))
     posted = sum(1 for row in rows if row["publishable"])
     periods = {(row["period_kind"], row["period_key"]) for row in rows}
     report: dict[str, Any] = {
@@ -2450,10 +2464,38 @@ def card_sentence(row: Mapping[str, Any]) -> str:
     return f"{card_lead(row)}, {comparison_clause(row)}."
 
 
+COVERAGE_SLOT = "{abdeckung}"
+
+
+def coverage_label(conn: sqlite3.Connection) -> str | None:
+    """Where the store's coverage starts, worded like a baseline: "seit Beginn
+    der 18. Wahlperiode" when its earliest sitting is protocol 1 of its
+    Wahlperiode, else "seit <Monat Jahr>"; None for an empty store."""
+    row = conn.execute(
+        "SELECT document_number, date FROM protocols WHERE date IS NOT NULL ORDER BY date, document_number LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    number, day = str(row[0] or ""), date.fromisoformat(str(row[1])[:10])
+    wahlperiode, _, sitting = number.partition("/")
+    if sitting == "1" and wahlperiode.isdigit():
+        return f"seit Beginn der {int(wahlperiode)}. Wahlperiode"
+    return f"seit {MONTHS_DE[day.month - 1]} {day.year}"
+
+
+def fill_caveat(text: str | None, coverage: str | None) -> str | None:
+    """A registry caveat with its coverage slot filled (or dropped when the
+    coverage start is unknown)."""
+    if text is None:
+        return None
+    return text.replace(COVERAGE_SLOT, f" {coverage}" if coverage else "")
+
+
 def card_caveat(row: Mapping[str, Any]) -> str | None:
     """The metric's caveat, registry data since D27; rendered on every card and
-    week page that shows the metric."""
-    return REGISTRY_BY_ID[row["metric_id"]].get("caveat")
+    week page that shows the metric. A row's ``coverage_label`` (set by the
+    renderer from coverage_label) fills its coverage slot."""
+    return fill_caveat(REGISTRY_BY_ID[row["metric_id"]].get("caveat"), row.get("coverage_label"))
 
 
 def wrap_lines(text: str, width: int, max_lines: int) -> list[str]:

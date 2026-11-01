@@ -63,26 +63,32 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             proc.wait()
             proc.stdout.close()
 
-    # Value: protects=online roster ingestion inside the staged rebuild binds roster and speaker to one stable person; fails_when=roster_ingest is skipped, bound under another key, or a failure replaces the store; why_new=no test passes roster_ingest or calls ingest_mdb_roster; seam=none
+    # Value: protects=staged ingestion binds valid MdB and speaker evidence while excluding BR-only roles; fails_when=MdBR roles enter the Bundestag roster or a valid MdB no longer binds; why_new=prior fixture covered MdB and Bundesminister only; seam=none; no_claim=live DIP roster shape
     def test_staged_roster_ingestion_binds_with_speaker_and_failure_keeps_store(self):
         roster = [
             {"id": "dip-7", "titel": "Ada Example", "vorname": "Ada", "nachname": "Example",
              "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21},
             {"id": "dip-8", "titel": "Bea Minister", "vorname": "Bea", "nachname": "Minister",
              "fraktion": ["SPD"], "funktion": ["Bundesminister"], "wahlperiode": 21},
+            {"id": "dip-9", "titel": "Carl Bundesrat", "vorname": "Carl", "nachname": "Bundesrat",
+             "fraktion": ["SPD"], "funktion": ["MdBR"], "wahlperiode": 21},
+            {"id": "dip-10", "titel": "Dana Stellvertretung", "vorname": "Dana", "nachname": "Stellvertretung",
+             "fraktion": ["SPD"], "funktion": ["Stellv. MdBR"], "wahlperiode": 21},
         ]
         client = mock.Mock()
         client.list_all.return_value = roster
         stats = []
         def ingest(staged):
-            stats.append(build.ingest_mdb_roster(client, staged, wahlperiode=21))
+            stats.append(build.ingest_mdb_roster(client, staged, wahlperioden=[21]))
         r = report()
         self.rebuild([r], preserve_roster=False, roster_ingest=ingest)
-        self.assertEqual((stats[0]["fetched"], stats[0]["mdb"]), (2, 1))
+        self.assertEqual((stats[0]["fetched"], stats[0]["mdb"]), (4, 1))
         bindings = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}
         roster_binding = stable_key("roster", "dip-7")
         self.assertIn(roster_binding, bindings)
         self.assertNotIn(stable_key("roster", "dip-8"), bindings)
+        self.assertNotIn(stable_key("roster", "dip-9"), bindings)
+        self.assertNotIn(stable_key("roster", "dip-10"), bindings)
         speech_binding = stable_key("speech", "s1", "s1-r0")
         self.assertEqual(bindings[roster_binding], bindings[speech_binding])
         self.assertEqual(len(self.rows("mps")), 2)
@@ -138,7 +144,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         def ingest_with(persons):
             client = mock.Mock()
             client.list_all.return_value = persons
-            return lambda staged: build.ingest_mdb_roster(client, staged, wahlperiode=21)
+            return lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[21])
         r = report()
         self.rebuild([r], preserve_roster=False, roster_ingest=ingest_with([ada, bea]))
         speech = stable_key("speech", "s1", "s1-r0")
@@ -154,6 +160,115 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(len(adas), 1)
         self.assertEqual((adas[0]["id"], adas[0]["speech_count"], adas[0]["wahlperioden"]), (person, 1, [21]))
         self.assertEqual(lookup["dip:dip-7"], person)
+
+    # Value: protects=offline replay keeps a renamed speaker joined while retaining retired roster keys and biographies; fails_when=preserved roster rows become live matching evidence; why_new=prior roster tests never replayed an obsolete DIP id beside a renamed speaker and replacement id; seam=none; no_claim=full-data store gate.
+    def test_preserved_roster_does_not_reactivate_retired_matching_evidence(self):
+        old = {"id": "7", "titel": "Ada Earlier", "vorname": "Ada", "nachname": "Earlier",
+               "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
+        first = report(names=("Ada Earlier",))
+        client = mock.Mock()
+        client.list_all.return_value = [old]
+        self.rebuild([first], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[21]))
+        retired = roster_occurrence_id("7")
+        issued = {r["identity_key"]: r["home_person_id"] for r in self.rows("person_records")}["dip:7"]
+
+        current = report(names=("Ada Earlier", "Ada Current"))
+        for speaker in current["agenda_items"][0]["xml_speakers"]:
+            speaker["speaker"]["xml_redner_id"] = "1"
+        current["sampled_people"] = [{"id": "9", "titel": "Ada Current", "fraktion": ["SPD"],
+                                      "funktion": ["MdB"], "wahlperiode": 21}]
+        live = {stable_key("speech", "s1", "s1-r0"), stable_key("speech", "s1", "s1-r1"),
+                roster_occurrence_id("9")}
+        for _ in range(2):
+            self.rebuild([current])
+            bindings = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}
+            self.assertEqual(len({bindings[b] for b in live}), 1)
+            self.assertEqual(bindings[retired], issued)
+            with sqlite3.connect(self.db) as conn:
+                conn.row_factory = sqlite3.Row
+                pages, _ = build.collect_abgeordnete(conn)
+            self.assertTrue(any(p["id"] == issued and p["is_mdb"] for p in pages))
+
+    # Value: protects=WP 18-20 leavers keep roster pages and the former table labels stored Fraktion without claiming recency;
+    #   fails_when=the roster union drops leavers or the former header says Fraktion (zuletzt);
+    #   why_new=prior assertions checked membership and rows but not that header; seam=none;
+    #   no_claim=source Fraktion history beyond stored rows
+    # Value: protects=a Wahlperiode in which DIP records only a Land-government office does not
+    # count as an MdB period (Scholz WP 18/19, Högl WP 21 on the A3 store); fails_when=the roster
+    # takes every period DIP lists a person under because the latest funktion is MdB; why_new=the
+    # union test's persons carry no person_roles; seam=none; no_claim=non-Land offices such as
+    # Wehrbeauftragte, which DIP gives no bundesland
+    def test_a_land_office_period_is_no_mdb_period(self):
+        land = {"funktionszusatz": "Erster Bürgermeister", "bundesland": "Hamburg", "wahlperiode_nummer": [18, 19]}
+        olaf = {"id": "dip-3", "titel": "Olaf Mayor", "vorname": "Olaf", "nachname": "Mayor", "fraktion": ["SPD"],
+                "funktion": ["MdB"], "wahlperiode": 21,
+                "person_roles": [land, {"fraktion": "SPD", "wahlperiode_nummer": [20]}]}
+        senator = {"id": "dip-4", "titel": "Eva Senator", "vorname": "Eva", "nachname": "Senator", "fraktion": ["SPD"],
+                   "funktion": ["MdB"], "wahlperiode": 21,
+                   "person_roles": [{"funktionszusatz": "Senatorin", "bundesland": "Bremen", "wahlperiode_nummer": [21]}]}
+        both = {"id": "dip-5", "titel": "Ben Both", "vorname": "Ben", "nachname": "Both", "fraktion": ["CDU/CSU"],
+                "funktion": ["MdB"], "wahlperiode": 19,
+                "person_roles": [{"bundesland": "Berlin", "wahlperiode_nummer": [19]},
+                                 {"fraktion": "CDU/CSU", "wahlperiode_nummer": [19]}]}
+        by_wahlperiode = {18: [olaf], 19: [olaf, both], 20: [olaf, senator], 21: [olaf, senator]}
+        client = mock.Mock()
+        client.list_all.side_effect = lambda _path, params: by_wahlperiode.get(params["f.wahlperiode"], [])
+        self.rebuild([report()], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[18, 19, 20, 21]))
+        roster = {m["dip_person_id"]: json.loads(m["wahlperiode"]) for m in self.rows("mps") if m["is_mdb"]}
+        self.assertEqual(roster, {"dip-3": [20, 21], "dip-4": [20], "dip-5": [19]})
+
+    def test_the_roster_unions_its_wahlperioden_and_keeps_former_members(self):
+        lea = {"id": "dip-1", "titel": "Lea Former", "vorname": "Lea", "nachname": "Former",
+               "fraktion": ["FDP"], "funktion": ["MdB"], "wahlperiode": 18}
+        ada = {"id": "dip-7", "titel": "Ada Example", "vorname": "Ada", "nachname": "Example",
+               "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
+        by_wahlperiode = {18: [lea, ada], 19: [ada], 21: [ada]}
+        client = mock.Mock()
+        client.list_all.side_effect = lambda _path, params: by_wahlperiode.get(params["f.wahlperiode"], [])
+
+        def pages():
+            with sqlite3.connect(self.db) as conn:
+                conn.row_factory = sqlite3.Row
+                mps, _lookup = build.collect_abgeordnete(conn)
+            return {mp["name"]: mp for mp in mps}, build.render_abgeordnete_index(mps)
+
+        self.rebuild([report()], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[21]))
+        _only_current, index_before = pages()
+        self.rebuild([report()], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[18, 19, 20, 21]))
+        roster = {m["dip_person_id"]: m for m in self.rows("mps") if m["is_mdb"]}
+        self.assertEqual(set(roster), {"dip-1", "dip-7"})
+        self.assertEqual(json.loads(roster["dip-7"]["wahlperiode"]), [18, 19, 21])
+        self.assertEqual(json.loads(roster["dip-1"]["wahlperiode"]), [18])
+        self.assertEqual([m["xml_redner_id"] for m in roster.values()], [None, None])
+        for replay in (False, True):
+            if replay:  # an unchanged offline replay keeps the preserved roster
+                self.rebuild([report()])
+            with self.subTest(replay=replay):
+                mps, index = pages()
+                self.assertTrue(mps["Lea Former"]["has_page"])
+                self.assertFalse(mps["Lea Former"]["current_mdb"])
+                self.assertTrue(mps["Ada Example"]["current_mdb"])
+                self.assertEqual(mps["Lea Former"]["wahlperioden"], [18])
+                current_rows = [line for line in index.splitlines() if "data-mp-row " in line]
+                self.assertEqual(current_rows, [line for line in index_before.splitlines() if "data-mp-row " in line])
+                self.assertEqual(len(current_rows), 1)
+                self.assertIn(f'href="{mps["Lea Former"]["id"]}.html"', index)
+                self.assertIn("data-former-mp-row", index)
+                former = index.split('<details class="former-mps" id="fruehere-abgeordnete" data-former-mps>', 1)[1].split("</details>", 1)[0]
+                self.assertIn("<th>Fraktion</th>", former)
+                self.assertNotIn("Fraktion (zuletzt)", former)
+                # Former rows are searchable and the script filters them (review 2026-11-01).
+                former_row = next(line for line in former.splitlines() if "data-former-mp-row" in line)
+                self.assertIn('data-search="lea former', former_row)
+                self.assertIn("data-party=", former_row)
+                self.assertIn('querySelectorAll("[data-former-mp-row]")', index)
+                # The intro sends former MdBs to their own table, not to "Weitere" (review 2026-11-01).
+                intro = index.split('<header class="page-header">', 1)[1].split("</header>", 1)[0]
+                self.assertIn('<a href="#fruehere-abgeordnete">Frühere Abgeordnete</a>', intro)
 
     # Value: protects=malformed or unresolvable corrections abort the rebuild before replacement; fails_when=a validation guard is dropped so a bad file is applied or partially applied; why_new=only unknown merge persons were tested; seam=none
     def test_invalid_corrections_abort_without_replacing_store(self):
@@ -259,7 +374,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         roster = self.open_store("roster.sqlite")
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            stats = build.ingest_mdb_roster(client, roster, wahlperiode=21)
+            stats = build.ingest_mdb_roster(client, roster, wahlperioden=[21])
         self.assertEqual((stats["mdb"], stats["skipped_no_id"]), (1, 2))
         self.assertEqual([row[0] for row in roster.execute("SELECT identity_key FROM person_records")], ["dip:dip-9"])
         self.assertIn("2 DIP persons with an MdB function have no id and were skipped", stderr.getvalue())
@@ -278,7 +393,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             person("dip-4", "Dora Rat", "Bundesratspräs."),
         ]
         roster = self.open_store("roster.sqlite")
-        stats = build.ingest_mdb_roster(client, roster, wahlperiode=21)
+        stats = build.ingest_mdb_roster(client, roster, wahlperioden=[21])
         self.assertEqual((stats["fetched"], stats["mdb"]), (4, 1))
         self.assertEqual([r[0] for r in roster.execute("SELECT dip_person_id FROM mps WHERE is_mdb = 1")], ["dip-1"])
 
