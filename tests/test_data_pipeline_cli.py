@@ -178,6 +178,8 @@ class OperatorFileTests(unittest.TestCase):
             # Split so the pre-push credential scanner does not flag this fake value.
             ("credentials in URL", {"supervisory_authority": {"url": "https://u:p" + "@lfd.example.org/"}}, "must be an https:// URL"),
             ("invalid JSON", b"{nope", "is not valid JSON"),
+            # /gstack-ship adversarial review 2026-11-01: ended in a traceback.
+            ("integer past the digit limit", b'{"name": 1' + b"0" * 5000 + b"}", "is not valid JSON"),
             ("not UTF-8", b"\xff\xfe{}", "is not UTF-8"),
             ("unknown field", {"phone": "123"}, "unknown field(s) phone"),
             ("unknown nested field", {"hosting": {"ip": "1.2.3.4"}}, "unknown field(s) hosting.ip"),

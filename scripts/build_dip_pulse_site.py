@@ -13666,6 +13666,8 @@ def load_operator(path: Path) -> dict[str, str]:
         raise OperatorFileError(f"--operator-file {path} is not UTF-8: {exc.reason} at byte {exc.start}") from exc
     except json.JSONDecodeError as exc:
         raise OperatorFileError(f"--operator-file {path} is not valid JSON: {exc.msg} (line {exc.lineno})") from exc
+    except ValueError as exc:  # an integer past Python's 4300-digit limit
+        raise OperatorFileError(f"--operator-file {path} is not valid JSON: {exc}") from exc
     except RecursionError as exc:
         raise OperatorFileError(f"--operator-file {path} is nested too deeply") from exc
     if not isinstance(raw, dict):
