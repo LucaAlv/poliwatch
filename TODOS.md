@@ -307,6 +307,23 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P2 (exclusion record, budget (a)/(e), catalog (e)); P3 for the rest
 **Depends on:** A3 merged
 
+### A3 /gstack-ship review: deferred findings (2026-11-01)
+
+**What:** Findings of the /gstack-ship review of `worktree-a3-plan` (after the main v0.26.1.0 merge 752684f) that are not correctness defects for any current input (CLAUDE.md). The same review fixed the stale "gemessen über 58 vergleichbare Wochen" in the knappste-abstimmung caveat, the Abgeordnete index copy for the former-MdB table, the `mps.wahlperiode` dictionary source and five README/PRODUCT.md/stable-ids sentences. Open:
+- **Exclusion record (D2), continued:** (f) `update_coverage_exclusions` runs right after the dossier loop (`build_dip_pulse_site.py`, before `reparse_cached_xml`/`require_parsed_reports` and the store rebuild) and also under `--no-persist`, so a run that then fails with "The previous store is untouched" leaves the record listing a sitting the store still holds; a plain `--offline` render then says "nicht erfasst (ausgeschlossen)" beside counts that include it, until the next rebuild. Write the record after the store swap, skip it under `--no-persist`. (Also raised by the 2026-10-31 adversarial pass.) (g) `validate_manifest` does not check `coverage.excluded` (list of strings), so a malformed `--data-manifest` crashes `render_daten_datenstand`. (h) Untested cells of the exclusion state matrix: `--include-document-number` for a sitting not on the record (stored, unstored, rejected source), excluding an already-excluded sitting (recorded_at kept), and the plain `--offline` render of a recorded sitting (stored, unstored, already excluded: dossier dropped, store kept, `coverage.excluded` lists it); `test_backfill.py:527` stubs the store rebuild.
+- **Publication guard:** the `local-path` lookbehind in `publication_state.py` (added for `www.sr.de/sr/home/` in 19/41) no longer flags `/Volumes/Data/Users/…`, `/mnt/c/Users/…` or `/System/Volumes/Data/home/…`. Exempt only matches inside an http(s) URL instead.
+- **Gate and prefetch robustness:** `validate_store_gate.audit_links` raises on a href with `%00` or an over-long path, and resolves `..` outside the site; `_data_clone` `rmtree`s any `fresh`/`half` in `--scratch` without a marker; `prefetch_dip_bulk` and a build rewrite the same `data/dip-*-cache.json` without the writer lock; `dip_cache._closed` accepts non-dict `drucksachen` items (AttributeError later).
+- **Parser:** `split_nested_reden` searches the chair text for the raw `last_name`, not `asker_name(last_name)`, so a WP 18/19 name printed with a middle initial ("W. Birkwald") misses a 6c split (no case found in the 716 cached sittings). `audit_offline_turns` looks up `mark_roleless_chairs`/`split_nested_reden` with `getattr` no-op defaults; call them directly. No test fails if the audit drops `mark_roleless_chairs` (18-100 audits the same without it).
+- **One key, one rule:** the Wahlperiode of a document number is parsed in `build_dip_pulse_site.wahlperiode_of`, `prefetch_dip_bulk._wahlperiode_of`, `person_registry._vote_evidence`, `facts.coverage_label` and `_wahlperiode_sql`, beside the strict `facts.wahlperiode`; they disagree on malformed input ("21/x", stray whitespace). `compare_store_values` calls the private `registry._vote_evidence`. R3/R6 switched to an inner join on `protocols`, so a vote with NULL `protocol_id` would drop out (persist always sets it today; R4's method text says so, R3/R6 do not).
+- **Cleanup (advisory):** `prefetch_dip_bulk.staged_positions` is test-only; `_catalog_list` repeats the cursor-paging loop of `counted_list`/`fetch_protocols`/`list_all`; the export manifest's `split_rede_ids` has no reader. Gate coverage: `validate_store_gate.store_counts`/`_store_identity`/`_persist_clone` run only in the real gate.
+- **Plan item 1.5 (Deferred from plan: docs/plans/a3-coverage.md):** the share of WP 18/19 Redner whose redner-id finds an abgeordnetenwatch `ext_id_bundestagsverwaltung` was never measured (a3-pilot.md: "not measured"; Phase 3 ran no aw-profiles). Measure it with `--enrich aw-profiles` on a clone of the A3 store and record it in the A3 Completed entry.
+
+**Why:** Recorded by the ship review so the PR could land; each is a latent edge, a guard gap no current input reaches, or test hygiene.
+
+**Effort:** M
+**Priority:** P1 (plan item 1.5); P2 (exclusion record (f), publication guard); P3 for the rest
+**Depends on:** A3 merged
+
 ## Protokoll-Dossier
 
 ### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
