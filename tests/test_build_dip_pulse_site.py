@@ -3201,6 +3201,20 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertEqual(build_dip_pulse_site.column_source("votes", "context_state"), "derived")
         self.assertEqual(build_dip_pulse_site.column_source("proceedings", "abstract"), "dip")
 
+    # Value: protects=the Daten dictionary labels C1's seat tables by origin: the Stammdaten fields as bundestag.de, the interval bounds cut by the rules and the counted seats as derived; fails_when=a seat table drops out of _TABLE_SOURCE_BUNDESTAG/_TABLE_SOURCE_DERIVED (falling back to dip) or valid_from/valid_until lose their override, so a cut stretch is captioned as copied source data; why_new=schema 9 adds them; seam=none
+    def test_seat_count_columns_are_labelled_by_origin(self) -> None:
+        expected = {
+            "mdb_zugehoerigkeiten": {
+                "mdb_id": "bundestag.de", "name": "bundestag.de", "wahlperiode": "bundestag.de", "party_id": "bundestag.de",
+                "valid_from": "derived", "valid_until": "derived",
+            },
+            "party_seats": {column: "derived" for column in ("party_id", "wahlperiode", "valid_from", "valid_until", "seats")},
+            "mdb_stammdaten_stand": {"stand": "bundestag.de", "sha256": "bundestag.de"},
+        }
+        for table, columns in expected.items():
+            for column, source in columns.items():
+                self.assertEqual(build_dip_pulse_site.column_source(table, column), source, (table, column))
+
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
         self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")
         self.assertEqual(build_dip_pulse_site._month_label("2026-13-10"), "Unbekanntes Datum")

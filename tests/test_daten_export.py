@@ -13,6 +13,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 from unittest import mock
 
@@ -1547,19 +1548,54 @@ class ExportDistributionDataTests(unittest.TestCase):
     #   seam=export_distribution_data + render_daten_datenstand
     def test_the_stammdaten_stand_reaches_the_manifest_and_the_daten_page(self) -> None:
         manifest = self.export()
-        self.assertIsNone(manifest["stammdaten"])
-        self.assertIn("Sitzzahlen: keine (MdB-Stammdaten nicht geladen)", b.render_daten_datenstand(manifest))
+        self.assertEqual(manifest["stammdaten"], self.ids["stammdaten"])
+        line = b.render_daten_datenstand(manifest)
+        self.assertIn("Sitzzahlen: MdB-Stammdaten des Bundestages, Stand 30.06.2024", line)
+        self.assertIn(self.ids["stammdaten"]["sha256"], line)
+        # A build without a cached file writes none of the three tables.
         conn = pulse_store.connect(self.db_path)
         try:
-            conn.execute("INSERT INTO mdb_stammdaten_stand(sha256, stand) VALUES (?, ?)", ("ab" * 32, "2026-04-29T08:03:03+00:00"))
+            for table in ("mdb_zugehoerigkeiten", "party_seats", "mdb_stammdaten_stand"):
+                conn.execute(f"DELETE FROM {table}")
             conn.commit()
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["stammdaten"], {"stand": "2026-04-29T08:03:03+00:00", "sha256": "ab" * 32})
-        line = b.render_daten_datenstand(manifest)
-        self.assertIn("Sitzzahlen: MdB-Stammdaten des Bundestages, Stand 29.04.2026", line)
-        self.assertIn("ab" * 32, line)
+        self.assertIsNone(manifest["stammdaten"])
+        self.assertIn("Sitzzahlen: keine (MdB-Stammdaten nicht geladen)", b.render_daten_datenstand(manifest))
+
+    # Value: protects=the exported party_seats recount exactly from the exported mdb_zugehoerigkeiten
+    #   under the lookup rule (the plan's traceability claim), with an open stretch exported as an empty
+    #   valid_until and fraktionslos as its parties row; fails_when=the CSVs drop or reorder rows, write
+    #   NULL as something other than empty, or the seat rows stop matching the stretches; why_new=C1 step 6,
+    #   the fixture had no seat rows; seam=export_distribution_data
+    def test_exported_seat_counts_recount_from_the_exported_zugehoerigkeiten(self) -> None:
+        manifest = self.export()
+        gen_dir = self.exports_dir / manifest["generation"]
+
+        def read(table):
+            with gzip.open(gen_dir / f"{table}-local.csv.gz", "rt", encoding="utf-8", newline="") as handle:
+                return list(csv.DictReader(handle))
+
+        stretches, seats = read("mdb_zugehoerigkeiten"), read("party_seats")
+        party_names = {row["id"]: row["name"] for row in read("parties")}
+
+        def covers(row, day):
+            return row["valid_from"] <= day and (row["valid_until"] == "" or day < row["valid_until"])
+
+        compositions = {}
+        for day in ("2024-05-15", "2024-05-22", "2024-06-01"):
+            counted = {party_names[s["party_id"]]: int(s["seats"]) for s in seats if s["wahlperiode"] == "20" and covers(s, day)}
+            recounted = Counter(party_names[z["party_id"]] for z in stretches if z["wahlperiode"] == "20" and covers(z, day))
+            self.assertEqual(counted, dict(recounted), day)
+            compositions[day] = counted
+        self.assertEqual(compositions, {
+            "2024-05-15": {"SPD": 2, "CDU/CSU": 2},
+            "2024-05-22": {"SPD": 2, "CDU/CSU": 1, "fraktionslos": 1},
+            "2024-06-01": {"SPD": 1, "CDU/CSU": 2, "fraktionslos": 1},
+        })
+        self.assertEqual(sum(row["valid_until"] == "" for row in seats), 3)
+        self.assertEqual(read("mdb_stammdaten_stand"), [self.ids["stammdaten"]])
 
     def test_manifest_stable_keys_are_the_declared_primary_keys(self) -> None:
         manifest = self.export()

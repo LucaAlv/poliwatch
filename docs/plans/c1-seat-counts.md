@@ -117,8 +117,8 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
 
 ### Export, licence and dictionary
 
-- **Export format:** the two tables enter the export automatically. Format 11 → 12, CSVs 29 → 31.
-- **Source tag:** both tables go into `_TABLE_SOURCE_BUNDESTAG`. `party_seats` is derived, so it may belong in `_TABLE_SOURCE_DERIVED` instead, if `_check_license_layers` wants that for a computed count. Decide in step 6.
+- **Export format:** the two tables and the provenance table `mdb_stammdaten_stand` (step 4) enter the export automatically. Format 11 → 12, CSVs 29 → 32.
+- **Source tag (decided in step 3):** `mdb_zugehoerigkeiten` and `mdb_stammdaten_stand` are `bundestag.de`, except `valid_from`/`valid_until`, which are `derived`; `party_seats` is `derived`.
 - **Licence layer (D7):** the Stammdaten is a new source under ADR 0003, and the existing `bundestag-abstimmungen` layer names the roll-call pages, not this file. Add a layer `bundestag-stammdaten`, mapped to `{"bundestag.de"}` in `LICENSE_LAYER_SOURCES`. Its redistribution terms join the D-track legal items as a **release blocker, not an implementation blocker**.
 - **Docs:** `scripts/data_dictionary.json` gets both tables, and `docs/data-methods.md` gets the interval rules, the lag and the cross-check.
 
@@ -160,6 +160,8 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
    - Done in step 3 (the export refuses a table without a dictionary entry): the source tags, the `bundestag-stammdaten` layer, the dictionary entries, the captions, `EXPORT_FORMAT` 12 and the `tests/test_daten_export.py` pins.
    - A `column_source` test (beside `tests/test_build_dip_pulse_site.py:3182`).
    - `tests/_daten_fixture.py` with Stammdaten-derived rows.
+   - `docs/data-methods.md` (moved here from step 8).
+   - Done (2026-11-01), see "Step 6 result".
 7. **R2.**
    - `sitzanteil_prozent` and its definition.
    - D6's caveat line in the recipe caveat: the Stand date, and that the seats are carried forward after it (from step 5).
@@ -167,8 +169,8 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
    - A new test: the column sums to 100 over the groups with seats in each WP, and is NULL for the Sprechrollen.
    - Re-check `tests/test_daten_export.py:34, 1299, 1340, 1433` and `tests/test_sprechrolle.py:266`.
 8. **Docs and TODOS.**
-   - README and `docs/stable-ids.md`: schema 9, export format 12.
-   - `docs/data-methods.md`.
+   - README and `docs/stable-ids.md`: schema 9, export format 12 (done in steps 3 and 4; recheck only).
+   - `docs/data-methods.md`: add R2's `sitzanteil_prozent` only (the seat section is step 6's).
    - Change the roadmap note "small" for C1.
    - Move C1 to Completed.
    - New TODOS, kept out of C1:
@@ -419,6 +421,55 @@ These fall under the gate's "change on the vote's day". The bundestag.de page ch
 - A shift could be a derivation fault rather than a source error. Step 9 compares the ids with E4 again.
 - **D6's caveat line** for roll-calls after the Stand is not in step 5, which only warns. It goes into R2's recipe caveat in step 7, beside the Stand date.
 - If the store cannot be read when the cross-check runs, an earlier report stays in place. No current input reaches this: the build has just written the store.
+
+## Step 6 result (2026-11-01)
+
+Step 3 had already brought most of the export forward. Step 6 adds the three pieces it left: the provenance test, the fixture rows and the methods text.
+
+**What changed**
+- **`column_source` test** (`tests/test_build_dip_pulse_site.py`, `test_seat_count_columns_are_labelled_by_origin`). It pins every column of the three tables:
+  - `mdb_zugehoerigkeiten`: `bundestag.de`, except `valid_from`/`valid_until`, which are `derived`;
+  - `party_seats`: `derived` throughout;
+  - `mdb_stammdaten_stand`: `bundestag.de`.
+
+  `sha256` stays `bundestag.de` under the `eigene-metadaten` layer. That layer allows only `dip` and `bundestag.de`, the same coarse fallback as `created_at` (data-methods, "Quellen").
+- **`tests/_daten_fixture.py`.** Four made-up WP 20 `MDB` records go through `derive.mdb_zugehoerigkeiten`, `derive.party_seats` and `pulse_store.persist_seat_counts`. They skip `stammdaten.seat_rows`, whose size check needs a whole Bundestag.
+  - **What they produce:** 6 Zugehörigkeit rows, 6 seat rows, the provenance row (Stand 30.06.2024), and a `fraktionslos` parties row.
+  - **Otto leaves the CDU/CSU on 2024-05-20, between the two sittings.** So 2024-05-15 is SPD 2 and CDU/CSU 2, and 2024-05-22 is SPD 2, CDU/CSU 1 and fraktionslos 1. Step 7's mean over sitting dates has a non-trivial input.
+  - **Petra switches SPD → CDU/CSU on 2024-06-01, after both sittings.** This matches the fixture's story: her speech carries the speech-time SPD label, and her current party is CDU/CSU.
+  - Three rows are open (`valid_until` NULL).
+- **Export tests** (`tests/test_daten_export.py`):
+  - The manifest test now starts from the fixture's Stand. It then empties the three tables to check the "keine" branch, since the writer always writes the provenance row together with the seats.
+  - New: `test_exported_seat_counts_recount_from_the_exported_zugehoerigkeiten`. From the CSVs alone, it recounts the seats of three dates under the lookup rule, pins the compositions, and checks that NULL is exported as empty and that the provenance CSV matches.
+- **`docs/data-methods.md`** gets a section "Sitzzahlen". It covers:
+  - the CONTEXT quotes for Zugehörigkeit and fraktionslos (verbatim, which the existing quote test checks);
+  - the source, and which fields reach the export;
+  - the interval rules and the build failures;
+  - the lookup rule, with the WP-end day that lies in two WPs;
+  - the Stand, with carry-forward and the no-file case;
+  - the cross-check: its closed cause list, E4/E5 and Nachrücker timing, and that it never fails the build and is not exported.
+
+  R2's `sitzanteil_prozent` is left to step 7.
+
+**Tests.** The five fixture users (`test_daten_export`, `test_daten_page`, `test_data_pipeline_cli`, `test_publish_dip_pulse_data`, `test_validate_store_gate`) pass: 204 tests. No parties-row or byte pin moved. Full suite: 1972 tests, OK (2 skipped).
+
+**Figures.** None moved. Only the test fixture and the codebook text changed. A real export's DATA.md gains the "Sitzzahlen" section, and its `codebook_inputs` hash for `docs/data-methods.md` changes with it.
+
+### Step 6 review checklist
+
+1. **Sibling path.** No code path changed. The fixture writes through the build's own writer.
+2–10. Not touched (no build, store or input code).
+11. **Claims.** Every sentence of the methods section maps to code:
+    - the function duplicates, handover day, Mandat clip, S5 rule and gaps: `derive._mandate_stretches` and the rules above;
+    - the build failures: `StammdatenError` → `DatabaseRebuildError` (overlap, name map, `check_seat_totals` over and never reached);
+    - the lookup rule and the WP-end day: S2;
+    - the Stand, manifest key and Daten-page line: `export_distribution_data` and `render_daten_datenstand`;
+    - carry-forward: open rows under the lookup rule;
+    - the cause order: `stammdaten.CAUSES`;
+    - "never fails the build, private directory": `log_seat_crosscheck` and `crosscheck_path`;
+    - E4 spans WP 19 and 20 (`docs/source-errors.md`, votes 756–757).
+12. **Loop cost.** Not touched.
+13. **Last commit.** The wording fixes (E4's WPs, the size-check clause) were made before the test run.
 
 ## Decisions
 
