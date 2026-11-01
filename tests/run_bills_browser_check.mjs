@@ -15,6 +15,7 @@ const check = fs.readFileSync(path.join(__dirname, 'bills_browser_check.js'), 'u
 const recipeCheck = fs.readFileSync(path.join(__dirname, 'recipe_copy_browser_check.js'), 'utf8');
 const weekCheck = fs.readFileSync(path.join(__dirname, 'week_comparison_browser_check.js'), 'utf8');
 const radarCheck = fs.readFileSync(path.join(__dirname, 'radar_browser_check.js'), 'utf8');
+const nextSittingCheck = fs.readFileSync(path.join(__dirname, 'next_sitting_browser_check.js'), 'utf8');
 const chrome = process.env.CHROME_BIN || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(fs.existsSync);
 if (!chrome || !fs.existsSync(chrome)) throw new Error('Chrome/Chromium not found; install Chromium or set CHROME_BIN to its executable path');
 if (typeof WebSocket !== 'function') throw new Error('Node 21+ with native WebSocket is required');
@@ -84,6 +85,8 @@ async function main() {
   if (weekFixture.status !== 0) throw new Error(`week fixture generation failed (${py}): ${weekFixture.error?.message || weekFixture.stderr || weekFixture.stdout}`);
   const radarFixture = spawnSync(py, [path.join(__dirname, 'test_politikfelder.py'), '--browser-fixture', path.join(publicDir, 'radar')], { cwd: root, encoding: 'utf8', timeout: 30000 });
   if (radarFixture.status !== 0) throw new Error(`radar fixture generation failed (${py}): ${radarFixture.error?.message || radarFixture.stderr || radarFixture.stdout}`);
+  const nextSittingFixture = spawnSync(py, [path.join(__dirname, 'test_sitzungskalender.py'), '--browser-fixture', path.join(publicDir, 'next-sitting')], { cwd: root, encoding: 'utf8', timeout: 30000 });
+  if (nextSittingFixture.status !== 0) throw new Error(`next-sitting fixture generation failed (${py}): ${nextSittingFixture.error?.message || nextSittingFixture.stderr || nextSittingFixture.stdout}`);
   server = http.createServer((req, res) => {
     let file = path.resolve(publicDir, '.' + decodeURIComponent(new URL(req.url, 'http://local').pathname));
     if (!file.startsWith(publicDir + path.sep)) { res.writeHead(403).end(); return; }
@@ -122,6 +125,29 @@ async function main() {
     await ws.call('Page.navigate', { url: origin + '/radar/radar.html' }); await radarLoaded;
     console.log(`PASS ${label} radar filter: ${JSON.stringify(await ws.evaluate(`(${radarCheck})()`))}`);
   }
+  // The "Nächste Sitzungswoche" line follows the reader's date: freeze `new Date()` per case
+  // (registered before the page's own script runs) and reload. The fixture page was built on 2026-09-15
+  // for KW 24; the synthetic calendar plans KW 24, 26, 28, 41, 42, 45, ... (tests/test_sitzungskalender.py).
+  await ws.call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  const frozenDate = (iso) => `(() => { const FIXED = Date.parse(${JSON.stringify(iso + 'T10:00:00Z')}), Real = Date;
+    class Frozen extends Real { constructor(...args) { if (args.length === 0) super(FIXED); else super(...args); } static now() { return FIXED; } }
+    window.Date = Frozen; window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(String(event.message))); })();`;
+  let frozenId = null;
+  for (const expected of [
+    { label: 'build date (fallback)', date: '2026-09-15', fallback: true },
+    { label: 'sitzungsfreie week', date: '2026-09-30', lead: 'Nächste Sitzungswoche:', range: '5.–9. Oktober 2026', kw: '(KW 41)', gap: 'Seit KW 24 lagen laut Sitzungskalender 2 weitere Sitzungswochen; sie sind hier noch nicht ausgewertet.', datetimes: ['2026-10-05', '2026-10-09'] },
+    { label: 'inside a later Sitzungswoche', date: '2026-11-04', lead: 'Sitzungswoche läuft:', range: '2.–6. November 2026', kw: '(KW 45)', gap: 'Seit KW 24 lagen laut Sitzungskalender 4 weitere Sitzungswochen', datetimes: ['2026-11-02', '2026-11-06'] },
+    { label: 'weekend after a Sitzungswoche', date: '2026-10-17', lead: 'Nächste Sitzungswoche:', range: '2.–6. November 2026', kw: '(KW 45)', gap: 'Seit KW 24 lagen laut Sitzungskalender 4 weitere Sitzungswochen', datetimes: ['2026-11-02', '2026-11-06'] },
+    { label: 'the shown running week', date: '2026-06-10', hidden: true },
+    { label: 'past the last listed week', date: '2027-06-01', hidden: true },
+  ]) {
+    if (frozenId) await ws.call('Page.removeScriptToEvaluateOnNewDocument', { identifier: frozenId });
+    frozenId = (await ws.call('Page.addScriptToEvaluateOnNewDocument', { source: frozenDate(expected.date) })).identifier;
+    const loaded = ws.waitEvent('Page.loadEventFired');
+    await ws.call('Page.navigate', { url: origin + '/next-sitting/next-sitting.html' }); await loaded;
+    console.log(`PASS next sitting, reader on ${expected.date}: ${JSON.stringify(await ws.evaluate(`(${nextSittingCheck})(${JSON.stringify(expected)})`))}`);
+  }
+  await ws.call('Page.removeScriptToEvaluateOnNewDocument', { identifier: frozenId });
   for (const [label, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
     await ws.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
     for (const [name, file] of [['overview', '/site/index.html'], ['detail', '/site/detail.html'], ['protocol', '/protocols/plenarprotokoll-21-1.html#speech-4-ID0']]) {

@@ -423,6 +423,12 @@ Calling the builder directly instead of the preview script keeps the deploy buil
 
 Note that `data/` ships alongside the pages and contains the cached DIP JSON and the SQLite store — that is intentional (the database explorer and dev views read them), but it means the whole cache becomes public.
 
+`feeds/` ships beside the pages as well and is the stable place for machine-readable output of the week radar:
+
+- `feeds/week-radar.json` is written on every build: the newest 12 sitting weeks (the shown week and the 11 before it), newest first, with the ranked rows, the Redeanteil as `fraktion`/`sprechrolle` counts, and links relative to the site root. Schema 1: fields are only added; a rename or removal raises `schema_version`.
+- `feeds/week-radar.xml` (RSS 2.0, one item per finished week, GUID like `2026-W43`) needs absolute links, so it is written only when `BUNDESTAG_PULSE_SITE_URL` is set to an absolute `https://` URL ending in `/` (for example `https://example.org/puls/`). Without it, or with an invalid value, the build writes no feed and deletes an older one, so a stale feed is never deployed.
+- `data/sitzungskalender.json` caches the Bundestag's planned Sitzungswochen for the "Nächste Sitzungswoche" line of `puls.html`. An online build that persists refreshes it at most every 7 days (one request for the calendar page and one per `.ics` file) and never fails because of it: an error leaves the old cache in place with a warning. `--offline` and `--no-persist` never fetch. Without the file the line is left out.
+
 ## 8. Troubleshooting
 
 | Symptom | Cause and fix |
