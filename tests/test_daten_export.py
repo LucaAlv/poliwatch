@@ -193,9 +193,16 @@ class ExportHelpersTests(unittest.TestCase):
         self.assertEqual(b.resolve_data_base_url("https://example.org/x"), "https://example.org/x/")
         self.assertEqual(b.resolve_data_base_url("http://example.org/x/"), "http://example.org/x/")
         self.assertEqual(b.resolve_data_base_url("/data/"), "/data/")
+        self.assertEqual(b.resolve_data_base_url("//cdn.example.org/x"), "//cdn.example.org/x/")
 
-    def test_resolve_data_base_url_rejects_other_schemes(self) -> None:
-        for bad in ("javascript://x", "ftp://example.org/x"):
+    # A host the Datenschutz page cannot parse ended the build in a traceback
+    # after every other page was written; it is refused up front instead.
+    def test_resolve_data_base_url_rejects_other_schemes_and_malformed_hosts(self) -> None:
+        # /ship review 2026-11-01: a backslash-led base left the site with no
+        # host named on datenschutz.html, and credentials reached every href
+        # (the credential URL is split so the pre-push scanner skips the fake).
+        for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/",
+                    "/\\evil.example/x/", "data\\exports/", "https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     b.resolve_data_base_url(bad)
@@ -389,6 +396,18 @@ class ExportDistributionDataTests(unittest.TestCase):
         entry = next(file for file in manifest["files"] if file["kind"] == "codebook")
         self.assertEqual(entry["sha256"], b._hash_file(codebook_path))
         self.assertNotIn(entry["sha256"], codebook)
+        # O3: every generation carries the licence file DATA.md's short string
+        # points to, as the bytes the codebook input hashed.
+        self.assertNotIn("docs/data-license.md", codebook)
+        self.assertNotIn("This file states the terms", codebook)
+        self.assertIn("Die vollständige Datei liegt diesem Export als `LICENSE-DATA.md` bei", codebook)
+        (licence,) = [file for file in manifest["files"] if file["kind"] == "license"]
+        licence_path = codebook_path.parent / "LICENSE-DATA.md"
+        self.assertEqual(licence["name"], "LICENSE-DATA.md")
+        self.assertEqual(licence["bytes"], licence_path.stat().st_size)
+        self.assertEqual(licence["sha256"], b._hash_file(licence_path))
+        self.assertEqual(licence["sha256"], manifest["codebook_inputs"]["LICENSE-DATA.md"])
+        self.assertEqual(licence_path.read_bytes(), (b.REPO_ROOT / "LICENSE-DATA.md").read_bytes().replace(b"\r\n", b"\n"))
 
     def test_missing_dictionary_entries_fail_by_name_and_preserve_publication(self) -> None:
         self.export()
@@ -510,7 +529,7 @@ class ExportDistributionDataTests(unittest.TestCase):
 
     def test_missing_or_truncated_new_assets_trigger_regeneration(self) -> None:
         manifest = self.export()
-        for name in ("DATA.md", manifest["recipes"][0]["file"]):
+        for name in ("DATA.md", "LICENSE-DATA.md", manifest["recipes"][0]["file"]):
             for damage in ("missing", "truncated", "same size, altered"):
                 with self.subTest(name=name, damage=damage):
                     path = self.exports_dir / manifest["generation"] / name
@@ -533,7 +552,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         first = self.export(commit=None)
         # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
         first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
-        self.assertIn("(`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        self.assertIn("sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
         self.assertIn("beim bloßen Öffnen per Doppelklick", first_codebook)
         self.assertIn("entschärfen solchen Quelltext nicht", first_codebook)
         with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
@@ -541,7 +560,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertNotEqual(first["generation"], second["generation"])
         manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
-        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertIn("Lizenzhinweis (der Kurzstring aus `LICENSE-DATA.md`, sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
@@ -722,7 +741,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             [[cells[0].split("](")[0].lstrip("["), *cells[1:]] for cells in listed],
             [[file["name"], file["kind"], str(file.get("rows", "\u2014")), str(file["bytes"]), file["sha256"]] for file in files],
         )
-        self.assertEqual({file["kind"] for file in files}, {"sqlite", "table_csv", "recipe_csv"})
+        self.assertEqual({file["kind"] for file in files}, {"sqlite", "table_csv", "recipe_csv", "license"})
         for file in files:
             self.assertEqual(b._hash_file(self.exports_dir / manifest["generation"] / file["name"]), file["sha256"])
 
@@ -753,7 +772,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             dictionary, methods, license_doc = (root / b.CODEBOOK_INPUT_FILES[field] for field in ("dictionary", "methods", "license"))
             originals = {path: path.read_bytes() for path in (dictionary, methods, license_doc)}
             cases = [
-                ("missing licence file", license_doc, None, "codebook input .*data-license.md"),
+                ("missing licence file", license_doc, None, "codebook input .*LICENSE-DATA.md"),
                 ("not UTF-8", methods, b"\xff\xfe\x00", "codebook input .*data-methods.md"),
                 ("empty methods", methods, b"", "data-methods.md is empty"),
                 ("whitespace-only methods", methods, b" \n\t\n", "data-methods.md is empty"),
@@ -1065,7 +1084,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 11)
+        self.assertEqual(manifest["export_format"], 12)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):

@@ -87,6 +87,7 @@ import tempfile
 import time
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from urllib.parse import urlparse
 from collections import Counter
@@ -3145,16 +3146,19 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 11
+EXPORT_FORMAT = 12
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
 CODEBOOK_INPUT_FILES = {
     "dictionary": "scripts/data_dictionary.json",
     "methods": "docs/data-methods.md",
-    "license": "docs/data-license.md",
+    "license": "LICENSE-DATA.md",
 }
-# The attribution name docs/data-license.md uses; PRODUCT.md has not settled the product name.
+# The data licence file: a codebook input, and a file of every generation.
+LICENSE_FILE_NAME = Path(CODEBOOK_INPUT_FILES["license"]).name
+DIP_TERMS_URL = "https://dip.bundestag.de/documents/nutzungsbedingungen_dip.pdf"
+# The attribution name LICENSE-DATA.md uses; PRODUCT.md has not settled the product name.
 ATTRIBUTION_NAME = "Bundestag-Puls"
 # Per-Wahlperiode counts in DATA.md, in table order.
 COVERAGE_COUNT_TABLES = ("agenda_items", "speeches", "contributions", "votes", "vote_members")
@@ -3572,9 +3576,9 @@ def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
     return manifest if isinstance(manifest, dict) else None
 
 
-# The small text files (DATA.md, recipe CSVs) are also hashed: DATA.md tells
-# readers to check every file's SHA-256, and these cost nothing to verify.
-_REUSE_HASHED_KINDS = ("codebook", "recipe_csv")
+# The small text files (DATA.md, LICENSE-DATA.md, recipe CSVs) are also hashed:
+# DATA.md tells readers to check every file's SHA-256, and these cost nothing to verify.
+_REUSE_HASHED_KINDS = ("codebook", "license", "recipe_csv")
 
 
 # F1.1: a manifest is only reusable when it parses, matches the current
@@ -3789,14 +3793,16 @@ def _read_codebook_inputs() -> CodebookInputs:
     for field, relative in CODEBOOK_INPUT_FILES.items():
         path = REPO_ROOT / relative
         try:
-            content = path.read_bytes()
+            # LF, as the commit holds it: a core.autocrlf=true checkout has CRLF
+            # here, and the release script hashes the committed blob.
+            content = path.read_bytes().replace(b"\r\n", b"\n")
             texts[field] = content.decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError(f"export: codebook input {path}: {exc}") from exc
         # An emptied document would drop its whole DATA.md section silently.
         if not texts[field].strip():
             raise RuntimeError(f"export: codebook input {path} is empty")
-        hashes[relative] = hashlib.sha256(content).hexdigest()
+        hashes[relative] = build_revision.text_sha256(content)
     return CodebookInputs(**texts, sha256=hashes)
 
 
@@ -3948,8 +3954,8 @@ def _demote_headings(text: str) -> str:
     return "\n".join(lines)
 
 
-# The release-facing part of docs/data-license.md starts at its first "## "
-# heading; the operator notes above it stay out of DATA.md.
+# DATA.md quotes LICENSE-DATA.md from its first "## " heading on; the file's
+# own preamble, which says what the file is, stays out.
 def _license_notice(text: str) -> str:
     start = re.search(r"^## ", text, flags=re.MULTILINE)
     if start is None:
@@ -3995,7 +4001,7 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
         f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` ({REVISION_SUFFIX_NOTE}).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
-        f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): {_license_line_text(manifest['license'])}", "",
+        f"Schema-SHA-256: `{manifest['schema_hash']}`. Lizenzhinweis (der Kurzstring aus `LICENSE-DATA.md`, sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): {_license_line_text(manifest['license'])}", "",
         "## Dateien und Verwendung", "",
         "Alle folgenden Dateien gehören zu dieser Generation. `datenstand.json` liegt eine Ebene darüber und enthält auch den SHA-256 von `DATA.md`. Das Codebook enthält keinen eigenen Hash.",
         "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren: beim bloßen Öffnen per Doppelklick wertet eine Tabellenkalkulation Zellen, die mit `=`, `+`, `-` oder `@` beginnen, als Formel aus (etwa DIP-Titel, die mit „- “ beginnen), und die Dateien entschärfen solchen Quelltext nicht. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",
@@ -4081,7 +4087,7 @@ def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
 def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -> list[str]:
     path = CODEBOOK_INPUT_FILES["license"]
     return ["## Quellen, Bedingungen und Transformationen", "",
-            f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch:", "",
+            f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch. Die vollständige Datei liegt diesem Export als `{LICENSE_FILE_NAME}` bei:", "",
             _license_notice(license_doc), "",
             "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
             "## Diesen Export zitieren", "",
@@ -4113,9 +4119,8 @@ def _render_codebook(manifest: dict[str, Any], dictionary: dict[str, Any], input
 #                            previous one is deleted only after datenstand.json
 #                            points at the new one
 #     DATA.md               snapshot codebook
+#     LICENSE-DATA.md        the data licence, the bytes the codebook input hashed
 #     recipe-<id>-<tag>.csv  SQL results, including hidden IDs in SQL order
-#   published.json           written by the (separate) publish script; never
-#   LICENSE-DATA.md          touched by this function
 # The lock, the store copies, the temp files and the generation being built
 # live in export_work_dir(exports_dir), on the same file system.
 def export_distribution_data(
@@ -4590,6 +4595,13 @@ def _run_export(
             "wahlperioden": wahlperioden,
         },
     }
+    # The bytes _read_codebook_inputs hashed, so the listed sha256 equals
+    # codebook_inputs["LICENSE-DATA.md"], which a release checks against its
+    # commit. Before DATA.md, whose file table lists it.
+    license_path = gen_dir / LICENSE_FILE_NAME
+    license_path.write_bytes(codebook.license.encode("utf-8"))
+    files.append({"name": license_path.name, "kind": "license", "bytes": license_path.stat().st_size,
+                  "sha256": _hash_file(license_path)})
     codebook_path = gen_dir / "DATA.md"
     codebook_path.write_text(_render_codebook(manifest, dictionary, codebook), encoding="utf-8")
     files.append({"name": codebook_path.name, "kind": "codebook", "bytes": codebook_path.stat().st_size,
@@ -4679,14 +4691,16 @@ def generation_file_href(manifest: dict[str, Any], data_base_url: str, name: str
 
 
 # The manifest was written by export_distribution_data or passed
-# validate_manifest: its files list the sqlite first and exactly one codebook.
+# validate_manifest: its files list the sqlite first, exactly one codebook and one licence file.
 def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_remote: bool) -> str:
     sqlite_file = manifest["files"][0]
     href = generation_file_href(manifest, data_base_url, sqlite_file["name"])
     csv_files = [file for file in manifest["files"] if file["kind"] == "table_csv"]
     (codebook,) = [file for file in manifest["files"] if file["kind"] == "codebook"]
+    (license_file,) = [file for file in manifest["files"] if file["kind"] == "license"]
     codebook_link = (
-        f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, codebook["name"]))}">Datenwörterbuch (DATA.md)</a></p>'
+        f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, codebook["name"]))}">Datenwörterbuch (DATA.md)</a>'
+        f' &middot; <a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, license_file["name"]))}">Datenlizenz ({pulse_html.esc(license_file["name"])})</a></p>'
     )
     csv_rows = "".join(
         f"""
@@ -4698,11 +4712,18 @@ def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_r
         for file in csv_files
     )
     license_text = manifest.get("license") or ""
-    license_line = (
-        pulse_html.esc(license_text)
-        if license_text
-        else "Lizenzhinweis: siehe Quellen und Methode"
-    )
+    # The string names the file ("Details in LICENSE-DATA.md"); that mention
+    # becomes the link to this generation's copy. A manifest without a licence
+    # (an older remote one) keeps the pointer to the sources page alone.
+    if license_text:
+        name = pulse_html.esc(license_file["name"])
+        link = f'<a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, license_file["name"]))}">{name}</a>'
+        escaped = pulse_html.esc(license_text)
+        license_line = (escaped.replace(name, link, 1) if name in escaped else f"{escaped} ({link})") + (
+            ' &middot; <a href="sources.html#lizenz">Lizenzschichten</a>'
+        )
+    else:
+        license_line = '<a href="sources.html#lizenz">Lizenzhinweis: siehe Quellen und Methode</a>'
     state_line = f"Release {manifest.get('tag') or '?'}" if is_remote else "lokaler Build"
     return f"""
       <div class="download-panel">
@@ -4717,7 +4738,7 @@ def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_r
           <ul class="file-list">{csv_rows}</ul>
         </details>
         <p class="transformation-note">{pulse_html.esc(manifest.get('transformation') or '')}</p>
-        <p class="licence-line"><a href="sources.html#lizenz">{license_line}</a></p>
+        <p class="licence-line">{license_line}</p>
       </div>
     """
 
@@ -5287,7 +5308,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
         {relationships_block}
       </section>
       <footer>
-        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''} {pulse_html.render_legal_links(depth=0)}
       </footer>
     </main>
   </div>
@@ -5324,6 +5345,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
     .panel {{ margin-top:32px; padding:24px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }}
     .panel h1 {{ margin-top:0; }}
     .panel p {{ color:var(--muted); line-height:1.55; }}
+    footer {{ margin-top:24px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }}
   </style>
 </head>
 <body>
@@ -5334,6 +5356,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
       <h1>Daten nicht erzeugt</h1>
       <p>{body}</p>
     </main>
+    <footer><a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -5474,7 +5497,7 @@ def render_landing_page(
         <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
       </section>
     </main>
-    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.</footer>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert. {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -5739,7 +5762,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
       {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
       <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Auswahl.</p>
     </section>
-    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_votes_archive_script()}
   {pulse_html.page_scripts(features)}
@@ -6285,7 +6308,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
       <p>{pulse_html.esc(message)}</p>
     </header>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -7196,7 +7219,7 @@ def render_front_page(
 {radar_html}{week_compare_html}
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
-      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
+      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}{next_sitting_script}
@@ -8217,7 +8240,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     <header class="page-header"><div><h1>Gesetzesvorhaben</h1>
       <p>Finde Gesetzesvorhaben und lies nach, wie sie im Bundestag beraten wurden.</p></div></header>
     <main data-bills-index>{controls}{results}</main>
-    <footer><a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer><a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_bill_script() if rows else ''}
   {render_bill_help_script() if rows else ''}
@@ -8429,7 +8452,7 @@ def render_bill_detail(
         </section>
       </div>
     </main>
-    <footer><a href="index.html">Alle Gesetzesvorhaben</a> · <a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer><a href="index.html">Alle Gesetzesvorhaben</a> · <a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_bill_help_script()}
   {pulse_html.page_scripts(features)}
@@ -9243,7 +9266,7 @@ def render_abgeordnete_index(
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
     {former_section}
     {redner_section}
-    <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_abgeordnete_script()}
   {pulse_html.page_scripts(features)}
@@ -9454,7 +9477,7 @@ def render_abgeordnete_detail(
         </section>
       </aside>
     </div>
-    <footer>Diese Seite zeigt nur Felder, die in den Rohdaten vorhanden sind. <a href="index.html">Alle Abgeordnete</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer>Diese Seite zeigt nur Felder, die in den Rohdaten vorhanden sind. <a href="index.html">Alle Abgeordnete</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -10107,7 +10130,7 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
       das funktioniert</a>.</p>
     </header>
     {body}
-    <footer>Primärquellen: Bundestag-DIP und die XML-Plenarprotokolle. <a href="methodik.html">Methodik</a></footer>
+    <footer>Primärquellen: Bundestag-DIP und die XML-Plenarprotokolle. <a href="methodik.html">Methodik</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -10190,7 +10213,7 @@ def render_facts_week(
     {content}
     <footer>
       Diese Karten werden bei jedem Neubau neu erzeugt; Datenkorrekturen und Änderungen an Regeln oder Formulierungen können sie verändern.
-      <a href="methodik.html">Methodik</a>
+      <a href="methodik.html">Methodik</a> {pulse_html.render_legal_links(depth=1)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -10298,7 +10321,7 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
       können frühere Karten verändern; auch geänderte Formulierungen erscheinen auf ihnen.
       Lässt sich ein Beleg nicht mehr auflösen, entfällt die zugehörige Karte.</p>
     </section>
-    <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -10800,7 +10823,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>. {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -11341,7 +11364,7 @@ def render_catalog_page(
     </section>
     <p class="no-results" data-no-results hidden>Keine Sitzungen entsprechen den Filterkriterien.</p>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>. {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {render_catalog_script()}
@@ -11481,12 +11504,180 @@ def render_bundestag_page(features: Selection | None = None) -> str:
       </div>
     </header>
     <main class="explainer">{body}</main>
-    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a></footer>
+    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
+
+
+# ---------------------------------------------------------------------------
+# PAGES: impressum.html and datenschutz.html (ADR 0003 D4)
+#
+# The operator's name, address, e-mail and hosting come from a local file
+# outside git (--operator-file, load_operator), never from the repository.
+# A value the file does not give renders as a marked placeholder, so a build
+# without it is visible: no generated page may carry data-operator-missing
+# once the site goes public.
+# ---------------------------------------------------------------------------
+
+# The localStorage keys page_scripts() writes, each on a click only, with what
+# it holds. tests/test_demo_site.py checks this against the scripts.
+DATENSCHUTZ_STORAGE_KEYS = (
+    ("bundestag-pulse-theme", "ob Sie das helle oder das dunkle Design gewählt haben, sobald Sie den Schalter „Dunkel“/„Hell“ betätigen"),
+    ("bundestag-pulse-ai-summaries-v1", "ob die KI-Zusammenfassungen ein- oder ausgeklappt sind, sobald Sie den Schalter dafür betätigen"),
+)
+# Hosts the pages load anything from (scripts, styles, fonts, images): none.
+DATENSCHUTZ_LOADED_HOSTS: tuple[str, ...] = ()
+
+
+def _operator_value(operator: dict[str, Any] | None, field: str) -> str:
+    value = (operator or {}).get(field)
+    if value is None:
+        return f'<span data-operator-missing="{pulse_html.esc(field)}">Angabe folgt.</span>'
+    return pulse_html.esc(value)
+
+
+def _operator_link(operator: dict[str, Any] | None, field: str, *, label: str | None = None, mailto: bool = False) -> str:
+    value = (operator or {}).get(field)
+    if value is None:
+        return _operator_value(operator, field)
+    href = f"mailto:{value}" if mailto else value
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label or value)}</a>'
+
+
+def _operator_address(operator: dict[str, Any] | None) -> str:
+    return (
+        f"{_operator_value(operator, 'name')}<br>{_operator_value(operator, 'street')}<br>"
+        f"{_operator_value(operator, 'postal_code')} {_operator_value(operator, 'city')}"
+    )
+
+
+# The supervisory authority as one link when both values are given,
+# otherwise each value or its placeholder.
+def _operator_authority(operator: dict[str, Any] | None) -> str:
+    name = (operator or {}).get("supervisory_authority.name")
+    if name and (operator or {}).get("supervisory_authority.url"):
+        return _operator_link(operator, "supervisory_authority.url", label=name)
+    return f"{_operator_value(operator, 'supervisory_authority.name')} ({_operator_link(operator, 'supervisory_authority.url')})"
+
+
+def _legal_page(title: str, lead: str, body: str, features: Selection | None) -> str:
+    features = features or publication_selection()
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · {pulse_html.esc(title)}</title>
+  {pulse_html.page_head(features)}
+  <style>{bill_styles()}
+    .legal {{ display:grid; gap:16px; max-width:860px; margin-top:18px; }}
+    .legal p, .legal li {{ line-height:1.6; overflow-wrap:anywhere; }}
+    .legal ul {{ padding-left:20px; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header()}
+    <header class="page-header">
+      <div>
+        <h1>{pulse_html.esc(title)}</h1>
+        <p>{lead}</p>
+      </div>
+    </header>
+    <main class="legal">{body}</main>
+    <footer><a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def render_impressum_page(operator: dict[str, Any] | None, features: Selection | None = None) -> str:
+    sections = (
+        ("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV",
+         f"<p>{_operator_address(operator)}</p>"
+         f"<p>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
+        ("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV",
+         f"<p>{_operator_value(operator, 'name')}, Anschrift wie oben.</p>"),
+        ("Fehler melden und Kontakt",
+         "<p>Fehler in den Daten und auf der Website werden öffentlich über GitHub Issues gemeldet. "
+         "Die E-Mail-Adresse oben ist nur für Anliegen gedacht, die nicht öffentlich sein sollen: "
+         "Datenschutzanfragen, Berichtigungs- oder Löschwünsche betroffener Personen, Presseanfragen "
+         "und Sicherheitshinweise.</p>"),
+        ("Quellen",
+         "<p>Die Daten stammen aus öffentlichen Quellen des Deutschen Bundestages, vor allem aus dem "
+         "Dokumentations- und Informationssystem für Parlamentsmaterialien (Quelle: „Deutscher "
+         "Bundestag/Bundesrat – DIP“). Welche Bedingungen für welche Daten gelten, steht unter "
+         '<a href="sources.html#lizenz">Quellen und Methode</a>.</p>'),
+    )
+    body = "".join(f'<section class="panel"><h2>{pulse_html.esc(heading)}</h2>{content}</section>' for heading, content in sections)
+    return _legal_page("Impressum", "Anbieterkennzeichnung dieser Website.", body, features)
+
+
+def render_datenschutz_page(
+    operator: dict[str, Any] | None, *, data_base_url: str | None = "data/exports/", features: Selection | None = None
+) -> str:
+    storage_items = "".join(
+        f"<li><code>{pulse_html.esc(key)}</code>: {pulse_html.esc(meaning)}.</li>" for key, meaning in DATENSCHUTZ_STORAGE_KEYS
+    )
+    # Absolute and protocol-relative ("//host/") bases leave the site; a site
+    # path has no host, and None means the build offers no downloads.
+    # resolve_data_base_url refused unparseable hosts.
+    try:
+        download_host = urllib.parse.urlsplit(data_base_url).hostname if data_base_url else None
+    except ValueError:
+        download_host = None
+    download_sentence = (
+        f" Die Datendownloads der Seite „Daten“ liegen auf {pulse_html.esc(download_host)}; erst wenn Sie eine "
+        "Datei herunterladen, ruft Ihr Browser diesen Server auf."
+        if download_host else ""
+    )
+    sections = (
+        ("Verantwortlicher",
+         f"<p>{_operator_address(operator)}<br>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
+        ("Hosting und Server-Logs",
+         f"<p>Die Website liegt bei {_operator_value(operator, 'hosting.provider')}, "
+         f"{_operator_value(operator, 'hosting.address')}. Wenn Sie eine Seite aufrufen, erhält dessen Server "
+         "technisch bedingt Ihre IP-Adresse, den Zeitpunkt, die aufgerufene Adresse und die Angaben, die Ihr "
+         f"Browser mitsendet. Wie lange der Hoster diese Server-Logs speichert: {_operator_value(operator, 'hosting.log_retention')}. "
+         f"Datenschutzhinweise des Hosters: {_operator_link(operator, 'hosting.privacy_url')}.</p>"),
+        ("Keine Cookies, kein Tracking, keine fremden Inhalte",
+         "<p>Die Seiten dieser Website setzen keine Cookies und enthalten keine Analyse- oder Tracking-Werkzeuge. Seiten, "
+         "Skripte, Stile und Bilder kommen vom selben Server; Schriften, Skripte oder andere Inhalte von "
+         f"fremden Servern werden nicht geladen.{download_sentence}</p>"),
+        ("Speicherung in Ihrem Browser",
+         "<p>Zwei Einstellungen speichert die Website im lokalen Speicher Ihres Browsers (localStorage), "
+         "jeweils erst, wenn Sie den zugehörigen Schalter betätigen:</p>"
+         f"<ul>{storage_items}</ul>"
+         "<p>Die Werte bleiben in Ihrem Browser und werden nicht übertragen. Sie können sie in den "
+         "Einstellungen Ihres Browsers löschen.</p>"),
+        ("Links auf andere Websites",
+         "<p>Die Seiten verlinken auf andere Websites, etwa bundestag.de, dip.bundestag.de, "
+         "abgeordnetenwatch.de und gesetze-im-internet.de. Erst wenn Sie einen solchen Link anklicken, ruft "
+         "Ihr Browser die andere Website auf; dort gelten deren Datenschutzbestimmungen.</p>"),
+        ("Kontakt",
+         f"<p>Wenn Sie per E-Mail schreiben ({_operator_link(operator, 'email', mailto=True)}), werden Ihre "
+         "Adresse und Ihre Nachricht verarbeitet, um Ihr Anliegen zu beantworten. Fehlermeldungen über GitHub "
+         "Issues sind öffentlich; für sie gelten die Datenschutzbestimmungen von GitHub.</p>"),
+        ("Personen in den Daten",
+         "<p>Website und Datendownloads enthalten Namen, Abstimmungsverhalten und Reden von Mitgliedern des "
+         "Bundestages sowie Angaben wie Geburtsjahr, Beruf und Wahlkreis. Sie stammen aus öffentlichen "
+         "Quellen: den Plenarprotokollen und dem DIP des Deutschen Bundestages, den Ergebnissen namentlicher "
+         "Abstimmungen auf bundestag.de sowie Wahlkreis, Bundesland, Geburtsjahr, Beruf und Geschlecht von "
+         "abgeordnetenwatch.de. Zweck ist, die Arbeit des Bundestages "
+         "nachvollziehbar zu machen.</p>"),
+        ("Ihre Rechte",
+         "<p>Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), "
+         "Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21). "
+         "Sie können sich bei einer Datenschutz-Aufsichtsbehörde beschweren (Art. 77 DSGVO), etwa bei "
+         f"{_operator_authority(operator)}.</p>"),
+    )
+    body = "".join(f'<section class="panel"><h2>{pulse_html.esc(heading)}</h2>{content}</section>' for heading, content in sections)
+    return _legal_page("Datenschutz", "Welche Daten beim Besuch dieser Website verarbeitet werden.", body, features)
 
 
 # ---------------------------------------------------------------------------
@@ -11605,11 +11796,32 @@ def render_sources_page(
             f"{' · '.join(database_links)}."
             "</span></li>"
         )
+    # The four source layers of LICENSE-DATA.md (ADR 0003 D1), authored here:
+    # the dictionary's ten column layers are too fine-grained for this page.
+    licence_layers = (
+        ("DIP und Plenarprotokolle: Sitzungen, Tagesordnungspunkte, Reden und Beiträge, Vorgänge und Drucksachen",
+         f'<a href="{DIP_TERMS_URL}">Nutzungsbedingungen des DIP</a>. Quellenangabe „Deutscher Bundestag/Bundesrat – DIP“; '
+         "zitierte Plenarprotokolle als „BT-PlPr.“ mit Nummer, etwa „BT-PlPr. 21/84“."),
+        ("Namentliche Abstimmungen: Ergebnisse und Einzelstimmen",
+         "Quelle „Deutscher Bundestag“ (Ergebnisse und Namenslisten auf bundestag.de). Die Einzelstimmen druckt auch das Plenarprotokoll als endgültiges Ergebnis ab."),
+        ("abgeordnetenwatch.de: Wahlkreis, Bundesland, Geburtsjahr, Beruf, Geschlecht, Profil-ID und Profil-Link",
+         '<a href="https://creativecommons.org/publicdomain/zero/1.0/deed.de">CC0 1.0</a>; die Quelle wird ohne Pflicht genannt.'),
+        ("Eigene Auswertungen: Zählungen, Zuordnungen, Politikfelder, Fakten und Personenregister",
+         f'<a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>, Namensnennung „{ATTRIBUTION_NAME}, Luca Veh“. '
+         "Die Bedingungen der verwendeten Quelldaten gelten weiter."),
+    )
+    licence_rows = "".join(f"<tr><th scope=\"row\">{pulse_html.esc(data)}</th><td>{terms}</td></tr>" for data, terms in licence_layers)
     licence_method_item = (
-        '<li id="lizenz"><strong>Lizenz und Weiterverwendung</strong><span>'
-        "Lizenzhinweis: siehe Quellen und Methode. Die genaue Lizenzformulierung für die "
-        "veröffentlichten Datensätze steht noch aus."
-        "</span></li>"
+        '<li id="lizenz"><strong>Lizenz und Weiterverwendung</strong><div class="licence-layers">'
+        "<p>Die Daten dieser Website und jedes Downloads verbinden Quellen mit unterschiedlichen Bedingungen; jede Schicht behält ihre eigenen:</p>"
+        f'<table><thead><tr><th scope="col">Daten</th><th scope="col">Bedingungen</th></tr></thead><tbody>{licence_rows}</tbody></table>'
+        "<p>Die Daten sind aufbereitet und verändert: Protokolle und DIP-Datensätze sind in Tabellen zerlegt, Leerraum ist "
+        "vereinheitlicht, die Absätze einer Rede sind zusammengefügt. Nach Nr. 5 der DIP-Nutzungsbedingungen dürfen DIP-Daten "
+        "nicht in einem entstellenden Zusammenhang verwendet werden und nicht so, dass Mitglieder des Bundestages, des "
+        "Bundesrates, der Bundesregierung oder andere herabgesetzt werden können; diese Bedingung der Quelle gilt für jede "
+        "Weiterverwendung.</p>"
+        '<p>Details: <code>LICENSE-DATA.md</code> liegt jedem Export bei und ist auf der Seite <a href="database.html">Daten</a> verlinkt.</p>'
+        "</div></li>"
     )
     # Glossary of the DIP vorgangstyp labels shown in the Debattenprofil card on
     # puls.html; each label there links to its entry here by anchor.
@@ -11728,7 +11940,11 @@ def render_sources_page(
     }}
     .method-list li:last-child {{ border-bottom:0; padding-bottom:0; }}
     .method-list strong {{ color:#273142; }}
-    .method-list span {{ color:var(--muted); }}
+    .method-list span, .method-list .licence-layers {{ color:var(--muted); }}
+    .licence-layers p {{ margin:0 0 10px; }}
+    .licence-layers table {{ width:100%; margin:0 0 10px; border-collapse:collapse; font-size:14px; }}
+    .licence-layers th, .licence-layers td {{ padding:6px 8px 6px 0; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; overflow-wrap:anywhere; }}
+    .licence-layers tbody th {{ font-weight:600; color:var(--ink); }}
     /* Glossary entries are link targets from the Debattenprofil on puls.html.
        Their terms are long compound nouns, so the term column is wider and may
        hyphenate instead of running into the explanation. */
@@ -11914,7 +12130,7 @@ def render_sources_page(
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -12282,7 +12498,7 @@ def render_settings_page(
       <p>Nur vorhandene KI-Zusammenfassungen lassen sich weiterhin ein- oder ausklappen. Diese Einstellung betrifft ausschließlich KI-generierte Texte, nicht die Quelleninhalte.</p>
       <a class="button" href="sources.html#datenstand">Datenstand dieser Veröffentlichung</a>
     </main>
-    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.6.0 erreichbar. <a href="sources.html">Quellen und Methode</a></footer>
+    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.6.0 erreichbar. <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts()}
 </body>
@@ -12323,6 +12539,7 @@ def render_site(
     authoritative_catalog: bool = False,
     catalog_full_fetched_at: str | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    operator: dict[str, str] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -12528,6 +12745,13 @@ def render_site(
             encoding="utf-8",
         )
     settings_path.write_text(render_settings_page(), encoding="utf-8")
+    (output_dir / "impressum.html").write_text(render_impressum_page(operator, features=features), encoding="utf-8")
+    # Without a manifest the Daten page offers no downloads (no store, a failed
+    # export), so the privacy page names no download host either.
+    (output_dir / "datenschutz.html").write_text(
+        render_datenschutz_page(operator, data_base_url=data_base_url if manifest is not None else None, features=features),
+        encoding="utf-8",
+    )
     if not include_dev_view:
         publication.validate_publication_directory(output_dir)
     return index_path
@@ -12835,7 +13059,23 @@ _ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
 # https://, http:// or a leading /; any other scheme:// is a build-time error
 # (F3.1) rather than a silently broken or unsafe href.
 def resolve_data_base_url(value: str) -> str:
+    # Browsers read a backslash as "/", so "/\host/" leaves the site while
+    # urlsplit sees no host and datenschutz.html would name none.
+    if "\\" in value:
+        raise ValueError(f"--data-base-url {value!r} contains a backslash")
     if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
+        # A host part (also a protocol-relative "//host/") must parse and be
+        # non-empty: datenschutz.html names it as the download host.
+        try:
+            parsed = urllib.parse.urlsplit(value)
+            host = parsed.hostname
+        except ValueError as exc:
+            raise ValueError(f"--data-base-url {value!r} is not a valid URL: {exc}") from exc
+        if host is None and (value.startswith("//") or not value.startswith("/")):
+            raise ValueError(f"--data-base-url {value!r} names no host")
+        # Every download href would carry them; the value is not echoed.
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("--data-base-url contains credentials (user:password@); remove them")
         return value if value.endswith("/") else value + "/"
     if _ABSOLUTE_SCHEME_RE.match(value):
         raise ValueError(
@@ -12973,7 +13213,7 @@ def validate_manifest(
 def _manifest_inventory_problems(manifest: dict[str, Any], files: list[Any]) -> list[str]:
     problems: list[str] = []
     inventory: dict[str, dict[str, Any]] = {}
-    kinds: dict[str, list[str]] = {"sqlite": [], "table_csv": [], "recipe_csv": [], "codebook": []}
+    kinds: dict[str, list[str]] = {"sqlite": [], "table_csv": [], "recipe_csv": [], "codebook": [], "license": []}
     for index, entry in enumerate(files):
         if not isinstance(entry, dict):
             continue
@@ -12999,6 +13239,8 @@ def _manifest_inventory_problems(manifest: dict[str, Any], files: list[Any]) -> 
         problems.append("files[0].unpacked_bytes must be a nonnegative integer")
     if kinds["codebook"] != ["DATA.md"]:
         problems.append("codebook needs exactly one typed DATA.md")
+    if kinds["license"] != [LICENSE_FILE_NAME]:
+        problems.append(f"license needs exactly one typed {LICENSE_FILE_NAME}")
     recipe_refs, recipe_ids = set(), set()
     for index, recipe in enumerate(manifest.get("recipes", []) if isinstance(manifest.get("recipes"), list) else []):
         if not isinstance(recipe, dict):
@@ -13346,7 +13588,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-license",
         default=None,
-        help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE).",
+        help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE). Default: the short string of LICENSE-DATA.md.",
+    )
+    parser.add_argument(
+        "--operator-file",
+        default=None,
+        help=(
+            "Local JSON file with the operator's name, address, e-mail, hosting and supervisory authority for "
+            "impressum.html and datenschutz.html (or $BUNDESTAG_PULSE_OPERATOR_FILE). Keep it outside git; "
+            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders."
+        ),
     )
     parser.add_argument(
         "--data-issues-url",
@@ -13359,6 +13610,11 @@ def parse_args() -> argparse.Namespace:
     # The tag ends every export file name and is shown as "Release <tag>".
     if args.data_tag is not None and args.data_tag != "local" and not release_version.is_version(args.data_tag):
         parser.error(f"--data-tag {args.data_tag!r} is neither 'local' nor a release version (YYYY.MM.DD[.N]; scripts/publish_dip_pulse_data.sh --next-version)")
+    # A release tag means "export this release": with another manifest rendered
+    # instead, nothing carries the tag, and an older release-tagged export left
+    # in OUTPUT_DIR would pass as this one.
+    if args.data_tag not in (None, "local") and args.data_manifest:
+        parser.error(f"--data-tag {args.data_tag} exports a release; it cannot be combined with --data-manifest, which skips the export")
     if args.vote_scan_pages is not None and args.vote_scan_pages < 0:
         parser.error("--vote-scan-pages must be 0 (off) or a positive number of list pages")
     if args.backfill_incomplete and args.document_number:
@@ -13401,6 +13657,110 @@ def dossier_database_page_href(args: argparse.Namespace, database_path: Path) ->
     return None
 
 
+# The operator file (O1 A): name, postal address, e-mail and hosting details
+# for impressum.html and datenschutz.html, from a local JSON file outside git.
+# The keys below, flattened with a dot for the nested objects, are also the
+# data-operator-missing field names.
+OPERATOR_FIELDS = ("name", "street", "postal_code", "city", "email")
+OPERATOR_OBJECTS = {
+    "hosting": ("provider", "address", "privacy_url", "log_retention"),
+    "supervisory_authority": ("name", "url"),
+}
+OPERATOR_URL_FIELDS = ("hosting.privacy_url", "supervisory_authority.url")
+OPERATOR_MAX_LENGTH = 300
+_OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
+
+
+class OperatorFileError(ValueError):
+    """The operator file is unreadable or malformed; the message names the path."""
+
+
+def _operator_url(value: str) -> bool:
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        host = parsed.hostname
+    except ValueError:  # "https://[::1" and other malformed hosts
+        return False
+    return parsed.scheme == "https" and bool(host) and not parsed.username and not parsed.password
+
+
+def load_operator(path: Path) -> dict[str, str]:
+    """The operator's values, flattened (``hosting.provider``); absent fields
+    are left out and render as placeholders. Raises OperatorFileError."""
+    try:
+        raw = json.loads(path.read_bytes().decode("utf-8"))
+    except OSError as exc:
+        raise OperatorFileError(f"--operator-file {path} cannot be read: {exc.strerror or exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise OperatorFileError(f"--operator-file {path} is not UTF-8: {exc.reason} at byte {exc.start}") from exc
+    except json.JSONDecodeError as exc:
+        raise OperatorFileError(f"--operator-file {path} is not valid JSON: {exc.msg} (line {exc.lineno})") from exc
+    except ValueError as exc:  # an integer past Python's 4300-digit limit
+        raise OperatorFileError(f"--operator-file {path} is not valid JSON: {exc}") from exc
+    except RecursionError as exc:
+        raise OperatorFileError(f"--operator-file {path} is nested too deeply") from exc
+    if not isinstance(raw, dict):
+        raise OperatorFileError(f"--operator-file {path} must hold a JSON object, not {type(raw).__name__}")
+    known = set(OPERATOR_FIELDS) | set(OPERATOR_OBJECTS)
+    unknown = sorted(str(key) for key in raw if key not in known)
+    if unknown:
+        raise OperatorFileError(f"--operator-file {path}: unknown field(s) {', '.join(unknown)}")
+    values: dict[str, Any] = {field: raw[field] for field in OPERATOR_FIELDS if field in raw}
+    for name, fields in OPERATOR_OBJECTS.items():
+        if name not in raw:
+            continue
+        if not isinstance(raw[name], dict):
+            raise OperatorFileError(f"--operator-file {path}: {name} must be an object with {', '.join(fields)}")
+        extra = sorted(str(key) for key in raw[name] if key not in fields)
+        if extra:
+            raise OperatorFileError(f"--operator-file {path}: unknown field(s) {', '.join(f'{name}.{key}' for key in extra)}")
+        values.update({f"{name}.{field}": raw[name][field] for field in fields if field in raw[name]})
+    operator: dict[str, str] = {}
+    for field, value in values.items():
+        if not isinstance(value, str):
+            raise OperatorFileError(f"--operator-file {path}: {field} must be a string")
+        value = value.strip()
+        if not value:
+            continue  # an empty value is a missing one
+        if len(value) > OPERATOR_MAX_LENGTH:
+            raise OperatorFileError(f"--operator-file {path}: {field} is longer than {OPERATOR_MAX_LENGTH} characters")
+        # Cs: a lone surrogate from a JSON escape cannot be written as UTF-8.
+        if any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
+            raise OperatorFileError(f"--operator-file {path}: {field} contains a control character")
+        if field == "email" and not _OPERATOR_EMAIL_RE.fullmatch(value):
+            raise OperatorFileError(f"--operator-file {path}: email {value!r} is not an e-mail address")
+        if field in OPERATOR_URL_FIELDS and not _operator_url(value):
+            raise OperatorFileError(f"--operator-file {path}: {field} must be an https:// URL without credentials")
+        operator[field] = value
+    return operator
+
+
+# CLI > env; neither set means no operator data (placeholders). A path that
+# is set but cannot be read stops the build (D3 A): a typo must not publish an
+# Impressum without its address.
+def resolve_operator(args: argparse.Namespace) -> dict[str, str] | None:
+    raw = getattr(args, "operator_file", None) or os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
+    if not raw:
+        return None
+    return load_operator(Path(raw))
+
+
+# The default --data-license: the blockquote under "## Short string" in
+# LICENSE-DATA.md, so the string is written once.
+def default_license_text() -> str:
+    path = REPO_ROOT / CODEBOOK_INPUT_FILES["license"]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError(f"default licence string: cannot read {path}: {exc}") from exc
+    section = re.search(r"^## Short string[ \t]*\n(.*?)(?=^## |\Z)", text, flags=re.MULTILINE | re.DOTALL)
+    quoted = [line[1:].strip() for line in section.group(1).splitlines() if line.startswith(">")] if section else []
+    short = " ".join(part for part in quoted if part)
+    if not short:
+        raise RuntimeError(f'default licence string: {path} has no blockquote under "## Short string"; pass --data-license')
+    return short
+
+
 # CLI > env > default, read in the layer that actually runs the build (not in
 # parse_args itself), per the DX addendum. getattr() throughout: main() must
 # keep working against the pre-existing test stub that mocks parse_args() with
@@ -13410,7 +13770,7 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
         getattr(args, "data_base_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_BASE_URL") or "data/exports/"
     )
     manifest_raw = data_manifest_source(args)
-    license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or ""
+    license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or default_license_text()
     issues_url = getattr(args, "data_issues_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_ISSUES_URL")
     issues_url = (issues_url or "").strip() or None
     if issues_url and safe_issues_url(issues_url) is None:
@@ -13530,6 +13890,9 @@ def run_data_pipeline(
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
     force_export = bool(getattr(args, "force_export", False))
+    tag = getattr(args, "data_tag", None) or "local"
+    if tag != "local" and manifest_raw:
+        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
     # A --data-manifest override replaces whatever this build would export, so
     # the export only runs when its result is used or explicitly forced.
     if manifest_raw and not force_export:
@@ -13547,13 +13910,17 @@ def run_data_pipeline(
                 excluded_sittings=[entry["document_number"] for entry in load_coverage_exclusions(output_dir)],
                 license_text=license_text,
                 issues_url=issues_url,
-                tag=getattr(args, "data_tag", None) or "local",
+                tag=tag,
                 commit=resolve_commit(),
                 force=force_export,
             )
         except DataExportUnavailable as exc:
+            if tag != "local":
+                raise RuntimeError(f"release {tag} was not exported: {exc}") from exc
             data_export_error = str(exc)
             print(f"error: {exc}", file=sys.stderr)
+    elif tag != "local":
+        raise RuntimeError(f"release {tag} was not exported: there is no store at {database_path}")
 
     is_remote_manifest = False
     if manifest_raw:
@@ -13586,6 +13953,13 @@ def main() -> int:
             return 1
         print(f"validated: {args.validate_publication}")
         return 0
+
+    # Before any work: a mistyped operator path stops here, naming the path.
+    try:
+        operator = resolve_operator(args)
+    except OperatorFileError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
@@ -13844,6 +14218,7 @@ def main() -> int:
             is_remote_manifest=is_remote_manifest,
             bill_slugs=bill_slugs,
             vorgang_cache=vorgang_cache,
+            operator=operator,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -14165,6 +14540,7 @@ def main() -> int:
         authoritative_catalog=True,
         catalog_full_fetched_at=catalog_full_fetched_at,
         vorgang_cache=vorgang_cache,
+        operator=operator,
     )
     print(index_path)
     summary, failing = acquisition_summary_lines(

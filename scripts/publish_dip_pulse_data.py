@@ -11,12 +11,14 @@ Typical use (see scripts/publish_dip_pulse_data.sh for the wrapper):
 The default is a dry run: it checks the export, writes the release directory
 (``<output-dir>/data-<version>/``) and prints the ``gh release create`` command it
 would run. ``--publish`` creates the release through ``gh`` and refuses unless
-LICENSE-DATA.md exists at the repository root (ADR 0003). This script never
-pushes, tags or uploads by itself; the only remote command is the one printed.
+the export carries a licence string (ADR 0003). This script never pushes, tags
+or uploads by itself; the only remote command is the one printed.
 
 The release is refused unless its export was built with a release tag, from a
 clean commit that exists in this repository (the manifest's, not HEAD), from the
-authored inputs that commit holds, and every file matches the manifest.
+authored inputs that commit holds, and every file matches the manifest. The
+export's LICENSE-DATA.md is one of those files: non-empty and equal to the one
+that commit holds.
 """
 
 from __future__ import annotations
@@ -44,7 +46,6 @@ import release_changes
 import release_version
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LICENSE_FILE = "LICENSE-DATA.md"
 ADR = "docs/adr/0003-licences-and-impressum.md"
 
 
@@ -72,6 +73,22 @@ def _read_json(path: Path, what: str) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ReleaseError(f"cannot read {what} {path}: {exc}") from exc
+
+
+def previous_manifest_problem(previous: Any) -> str | None:
+    """Why a --previous-manifest cannot head the changelog, or None. Not the
+    site's validate_manifest: that refuses every export format but the current
+    one, and the release after a format bump is the one whose changelog must
+    report it. This checks the fields release_changes reads."""
+    if not isinstance(previous, dict):
+        return "is not a datenstand.json (a JSON object)"
+    problems = [f"missing {field}" for field in release_changes.SCHEMA_FIELDS if field not in previous]
+    for key, fields in (("protocols", ("count",)), ("votes", ("count", "members"))):
+        if not isinstance(previous.get(key), dict) or not all(field in previous[key] for field in fields):
+            problems.append(f"{key} needs {'/'.join(fields)}")
+    if type(previous.get("total_rows")) is not int:
+        problems.append("total_rows is not an integer")
+    return f"is not a usable datenstand.json: {'; '.join(problems)}" if problems else None
 
 
 def local_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
@@ -116,6 +133,11 @@ def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], s
     for relative, digest in sorted(inputs.items()):
         if build_revision.blob_sha256(repo_root, full, relative) != digest:
             raise ReleaseError(f"the authored input {relative} of the export differs from commit {commit}; rebuild from that commit")
+    # validate_manifest admits exactly one licence file; it must be the bytes
+    # the commit holds (hashed as a codebook input), and say something.
+    (licence,) = [entry for entry in manifest["files"] if entry["kind"] == "license"]
+    if licence["bytes"] == 0 or licence["sha256"] != inputs.get(site.CODEBOOK_INPUT_FILES["license"]):
+        raise ReleaseError(f"the export's {licence['name']} is empty or not the {site.CODEBOOK_INPUT_FILES['license']} of commit {commit}; rebuild the export")
     generation = exports_dir / manifest["generation"]
     listed = {entry["name"]: entry for entry in manifest["files"]}
     present = {path.name for path in generation.iterdir()} if generation.is_dir() else set()
@@ -149,7 +171,7 @@ def _write_checksums(directory: Path) -> None:
 
 
 def build_release_directory(
-    *, exports_dir: Path, manifest: dict[str, Any], version: str, changes: dict[str, Any], output_dir: Path, license_file: Path | None
+    *, exports_dir: Path, manifest: dict[str, Any], version: str, changes: dict[str, Any], output_dir: Path
 ) -> Path:
     release_dir = output_dir / release_version.tag_for(version)
     if release_dir.exists():
@@ -162,8 +184,6 @@ def build_release_directory(
             _link_or_copy(exports_dir / manifest["generation"] / entry["name"], staging / manifest["generation"] / entry["name"])
         (staging / "changes.json").write_text(json.dumps(changes, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (staging / "CHANGES.md").write_text(release_changes.render_markdown(changes), encoding="utf-8")
-        if license_file is not None:
-            shutil.copyfile(license_file, staging / LICENSE_FILE)
         _write_checksums(staging)
         staging.rename(release_dir)
     except BaseException:
@@ -181,7 +201,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--initial", action="store_true", help="This is the first data release.")
     parser.add_argument("--previous-manifest", type=Path, help="datenstand.json of the previous release (for the changelog).")
     parser.add_argument("--changes", type=Path, help="Authored changes file (docs/data-changelog.md); required for every release but the first.")
-    parser.add_argument("--publish", action="store_true", help=f"Create the release through gh. Refuses unless {LICENSE_FILE} exists at the repository root (ADR 0003).")
+    parser.add_argument("--publish", action="store_true", help="Create the release through gh. Refuses an export without a licence string (ADR 0003).")
     return parser.parse_args(argv)
 
 
@@ -190,12 +210,11 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError("--exports-dir and --output-dir are required")
     if args.initial == bool(args.previous_manifest):
         raise ReleaseError("say which release this is: --initial (the first) or --previous-manifest <datenstand.json> (not both)")
-    license_file = repo_root / LICENSE_FILE
-    if args.publish and not license_file.is_file():
-        raise ReleaseError(
-            f"--publish refused: {LICENSE_FILE} does not exist at the repository root. ADR 0003 ({ADR}) is not implemented yet, "
-            "and a release must carry its data licence. A dry run (without --publish) still works."
-        )
+    # gh runs with cwd=repo_root and reads "path#label" as an asset label, so
+    # every path it is given must be absolute and free of "#".
+    args.exports_dir, args.output_dir = args.exports_dir.resolve(), args.output_dir.resolve()
+    if "#" in str(args.output_dir):
+        raise ReleaseError(f"--output-dir {args.output_dir} contains '#', which gh reads as an asset label separator; choose another directory")
     data_base_url = None
     if args.base_url:
         try:
@@ -206,7 +225,7 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     if args.publish and not str(manifest.get("license") or "").strip():
         raise ReleaseError(
             "--publish refused: the export carries no licence string (manifest field license). Rebuild it with --data-license "
-            f"(the short string of {ADR}) or $BUNDESTAG_PULSE_DATA_LICENSE."
+            f"(the short string of LICENSE-DATA.md, {ADR}) or $BUNDESTAG_PULSE_DATA_LICENSE."
         )
     tag = release_version.tag_for(version)
     known = local_versions(repo_root, run)
@@ -216,14 +235,17 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
     if args.initial and known:
         raise ReleaseError(f"--initial, but data releases already exist ({', '.join(sorted(known, key=release_version.version_key))}); give --previous-manifest instead")
-    previous = _read_json(args.previous_manifest, "previous manifest") if args.previous_manifest else None
-    if previous is not None and not isinstance(previous, dict):
-        raise ReleaseError(f"the previous manifest {args.previous_manifest} is not a datenstand.json (a JSON object)")
+    previous = None
+    if args.previous_manifest:
+        # JSON null too: read as None it would label this release the first one.
+        previous = _read_json(args.previous_manifest, "previous manifest")
+        problem = previous_manifest_problem(previous)
+        if problem:
+            raise ReleaseError(f"the previous manifest {args.previous_manifest} {problem}")
     authored = release_changes.load_authored(args.changes) if args.changes else None
     changes = release_changes.assemble(version=version, released=today, manifest=manifest, previous_manifest=previous, authored=authored)
     release_dir = build_release_directory(
         exports_dir=args.exports_dir, manifest=manifest, version=version, changes=changes, output_dir=args.output_dir,
-        license_file=license_file if license_file.is_file() else None,
     )
     files = sorted((path for path in release_dir.rglob("*") if path.is_file()), key=lambda p: p.relative_to(release_dir).as_posix())
     command = [
@@ -245,8 +267,6 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             "a GitHub release URL as --base-url does not resolve until the site's link scheme or the host changes "
             "(TODOS: Site hosting plan). Use a host that keeps the directory layout of the release directory."
         )
-        if not license_file.is_file():
-            out(f"{LICENSE_FILE}: missing at the repository root; --publish refuses until ADR 0003 is implemented.")
         if not str(manifest.get("license") or "").strip():
             out("licence string: empty in the export; --publish refuses until the export is rebuilt with --data-license.")
         return

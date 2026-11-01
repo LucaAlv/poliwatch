@@ -71,6 +71,24 @@ class DatenPageTests(unittest.TestCase):
         self.assertRegex(provenance("abc123def456-dirty-0123abcd"), r"Commit abc123def456-dirty-0123abcd.*Änderungen")
         self.assertRegex(provenance("abc123def456-unverified-0123abcd"), r"Commit abc123def456-unverified-0123abcd.*nicht prüfen")
 
+    # Value: protects=the download panel shows the manifest's licence string with its "LICENSE-DATA.md" mention linked to this generation's copy and keeps the sources.html#lizenz link, and a manifest without a licence shows only the placeholder pointer; fails_when=the string is dropped, the file link points at the repository or another generation, or the placeholder shows beside a real string; why_new=step 4 of the Impressum/licence plan; seam=render_daten_downloads; no_claim=the string's content
+    def test_the_licence_line_links_the_generation_licence_file(self) -> None:
+        def licence_line(manifest, base="data/exports/") -> str:
+            html = b.render_daten_downloads(manifest, data_base_url=base, is_remote=False)
+            return re.search(r'<p class="licence-line">(.*?)</p>', html, re.S).group(1)
+
+        short = b.default_license_text()
+        for base in ("data/exports/", "https://example.org/releases/v-test/"):
+            with self.subTest(base=base):
+                line = licence_line(dict(self.manifest, license=short), base)
+                href = f'{base}{self.manifest["generation"]}/LICENSE-DATA.md'
+                self.assertIn(f'Details in <a href="{href}">LICENSE-DATA.md</a>.', line)
+                self.assertIn('<a href="sources.html#lizenz">', line)
+                self.assertNotIn("siehe Quellen und Methode", line)
+        custom = licence_line(dict(self.manifest, license="CC BY 4.0 <b>"))
+        self.assertIn("CC BY 4.0 &lt;b&gt; (<a href=", custom)
+        self.assertEqual(licence_line(dict(self.manifest, license="")), '<a href="sources.html#lizenz">Lizenzhinweis: siehe Quellen und Methode</a>')
+
     def test_no_sample_table_or_search_box(self) -> None:
         # The shared dark-theme stylesheet still lists .sample-table in an
         # unrelated selector (harmless, unrelated to this page); this page
@@ -172,8 +190,8 @@ class DatenPageTests(unittest.TestCase):
         for base in ("data/exports/", "https://example.org/releases/v-test/"):
             with self.subTest(base=base):
                 page = b.render_database_page(self.manifest, data_base_url=base, is_remote=base.startswith("https"))
-                artifacts = [file for file in self.manifest["files"] if file["kind"] in ("codebook", "recipe_csv")]
-                self.assertEqual(len(artifacts), 7)
+                artifacts = [file for file in self.manifest["files"] if file["kind"] in ("codebook", "license", "recipe_csv")]
+                self.assertEqual(len(artifacts), 8)
                 for file in artifacts:
                     self.assertIn(f'href="{base}{self.manifest["generation"]}/{file["name"]}"', page)
                     self.assertTrue((self.tmp / "exports" / self.manifest["generation"] / file["name"]).is_file())
@@ -212,9 +230,15 @@ class DatenPageTests(unittest.TestCase):
         def recipe_file(manifest):
             return next(file for file in manifest["files"] if file["kind"] == "recipe_csv")
 
+        def licence(manifest):
+            return next(file for file in manifest["files"] if file["kind"] == "license")
+
         cases = [
             ("missing codebook", "codebook", lambda m: m["files"].remove(codebook(m))),
             ("mistyped codebook", "codebook", lambda m: codebook(m).update(kind="table_csv")),
+            ("missing licence file", "license needs exactly one", lambda m: m["files"].remove(licence(m))),
+            ("two licence files", "license needs exactly one", lambda m: m["files"].append({**licence(m), "name": "LICENSE-DATA-2.md"})),
+            ("misnamed licence file", "license needs exactly one", lambda m: licence(m).update(name="LICENSE.md")),
             ("missing recipe", "recipe_csv reference", lambda m: m["files"].remove(recipe_file(m))),
             ("mistyped recipe", "recipe_csv reference", lambda m: recipe_file(m).update(kind="table_csv")),
             ("missing kind", "kind unsupported", lambda m: codebook(m).pop("kind")),
@@ -416,6 +440,45 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             index_content = (output_dir / "index.html").read_text(encoding="utf-8")
             self.assertIn(">Daten<", index_content)
             self.assertNotIn("Datenbank erkunden", index_content)
+
+
+    # Value: protects=a build with a manifest writes the real Daten page with the legal links in its footer, and render_site hands the build's --data-base-url and operator values to datenschutz.html and impressum.html; fails_when=the Daten page footer loses the legal span (the demo only builds the "nicht erzeugt" page), or render_site passes the default base so the privacy page says downloads stay on this server while they leave it, or drops operator=; why_new=no other test renders database.html from a manifest through render_site and reads the legal pages it writes; seam=render_site; no_claim=wording of the legal pages
+    def test_render_site_gives_the_daten_page_legal_links_and_the_legal_pages_their_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            output_dir = tmp_path / "site"
+            (output_dir / "data").mkdir(parents=True)
+            manifest, lookup = build_manifest(tmp_path)
+            b.render_site(
+                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", protocols=[], entries=[],
+                abg_mps=[], mp_lookup=lookup, manifest=manifest, data_base_url="https://cdn.example.net/releases/",
+                operator={"name": "Erika Muster", "email": "impressum@example.org"},
+            )
+            database = (output_dir / "database.html").read_text(encoding="utf-8")
+            impressum = (output_dir / "impressum.html").read_text(encoding="utf-8")
+            datenschutz = (output_dir / "datenschutz.html").read_text(encoding="utf-8")
+        footer = database.split("<footer")[-1]
+        self.assertIn('<span class="legal-links"><a href="impressum.html">Impressum</a>', footer)
+        self.assertIn('<a href="datenschutz.html">Datenschutz</a>', footer)
+        self.assertIn("Die Datendownloads der Seite „Daten“ liegen auf cdn.example.net;", datenschutz)
+        self.assertIn("Erika Muster", impressum)
+        self.assertIn('<a href="mailto:impressum@example.org">', impressum)
+        self.assertNotIn('data-operator-missing="name"', impressum)
+
+    # Value: protects=a build without a manifest (no store, a failed export) offers no downloads, so datenschutz.html names no download host even for a remote --data-base-url; fails_when=render_site hands the base to the privacy page unconditionally and it describes downloads that do not exist; why_new=/ship red-team review 2026-11-01, the manifest test above only covers a build with downloads; seam=render_site; no_claim=the Daten unavailable page's own text
+    def test_without_a_manifest_the_privacy_page_names_no_download_host(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            output_dir = tmp_path / "site"
+            (output_dir / "data").mkdir(parents=True)
+            b.render_site(
+                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", protocols=[], entries=[],
+                abg_mps=[], mp_lookup={}, manifest=None, data_base_url="https://cdn.example.net/releases/",
+                data_export_error="no store",
+            )
+            datenschutz = (output_dir / "datenschutz.html").read_text(encoding="utf-8")
+        self.assertNotIn("Die Datendownloads der Seite", datenschutz)
+        self.assertNotIn("cdn.example.net", datenschutz)
 
 
 def write_browser_fixture(output: Path) -> None:

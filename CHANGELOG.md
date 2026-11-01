@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0.0] - 2026-11-01
+
+### Added
+
+- **Impressum and Datenschutz.** Every build writes `impressum.html` and `datenschutz.html`, and every page's footer links both at its depth. The Impressum gives the operator's name, address and e-mail (§ 5 DDG, § 18 MStV), the contact routes and the sources. The Datenschutz page names the hoster and its server logs, the two settings stored in the browser (theme and KI-Zusammenfassungen, each only after a click), that no cookies, tracking or third-party content are used, the download host when the downloads live elsewhere, the people in the data and the reader's rights under the DSGVO. The publication check refuses an output without either page.
+- **`--operator-file` (or `$BUNDESTAG_PULSE_OPERATOR_FILE`).** The operator's details come from a local JSON file outside git, so an address never enters the repository history. `docs/project-documentation.md` shows its shape. A value the file does not give renders as a marked „Angabe folgt.“ placeholder (`data-operator-missing`), so an incomplete build is visible. A path that is set but unreadable, or a file with unknown fields, wrong types, control characters, a malformed e-mail or a URL that is not https or carries credentials, stops the build before any work, naming the path.
+- **Licence files.** `LICENSE` puts the code under MIT. `LICENSE-DATA.md` at the repository root is the one data-licence source: each source layer keeps its own terms (DIP terms of use, roll-call results from bundestag.de, CC0 for abgeordnetenwatch.de, CC BY 4.0 for the project's own derivations). Every export carries it as `LICENSE-DATA.md` beside `DATA.md`, and the Daten page links that copy. `sources.html#lizenz` shows the four layers as a table instead of the placeholder that said the wording was still open.
+
+### Changed
+
+- **The default licence string is the short string of `LICENSE-DATA.md`.** Without `--data-license`, `datenstand.json`, the DATA.md header and the Daten page now carry it instead of an empty string. On the Daten page, its mention of `LICENSE-DATA.md` links the export's copy.
+- **Export format 12.** The manifest lists the licence file as a file of its own (kind `license`) with its SHA-256, and a reused export re-hashes it. The first build after this release re-exports once.
+- **A release checks the export's licence file.** `scripts/publish_dip_pulse_data.sh` verifies that the export's `LICENSE-DATA.md` is non-empty and identical to the one its commit holds, and copies nothing from the working tree. `--publish` refuses an export without a licence string.
+- **`--data-base-url` refuses more bad input.** A host that does not parse, a base with no host, a backslash (browsers read `/\host/` as another site) and a URL with credentials are refused at the start of the export.
+
+### Fixed
+
+- **The release script before its first real run.** A `--previous-manifest` holding JSON `null`, a number or a list, or missing the counts the changelog reads, is refused instead of labelling the release the first one; a previous manifest of an older export format stays usable. Relative `--output-dir`/`--exports-dir` are made absolute before `gh` sees them, and an `--output-dir` containing `#` is refused. A release `--data-tag` refuses `--data-manifest`, and the build stops when no export carries the tag instead of leaving an older release-tagged export behind. A checkout with `core.autocrlf=true` no longer builds an export the release script refuses as "differs from commit".
+
 ## [0.29.0.0] - 2026-11-01
 
 ### Changed

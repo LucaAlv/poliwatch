@@ -3561,6 +3561,44 @@ class BuildClockAndWeekTests(unittest.TestCase):
             self.assertEqual(render_site.call_args.kwargs["week"], (2026, 24))
             self.assertIs(render_site.call_args.kwargs["entries"][0], entry)
 
+    # Value: protects=main() reads --operator-file once and hands its values to render_site on both the offline and the online path, so the Impressum of a real build carries the operator's data; fails_when=either render_site call drops operator=, so a valid file still publishes an Impressum of "Angabe folgt." placeholders with exit 0; why_new=the missing-path test stops main() before render_site and test_demo_site calls build_demo, so no test saw main() pass the values on; seam=main with render_site mocked (as the neighbouring week tests do); no_claim=what the pages render from the values
+    def test_main_hands_the_operator_file_values_to_render_site_offline_and_online(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            operator_file = root / "operator.json"
+            operator_file.write_text(json.dumps({"name": "Erika Muster", "hosting": {"provider": "Hoster"}}), encoding="utf-8")
+            expected = {"name": "Erika Muster", "hosting.provider": "Hoster"}
+            entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            entry["report"]["protocol"]["id"] = "5799"
+            # An offline render reads the store (A4 slice 0), as the week tests above do.
+            _site_store_fixture.build_site_store(root / "offline", [entry])
+            offline_args = SimpleNamespace(
+                output_dir=root / "offline", database_path=None, offline=True, week=None, today=date(2026, 9, 15),
+                operator_file=str(operator_file),
+            )
+            with (
+                mock.patch.object(build_dip_pulse_site, "parse_args", return_value=offline_args),
+                mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached", "datum": "2026-06-12"}]),
+                mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[entry]),
+                mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[entry]),
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=root / "offline" / "index.html") as offline_render,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                self.assertEqual(build_dip_pulse_site.main(), 0)
+            self.assertEqual(offline_render.call_args.kwargs["operator"], expected)
+            online_argv = self._online_argv(root / "online", "--operator-file", str(operator_file))
+            with (
+                mock.patch.object(sys, "argv", online_argv),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=[self._catalog_protocol("21/84", "5799", "2026-06-12")]),
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[entry]),
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=root / "online" / "index.html") as online_render,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                self.assertEqual(build_dip_pulse_site.main(), 0)
+            self.assertEqual(online_render.call_args.kwargs["operator"], expected)
+
     def _online_argv(self, output_dir: Path, *extra: str) -> list[str]:
         return ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir), *extra]
 

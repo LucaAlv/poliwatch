@@ -197,6 +197,19 @@ class SummaryRenderingTests(unittest.TestCase):
         self.assertIn("catch (_) {}", runtime)
         self.assertLess(runtime.index("addEventListener"), runtime.index("apply(state, false)"))
 
+    # Value: protects=both LLM renderers (the TOP card and the session summary) mark their output as machine-generated in text and as data; fails_when=either drops „KI-generiert · nicht redaktionell geprüft“ or data-ai-generated="true"; why_new=ADR 0003 asked for the label and called it not verified; seam=render_llm_summary, render_session_llm_summary; no_claim=rule output (Fakten, vote leads, Politikfelder), which no model writes
+    def test_both_llm_renderers_carry_the_machine_generated_label(self) -> None:
+        top = source_top()
+        item = {"index": 1, "top_id": top["top_id"], "heading": top["heading"], "xml_speakers": top["speeches"],
+                "xml_speech_count": len(top["speeches"]), "llm_summary": valid_summary(top)}
+        protocol = {"dokumentnummer": "21/84", "pdf_url": "https://www.bundestag.de/test.pdf"}
+        top_card = html.render_llm_summary(item, {"speakers": top["speeches"]}, protocol=protocol)
+        session = html.render_session_llm_summary([item], {1: html.item_stats(item)}, {"enabled": True}, protocol)
+        for label, markup in (("TOP card", top_card), ("session summary", session)):
+            with self.subTest(label):
+                self.assertIn('data-ai-generated="true"', markup)
+                self.assertIn('<span class="ai-summary-label">KI-generiert · nicht redaktionell geprüft</span>', markup)
+
     def test_missing_summary_emits_no_empty_ai_card(self) -> None:
         self.assertEqual(html.render_llm_summary({}, {"speakers": []}), "")
 

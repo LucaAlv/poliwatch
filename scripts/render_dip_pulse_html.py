@@ -621,10 +621,21 @@ def format_percent(value: float) -> str:
     return f"{value:.1f}".replace(".", ",") + "%"
 
 
+# The legal pages, appended to every page's footer (not the navigation,
+# which tests/test_features.py pins); same prefix scheme as the header.
+def render_legal_links(*, depth: int = 0) -> str:
+    prefix = "../" * depth
+    return (
+        f'<span class="legal-links"><a href="{prefix}impressum.html">Impressum</a>'
+        f' &middot; <a href="{prefix}datenschutz.html">Datenschutz</a></span>'
+    )
+
+
 def global_header_styles() -> str:
     return """
     :root { --party-cdu:#222222; }
     a:visited { color:var(--teal, #0f766e); }
+    .legal-links { white-space:nowrap; }
     :is(a, .site-nav summary, .theme-toggle):focus-visible {
       outline:2px solid var(--blue);
       outline-offset:2px;
@@ -4213,7 +4224,7 @@ def render_html(
     {sitting_contributions_html}
       {protocol_dev_sections}
     <footer>
-      <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
+      <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html} {render_legal_links(depth=1)}</span>
     </footer>
   </div>
   {speech_hash_runtime_script()}

@@ -47,7 +47,7 @@ DIP clause 5 and the duties to name the source and mark changes are conditions w
 - persons are consolidated across sources (`mp_canonical`);
 - the `derived` tables are computed by us.
 
-The site's LLM summaries are not in the export. On the site they must be labelled as machine-generated; this is not verified today and is tracked in TODOS.
+The site's LLM summaries are not in the export. On the site they must be labelled as machine-generated; both renderers print „KI-generiert · nicht redaktionell geprüft“ with `data-ai-generated="true"`, pinned by a test since 2026-11-01. Fakten, vote leads and Politikfelder are rule output, which no model writes.
 
 **Clause 5** is passed on as a notice ("Die Nutzungsbedingungen des DIP, insbesondere Nr. 5, gelten für Weiterverwendungen fort"). We don't restate it as our own licence term.
 
@@ -128,11 +128,17 @@ The operator is one person with limited time, the audience is mostly not develop
 6. Whether the site is „journalistisch-redaktionell gestaltet" at all (§ 18 Abs. 2 MStV, and the press-law duties that come with it), or whether § 18 Abs. 1 is enough.
 
 7. Whether whitespace normalisation and joining paragraphs (D2) count as a change under § 62 UrhG, or whether the export must keep paragraph breaks.
+8. Whether the two localStorage entries the site writes on a click (the theme and the AI-summary collapse state, never transmitted) need consent or a statement of their basis under § 25 TDDDG. `datenschutz.html` describes them and states no legal basis.
 
 ## Consequences and follow-ups
 
 Tracked in `TODOS.md`:
-- **Implementation:** footer link, `impressum.html`, `datenschutz.html`, `LICENSE` (MIT), `LICENSE-DATA.md` from `docs/data-license.md`, the `--data-license` string, and the `lizenz` item on `sources.html`.
+- **Implementation (built 2026-11-01, `docs/plans/impressum-datenschutz-licence.md`):** footer links, `impressum.html`, `datenschutz.html`, `LICENSE` (MIT), `LICENSE-DATA.md` (formerly `docs/data-license.md`), the `--data-license` default, and the `lizenz` item on `sources.html`. The operator's values are still missing (see the amendment below).
+
+## Amendment, 2026-11-01: where the operator data and the licence text live
+
+- **Operator data (D4) stays out of git.** Name, postal address, e-mail, host and supervisory authority come from a local JSON file passed as `--operator-file` (or `$BUNDESTAG_PULSE_OPERATOR_FILE`), not from the repository: the repository will go public, and an address in its history cannot be taken back, which matters if question 1 allows a c/o address or the address changes. A value the file does not give renders as a `data-operator-missing` placeholder, and the future deploy step must refuse any page that still carries one (TODOS, hosting item).
+- **One source for the data licence (D1).** The root `LICENSE-DATA.md` is the only copy of the licence text. Every export carries it next to `DATA.md`, which quotes it from „Short string“ on, and its short string is the default `--data-license`. The maintainer notes of the former `docs/data-license.md` moved to `docs/project-documentation.md`.
 - **Provenance fix (completed 2026-10-22).** Export format 6 tags `mps.birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` as `abgeordnetenwatch`, matching the roster enrichment and the D1 table.
 - **Citation format:** protocol citations must read „BT-PlPr." with the period.
 - **Roll-call coverage:** check whether non-voters („nicht abgegeben") are also listed in the protocol, or only in the XLSX.

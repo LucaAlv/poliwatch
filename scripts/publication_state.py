@@ -406,7 +406,11 @@ def validate_publication_directory(root: Path) -> None:
     canonical = validate_manifest(payload)
     if canonical["build"]["development_output"]:
         raise PublicationStateError("development output is not deployable")
-    missing = [name for name in ("index.html", "puls.html", "overview.html", "sources.html") if not (root / name).is_file()]
+    missing = [
+        name
+        for name in ("index.html", "puls.html", "overview.html", "sources.html", "impressum.html", "datenschutz.html")
+        if not (root / name).is_file()
+    ]
     if missing:
         raise PublicationStateError(f"publication entry points are missing: {', '.join(missing)}")
     findings = validate_public_output(root)
