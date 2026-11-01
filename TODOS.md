@@ -786,6 +786,28 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** None
 
+### Impressum/licence branch: deferred /gstack-review findings (2026-11-01)
+
+**What:** Non-correctness findings from the pre-landing review of `claude/pre-public-items-plan-e8d01d` (specialists, Claude adversarial, red team; Codex found nothing):
+1. `test_the_legal_span_is_the_only_footer_change` (`tests/test_demo_site.py`) compares two renders of the same tree, one with `render_legal_links` patched to "". A footer sentence or link lost while editing would be missing from both, so the test cannot catch the regression D5 asked for. Compare against a golden of the pre-change footers (or main's build), or drop the second build and keep the database-unavailable assertions.
+2. `previous_manifest_problem` (`scripts/publish_dip_pulse_data.py`): the `protocols`/`votes` shape and `total_rows` branches (bool included) have no test rows, and the docstring says it checks "the fields release_changes reads" although `release_changes` tolerates their absence and reads `tag`, which is not checked.
+3. The release gate ties `LICENSE-DATA.md` to the commit but not `manifest["license"]` to its short string: a leftover `$BUNDESTAG_PULSE_DATA_LICENSE` publishes a different string in `datenstand.json`, the Daten page and the DATA.md header. Since `default_license_text()` fills an empty value, the "export carries no licence string" refusal is unreachable from exports this repo writes. Compare against the short string of the commit's blob instead.
+4. `--operator-file ""` or an empty `$BUNDESTAG_PULSE_OPERATOR_FILE` (an unset CI secret) is read as "not set" and builds placeholder pages with exit 0; the operator file is also resolved before `--fetch-xml`, so a stale variable blocks runs that render nothing.
+5. The operator e-mail regex accepts `?`, `&`, `%` and `=` in the local part, so `mailto:` can carry header parameters; operator URLs accept whitespace. Owner-controlled input, wrong link at worst.
+6. Nothing keeps the operator file out of git: no `.gitignore` entry for a conventional name, and `resolve_operator` accepts a path inside the work tree.
+7. `sources.html#lizenz` states the roll-call layer without the caveat DATA.md and `docs/data-methods.md` carry (redistribution of the named votes is still open, ADR 0003). The four layers are authored in `render_sources_page` beside `LICENSE-DATA.md` with no drift test; „Luca Veh“ is a literal there, in `LICENSE-DATA.md`, the dictionary and `CITATION.cff`.
+8. The Impressum says errors are reported publicly via GitHub Issues, but no link renders while `--data-issues-url` is unset, and the repository is private (non-members get a 404).
+9. A release `--data-tag` with `$BUNDESTAG_PULSE_DATA_MANIFEST` is refused only after `run_facts_engine` wrote the facts tables (idempotent, a wasted pass); move the check before it.
+10. A blob committed with CRLF is exported as LF, so the shipped `LICENSE-DATA.md` is not byte-identical to "the one that commit holds" (docstring and docs); add `.gitattributes` `eol=lf` for the three codebook inputs or soften the claim.
+11. Smaller: `_read_codebook_inputs` normalises CRLF and `text_sha256` normalises again; the `os.chdir` in `test_relative_directories_reach_gh_as_absolute_paths_and_a_hash_is_refused` should be `contextlib.chdir`; README, `CONTEXT.md` and `docs/stable-ids.md` still name "export format 11" in sentences that stay true but cite an old number; the C1 seat-count work also plans export format 12, so whichever lands second takes 13.
+12. Not run in the review: the 375px / dark-mode browser check of `impressum.html`, `datenschutz.html` and `sources.html#lizenz` (the sandbox refused a local server), and the reference-store export replay (format 12, one re-export, no moved figures).
+
+**Why:** Deferred under the CLAUDE.md fix-now-or-defer rule. The review fixed the crashes (operator-file lone surrogate, deep nesting and unparseable URL host; a malformed or host-less `--data-base-url`), the Datenschutz download host for a protocol-relative base URL, the Datenschutz source sentence (roll-call results were credited to abgeordnetenwatch.de too), „LICENSE-DATA.md in jedem Download“ (only the export carries it), and two stale claims.
+
+**Effort:** M
+**Priority:** P2 (items 3, 4, 6 and 12 before the site goes public), P3 (rest)
+**Depends on:** None
+
 ### Impressum, Datenschutz and licence files before the site goes public
 
 **What:** Implement [ADR 0003](docs/adr/0003-licences-and-impressum.md):
