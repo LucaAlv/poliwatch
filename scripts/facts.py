@@ -215,9 +215,8 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "requires_topic": False,
         "caveat": (
             "Verglichen werden nur die namentlichen Abstimmungen. Je mehr eine Woche davon "
-            "hat, desto knapper fällt die knappste im Schnitt aus (gemessen über 58 "
-            "vergleichbare Wochen), ein hoher Prozentwert sagt also auch etwas über die "
-            "Zahl der Abstimmungen."
+            "hat, desto knapper fällt die knappste im Schnitt aus, ein hoher Prozentwert "
+            "sagt also auch etwas über die Zahl der Abstimmungen."
         ),
     },
     {

@@ -233,9 +233,12 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                 self.assertEqual(len(current_rows), 1)
                 self.assertIn(f'href="{mps["Lea Former"]["id"]}.html"', index)
                 self.assertIn("data-former-mp-row", index)
-                former = index.split('<details class="former-mps">', 1)[1].split("</details>", 1)[0]
+                former = index.split('<details class="former-mps" id="fruehere-abgeordnete">', 1)[1].split("</details>", 1)[0]
                 self.assertIn("<th>Fraktion</th>", former)
                 self.assertNotIn("Fraktion (zuletzt)", former)
+                # The intro sends former MdBs to their own table, not to "Weitere" (review 2026-11-01).
+                intro = index.split('<header class="page-header">', 1)[1].split("</header>", 1)[0]
+                self.assertIn('<a href="#fruehere-abgeordnete">Frühere Abgeordnete</a>', intro)
 
     # Value: protects=malformed or unresolvable corrections abort the rebuild before replacement; fails_when=a validation guard is dropped so a bad file is applied or partially applied; why_new=only unknown merge persons were tested; seam=none
     def test_invalid_corrections_abort_without_replacing_store(self):

@@ -8961,10 +8961,16 @@ def render_abgeordnete_index(
         for mp in former
     )
     former_section = (
-        f'<details class="former-mps"><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
+        f'<details class="former-mps" id="fruehere-abgeordnete"><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
         f"({pulse_html.format_int(len(former))})</summary>"
         '<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlperioden</th>'
         f'<th class="num">Reden</th></tr></thead><tbody>{former_rows}</tbody></table></details>'
+        if former
+        else ""
+    )
+    former_pointer = (
+        f"Wer nur in einer früheren Wahlperiode seit der {V1_FIRST_WAHLPERIODE}. im Bundestag saß, steht unter "
+        '<a href="#fruehere-abgeordnete">Frühere Abgeordnete</a>. '
         if former
         else ""
     )
@@ -9015,8 +9021,8 @@ def render_abgeordnete_index(
     redner_section = (
         '<section class="redner-group" id="weitere-redner">'
         "<h2>Weitere Rednerinnen und Redner</h2>"
-        "<p>Personen, die im Plenum gesprochen haben und nicht in der Liste oben stehen: etwa für die Bundesregierung "
-        "oder den Bundesrat, oder als Mitglied des Bundestages einer früheren Wahlperiode. Mitglieder des Bundestages, "
+        "<p>Personen, die im Plenum gesprochen haben und in keiner der Listen oben stehen: etwa für die Bundesregierung "
+        f"oder den Bundesrat, oder als Mitglied des Bundestages vor der {V1_FIRST_WAHLPERIODE}. Wahlperiode. Mitglieder des Bundestages, "
         "die ein Regierungsamt haben, führt DIP ohne die Funktion MdB; sie stehen bis auf Weiteres hier.</p>"
         '<table class="mp-table"><thead><tr><th>Name</th><th>Sprechrolle</th><th class="num">Reden</th></tr></thead><tbody>'
         + "".join(redner_rows)
@@ -9050,7 +9056,7 @@ def render_abgeordnete_index(
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
-        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. Wer im Plenum sprach und nicht in dieser Liste steht, folgt unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
+        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. {former_pointer}Wer im Plenum sprach und in keiner dieser Listen steht, folgt unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
       </div>
       <div class="follow-summary">
         <span class="eyebrow">Angezeigt</span>
