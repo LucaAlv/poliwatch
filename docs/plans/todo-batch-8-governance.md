@@ -174,7 +174,7 @@ body:
     id: datenstand
     attributes:
       label: Datenstand (optional)
-      description: Nur bei Fehlern im Download: das Release, zu finden auf der Daten-Seite unter „Rohdaten".
+      description: "Nur bei Fehlern im Download: das Release, zu finden auf der Daten-Seite unter „Rohdaten\"."
       placeholder: data-2026.10.31
   - type: textarea
     id: hinweise
@@ -196,7 +196,7 @@ Notes:
 
 ```yaml
 name: Fehler auf der Seite
-description: Die Seite selbst funktioniert nicht: Darstellung, Links, Suche oder Bedienung.
+description: "Die Seite selbst funktioniert nicht: Darstellung, Links, Suche oder Bedienung."
 title: "Seitenfehler: "
 labels: ["needs-triage", "bug"]           # names per O3
 body:

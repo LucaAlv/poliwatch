@@ -1,5 +1,5 @@
 name: Fehler auf der Seite
-description: Die Seite selbst funktioniert nicht: Darstellung, Links, Suche oder Bedienung.
+description: "Die Seite selbst funktioniert nicht: Darstellung, Links, Suche oder Bedienung."
 title: "Seitenfehler: "
 labels: ["needs-triage", "bug"]
 body:

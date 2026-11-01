@@ -44,7 +44,7 @@ body:
     id: datenstand
     attributes:
       label: Datenstand (optional)
-      description: Nur bei Fehlern im Download: das Release, zu finden auf der Daten-Seite unter „Rohdaten".
+      description: "Nur bei Fehlern im Download: das Release, zu finden auf der Daten-Seite unter „Rohdaten\"."
       placeholder: data-2026.10.31
   - type: textarea
     id: hinweise

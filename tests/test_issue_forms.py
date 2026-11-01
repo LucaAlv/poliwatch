@@ -79,6 +79,36 @@ class IssueFormTests(unittest.TestCase):
     def test_blank_issues_are_disabled(self) -> None:
         self.assertIn("\nblank_issues_enabled: false\n", "\n" + _read(TEMPLATES / "config.yml"))
 
+    # Value: protects=every plain (unquoted) `key: value` line in the forms and config is valid YAML, so GitHub can load them; fails_when=an unquoted value contains ": " or " #" or starts with a YAML indicator character (YAML then reads a nested mapping or a comment, and GitHub rejects the template); why_new=both forms shipped with an unquoted ": " in a description and no parser is available to catch it; seam=none; no_claim=a line-based approximation, not a YAML parser: multi-line plain scalars and flow collections are not checked
+    def test_plain_scalar_values_are_valid_yaml(self) -> None:
+        key_line = re.compile(r"^(\s*)(?:- )?[A-Za-z_][A-Za-z0-9_-]*:\s+(\S.*?)\s*$")
+        block_header = re.compile(r"^(\s*)(?:- )?[A-Za-z_][A-Za-z0-9_-]*:\s+[|>][+-]?\d?\s*$")
+        indicators = "!&*|>%@`,[]{}#'\"?-:"
+        checked = 0
+        for path in sorted(TEMPLATES.glob("*.yml")):
+            block_indent: int | None = None
+            for number, line in enumerate(_read(path).splitlines(), 1):
+                if block_indent is not None:
+                    if not line.strip() or len(line) - len(line.lstrip()) > block_indent:
+                        continue
+                    block_indent = None
+                header = block_header.match(line)
+                if header:
+                    block_indent = len(header.group(1))
+                    continue
+                match = key_line.match(line)
+                if not match:
+                    continue
+                value = match.group(2)
+                if value[0] in "\"'[{":
+                    continue  # quoted scalar or flow collection
+                checked += 1
+                where = f"{path.name}:{number}: {line.strip()}"
+                self.assertNotIn(": ", value, where)
+                self.assertNotIn(" #", value, where)
+                self.assertNotIn(value[0], indicators, where)
+        self.assertGreater(checked, 15)
+
     # Value: protects=no placeholder marker survives in public text that is live the moment the repository is public; fails_when=a PLATZHALTER, TODO, example.invalid or [B<digit> marker is committed in a form, config, SECURITY.md or CODE_OF_CONDUCT.md; why_new=the private-matters link was deliberately left out rather than stubbed; seam=none
     def test_no_placeholder_markers_in_public_text(self) -> None:
         paths = sorted(TEMPLATES.iterdir()) + [ROOT / "SECURITY.md", ROOT / "CODE_OF_CONDUCT.md"]
