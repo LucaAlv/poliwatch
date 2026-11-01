@@ -357,7 +357,7 @@ Kept out of scope because of A3: the ~15 other page footers (abgeordnete near ba
 - O10: merge now.
 - O11: impersonal register.
 
-Label check, 2026-11-01: `needs-triage` and `bug` exist; `datenfehler` does not yet.
+Labels, 2026-11-01: `needs-triage` and `bug` exist; the owner created `datenfehler` the same day. Done-criterion (c) has every label it needs.
 
 The original options follow for the record.
 
