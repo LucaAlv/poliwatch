@@ -12,6 +12,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +21,7 @@ import build_dip_pulse_site as build
 import facts
 import persist_dip_pulse_store as pulse_store
 import speech_kinds
+import stammdaten
 from _support import FIXTURES
 from stable_ids import roster_occurrence_id, stable_key, vote_member_occurrence_id
 
@@ -65,6 +67,11 @@ def stammdaten_wp21() -> list[dict]:
     rest = [stammdaten_mdb(f"110{index:05d}", "Max", f"Muster{index}", (CDU_CSU if index <= 229 else SPD, "25.03.2025", None))
             for index in range(1, 630)]
     return [switcher, *rest]
+
+
+def cached(records: list[dict]) -> stammdaten.Stammdaten:
+    """What read_cached_stammdaten returns for a cached file holding ``records``."""
+    return stammdaten.Stammdaten(records=records, stand="2026-04-29T08:03:03+00:00", sha256="ab" * 32)
 
 
 class ReparseCachedXmlTests(unittest.TestCase):
@@ -979,7 +986,7 @@ class RepersistTests(unittest.TestCase):
     #   why_new=C1 step 3 adds the hook; seam=repersist_cached_reports with read_cached_stammdaten
     #   patched (the zip reader is step 4)
     def test_stammdaten_become_seat_rows_that_a_second_repersist_leaves_identical(self) -> None:
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=stammdaten_wp21()):
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached(stammdaten_wp21())):
             _, rebuilt = self.repersist()
             self.assertTrue(rebuilt.replaced)
             members, seats = self.seat_rows()
@@ -995,10 +1002,44 @@ class RepersistTests(unittest.TestCase):
             ("fraktionslos", 21, "2025-11-10", None, 1),
         ])
         self.assertEqual(len(members), 631)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(conn.execute("SELECT sha256, stand FROM mdb_stammdaten_stand").fetchall(),
+                             [("ab" * 32, "2026-04-29T08:03:03+00:00")])
+        finally:
+            conn.close()
         self.assertEqual([row for row in members if row[0] == "11000000"], [
             ("11000000", "Erika Wechsel", 21, "AfD", "2025-03-25", "2025-11-10"),
             ("11000000", "Erika Wechsel", 21, "fraktionslos", "2025-11-10", None),
         ])
+
+    # Value: protects=a cached file that cannot be read stops the rebuild with the cause named and the
+    #   previous store byte for byte, never a traceback; fails_when=the loader's StammdatenError escapes
+    #   past the CLI's DatabaseRebuildError handler; why_new=C1 step 4 reads the cache; seam=repersist_cached_reports
+    def test_an_unreadable_cached_file_stops_the_rebuild_and_keeps_the_store(self) -> None:
+        self.repersist()
+        before = sha(self.database)
+        cache = stammdaten.cache_path(self.database)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(b"<html>Wartungsarbeiten</html>")
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "cached MdB-Stammdaten.*not a zip"):
+            self.repersist()
+        self.assertEqual(before, sha(self.database))
+
+    # Value: protects=the rebuild reads the zip cached in the store's private directory and nothing
+    #   else, and reads no file when none is cached; fails_when=read_cached_stammdaten looks in OUTPUT/data
+    #   or returns records without the Stand; why_new=C1 step 4; seam=read_cached_stammdaten
+    def test_read_cached_stammdaten_reads_the_private_cache(self) -> None:
+        self.assertIsNone(build.read_cached_stammdaten(self.database))
+        (self.output_dir / "data" / "mdb-stammdaten.zip").write_bytes(b"not here")
+        self.assertIsNone(build.read_cached_stammdaten(self.database))
+        cache = stammdaten.cache_path(self.database)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(cache, "w") as archive:
+            archive.write(FIXTURES / "mdb-stammdaten-mini.xml", "MDB_STAMMDATEN.XML")
+        result = build.read_cached_stammdaten(self.database)
+        self.assertEqual(result.stand, "2026-04-29T08:03:03+00:00")
+        self.assertEqual([record["ID"] for record in result.records], ["11009901", "11009902", "11009903"])
 
     # Value: protects=Stammdaten that break a seat rule stop the rebuild with the cause named and the
     #   previous store byte for byte; fails_when=StammdatenError escapes as a traceback past the CLI's
@@ -1007,7 +1048,7 @@ class RepersistTests(unittest.TestCase):
     def test_stammdaten_that_break_a_seat_rule_stop_the_rebuild_and_keep_the_store(self) -> None:
         self.repersist()
         before = sha(self.database)
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=stammdaten_wp21()[:3]):
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached(stammdaten_wp21()[:3])):
             with self.assertRaisesRegex(build.DatabaseRebuildError, "WP 21: at most 3 seats on any day, never the legal 630"):
                 self.repersist()
         self.assertEqual(before, sha(self.database))
@@ -1022,7 +1063,7 @@ class RepersistTests(unittest.TestCase):
         old_only = stammdaten_mdb("11000001", "Max", "Alt", (CDU_CSU, "17.10.2017", None))
         old_only["WAHLPERIODEN"][0]["WP"] = "17"
         for label, records in (("empty", []), ("WP 17 only", [old_only])):
-            with self.subTest(label), mock.patch.object(build, "read_cached_stammdaten", return_value=records):
+            with self.subTest(label), mock.patch.object(build, "read_cached_stammdaten", return_value=cached(records)):
                 with self.assertRaisesRegex(build.DatabaseRebuildError, "no Mandat from Wahlperiode 18 on"):
                     self.repersist()
                 self.assertEqual(before, sha(self.database))

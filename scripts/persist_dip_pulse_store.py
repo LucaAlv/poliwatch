@@ -450,6 +450,13 @@ def initialize(conn: sqlite3.Connection) -> None:
           PRIMARY KEY (party_id, wahlperiode, valid_from)
         );
 
+        -- The MdB-Stammdaten file both tables were derived from: its Stand
+        -- (the VERSION stamp) and sha256. One row, none without a cached file.
+        CREATE TABLE IF NOT EXISTS mdb_stammdaten_stand (
+          sha256 TEXT PRIMARY KEY NOT NULL,
+          stand TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_agenda_items_protocol ON agenda_items(protocol_id);
         CREATE INDEX IF NOT EXISTS idx_mps_person ON mps(person_id);
         CREATE INDEX IF NOT EXISTS idx_speeches_mp ON speeches(mp_id);
@@ -1304,11 +1311,16 @@ def persist_seat_counts(
     conn: sqlite3.Connection,
     zugehoerigkeiten: Iterable[Mapping[str, Any]],
     seats: Iterable[Mapping[str, Any]],
+    *,
+    stand: str,
+    sha256: str,
     now: str,
 ) -> None:
     """Replace ``mdb_zugehoerigkeiten`` and ``party_seats`` with the rows of
-    ``derive.mdb_zugehoerigkeiten`` and ``derive.party_seats`` (C1). Each
-    ``party`` name, ``"fraktionslos"`` included, becomes its parties row."""
+    ``derive.mdb_zugehoerigkeiten`` and ``derive.party_seats`` (C1), and
+    ``mdb_stammdaten_stand`` with the Stand and sha256 of the file they came
+    from. Each ``party`` name, ``"fraktionslos"`` included, becomes its parties
+    row."""
     party_ids: dict[str, str] = {}
 
     def party_id(name: str) -> str:
@@ -1318,6 +1330,8 @@ def persist_seat_counts(
 
     conn.execute("DELETE FROM mdb_zugehoerigkeiten")
     conn.execute("DELETE FROM party_seats")
+    conn.execute("DELETE FROM mdb_stammdaten_stand")
+    conn.execute("INSERT INTO mdb_stammdaten_stand(sha256, stand) VALUES (?, ?)", (sha256, stand))
     conn.executemany(
         "INSERT INTO mdb_zugehoerigkeiten(mdb_id, name, wahlperiode, party_id, valid_from, valid_until) VALUES (?, ?, ?, ?, ?, ?)",
         [(row["mdb_id"], row["name"], row["wahlperiode"], party_id(row["party"]), row["valid_from"], row["valid_until"])

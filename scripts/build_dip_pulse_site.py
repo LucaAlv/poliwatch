@@ -110,6 +110,7 @@ import dip_cache
 import abgeordnetenwatch as aw
 import derive
 import speech_kinds
+import stammdaten
 import publication_state as publication
 import facts
 import politikfelder
@@ -144,6 +145,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "parties": "Zusammenschlüsse (Fraktionen und Gruppen, etwa CDU/CSU oder Gruppe BSW) und fraktionslos für Abgeordnete ohne Zusammenschluss.",
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
     "mdb_zugehoerigkeiten": "Zugehörigkeit jedes MdB je Wahlperiode und Zeitraum: welcher Zusammenschluss oder fraktionslos, aus den MdB-Stammdaten des Bundestages.",
+    "mdb_stammdaten_stand": "Stand und sha256 der MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats gebildet sind; leer ohne geladene Datei.",
     "party_seats": "Sitzzahl je Zusammenschluss (und fraktionslos), Wahlperiode und Zeitraum, gezählt aus mdb_zugehoerigkeiten.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
@@ -1493,34 +1495,34 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         raise DatabaseRebuildError(str(exc)) from exc
 
 
-def read_cached_stammdaten(database_path: Path) -> list[dict[str, Any]] | None:
-    """The cached MdB-Stammdaten as one dict per ``MDB`` element (the input of
-    ``derive.mdb_zugehoerigkeiten``), or None when no file is cached. Reading
-    the cached zip is C1 step 4; until then there is never a file."""
-    return None
+def read_cached_stammdaten(database_path: Path) -> stammdaten.Stammdaten | None:
+    """The MdB-Stammdaten cached for the store at ``database_path`` (in its
+    private directory, ``stammdaten.cache_path``), or None when no file is
+    cached. Raises StammdatenError for a cached file that cannot be read."""
+    path = stammdaten.cache_path(database_path)
+    return stammdaten.read_zip(path) if path.is_file() else None
 
 
-def rebuild_seat_counts(store: sqlite3.Connection, mdbs: list[dict[str, Any]] | None) -> None:
-    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the MdB-Stammdaten
-    into the staged store (C1). With no Stammdaten both tables stay empty and a
-    warning says so; Stammdaten that break an interval or size rule raise
-    DatabaseRebuildError, so nothing is swapped in."""
-    if mdbs is None:
+def rebuild_seat_counts(store: sqlite3.Connection, database_path: Path) -> None:
+    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the cached
+    MdB-Stammdaten into the staged store (C1). With no cached file the tables
+    stay empty and a warning says so; a file that cannot be read, or breaks an
+    interval or size rule, raises DatabaseRebuildError, so nothing is swapped in."""
+    try:
+        cached = read_cached_stammdaten(database_path)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    if cached is None:
         print("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen): "
-              "mdb_zugehoerigkeiten and party_seats stay empty", file=sys.stderr)
+              "mdb_zugehoerigkeiten and party_seats stay empty; fetch them with --enrich mdb-stammdaten", file=sys.stderr)
         return
     try:
-        zugehoerigkeiten = derive.mdb_zugehoerigkeiten(mdbs, since_wahlperiode=V1_FIRST_WAHLPERIODE)
-        seats = derive.party_seats(zugehoerigkeiten)
-        derive.check_seat_totals(seats)
+        zugehoerigkeiten, seats = stammdaten.seat_rows(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE)
     except derive.StammdatenError as exc:
         raise DatabaseRebuildError(f"The MdB-Stammdaten break a seat rule: {exc}") from exc
-    if not seats:
-        # check_seat_totals checks only the Wahlperioden present, so a file
-        # without one would leave both tables empty with no warning.
-        raise DatabaseRebuildError(f"The MdB-Stammdaten hold no Mandat from Wahlperiode {V1_FIRST_WAHLPERIODE} on")
     with store:
-        pulse_store.persist_seat_counts(store, zugehoerigkeiten, seats, pulse_store.utc_now())
+        pulse_store.persist_seat_counts(store, zugehoerigkeiten, seats, stand=cached.stand, sha256=cached.sha256,
+                                        now=pulse_store.utc_now())
 
 
 def _staged_store_path(database_path: Path) -> Path:
@@ -1696,7 +1698,7 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
-        rebuild_seat_counts(store, read_cached_stammdaten(database_path))
+        rebuild_seat_counts(store, database_path)
         try:
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
@@ -2999,7 +3001,8 @@ _COLUMN_SOURCE_ABGEORDNETENWATCH = {
     ("mps", "wahlkreis"),
     ("mps", "bundesland"),
 }
-_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes", "mdb_zugehoerigkeiten"}
+_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes", "mdb_zugehoerigkeiten",
+                           "mdb_stammdaten_stand"}
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
@@ -4466,6 +4469,7 @@ def _run_export(
             )
 
         protocols_count = int(snapshot_conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0])
+        stammdaten_row = snapshot_conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
         first_protocol = snapshot_conn.execute(
             "SELECT document_number, date FROM protocols ORDER BY date ASC, document_number ASC LIMIT 1"
         ).fetchone()
@@ -4515,6 +4519,8 @@ def _run_export(
             "from": first_protocol["date"] if first_protocol else None,
             "to": last_protocol["date"] if last_protocol else None,
         },
+        # The MdB-Stammdaten file the seat tables come from; None without one (C1).
+        "stammdaten": {"stand": stammdaten_row["stand"], "sha256": stammdaten_row["sha256"]} if stammdaten_row else None,
         "tables": manifest_tables,
         "relationships": relationships_count,
         "total_rows": total_rows,
@@ -4696,6 +4702,13 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         if "-" in manifest["commit"]:
             provenance_bits.append(REVISION_SUFFIX_NOTE.replace("`", ""))
     provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
+    source = manifest.get("stammdaten")
+    if source:
+        stand = datetime.fromisoformat(source["stand"]).astimezone(timezone.utc)
+        stammdaten_line = (f"Sitzzahlen: MdB-Stammdaten des Bundestages, Stand {stand:%d.%m.%Y} &middot; sha256 "
+                           f"<code>{pulse_html.esc(source['sha256'])}</code>")
+    else:
+        stammdaten_line = "Sitzzahlen: keine (MdB-Stammdaten nicht geladen)"
     return f"""
     <section class="summary-band">
       <div><span class="eyebrow">Datenstand</span><strong><time datetime="{pulse_html.esc(iso)}">{pulse_html.esc(display)}</time></strong></div>
@@ -4704,6 +4717,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
       <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
     </section>
     <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
+    <p class="stammdaten-line">{stammdaten_line}</p>
     <p class="coverage-line">{coverage_line}</p>
     <p class="bausteine-line">{bausteine_line}</p>
     <p class="provenance-line">{provenance_line}</p>
@@ -13990,6 +14004,9 @@ def main() -> int:
                 return 2
             if not args.no_persist:
                 refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
+                if "mdb-stammdaten" in enrichments:
+                    # Before the staged rebuild, which reads the cached file.
+                    stammdaten.refresh(database_path, since_wahlperiode=V1_FIRST_WAHLPERIODE)
 
                 roster_wahlperioden = roster_periods(args, protocols)
 

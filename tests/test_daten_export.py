@@ -1016,18 +1016,18 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_thirty_one_csvs_named_and_headered(self) -> None:
+    def test_all_thirty_two_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 31)
+        self.assertEqual(len(csv_files), 32)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
             "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
-            "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz",
+            "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz", "mdb_stammdaten_stand-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -1541,6 +1541,26 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(self.export()["generation"], first["generation"])
 
     # Value: protects=the manifest names each table's stable key exactly: its declared primary-key columns in key order; fails_when=stable_keys lists other columns or drops one of a composite key (no composite key of this schema declares its columns out of table order, so key order is not distinguishable here); why_new=registry follow-ups (3): the manifest test checked only that the list is not empty; seam=none
+    # Value: protects=the export says which MdB-Stammdaten file the seat counts came from (Stand and
+    #   sha256 in the manifest and on the Daten page), and says plainly when there are none; fails_when=the
+    #   manifest drops the provenance, or a build without the file shows no notice; why_new=C1 step 4;
+    #   seam=export_distribution_data + render_daten_datenstand
+    def test_the_stammdaten_stand_reaches_the_manifest_and_the_daten_page(self) -> None:
+        manifest = self.export()
+        self.assertIsNone(manifest["stammdaten"])
+        self.assertIn("Sitzzahlen: keine (MdB-Stammdaten nicht geladen)", b.render_daten_datenstand(manifest))
+        conn = pulse_store.connect(self.db_path)
+        try:
+            conn.execute("INSERT INTO mdb_stammdaten_stand(sha256, stand) VALUES (?, ?)", ("ab" * 32, "2026-04-29T08:03:03+00:00"))
+            conn.commit()
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertEqual(manifest["stammdaten"], {"stand": "2026-04-29T08:03:03+00:00", "sha256": "ab" * 32})
+        line = b.render_daten_datenstand(manifest)
+        self.assertIn("Sitzzahlen: MdB-Stammdaten des Bundestages, Stand 29.04.2026", line)
+        self.assertIn("ab" * 32, line)
+
     def test_manifest_stable_keys_are_the_declared_primary_keys(self) -> None:
         manifest = self.export()
         keys = {table["name"]: table["stable_keys"] for table in manifest["tables"]}
@@ -1549,7 +1569,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             "agenda_item_politikfelder": ["agenda_item_id", "politikfeld"],
             "agenda_item_votes": ["agenda_item_id", "vote_id"],
             "agenda_items": ["id"], "contributions": ["id"], "datenstand": ["tag"], "documents": ["id"],
-            "mdb_zugehoerigkeiten": ["mdb_id", "wahlperiode", "valid_from"],
+            "mdb_stammdaten_stand": ["sha256"], "mdb_zugehoerigkeiten": ["mdb_id", "wahlperiode", "valid_from"],
             "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"],
             "party_seats": ["party_id", "wahlperiode", "valid_from"], "person_aliases": ["id"],
             "person_bindings": ["id"], "person_records": ["id"], "persons": ["id"],

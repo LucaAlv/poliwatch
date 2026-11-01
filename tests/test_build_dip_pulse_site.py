@@ -1494,7 +1494,7 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
             ("--no-votes beats --vote-scan-pages", {}, {"args": {"no_votes": True, "vote_scan_pages": 5}}, set()),
             ("--vote-scan-pages 0 turns votes off", {}, {"args": {"vote_scan_pages": 0}}, set()),
             ("--enrich votes lifts a config veto", {"local": ["-votes"]}, {"args": {"enrich": ["votes"]}}, {"votes"}),
-            ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster"}),
+            ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster", "mdb-stammdaten"}),
         )
         for label, files, inputs, expected in scenarios:
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:

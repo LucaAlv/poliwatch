@@ -663,6 +663,23 @@
         }
       }
     },
+    "mdb_stammdaten_stand": {
+      "meaning": "Die MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats in diesem Build gebildet sind: eine Zeile mit ihrem Stand und ihrer Prüfsumme, keine Zeile, wenn keine Datei geladen war (dann sind beide Tabellen leer).",
+      "columns": {
+        "sha256": {
+          "meaning": "SHA-256-Prüfsumme der zwischengespeicherten Zip-Datei, wie sie von bundestag.de geladen wurde.",
+          "unit": "64 Hexadezimalzeichen als Text.",
+          "source": "Vom Projekt über die Bytes der geladenen Datei MdB-Stammdaten.zip berechnet.",
+          "license": "eigene-metadaten"
+        },
+        "stand": {
+          "meaning": "Stand der Datei laut ihrem eigenen Zeitstempel; spätere Änderungen fehlen bis zur nächsten Veröffentlichung durch den Bundestag (Plan D6).",
+          "unit": "Zeitpunkt als ISO-Text in UTC.",
+          "source": "MdB-Stammdaten des Deutschen Bundestages (bundestag.de/services/opendata, MDB_STAMMDATEN.XML), Element VERSION (Unix-Zeitstempel).",
+          "license": "bundestag-stammdaten"
+        }
+      }
+    },
     "mdb_zugehoerigkeiten": {
       "meaning": "Zugehörigkeit je MdB, Wahlperiode und ununterbrochenem Zeitraum: zu welchem Zusammenschluss (oder fraktionslos) ein Mitglied an diesen Tagen seines Mandats gehörte. Grundlage der Sitzzahlen in party_seats.",
       "columns": {

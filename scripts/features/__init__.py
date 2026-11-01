@@ -83,6 +83,7 @@ ENRICHMENTS = (
     Enrichment("votes", "Namentliche Abstimmungen", "votes", "Ruft Bundestag-Abstimmungsdaten ab."),
     Enrichment("aw-profiles", "abgeordnetenwatch-Profile", "aw_profiles", "Verknüpft öffentliche Profile."),
     Enrichment("mp-roster", "Vollständiger MdB-Kader", "abgeordnete", "Ruft den vollständigen DIP-Kader ab."),
+    Enrichment("mdb-stammdaten", "MdB-Stammdaten", "stammdaten", "Lädt die MdB-Stammdaten des Bundestages für die Sitzzahlen."),
 )
 ENRICHMENT_REGISTRY = {enrichment.id: enrichment for enrichment in ENRICHMENTS}
 

@@ -82,10 +82,10 @@ CREATE TABLE IF NOT EXISTS party_seats (
 ### Acquisition
 
 - **Enrichment.** A new entry `mdb-stammdaten` in `scripts/features/__init__.py`, beside `mp-roster`.
-- **Online build with the enrichment:** fetch the zip with the existing urllib path (`validate_dip_protocol._fetch_page`-style), validate it (zip opens, XML parses, the size check passes), then replace `OUTPUT_DIR/data/mdb-stammdaten.zip`. A failed fetch or validation keeps the previous file and warns.
+- **Online build with the enrichment:** fetch the zip with a conditional GET (ETag), validate it with the rebuild's own checks (zip opens, XML parses, the derivation and size check pass), then replace the cache in the store's private directory (`stammdaten.cache_path`, D9). A failed fetch or validation keeps the previous file and warns.
 - **Every rebuild,** `--offline --repersist` included, parses the cached file. The tables are recomputed from the cache, so they survive a repersist without a roster-style preserve.
-- **No cached file:** both tables are empty, R2's seat column is NULL, and the build prints a warning. The Daten page and the manifest say "keine Sitzzahlen (MdB-Stammdaten nicht geladen)". Never silent.
-- **Provenance.** The file's Stand (from inside the file if it has one, step 1b; otherwise the fetch date and HTTP `Last-Modified`) and its sha256 go into `datenstand` and the export manifest. A release then says which file its seats came from.
+- **No cached file:** both tables are empty, R2's seat column is NULL, and the build prints a warning. The Daten page says "Sitzzahlen: keine (MdB-Stammdaten nicht geladen)" and the manifest's `stammdaten` is null. Never silent.
+- **Provenance.** The file's Stand (its `VERSION` stamp) and its sha256 go into the store table `mdb_stammdaten_stand`, the export manifest (`stammdaten`) and the Daten page (D10). A release then says which file its seats came from.
 - **Hook.** In `rebuild_database_from_entries`, after the `persist_report` loop and the roster block, and before `registry.reconcile` / `facts.compute_and_store` (`build_dip_pulse_site.py:~1606-1671`).
 
 ### Cross-check against the roll-call totals (the gate)
@@ -151,8 +151,9 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
    - The writers and the rebuild hook.
    - Tests: `tests/test_repersist.py` (identical rows after a second repersist, and both tables empty with a warning when there is no cached file) and the `tests/test_a1_followups.py:633` pin.
 4. **Acquisition.**
-   - The enrichment entry, the fetch, the validation, the keep-previous-on-failure rule, and provenance in `datenstand`.
-   - Tests with a small fixture zip under `tests/fixtures/`, built from the step 1b structure. No network in tests.
+   - The enrichment entry, the fetch, the validation, the keep-previous-on-failure rule, and the provenance.
+   - Tests with a small fixture under `tests/fixtures/`, built from the step 1b structure. No network in tests.
+   - Done (2026-11-01), see "Step 4 result".
 5. **Cross-check.** The disagreement report and its summary line. A test with a fixture vote whose total disagrees.
 6. **Export.**
    - Done in step 3 (the export refuses a table without a dictionary entry): the source tags, the `bundestag-stammdaten` layer, the dictionary entries, the captions, `EXPORT_FORMAT` 12 and the `tests/test_daten_export.py` pins.
@@ -248,7 +249,7 @@ Rule 6 needs each WP's legal size reached, so any fixture needs a whole Bundesta
 **Figures.** No existing figure moves. Production builds pass None until step 4, so both tables are empty and no other table is touched. The export gains two header-only CSVs and the format number.
 
 **For step 4**
-- `read_cached_stammdaten` gets only `database_path`, but the zip lives in `OUTPUT_DIR/data`. With `--database-path` elsewhere, that is not the store's directory. Step 4 either passes the output directory to the rebuild or keeps the file beside the store.
+- `read_cached_stammdaten` gets only `database_path`, but the zip lives in `OUTPUT_DIR/data`. With `--database-path` elsewhere, that is not the store's directory. Step 4 either passes the output directory to the rebuild or keeps the file beside the store. **Resolved in step 4 (D9):** the cache is keyed off the store.
 - `derive.mdb_zugehoerigkeiten` raises `KeyError`/`ValueError`, not `StammdatenError`, on an `MDB` without `ID` or a `WAHLPERIODE` with a non-numeric `WP`. The hook catches only `StammdatenError`. The reader must refuse such records, or derive must raise `StammdatenError` for them, so a malformed file ends in `DatabaseRebuildError` and not a traceback. No input reaches this today.
 - `xml.etree` elements are falsy when they have no children, so `wp.find("INSTITUTIONEN") or []` is the wrong test. Use `is not None`.
 
@@ -282,6 +283,79 @@ Rule 6 needs each WP's legal size reached, so any fixture needs a whole Bundesta
 - **Python 3.13.12:** not reached; `html.parser` is untouched.
 - **Adversarial lenses (red team, Codex):** owed once, on the C1 tip handed to `/gstack-ship`.
 
+## Step 4 result (2026-11-01)
+
+The acquisition is in, test-first. The owner settled three questions first: the cache location (D9), the provenance shape (D10), and the fetch staying opt-in.
+
+**What changed**
+- **`scripts/stammdaten.py` (new).**
+  - `cache_path(database_path)`: the zip lives in `registry.private_dir(database_path)` as `mdb-stammdaten.zip`, beside the writer lock, never in the published OUTPUT tree (D9). It works with any `--database-path`.
+  - `read_zip(path)` keeps only what the seat counts need: `ID`, `NAMEN` (name fields and `HISTORIE_VON`) and `WAHLPERIODEN` (`WP`, Mandat dates, the `INSTITUTIONEN` with type, name and dates). Biographies stay out.
+    - It reads the top-level `MDB_STAMMDATEN.XML` in memory, skips the `__MACOSX/` fork and refuses a member over 64 MB.
+    - The Stand is the decoded `VERSION` stamp; the sha256 is that of the zip.
+    - A file that is no zip, lacks the XML or `VERSION`, does not parse, has the wrong root, or holds an `MDB` without `ID` or with a non-numeric `WP` raises `StammdatenError` (step 3 handover).
+  - `seat_rows(records, since_wahlperiode)`: the derivation plus the size check, refusing an empty result. The rebuild and the fetch both call it, so a fetched file is checked exactly as the rebuild will check it.
+  - `refresh(database_path, since_wahlperiode)`: the `--enrich mdb-stammdaten` fetch.
+    - **Request:** a conditional GET with the ETag from the sidecar `mdb-stammdaten.json`, a body cap of 32 MB, and urllib's `HTTPError(304)` read as "unchanged".
+    - **On a 200:** it writes a temp file in the same directory, checks it with `read_zip` and `seat_rows`, then calls `os.replace`, and only after that writes the ETag.
+    - **On failure:** a failed request, a failed check, or a failed write or replace keeps the previous file and prints one warning naming the cause and the Stand kept. With no cached file, the warning says "keine Sitzzahlen".
+    - **Cleanup:** temp files left by a killed refresh are removed first.
+- **Rebuild.** `rebuild_seat_counts(store, database_path)` reads the cache. A cached file that cannot be read raises `DatabaseRebuildError`. It does not fall back to empty tables, because the fetch never stores a file that fails its checks.
+- **Schema 9, amended in place (unpushed).** New one-row table `mdb_stammdaten_stand(sha256 PK, stand)` (D10). The fetch time and ETag stay in the sidecar, so a second repersist stays byte-identical.
+- **Export.**
+  - The provenance table is exported: 32 CSVs, with a dictionary entry. The `stand` column has layer `bundestag-stammdaten` and `sha256` has `eigene-metadaten`; the table's source tag is `bundestag.de`.
+  - The manifest gains `stammdaten: {stand, sha256}`, or null.
+  - The Daten page prints "Sitzzahlen: MdB-Stammdaten des Bundestages, Stand TT.MM.JJJJ · sha256 …", or "Sitzzahlen: keine (MdB-Stammdaten nicht geladen)".
+- **Enrichment and wiring.** `mdb-stammdaten` is in `ENRICHMENTS`, opt-in like `mp-roster`. The online persist path calls `stammdaten.refresh` after the Vorgang cache refresh and before the staged rebuild. `--offline` and `--no-persist` never fetch.
+- **Docs.** README (the enrichment table and `--enrich` rows, 32 CSVs, the format 12 note), `docs/stable-ids.md` and `docs/data-license.md`.
+
+**Tests**
+- `tests/test_stammdaten.py` (11):
+  - **Reader:** fixture to records, records through the derivation, the bad-file cases, the size cap, the cache path.
+  - **Refresh:** 200, 304, 304 without a cache, network error / 503 / non-zip / seat-rule failure each with and without a previous file, a failed cache write, the size cap.
+- **Other test files:**
+  - `tests/test_repersist.py`: provenance row, unreadable cache, the private-cache lookup.
+  - `tests/test_daten_export.py`: manifest and Daten-page line, 32 CSVs, primary key.
+  - `tests/test_backfill.py`: the refresh runs only with `--enrich mdb-stammdaten`, before the rebuild.
+  - `tests/test_features.py`: four enrichments.
+- **Fixture.** `tests/fixtures/mdb-stammdaten-mini.xml` holds three made-up MdBs in the file's element names. The tests zip it at run time instead of committing a binary zip. The fetch tests generate a whole 630-seat WP 21 zip, because the size check needs one.
+
+**Real-file check.** `read_zip` on the real download (952,696 bytes) gives 4,614 `MDB` records, Stand 2026-04-29T08:03:03Z and sha256 `29ae4ba1…`, the same as step 1b. Through `seat_rows` that makes 2,914 / 171 rows in 1.5 s. The record keys are only the kept fields.
+
+**Figures.** None moved. Without a cached file every build behaves as in step 3. The export gains the provenance CSV and the manifest key.
+
+**Left open**
+- `refresh` makes one attempt, with no retry and no line in the DIP request log (`DIP_REQUEST_LOG`). A failed fetch keeps the previous file, and the next build tries again.
+- If writing the ETag sidecar fails after the replace, the warning names the old Stand although the new file is cached. The next fetch is then a full download. Cosmetic.
+- A replay copy of the site must also copy `.OUTPUT.private/`, or the copy has no cached Stammdaten (step 9).
+
+### Step 4 review checklist (full pass)
+
+1. **Sibling path.** The fetch runs only on the online persist path (`build_dip_pulse_site.py`, after `refresh_vorgang_cache`). `--offline`, `--no-persist` and the facts engine never fetch. Every rebuild reads the cache through `rebuild_seat_counts`, one function. The export reads only the store.
+2. **Stale beats fresh.** A failed fetch keeps the previous file by design (plan rule). A 304 is sent only when a readable cache exists. The ETag is written after the replace, so it is never newer than the file.
+3. **Order and history.** The output depends on the cached bytes only. The fetch time and ETag stay out of the store, and the second-repersist test pins byte identity.
+4. **One key, one function.** The cache location is `stammdaten.cache_path`, used by both the fetch and the rebuild. The Stand comes from `read_zip` only.
+5. **Absent vs zero.** No file means a warning and empty tables. An unreadable file stops the build. An empty derivation is a `StammdatenError` in `seat_rows`, covering both the fetch and the rebuild. A 304 without a cache is a warning.
+6. **Derived columns.** Not touched.
+7. **Neighbour binding.** Not touched.
+8. **Hostile text.** The zip member size is checked before reading, and the read is capped. ElementTree resolves no external DTD, and expat limits entity expansion. Malformed records raise `StammdatenError`. Timing: the real 15.3 MB file reads in 1.5 s.
+9. **Input shape.** The URL is a constant. A sidecar that is not JSON, not an object, or has a non-string ETag is ignored. The body is capped.
+10. **Interrupted run.** A temp file sits in the cache dir and `os.replace` is atomic. A killed refresh's temp file is removed on the next refresh. The ETag goes after the file, and a write failure warns and keeps the file. The staging cleanup glob (`<store>.*.tmp*`) never matches the refresh temp files.
+11. **Claims.**
+    - The README enrichment row matches `refresh` (conditional GET, validation, keep-previous) and `cache_path`.
+    - The Daten-page line is pinned by its test.
+    - The dictionary `stand` entry says "spätere Änderungen fehlen bis zur nächsten Veröffentlichung", which is D6.
+    - The dictionary `sha256` entry says it is computed over the bytes of the downloaded file: `read_zip` hashes the cached file, which is the downloaded body written unchanged.
+12. **Loop cost.** One request per build with the enrichment. Parsing takes 1.5 s, and the fetch parses the file a second time only on a 200.
+13. **Last commit.** Re-run on the 304, stale-temp and write-failure fixes; each has its test.
+
+**Checks no diff review replaces**
+- **Figures:** none moved (above).
+- **Browser:** not opened. The Daten page gains one `<p>` in `render_daten_datenstand`, and its test checks the text.
+- **Live fetch:** not run. The sandbox blocks bundestag.de, so the first real `--enrich mdb-stammdaten` run belongs to step 9 or is yours.
+- **Python 3.13.12:** not reached; `html.parser` is untouched.
+- **Adversarial lenses:** owed once, on the C1 tip handed to `/gstack-ship`.
+
 ## Decisions
 
 | | Question | Recommendation |
@@ -294,6 +368,8 @@ Rule 6 needs each WP's legal size reached, so any fixture needs a whole Bundesta
 | D6 | Dates after the Stammdaten's Stand | **Decided 2026-11-01 (owner): (a).** Evidence in S4: 1 of 33 roll-calls after the Stand disagrees. (a) Carry the Stand composition forward, print the Stand date beside every seat figure and in the manifest, and flag later roll-call disagreements as drift. The alternatives: (b) no seats after the Stand, which leaves months of WP 21 with no denominator; (c) fill in from roll-calls after the Stand, which brings E4-type errors back into recent months. Decide after step 1b |
 | D7 | Licence layer | New layer `bundestag-stammdaten`; terms settled under track D before a release. The layer exists since step 3 |
 | D8 | How fraktionslos is stored | **Decided 2026-11-01 (owner): the existing `fraktionslos` parties row**, `party_id NOT NULL` in both tables. A NULL would let SQLite's composite primary key accept duplicate fraktionslos rows, since every NULL counts as distinct. It would also make the seat tables the only ones that do not spell fraktionslos the way `speeches`, `vote_fractions` and `vote_members` do (through `upsert_party`), and every join in steps 5 and 7 would need a COALESCE. A forgotten COALESCE drops the fraktionslos share with no error |
+| D9 | Where the cached zip lives | **Decided 2026-11-01 (owner): the store's private directory** (`registry.private_dir`, beside the writer lock), not `OUTPUT/data`, which is published with the site while the file's redistribution terms are open (D7). Keyed off the store, so `--database-path` works too |
+| D10 | How the Stand and sha256 reach the export | **Decided 2026-11-01 (owner): a one-row store table `mdb_stammdaten_stand`** (exported, 32 CSVs), the manifest key `stammdaten` and a Daten-page line. The fetch time and ETag stay in a sidecar beside the zip. The fetch is opt-in (`--enrich mdb-stammdaten`), like `mp-roster` |
 
 ## History: why the source changed
 
