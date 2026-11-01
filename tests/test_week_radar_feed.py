@@ -179,10 +179,10 @@ class PayloadTests(unittest.TestCase):
         checked = 0
         for week_payload in payload["weeks"]:
             year, number = week_payload["week"].split("-W")
-            key = (int(year), int(number))
+            week = (int(year), int(number))
             own = pulse_html.week_topic_rows(
-                weeks[key], pulse_html.vorgang_occurrences(weeks, key),
-                total=pulse_html.week_stats(key, weeks[key])["speech_count"], dossier_href_for=site.dossier_href,
+                weeks[week], pulse_html.vorgang_occurrences(weeks, week),
+                total=pulse_html.week_stats(week, weeks[week])["speech_count"], dossier_href_for=site.dossier_href,
             )
             for row, expected in zip(week_payload["rows"], own["rows"]):
                 if expected["trace"]:
