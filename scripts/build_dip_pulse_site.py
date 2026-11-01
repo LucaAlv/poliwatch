@@ -87,6 +87,7 @@ import tempfile
 import time
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from urllib.parse import urlparse
 from collections import Counter
@@ -3104,6 +3105,7 @@ CODEBOOK_INPUT_FILES = {
 }
 # The data licence file: a codebook input, and a file of every generation.
 LICENSE_FILE_NAME = Path(CODEBOOK_INPUT_FILES["license"]).name
+DIP_TERMS_URL = "https://dip.bundestag.de/documents/nutzungsbedingungen_dip.pdf"
 # The attribution name LICENSE-DATA.md uses; PRODUCT.md has not settled the product name.
 ATTRIBUTION_NAME = "Bundestag-Puls"
 # Per-Wahlperiode counts in DATA.md, in table order.
@@ -5254,7 +5256,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
         {relationships_block}
       </section>
       <footer>
-        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''} {pulse_html.render_legal_links(depth=0)}
       </footer>
     </main>
   </div>
@@ -5291,6 +5293,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
     .panel {{ margin-top:32px; padding:24px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }}
     .panel h1 {{ margin-top:0; }}
     .panel p {{ color:var(--muted); line-height:1.55; }}
+    footer {{ margin-top:24px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }}
   </style>
 </head>
 <body>
@@ -5302,6 +5305,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
       <p>{body}</p>
       <p>Erzeuge die Vorschau ohne <code>--no-persist</code>, um diese Seite zu füllen.</p>
     </main>
+    <footer><a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -5442,7 +5446,7 @@ def render_landing_page(
         <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
       </section>
     </main>
-    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.</footer>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert. {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -5707,7 +5711,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
       {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
       <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Auswahl.</p>
     </section>
-    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_votes_archive_script()}
   {pulse_html.page_scripts(features)}
@@ -6253,7 +6257,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
       <p>{pulse_html.esc(message)}</p>
     </header>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -7164,7 +7168,7 @@ def render_front_page(
 {radar_html}{week_compare_html}
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
-      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
+      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}{next_sitting_script}
@@ -8185,7 +8189,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     <header class="page-header"><div><h1>Gesetzesvorhaben</h1>
       <p>Finde Gesetzesvorhaben und lies nach, wie sie im Bundestag beraten wurden.</p></div></header>
     <main data-bills-index>{controls}{results}</main>
-    <footer><a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer><a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_bill_script() if rows else ''}
   {render_bill_help_script() if rows else ''}
@@ -8397,7 +8401,7 @@ def render_bill_detail(
         </section>
       </div>
     </main>
-    <footer><a href="index.html">Alle Gesetzesvorhaben</a> · <a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer><a href="index.html">Alle Gesetzesvorhaben</a> · <a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_bill_help_script()}
   {pulse_html.page_scripts(features)}
@@ -9211,7 +9215,7 @@ def render_abgeordnete_index(
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
     {former_section}
     {redner_section}
-    <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_abgeordnete_script()}
   {pulse_html.page_scripts(features)}
@@ -9422,7 +9426,7 @@ def render_abgeordnete_detail(
         </section>
       </aside>
     </div>
-    <footer>Diese Seite zeigt nur Felder, die in den Rohdaten vorhanden sind. <a href="index.html">Alle Abgeordnete</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer>Diese Seite zeigt nur Felder, die in den Rohdaten vorhanden sind. <a href="index.html">Alle Abgeordnete</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -10075,7 +10079,7 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
       das funktioniert</a>.</p>
     </header>
     {body}
-    <footer>Primärquellen: Bundestag-DIP und die XML-Plenarprotokolle. <a href="methodik.html">Methodik</a></footer>
+    <footer>Primärquellen: Bundestag-DIP und die XML-Plenarprotokolle. <a href="methodik.html">Methodik</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -10158,7 +10162,7 @@ def render_facts_week(
     {content}
     <footer>
       Diese Karten werden bei jedem Neubau neu erzeugt; Datenkorrekturen und Änderungen an Regeln oder Formulierungen können sie verändern.
-      <a href="methodik.html">Methodik</a>
+      <a href="methodik.html">Methodik</a> {pulse_html.render_legal_links(depth=1)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -10266,7 +10270,7 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
       können frühere Karten verändern; auch geänderte Formulierungen erscheinen auf ihnen.
       Lässt sich ein Beleg nicht mehr auflösen, entfällt die zugehörige Karte.</p>
     </section>
-    <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -10770,7 +10774,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>. {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -11311,7 +11315,7 @@ def render_catalog_page(
     </section>
     <p class="no-results" data-no-results hidden>Keine Sitzungen entsprechen den Filterkriterien.</p>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>. {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {render_catalog_script()}
@@ -11451,12 +11455,173 @@ def render_bundestag_page(features: Selection | None = None) -> str:
       </div>
     </header>
     <main class="explainer">{body}</main>
-    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a></footer>
+    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
+
+
+# ---------------------------------------------------------------------------
+# PAGES: impressum.html and datenschutz.html (ADR 0003 D4)
+#
+# The operator's name, address, e-mail and hosting come from a local file
+# outside git (--operator-file, load_operator), never from the repository.
+# A value the file does not give renders as a marked placeholder, so a build
+# without it is visible: no generated page may carry data-operator-missing
+# once the site goes public.
+# ---------------------------------------------------------------------------
+
+# The localStorage keys page_scripts() writes, each on a click only, with what
+# it holds. tests/test_demo_site.py checks this against the scripts.
+DATENSCHUTZ_STORAGE_KEYS = (
+    ("bundestag-pulse-theme", "ob Sie das helle oder das dunkle Design gewählt haben, sobald Sie den Schalter „Dunkel“/„Hell“ betätigen"),
+    ("bundestag-pulse-ai-summaries-v1", "ob die KI-Zusammenfassungen ein- oder ausgeklappt sind, sobald Sie den Schalter dafür betätigen"),
+)
+# Hosts the pages load anything from (scripts, styles, fonts, images): none.
+DATENSCHUTZ_LOADED_HOSTS: tuple[str, ...] = ()
+
+
+def _operator_value(operator: dict[str, Any] | None, field: str) -> str:
+    value = (operator or {}).get(field)
+    if value is None:
+        return f'<span data-operator-missing="{pulse_html.esc(field)}">Angabe folgt.</span>'
+    return pulse_html.esc(value)
+
+
+def _operator_link(operator: dict[str, Any] | None, field: str, *, label: str | None = None, mailto: bool = False) -> str:
+    value = (operator or {}).get(field)
+    if value is None:
+        return _operator_value(operator, field)
+    href = f"mailto:{value}" if mailto else value
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label or value)}</a>'
+
+
+def _operator_address(operator: dict[str, Any] | None) -> str:
+    return (
+        f"{_operator_value(operator, 'name')}<br>{_operator_value(operator, 'street')}<br>"
+        f"{_operator_value(operator, 'postal_code')} {_operator_value(operator, 'city')}"
+    )
+
+
+# The supervisory authority as one link when both values are given,
+# otherwise each value or its placeholder.
+def _operator_authority(operator: dict[str, Any] | None) -> str:
+    name = (operator or {}).get("supervisory_authority.name")
+    if name and (operator or {}).get("supervisory_authority.url"):
+        return _operator_link(operator, "supervisory_authority.url", label=name)
+    return f"{_operator_value(operator, 'supervisory_authority.name')} ({_operator_link(operator, 'supervisory_authority.url')})"
+
+
+def _legal_page(title: str, lead: str, body: str, features: Selection | None) -> str:
+    features = features or publication_selection()
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · {pulse_html.esc(title)}</title>
+  {pulse_html.page_head(features)}
+  <style>{bill_styles()}
+    .legal {{ display:grid; gap:16px; max-width:860px; margin-top:18px; }}
+    .legal p, .legal li {{ line-height:1.6; overflow-wrap:anywhere; }}
+    .legal ul {{ padding-left:20px; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header()}
+    <header class="page-header">
+      <div>
+        <h1>{pulse_html.esc(title)}</h1>
+        <p>{lead}</p>
+      </div>
+    </header>
+    <main class="legal">{body}</main>
+    <footer><a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def render_impressum_page(operator: dict[str, Any] | None, features: Selection | None = None) -> str:
+    sections = (
+        ("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV",
+         f"<p>{_operator_address(operator)}</p>"
+         f"<p>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
+        ("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV",
+         f"<p>{_operator_value(operator, 'name')}, Anschrift wie oben.</p>"),
+        ("Fehler melden und Kontakt",
+         "<p>Fehler in den Daten und auf der Website werden öffentlich über GitHub Issues gemeldet. "
+         "Die E-Mail-Adresse oben ist nur für Anliegen gedacht, die nicht öffentlich sein sollen: "
+         "Datenschutzanfragen, Berichtigungs- oder Löschwünsche betroffener Personen, Presseanfragen "
+         "und Sicherheitshinweise.</p>"),
+        ("Quellen",
+         "<p>Die Daten stammen aus öffentlichen Quellen des Deutschen Bundestages, vor allem aus dem "
+         "Dokumentations- und Informationssystem für Parlamentsmaterialien (Quelle: „Deutscher "
+         "Bundestag/Bundesrat – DIP“). Welche Bedingungen für welche Daten gelten, steht unter "
+         '<a href="sources.html#lizenz">Quellen und Methode</a>.</p>'),
+    )
+    body = "".join(f'<section class="panel"><h2>{pulse_html.esc(heading)}</h2>{content}</section>' for heading, content in sections)
+    return _legal_page("Impressum", "Anbieterkennzeichnung dieser Website.", body, features)
+
+
+def render_datenschutz_page(
+    operator: dict[str, Any] | None, *, data_base_url: str = "data/exports/", features: Selection | None = None
+) -> str:
+    storage_items = "".join(
+        f"<li><code>{pulse_html.esc(key)}</code>: {pulse_html.esc(meaning)}.</li>" for key, meaning in DATENSCHUTZ_STORAGE_KEYS
+    )
+    download_host = urllib.parse.urlsplit(data_base_url).hostname if is_url(data_base_url) else None
+    download_sentence = (
+        f" Die Datendownloads der Seite „Daten“ liegen auf {pulse_html.esc(download_host)}; erst wenn Sie eine "
+        "Datei herunterladen, ruft Ihr Browser diesen Server auf."
+        if download_host else ""
+    )
+    sections = (
+        ("Verantwortlicher",
+         f"<p>{_operator_address(operator)}<br>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
+        ("Hosting und Server-Logs",
+         f"<p>Die Website liegt bei {_operator_value(operator, 'hosting.provider')}, "
+         f"{_operator_value(operator, 'hosting.address')}. Wenn Sie eine Seite aufrufen, erhält dessen Server "
+         "technisch bedingt Ihre IP-Adresse, den Zeitpunkt, die aufgerufene Adresse und die Angaben, die Ihr "
+         f"Browser mitsendet. Wie lange der Hoster diese Server-Logs speichert: {_operator_value(operator, 'hosting.log_retention')}. "
+         f"Datenschutzhinweise des Hosters: {_operator_link(operator, 'hosting.privacy_url')}.</p>"),
+        ("Keine Cookies, kein Tracking, keine fremden Inhalte",
+         "<p>Diese Website setzt keine Cookies und verwendet keine Analyse- oder Tracking-Werkzeuge. Seiten, "
+         "Skripte, Stile und Bilder kommen vom selben Server; Schriften, Skripte oder andere Inhalte von "
+         f"fremden Servern werden nicht geladen.{download_sentence}</p>"),
+        ("Speicherung in Ihrem Browser",
+         "<p>Zwei Einstellungen speichert die Website im lokalen Speicher Ihres Browsers (localStorage), "
+         "jeweils erst, wenn Sie den zugehörigen Schalter betätigen:</p>"
+         f"<ul>{storage_items}</ul>"
+         "<p>Die Werte bleiben in Ihrem Browser und werden nicht übertragen. Sie können sie in den "
+         "Einstellungen Ihres Browsers löschen.</p>"),
+        ("Links auf andere Websites",
+         "<p>Die Seiten verlinken auf andere Websites, etwa bundestag.de, dip.bundestag.de, "
+         "abgeordnetenwatch.de und gesetze-im-internet.de. Erst wenn Sie einen solchen Link anklicken, ruft "
+         "Ihr Browser die andere Website auf; dort gelten deren Datenschutzbestimmungen.</p>"),
+        ("Kontakt",
+         f"<p>Wenn Sie per E-Mail schreiben ({_operator_link(operator, 'email', mailto=True)}), werden Ihre "
+         "Adresse und Ihre Nachricht verarbeitet, um Ihr Anliegen zu beantworten. Fehlermeldungen über GitHub "
+         "Issues sind öffentlich; für sie gelten die Datenschutzbestimmungen von GitHub.</p>"),
+        ("Personen in den Daten",
+         "<p>Website und Datendownloads enthalten Namen, Abstimmungsverhalten und Reden von Mitgliedern des "
+         "Bundestages sowie Angaben wie Geburtsjahr, Beruf und Wahlkreis. Sie stammen aus öffentlichen "
+         "Quellen: den Plenarprotokollen und dem DIP des Deutschen Bundestages, den Ergebnissen namentlicher "
+         "Abstimmungen auf bundestag.de und abgeordnetenwatch.de. Zweck ist, die Arbeit des Bundestages "
+         "nachvollziehbar zu machen.</p>"),
+        ("Ihre Rechte",
+         "<p>Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), "
+         "Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21). "
+         "Sie können sich bei einer Datenschutz-Aufsichtsbehörde beschweren (Art. 77 DSGVO), etwa bei "
+         f"{_operator_authority(operator)}.</p>"),
+    )
+    body = "".join(f'<section class="panel"><h2>{pulse_html.esc(heading)}</h2>{content}</section>' for heading, content in sections)
+    return _legal_page("Datenschutz", "Welche Daten beim Besuch dieser Website verarbeitet werden.", body, features)
 
 
 # ---------------------------------------------------------------------------
@@ -11575,11 +11740,32 @@ def render_sources_page(
             f"{' · '.join(database_links)}."
             "</span></li>"
         )
+    # The four source layers of LICENSE-DATA.md (ADR 0003 D1), authored here:
+    # the dictionary's ten column layers are too fine-grained for this page.
+    licence_layers = (
+        ("DIP und Plenarprotokolle: Sitzungen, Tagesordnungspunkte, Reden und Beiträge, Vorgänge und Drucksachen",
+         f'<a href="{DIP_TERMS_URL}">Nutzungsbedingungen des DIP</a>. Quellenangabe „Deutscher Bundestag/Bundesrat – DIP“; '
+         "zitierte Plenarprotokolle als „BT-PlPr.“ mit Nummer, etwa „BT-PlPr. 21/84“."),
+        ("Namentliche Abstimmungen: Ergebnisse und Einzelstimmen",
+         "Quelle „Deutscher Bundestag“. Grundlage ist das Plenarprotokoll, das das endgültige Ergebnis mit den Einzelstimmen abdruckt."),
+        ("abgeordnetenwatch.de: Wahlkreis, Bundesland, Geburtsjahr, Beruf, Geschlecht und Profil-Link",
+         '<a href="https://creativecommons.org/publicdomain/zero/1.0/deed.de">CC0 1.0</a>; die Quelle wird ohne Pflicht genannt.'),
+        ("Eigene Auswertungen: Zählungen, Zuordnungen, Politikfelder, Fakten und Personenregister",
+         f'<a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>, Namensnennung „{ATTRIBUTION_NAME}, Luca Veh“. '
+         "Die Bedingungen der verwendeten Quelldaten gelten weiter."),
+    )
+    licence_rows = "".join(f"<tr><th scope=\"row\">{pulse_html.esc(data)}</th><td>{terms}</td></tr>" for data, terms in licence_layers)
     licence_method_item = (
-        '<li id="lizenz"><strong>Lizenz und Weiterverwendung</strong><span>'
-        "Lizenzhinweis: siehe Quellen und Methode. Die genaue Lizenzformulierung für die "
-        "veröffentlichten Datensätze steht noch aus."
-        "</span></li>"
+        '<li id="lizenz"><strong>Lizenz und Weiterverwendung</strong><div class="licence-layers">'
+        "<p>Die Daten dieser Website und jedes Downloads verbinden Quellen mit unterschiedlichen Bedingungen; jede Schicht behält ihre eigenen:</p>"
+        f'<table><thead><tr><th scope="col">Daten</th><th scope="col">Bedingungen</th></tr></thead><tbody>{licence_rows}</tbody></table>'
+        "<p>Die Daten sind aufbereitet und verändert: Protokolle und DIP-Datensätze sind in Tabellen zerlegt, Leerraum ist "
+        "vereinheitlicht, die Absätze einer Rede sind zusammengefügt. Nach Nr. 5 der DIP-Nutzungsbedingungen dürfen DIP-Daten "
+        "nicht in einem entstellenden Zusammenhang verwendet werden und nicht so, dass Mitglieder des Bundestages, des "
+        "Bundesrates, der Bundesregierung oder andere herabgesetzt werden können; diese Bedingung der Quelle gilt für jede "
+        "Weiterverwendung.</p>"
+        '<p>Details: <code>LICENSE-DATA.md</code> in jedem Download, zu finden auf der Seite <a href="database.html">Daten</a>.</p>'
+        "</div></li>"
     )
     # Glossary of the DIP vorgangstyp labels shown in the Debattenprofil card on
     # puls.html; each label there links to its entry here by anchor.
@@ -11698,7 +11884,11 @@ def render_sources_page(
     }}
     .method-list li:last-child {{ border-bottom:0; padding-bottom:0; }}
     .method-list strong {{ color:#273142; }}
-    .method-list span {{ color:var(--muted); }}
+    .method-list span, .method-list .licence-layers {{ color:var(--muted); }}
+    .licence-layers p {{ margin:0 0 10px; }}
+    .licence-layers table {{ width:100%; margin:0 0 10px; border-collapse:collapse; font-size:14px; }}
+    .licence-layers th, .licence-layers td {{ padding:6px 8px 6px 0; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; overflow-wrap:anywhere; }}
+    .licence-layers tbody th {{ font-weight:600; color:var(--ink); }}
     /* Glossary entries are link targets from the Debattenprofil on puls.html.
        Their terms are long compound nouns, so the term column is wider and may
        hyphenate instead of running into the explanation. */
@@ -11884,7 +12074,7 @@ def render_sources_page(
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -12252,7 +12442,7 @@ def render_settings_page(
       <p>Nur vorhandene KI-Zusammenfassungen lassen sich weiterhin ein- oder ausklappen. Diese Einstellung betrifft ausschließlich KI-generierte Texte, nicht die Quelleninhalte.</p>
       <a class="button" href="sources.html#datenstand">Datenstand dieser Veröffentlichung</a>
     </main>
-    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.6.0 erreichbar. <a href="sources.html">Quellen und Methode</a></footer>
+    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.6.0 erreichbar. <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts()}
 </body>
@@ -12294,6 +12484,7 @@ def render_site(
     authoritative_catalog: bool = False,
     catalog_full_fetched_at: str | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    operator: dict[str, str] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -12501,6 +12692,10 @@ def render_site(
             encoding="utf-8",
         )
     settings_path.write_text(render_settings_page(), encoding="utf-8")
+    (output_dir / "impressum.html").write_text(render_impressum_page(operator, features=features), encoding="utf-8")
+    (output_dir / "datenschutz.html").write_text(
+        render_datenschutz_page(operator, data_base_url=data_base_url, features=features), encoding="utf-8"
+    )
     if not include_dev_view:
         publication.validate_publication_directory(output_dir)
     return index_path
@@ -13329,6 +13524,15 @@ def parse_args() -> argparse.Namespace:
         help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE). Default: the short string of LICENSE-DATA.md.",
     )
     parser.add_argument(
+        "--operator-file",
+        default=None,
+        help=(
+            "Local JSON file with the operator's name, address, e-mail, hosting and supervisory authority for "
+            "impressum.html and datenschutz.html (or $BUNDESTAG_PULSE_OPERATOR_FILE). Keep it outside git; "
+            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders."
+        ),
+    )
+    parser.add_argument(
         "--data-issues-url",
         default=None,
         help="Optional URL for the 'Datenfehler melden' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only. docs/project-documentation.md gives the GitHub form URL that pre-fills the page.",
@@ -13396,6 +13600,85 @@ def dossier_database_page_href(args: argparse.Namespace, database_path: Path) ->
     if data_manifest_source(args) or (not args.no_persist and database_path.exists()):
         return "../database.html"
     return None
+
+
+# The operator file (O1 A): name, postal address, e-mail and hosting details
+# for impressum.html and datenschutz.html, from a local JSON file outside git.
+# The keys below, flattened with a dot for the nested objects, are also the
+# data-operator-missing field names.
+OPERATOR_FIELDS = ("name", "street", "postal_code", "city", "email")
+OPERATOR_OBJECTS = {
+    "hosting": ("provider", "address", "privacy_url", "log_retention"),
+    "supervisory_authority": ("name", "url"),
+}
+OPERATOR_URL_FIELDS = ("hosting.privacy_url", "supervisory_authority.url")
+OPERATOR_MAX_LENGTH = 300
+_OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
+
+
+class OperatorFileError(ValueError):
+    """The operator file is unreadable or malformed; the message names the path."""
+
+
+def _operator_url(value: str) -> bool:
+    parsed = urllib.parse.urlsplit(value)
+    return parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password
+
+
+def load_operator(path: Path) -> dict[str, str]:
+    """The operator's values, flattened (``hosting.provider``); absent fields
+    are left out and render as placeholders. Raises OperatorFileError."""
+    try:
+        raw = json.loads(path.read_bytes().decode("utf-8"))
+    except OSError as exc:
+        raise OperatorFileError(f"--operator-file {path} cannot be read: {exc.strerror or exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise OperatorFileError(f"--operator-file {path} is not UTF-8: {exc.reason} at byte {exc.start}") from exc
+    except json.JSONDecodeError as exc:
+        raise OperatorFileError(f"--operator-file {path} is not valid JSON: {exc.msg} (line {exc.lineno})") from exc
+    if not isinstance(raw, dict):
+        raise OperatorFileError(f"--operator-file {path} must hold a JSON object, not {type(raw).__name__}")
+    known = set(OPERATOR_FIELDS) | set(OPERATOR_OBJECTS)
+    unknown = sorted(str(key) for key in raw if key not in known)
+    if unknown:
+        raise OperatorFileError(f"--operator-file {path}: unknown field(s) {', '.join(unknown)}")
+    values: dict[str, Any] = {field: raw[field] for field in OPERATOR_FIELDS if field in raw}
+    for name, fields in OPERATOR_OBJECTS.items():
+        if name not in raw:
+            continue
+        if not isinstance(raw[name], dict):
+            raise OperatorFileError(f"--operator-file {path}: {name} must be an object with {', '.join(fields)}")
+        extra = sorted(str(key) for key in raw[name] if key not in fields)
+        if extra:
+            raise OperatorFileError(f"--operator-file {path}: unknown field(s) {', '.join(f'{name}.{key}' for key in extra)}")
+        values.update({f"{name}.{field}": raw[name][field] for field in fields if field in raw[name]})
+    operator: dict[str, str] = {}
+    for field, value in values.items():
+        if not isinstance(value, str):
+            raise OperatorFileError(f"--operator-file {path}: {field} must be a string")
+        value = value.strip()
+        if not value:
+            continue  # an empty value is a missing one
+        if len(value) > OPERATOR_MAX_LENGTH:
+            raise OperatorFileError(f"--operator-file {path}: {field} is longer than {OPERATOR_MAX_LENGTH} characters")
+        if any(unicodedata.category(char) in ("Cc", "Cf", "Zl", "Zp") for char in value):
+            raise OperatorFileError(f"--operator-file {path}: {field} contains a control character")
+        if field == "email" and not _OPERATOR_EMAIL_RE.fullmatch(value):
+            raise OperatorFileError(f"--operator-file {path}: email {value!r} is not an e-mail address")
+        if field in OPERATOR_URL_FIELDS and not _operator_url(value):
+            raise OperatorFileError(f"--operator-file {path}: {field} must be an https:// URL without credentials")
+        operator[field] = value
+    return operator
+
+
+# CLI > env; neither set means no operator data (placeholders). A path that
+# is set but cannot be read stops the build (D3 A): a typo must not publish an
+# Impressum without its address.
+def resolve_operator(args: argparse.Namespace) -> dict[str, str] | None:
+    raw = getattr(args, "operator_file", None) or os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
+    if not raw:
+        return None
+    return load_operator(Path(raw))
 
 
 # The default --data-license: the blockquote under "## Short string" in
@@ -13606,6 +13889,13 @@ def main() -> int:
             return 1
         print(f"validated: {args.validate_publication}")
         return 0
+
+    # Before any work: a mistyped operator path stops here, naming the path.
+    try:
+        operator = resolve_operator(args)
+    except OperatorFileError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
@@ -13854,6 +14144,7 @@ def main() -> int:
             is_remote_manifest=is_remote_manifest,
             bill_slugs=bill_slugs,
             vorgang_cache=vorgang_cache,
+            operator=operator,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -14176,6 +14467,7 @@ def main() -> int:
         authoritative_catalog=True,
         catalog_full_fetched_at=catalog_full_fetched_at,
         vorgang_cache=vorgang_cache,
+        operator=operator,
     )
     print(index_path)
     summary, failing = acquisition_summary_lines(

@@ -135,6 +135,81 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
             b.default_license_text()
 
 
+class OperatorFileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+
+    def write(self, content, name: str = "operator.json") -> Path:
+        path = self.tmp / name
+        path.write_bytes(content if isinstance(content, bytes) else json.dumps(content).encode("utf-8"))
+        return path
+
+    # Value: protects=a complete operator file loads into the flattened fields the pages read, and absent or empty fields are left out (placeholders); fails_when=a nested value is lost, a field is renamed, or an empty string counts as given; why_new=O1 A, the operator data comes from a local file outside git; seam=load_operator; no_claim=page wording
+    def test_a_complete_file_loads_flattened_and_partial_fields_stay_missing(self) -> None:
+        complete = {
+            "name": " Erika Muster ", "street": "Musterstraße 1", "postal_code": "12345", "city": "Musterstadt",
+            "email": "impressum@example.org",
+            "hosting": {"provider": "Hoster", "address": "Hostweg 2", "privacy_url": "https://h.example.org/ds", "log_retention": "7 Tage"},
+            "supervisory_authority": {"name": "LfD", "url": "https://lfd.example.org/"},
+        }
+        operator = b.load_operator(self.write(complete))
+        self.assertEqual(operator["name"], "Erika Muster")
+        self.assertEqual(operator["hosting.log_retention"], "7 Tage")
+        self.assertEqual(set(operator), set(b.OPERATOR_FIELDS) | {f"{k}.{f}" for k, fs in b.OPERATOR_OBJECTS.items() for f in fs})
+        self.assertEqual(b.load_operator(self.write({"name": "Erika Muster", "city": "", "hosting": {"provider": "Hoster"}})), {"name": "Erika Muster", "hosting.provider": "Hoster"})
+
+    # Value: protects=every malformed operator file stops with an OperatorFileError naming the path and the problem, never a traceback or a page carrying the bad value; fails_when=null/list/number, a non-string or nested non-object, an over-long value, a control character, an address that is no e-mail, a javascript: or http URL, invalid JSON, non-UTF-8 bytes or an unknown field get through; why_new=checklist class 9, eng review A3; seam=load_operator; no_claim=deliverability of the address
+    def test_malformed_operator_files_are_refused_naming_the_path(self) -> None:
+        cases = [
+            ("null", None, "must hold a JSON object"),
+            ("list", ["Erika"], "must hold a JSON object"),
+            ("number", 7, "must hold a JSON object"),
+            ("non-string field", {"name": 42}, "name must be a string"),
+            ("hosting not an object", {"hosting": "Hoster"}, "hosting must be an object"),
+            ("over-long value", {"street": "x" * (b.OPERATOR_MAX_LENGTH + 1)}, "street is longer than"),
+            ("control character", {"name": "Erika\nMuster"}, "name contains a control character"),
+            ("bidi control", {"name": "Erika\u202eMuster"}, "name contains a control character"),
+            ("bad e-mail", {"email": "kein-at-zeichen"}, "is not an e-mail address"),
+            ("e-mail with markup", {"email": "a<b>@example.org"}, "is not an e-mail address"),
+            ("javascript: URL", {"hosting": {"privacy_url": "javascript:alert(1)"}}, "hosting.privacy_url must be an https:// URL"),
+            ("http URL", {"supervisory_authority": {"url": "http://lfd.example.org/"}}, "supervisory_authority.url must be an https:// URL"),
+            ("credentials in URL", {"supervisory_authority": {"url": "https://u:p@lfd.example.org/"}}, "must be an https:// URL"),
+            ("invalid JSON", b"{nope", "is not valid JSON"),
+            ("not UTF-8", b"\xff\xfe{}", "is not UTF-8"),
+            ("unknown field", {"phone": "123"}, "unknown field(s) phone"),
+            ("unknown nested field", {"hosting": {"ip": "1.2.3.4"}}, "unknown field(s) hosting.ip"),
+        ]
+        for label, content, fragment in cases:
+            with self.subTest(label):
+                path = self.write(content)
+                with self.assertRaises(b.OperatorFileError) as caught:
+                    b.load_operator(path)
+                self.assertIn(str(path), str(caught.exception))
+                self.assertIn(fragment, str(caught.exception))
+
+    # Value: protects=with neither --operator-file nor $BUNDESTAG_PULSE_OPERATOR_FILE there is no operator data (placeholders), the flag beats the env, and a set path that does not exist stops main() with exit 1 naming the path before any page is written; fails_when=a mistyped path renders an Impressum of placeholders with exit 0, or the env var is ignored; why_new=eng review D3 A; seam=resolve_operator, main; no_claim=what the pages say
+    def test_operator_resolution_and_a_missing_path_stops_the_build(self) -> None:
+        good = self.write({"name": "Aus der Datei"})
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BUNDESTAG_PULSE_OPERATOR_FILE", None)
+            self.assertIsNone(b.resolve_operator(SimpleNamespace()))
+            self.assertIsNone(b.resolve_operator(_pipeline_args(operator_file=None)))
+            os.environ["BUNDESTAG_PULSE_OPERATOR_FILE"] = str(good)
+            self.assertEqual(b.resolve_operator(SimpleNamespace()), {"name": "Aus der Datei"})
+            other = self.write({"name": "Vom Flag"}, "flag.json")
+            self.assertEqual(b.resolve_operator(_pipeline_args(operator_file=str(other))), {"name": "Vom Flag"})
+        missing = self.tmp / "tippfehler.json"
+        args = SimpleNamespace(validate_publication=None, operator_file=str(missing), output_dir=self.tmp / "site")
+        with mock.patch.object(b, "parse_args", return_value=args), mock.patch.object(b, "render_site") as render, mock.patch.object(b.dip, "load_local_env"), contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(b.main(), 1)
+        render.assert_not_called()
+        self.assertIn(str(missing), err.getvalue())
+        self.assertIn("cannot be read", err.getvalue())
+        self.assertFalse((self.tmp / "site").exists())
+
+
 class ResolveCommitTests(unittest.TestCase):
     # Value: protects=the site build cites the revision of its own checkout through build_revision; fails_when=resolve_commit stops delegating or points at another directory; why_new=the git logic moved to scripts/build_revision.py (tested there against real git); seam=none; no_claim=git behaviour
     def test_delegates_to_build_revision_for_this_checkout(self) -> None:

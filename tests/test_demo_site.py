@@ -14,7 +14,147 @@ import _support  # noqa: F401
 import build_demo_site as demo
 import build_dip_pulse_site as site
 import publication_state as publication
+import render_dip_pulse_html as pulse_html
 from features import EnrichmentSelection
+
+
+# A complete operator file's values, flattened as load_operator returns them.
+COMPLETE_OPERATOR = {
+    "name": "Erika <script>alert(1)</script> Muster",
+    "street": "Musterstraße 1",
+    "postal_code": "12345",
+    "city": "Musterstadt",
+    "email": "impressum@example.org",
+    "hosting.provider": "Beispiel Hosting GmbH",
+    "hosting.address": "Hostweg 2, 54321 Hoststadt",
+    "hosting.privacy_url": "https://hosting.example.org/datenschutz",
+    "hosting.log_retention": "7 Tage",
+    "supervisory_authority.name": "Landesbeauftragte für Datenschutz Musterland",
+    "supervisory_authority.url": "https://datenschutz.example.org/",
+}
+OPERATOR_KEYS = set(COMPLETE_OPERATOR)
+LEGAL_SPAN_RE = re.compile(r'<span class="legal-links">.*?</span>', re.S)
+
+
+def _site_pages(output: Path) -> dict[str, str]:
+    """Every generated page but the meta-refresh alias redirects, by relative path."""
+    pages = {}
+    for path in sorted(output.rglob("*.html")):
+        markup = path.read_text(encoding="utf-8")
+        if 'http-equiv="refresh"' not in markup:
+            pages[path.relative_to(output).as_posix()] = markup
+    return pages
+
+
+class LegalPagesTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.output = Path(cls._tmp.name) / "site"
+        demo.build_demo(cls.output)
+        cls.pages = _site_pages(cls.output)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    # Value: protects=the TODO's done criterion: every non-redirect page links impressum.html and datenschutz.html with the prefix of its depth, and both targets exist; fails_when=a footer lacks the links, a depth-1 page links impressum.html relative to its own directory, or a target is not written; why_new=ADR 0003 D4 needs the legal pages reachable from every page; seam=build_demo; no_claim=footer wording
+    def test_every_page_links_both_legal_pages_at_its_depth(self) -> None:
+        self.assertGreater(len(self.pages), 10)
+        for relative, markup in self.pages.items():
+            with self.subTest(page=relative):
+                prefix = "../" * relative.count("/")
+                (span,) = LEGAL_SPAN_RE.findall(markup)
+                self.assertIn(f'href="{prefix}impressum.html"', span)
+                self.assertIn(f'href="{prefix}datenschutz.html"', span)
+                self.assertIn(span, markup.split("<footer")[-1])
+        for name in ("impressum.html", "datenschutz.html"):
+            self.assertTrue((self.output / name).is_file())
+        for depth_one in ("protocols/plenarprotokoll-21-84.html", "bills/index.html", "abgeordnete/index.html", "votes/index.html", "fakt/index.html"):
+            self.assertIn(depth_one, self.pages)
+
+    # Value: protects=without an operator file each operator field renders one marked placeholder kind per page, and only the two legal pages carry markers; fails_when=a missing value renders blank or unmarked, a field has no marker, or a marker leaks onto another page; why_new=eng review D2 A; seam=build_demo; no_claim=the deploy gate on markers (TODOS hosting item)
+    def test_without_an_operator_file_every_field_is_a_marked_placeholder(self) -> None:
+        def fields(markup: str) -> set[str]:
+            return set(re.findall(r'<span data-operator-missing="([^"]+)">Angabe folgt\.</span>', markup))
+
+        self.assertEqual(fields(self.pages["impressum.html"]), {"name", "street", "postal_code", "city", "email"})
+        self.assertEqual(fields(self.pages["datenschutz.html"]), OPERATOR_KEYS)
+        self.assertEqual(sorted(name for name, markup in self.pages.items() if "data-operator-missing" in markup), ["datenschutz.html", "impressum.html"])
+
+    # Value: protects=with a complete operator file no generated page carries data-operator-missing, every value is escaped, sources.html no longer says the licence "steht noch aus", and the authority is one link; fails_when=a field is not read, a value is written raw, or the licence placeholder remains; why_new=eng review D2 A done criterion; seam=build_demo with an operator; no_claim=legal sufficiency of the text
+    def test_a_complete_operator_file_leaves_no_marker_and_is_escaped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "site"
+            demo.build_demo(output, operator=COMPLETE_OPERATOR)
+            pages = _site_pages(output)
+        self.assertEqual([name for name, markup in pages.items() if "data-operator-missing" in markup], [])
+        for name in ("impressum.html", "datenschutz.html"):
+            with self.subTest(name):
+                self.assertNotIn("<script>alert(1)</script>", pages[name])
+                self.assertIn("Erika &lt;script&gt;alert(1)&lt;/script&gt; Muster", pages[name])
+                self.assertIn('<a href="mailto:impressum@example.org">impressum@example.org</a>', pages[name])
+        self.assertIn('<a href="https://datenschutz.example.org/">Landesbeauftragte für Datenschutz Musterland</a>', pages["datenschutz.html"])
+        self.assertIn("7 Tage", pages["datenschutz.html"])
+        self.assertNotIn("steht noch aus", pages["sources.html"])
+        self.assertIn('id="lizenz"', pages["sources.html"])
+        self.assertIn("BT-PlPr.", pages["sources.html"])
+
+    # Value: protects=the publication validator refuses an output tree without impressum.html or datenschutz.html; fails_when=a deployable tree can lack a legal page; why_new=ADR 0003 D4 makes both pages part of every public build; seam=validate_publication_directory; no_claim=page content
+    def test_the_publication_validator_requires_both_legal_pages(self) -> None:
+        import shutil
+
+        for name in ("impressum.html", "datenschutz.html"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                copy_dir = Path(tmp) / "site"
+                shutil.copytree(self.output, copy_dir)
+                publication.validate_publication_directory(copy_dir)
+                (copy_dir / name).unlink()
+                with self.assertRaisesRegex(publication.PublicationStateError, f"entry points are missing: {name}"):
+                    publication.validate_publication_directory(copy_dir)
+
+    # Value: protects=the Datenschutz page names exactly the localStorage keys the page scripts use and no host is loaded that it does not name (none today); fails_when=a new stored setting or a CDN font/script/style is added without a matching text change; why_new=eng review D4 A, a false privacy statement is a correctness defect; seam=page_scripts and the demo build's HTML; no_claim=outbound links, which load nothing until clicked
+    def test_datenschutz_names_every_stored_key_and_every_loaded_host(self) -> None:
+        scripts = pulse_html.page_head() + pulse_html.page_scripts()
+        used = set(re.findall(r'const key = "([^"]+)"', scripts))
+        self.assertEqual(scripts.count("localStorage"), scripts.count("window.localStorage"))
+        named = {key for key, _ in site.DATENSCHUTZ_STORAGE_KEYS}
+        self.assertEqual(used, named)
+        for key in named:
+            self.assertIn(f"<code>{key}</code>", self.pages["datenschutz.html"])
+        for word in ("sessionStorage", "indexedDB", "document.cookie"):
+            self.assertNotIn(word, scripts)
+        loaded = set()
+        for relative, markup in self.pages.items():
+            urls = re.findall(r'<(?:script|img|iframe|source|video|audio)\b[^>]*\ssrc="([^"]+)"', markup)
+            urls += re.findall(r'<link\b[^>]*\shref="([^"]+)"', markup)
+            urls += re.findall(r'@import\s+(?:url\()?["\']?([^"\')\s;]+)', markup)
+            urls += re.findall(r'url\(["\']?((?:https?:)?//[^"\')]+)', markup)
+            for url in urls:
+                if re.match(r"(?:https?:)?//", url):
+                    loaded.add(re.sub(r"^(?:https?:)?//", "", url).split("/")[0])
+        self.assertEqual(loaded, set(site.DATENSCHUTZ_LOADED_HOSTS))
+
+    # Value: protects=the footer change added the legal span and nothing else on any page, and the database-unavailable page gained a footer with the links; fails_when=a footer link or sentence is lost, moved or altered while appending the span; why_new=eng review D5 A, 17 of 18 footers had no coverage; seam=build_demo rendered with render_legal_links patched to ""; no_claim=pages the demo does not build
+    def test_the_legal_span_is_the_only_footer_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(pulse_html, "render_legal_links", return_value=""):
+            output = Path(tmp) / "site"
+            demo.build_demo(output)
+            without = _site_pages(output)
+        self.assertEqual(set(without), set(self.pages))
+
+        def normalise(markup: str) -> str:
+            markup = LEGAL_SPAN_RE.sub("", markup)
+            return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?", "<time>", markup)
+
+        for relative, markup in self.pages.items():
+            with self.subTest(page=relative):
+                self.assertEqual(normalise(markup), normalise(without[relative]))
+        unavailable = self.pages["database.html"]
+        self.assertIn("Daten nicht erzeugt", unavailable)
+        footer = unavailable.split("<footer>")[1].split("</footer>")[0]
+        self.assertIn('<a href="sources.html">Quellen und Methode</a>', footer)
+        self.assertIn('href="impressum.html"', footer)
 
 
 class DemoSiteTests(unittest.TestCase):
