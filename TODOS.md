@@ -127,6 +127,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **Why:** The Daten page and `--data-base-url` make the *data* shippable to a public audience; the *site* itself cannot go to a capped host today. Both outside voices in the `/autoplan` review flagged this; the user's go/no-go framing ("ship to a larger audience in a few weeks") depends on the site being public, not only the download.
 
+**Deploy gate (eng review of `docs/plans/impressum-datenschutz-licence.md`, D6, 2026-11-01):** the deploy step this item adds must refuse to publish while any generated page carries `data-operator-missing`, and must name the missing fields. That marker means the Impressum or Datenschutz page still shows "Angabe folgt." where the operator's address, e-mail, host or supervisory authority belongs (§ 18 MStV).
+
 **Effort:** L
 **Priority:** P1
 **Depends on:** None (absorbs the former "base URL for report JSON" item)
