@@ -180,6 +180,10 @@ class OperatorFileTests(unittest.TestCase):
             ("not UTF-8", b"\xff\xfe{}", "is not UTF-8"),
             ("unknown field", {"phone": "123"}, "unknown field(s) phone"),
             ("unknown nested field", {"hosting": {"ip": "1.2.3.4"}}, "unknown field(s) hosting.ip"),
+            # /gstack-review 2026-11-01: these three ended in a traceback.
+            ("lone surrogate", b'{"name": "Erika\\ud800"}', "name contains a control character"),
+            ("nested too deeply", b"[" * 100_000, "nested too deeply"),
+            ("unparseable URL host", {"hosting": {"privacy_url": "https://[::1"}}, "hosting.privacy_url must be an https:// URL"),
         ]
         for label, content, fragment in cases:
             with self.subTest(label):

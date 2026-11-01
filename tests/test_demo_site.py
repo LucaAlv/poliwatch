@@ -100,6 +100,25 @@ class LegalPagesTests(unittest.TestCase):
         self.assertIn('id="lizenz"', pages["sources.html"])
         self.assertIn("BT-PlPr.", pages["sources.html"])
 
+    # Value: protects=the Datenschutz page names the download host for an absolute and a protocol-relative --data-base-url, and none for a site path; fails_when=a "//host/" base, whose downloads leave the site, is treated as same-server; why_new=red-team review of this branch; seam=render_datenschutz_page; no_claim=the Daten page links
+    def test_datenschutz_names_the_download_host_of_a_remote_base(self) -> None:
+        for base, host in (("https://cdn.example.net/x/", "cdn.example.net"), ("//cdn.example.net/x/", "cdn.example.net"), ("data/exports/", None)):
+            with self.subTest(base=base):
+                page = site.render_datenschutz_page(None, data_base_url=base)
+                if host:
+                    self.assertIn(f"Die Datendownloads der Seite „Daten“ liegen auf {host};", page)
+                else:
+                    self.assertNotIn("Die Datendownloads der Seite", page)
+
+    # Value: protects=the legal pages attribute personal data to the source that supplies it and do not promise the licence file inside every single download; fails_when=roll-call results are credited to abgeordnetenwatch.de again, or sources.html says LICENSE-DATA.md comes with each download; why_new=red-team review of this branch, owner decisions D1 A and D2 A; seam=render_datenschutz_page, render_sources_page; no_claim=legal sufficiency
+    def test_legal_pages_name_sources_and_the_licence_file_accurately(self) -> None:
+        persons = self.pages["datenschutz.html"].split("<h2>Personen in den Daten</h2>")[1].split("</section>")[0]
+        self.assertIn("namentlicher Abstimmungen auf bundestag.de", persons)
+        self.assertNotIn("bundestag.de und abgeordnetenwatch.de", persons)
+        self.assertIn("Wahlkreis, Bundesland, Geburtsjahr, Beruf und Geschlecht von abgeordnetenwatch.de", persons)
+        self.assertNotIn("in jedem Download", self.pages["sources.html"])
+        self.assertIn("<code>LICENSE-DATA.md</code> liegt jedem Export bei", self.pages["sources.html"])
+
     # Value: protects=the publication validator refuses an output tree without impressum.html or datenschutz.html; fails_when=a deployable tree can lack a legal page; why_new=ADR 0003 D4 makes both pages part of every public build; seam=validate_publication_directory; no_claim=page content
     def test_the_publication_validator_requires_both_legal_pages(self) -> None:
         import shutil

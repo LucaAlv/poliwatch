@@ -193,9 +193,12 @@ class ExportHelpersTests(unittest.TestCase):
         self.assertEqual(b.resolve_data_base_url("https://example.org/x"), "https://example.org/x/")
         self.assertEqual(b.resolve_data_base_url("http://example.org/x/"), "http://example.org/x/")
         self.assertEqual(b.resolve_data_base_url("/data/"), "/data/")
+        self.assertEqual(b.resolve_data_base_url("//cdn.example.org/x"), "//cdn.example.org/x/")
 
-    def test_resolve_data_base_url_rejects_other_schemes(self) -> None:
-        for bad in ("javascript://x", "ftp://example.org/x"):
+    # A host the Datenschutz page cannot parse ended the build in a traceback
+    # after every other page was written; it is refused up front instead.
+    def test_resolve_data_base_url_rejects_other_schemes_and_malformed_hosts(self) -> None:
+        for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     b.resolve_data_base_url(bad)

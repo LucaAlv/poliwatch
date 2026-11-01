@@ -11575,7 +11575,12 @@ def render_datenschutz_page(
     storage_items = "".join(
         f"<li><code>{pulse_html.esc(key)}</code>: {pulse_html.esc(meaning)}.</li>" for key, meaning in DATENSCHUTZ_STORAGE_KEYS
     )
-    download_host = urllib.parse.urlsplit(data_base_url).hostname if is_url(data_base_url) else None
+    # Absolute and protocol-relative ("//host/") bases leave the site; a site
+    # path has no host. resolve_data_base_url refused unparseable hosts.
+    try:
+        download_host = urllib.parse.urlsplit(data_base_url).hostname
+    except ValueError:
+        download_host = None
     download_sentence = (
         f" Die Datendownloads der Seite „Daten“ liegen auf {pulse_html.esc(download_host)}; erst wenn Sie eine "
         "Datei herunterladen, ruft Ihr Browser diesen Server auf."
@@ -11612,7 +11617,8 @@ def render_datenschutz_page(
          "<p>Website und Datendownloads enthalten Namen, Abstimmungsverhalten und Reden von Mitgliedern des "
          "Bundestages sowie Angaben wie Geburtsjahr, Beruf und Wahlkreis. Sie stammen aus öffentlichen "
          "Quellen: den Plenarprotokollen und dem DIP des Deutschen Bundestages, den Ergebnissen namentlicher "
-         "Abstimmungen auf bundestag.de und abgeordnetenwatch.de. Zweck ist, die Arbeit des Bundestages "
+         "Abstimmungen auf bundestag.de sowie Wahlkreis, Bundesland, Geburtsjahr, Beruf und Geschlecht von "
+         "abgeordnetenwatch.de. Zweck ist, die Arbeit des Bundestages "
          "nachvollziehbar zu machen.</p>"),
         ("Ihre Rechte",
          "<p>Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), "
@@ -11764,7 +11770,7 @@ def render_sources_page(
         "nicht in einem entstellenden Zusammenhang verwendet werden und nicht so, dass Mitglieder des Bundestages, des "
         "Bundesrates, der Bundesregierung oder andere herabgesetzt werden können; diese Bedingung der Quelle gilt für jede "
         "Weiterverwendung.</p>"
-        '<p>Details: <code>LICENSE-DATA.md</code> in jedem Download, zu finden auf der Seite <a href="database.html">Daten</a>.</p>'
+        '<p>Details: <code>LICENSE-DATA.md</code> liegt jedem Export bei und ist auf der Seite <a href="database.html">Daten</a> verlinkt.</p>'
         "</div></li>"
     )
     # Glossary of the DIP vorgangstyp labels shown in the Debattenprofil card on
@@ -13004,6 +13010,14 @@ _ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
 # (F3.1) rather than a silently broken or unsafe href.
 def resolve_data_base_url(value: str) -> str:
     if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
+        # A host part (also a protocol-relative "//host/") must parse and be
+        # non-empty: datenschutz.html names it as the download host.
+        try:
+            host = urllib.parse.urlsplit(value).hostname
+        except ValueError as exc:
+            raise ValueError(f"--data-base-url {value!r} is not a valid URL: {exc}") from exc
+        if host is None and (value.startswith("//") or not value.startswith("/")):
+            raise ValueError(f"--data-base-url {value!r} names no host")
         return value if value.endswith("/") else value + "/"
     if _ABSOLUTE_SCHEME_RE.match(value):
         raise ValueError(
@@ -13621,8 +13635,12 @@ class OperatorFileError(ValueError):
 
 
 def _operator_url(value: str) -> bool:
-    parsed = urllib.parse.urlsplit(value)
-    return parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        host = parsed.hostname
+    except ValueError:  # "https://[::1" and other malformed hosts
+        return False
+    return parsed.scheme == "https" and bool(host) and not parsed.username and not parsed.password
 
 
 def load_operator(path: Path) -> dict[str, str]:
@@ -13636,6 +13654,8 @@ def load_operator(path: Path) -> dict[str, str]:
         raise OperatorFileError(f"--operator-file {path} is not UTF-8: {exc.reason} at byte {exc.start}") from exc
     except json.JSONDecodeError as exc:
         raise OperatorFileError(f"--operator-file {path} is not valid JSON: {exc.msg} (line {exc.lineno})") from exc
+    except RecursionError as exc:
+        raise OperatorFileError(f"--operator-file {path} is nested too deeply") from exc
     if not isinstance(raw, dict):
         raise OperatorFileError(f"--operator-file {path} must hold a JSON object, not {type(raw).__name__}")
     known = set(OPERATOR_FIELDS) | set(OPERATOR_OBJECTS)
@@ -13661,7 +13681,8 @@ def load_operator(path: Path) -> dict[str, str]:
             continue  # an empty value is a missing one
         if len(value) > OPERATOR_MAX_LENGTH:
             raise OperatorFileError(f"--operator-file {path}: {field} is longer than {OPERATOR_MAX_LENGTH} characters")
-        if any(unicodedata.category(char) in ("Cc", "Cf", "Zl", "Zp") for char in value):
+        # Cs: a lone surrogate from a JSON escape cannot be written as UTF-8.
+        if any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
             raise OperatorFileError(f"--operator-file {path}: {field} contains a control character")
         if field == "email" and not _OPERATOR_EMAIL_RE.fullmatch(value):
             raise OperatorFileError(f"--operator-file {path}: email {value!r} is not an e-mail address")
