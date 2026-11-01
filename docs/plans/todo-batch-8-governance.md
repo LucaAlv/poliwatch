@@ -342,7 +342,24 @@ Main has changed `scripts/build_dip_pulse_site.py` since then, all from base lin
 
 Kept out of scope because of A3: the ~15 other page footers (abgeordnete near base 8492/8597 and facts near base 9554–9780 are A3 hunks). See O8/B5.
 
-## Open owner decisions
+## Owner decisions
+
+**Answered by the owner on 2026-11-01. Every recommendation is accepted:**
+- O1: the S5 text is approved as drafted.
+- O2: `CODE_OF_CONDUCT.md`.
+- O3: `needs-triage` plus `datenfehler`/`bug`.
+- O4: English, with a German summary.
+- O5: omit the placeholder link.
+- O6: form wording approved as drafted, including the reply sentence; no checkbox.
+- O7: „Datenfehler melden (GitHub)".
+- O8: after A3 merges and before the flip, recorded as a TODO.
+- O9: the checklist as written.
+- O10: merge now.
+- O11: impersonal register.
+
+Label check, 2026-11-01: `needs-triage` and `bug` exist; `datenfehler` does not yet.
+
+The original options follow for the record.
 
 All public text is the owner's call. AskUserQuestion was not available in this planning session, so each recommendation below is the working assumption until the owner answers. **(rec.)** marks the recommendation.
 
@@ -366,7 +383,7 @@ Owner steps (no code): approve O1/O4/O6 text; create labels (O3); run the manual
 
 ### Eng review (`/gstack-plan-eng-review`, 2026-11-01)
 
-AskUserQuestion was not available to this planning agent. Per the caller's instruction, each choice took the recommended option, and every public-text choice is also listed under Open owner decisions.
+AskUserQuestion was not available to this planning agent. Per the caller's instruction, each choice took the recommended option, and every public-text choice is also listed under Owner decisions.
 
 **Scope Challenge.**
 - The plan touches ~12 files: 6 new (SECURITY.md, CODE_OF_CONDUCT.md, 3 form/config files, tests/test_issue_forms.py) and 6 edited (CONTRIBUTING.md, project-documentation.md, ADR 0003, TODOS.md at ship, plus build_dip_pulse_site.py and test_daten_page.py only with O7). It adds 0 new classes or services. That trips the 8-file complexity gate.
@@ -443,7 +460,7 @@ COVERAGE after plan: code paths 5/5 by test or named manual check; schema validi
 
 ### Design review (`/gstack-plan-design-review`, 2026-11-01)
 
-AskUserQuestion was not available to this planning agent. Each finding took the recommended option, and every public-text choice is also listed under Open owner decisions (O6, O7, O8, O11).
+AskUserQuestion was not available to this planning agent. Each finding took the recommended option, and every public-text choice is also listed under Owner decisions (O6, O7, O8, O11).
 
 **System audit.**
 - UI scope: the two GitHub issue forms, the `config.yml` chooser, the German text readers see there and in CONTRIBUTING/CODE_OF_CONDUCT, and the Daten page footer link label.

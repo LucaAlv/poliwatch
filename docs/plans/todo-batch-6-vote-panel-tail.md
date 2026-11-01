@@ -8,7 +8,7 @@ Three small TODO items. All three sit in the "Worum es geht" block of the vote p
 | # | TODO heading, item | What |
 |---|---|---|
 | 1 | "B4 review findings: lower-priority edges", item 1, plus item 23(b) | Per-vote cap and fold for "Worum es geht" blocks; restore a visible disclosure marker on the "Ganze Beschreibung" toggle |
-| 2 | Same heading, item 22(a) and 22(d) | `dip_text`: a `<script>`/`<style>` that closes beyond the 12,000-character window leaks its body; fix the docstrings. 22(b) and 22(c) are **not** fixed: they go to the owner question in "Open owner decisions" |
+| 2 | Same heading, item 22(a) and 22(d) | `dip_text`: a `<script>`/`<style>` that closes beyond the 12,000-character window leaks its body; fix the docstrings. 22(b) and 22(c) are **not** fixed: they go to the owner question in "Owner decisions" |
 | 3 | "Politikfelder: findings deferred from the B3 review", item 5 | Browser check for the inline filter script on `votes/index.html` |
 
 Pre-release rule (CLAUDE.md): change in place, no shims. Items 1 and 3 are render-only or test-only.
@@ -340,7 +340,16 @@ For recipe 2, extend the inner loop:
 - store `hashlib.sha256(html.encode()).hexdigest()` under `(p.name, key)`;
 - dump the result to JSON once before the first edit and once after, and diff the two files.
 
-## Open owner decisions
+## Owner decisions
+
+**Answered by the owner on 2026-11-01. Every recommendation is accepted:**
+- 1: 3 blocks open; fold only when 2 or more would hide (DD1).
+- 2: „{n} weitere Vorgänge anzeigen".
+- 3: parity with html.parser on malformed markup is not a goal. Close 22(b)/(c) in TODOS.md at ship time and state the rule in the `dip_text` docstring.
+- 4: search for the close tag in the raw tail.
+- 5: DD2, DD3 and DD4 are all kept. Eng D1 and D2 stand.
+
+The original options follow for the record.
 
 The global AskUserQuestion hook may answer gstack's questions. These are also logged here with a recommendation:
 
@@ -371,7 +380,7 @@ The global AskUserQuestion hook may answer gstack's questions. These are also lo
 Target: this file, `docs/plans/todo-batch-6-vote-panel-tail.md` (named explicitly). Report file: this file.
 
 How it ran:
-- **Mode:** subagent run with no AskUserQuestion tool. As the caller instructed, every decision below took the recommended option and is logged here and in "Open owner decisions". The preamble echoed `SESSION_KIND: interactive`, but nobody reads this run live.
+- **Mode:** subagent run with no AskUserQuestion tool. As the caller instructed, every decision below took the recommended option and is logged here and in "Owner decisions". The preamble echoed `SESSION_KIND: interactive`, but nobody reads this run live.
 - **Skipped:** the gstack upgrade prompt (`UPGRADE_AVAILABLE 1.91.176.0 1.91.379.0`). It writes under `~/.claude/skills`, which the sandbox denies.
 - Prior learning applied: headless-window-clamps-mobile-width (confidence 10/10, 2026-10-26). The item 3 runner block uses `Emulation.setDeviceMetricsOverride` for the 390 px pass, as the radar block does.
 
@@ -613,7 +622,7 @@ Task JSONL: **not persisted**. Its destination is under `~/.gstack`; it was kept
 
 ## Unresolved decisions
 
-None in this review. The owner questions in "Open owner decisions" are product calls, logged with recommendations, not open eng choices.
+None in this review. The owner questions in "Owner decisions" are product calls, logged with recommendations, not open eng choices.
 
 ## Completion summary
 
@@ -651,7 +660,7 @@ None in this review. The owner questions in "Open owner decisions" are product c
 Target: this file, named explicitly.
 
 How it ran:
-- **Mode:** subagent run without AskUserQuestion. As the caller instructed, every issue decision took the recommended option. Each one is logged below and mirrored in "Open owner decisions" where it is the owner's call.
+- **Mode:** subagent run without AskUserQuestion. As the caller instructed, every issue decision took the recommended option. Each one is logged below and mirrored in "Owner decisions" where it is the owner's call.
 - **Skipped:** the gstack upgrade prompt again. The sandbox denies writes under `~/.claude/skills`.
 
 **System audit:**
@@ -821,7 +830,7 @@ All rated passes are 8 or above. The plan is design-complete for its scope. Run 
 
 ### Unresolved Decisions (design)
 
-None open in this review. The Abweichler marker is deferred (out of scope), not unanswered. The owner wording question is logged under "Open owner decisions".
+None open in this review. The Abweichler marker is deferred (out of scope), not unanswered. The owner wording question is logged under "Owner decisions".
 
 ## GSTACK REVIEW REPORT
 

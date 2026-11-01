@@ -86,7 +86,7 @@ Wording rules (design review DR1, DR3):
 - "ausgewertet" matches the page's own clock label, "Auswertung vom".
 - Each date sits in a `<time datetime="YYYY-MM-DD">` element, the convention `week_header_facts` follows ("every date in a <time> element"). The server fallback uses `time_html`. The script builds the same elements with `createElement`/`textContent`, so it never uses `innerHTML`.
 
-The optional clause covers a real gap: a build whose archive stops at KW 43 but is read in KW 47. It is listed as a scope decision (Open owner decisions, D4).
+The optional clause covers a real gap: a build whose archive stops at KW 43 but is read in KW 47. It is listed as a scope decision (Owner decisions, D4).
 
 ### Markup and script
 
@@ -375,7 +375,21 @@ Pre-release rule: the only intended change to existing output is the new header 
 5. Full suite: `python3 -m unittest discover -s tests` on local 3.13.2 and on uv 3.13.12 (memory: local html.parser differs from CI).
 6. The merge-tree gate above.
 
-## Open owner decisions
+## Owner decisions
+
+**Answered by the owner on 2026-11-01. Every recommendation is accepted:**
+- D1: route B. JSON now; RSS only when `BUNDESTAG_PULSE_SITE_URL` is set.
+- D2: `feeds/week-radar.json` and `feeds/week-radar.xml`.
+- D3: wording and placement as drafted.
+- D4: include the „noch nicht ausgewertet" sentence.
+- D5: no change to ADR 0003; the sources.html row is deferred to a TODO.
+- D6: the channel title reuses „Bundestag-Puls · Wochenübersicht".
+- D7: 12 weeks, no KI summaries or Politikfelder tags; each item links to the week's newest dossier.
+- D8: refresh at most every 7 days, online persisting builds only, fail-soft.
+- D9: topic-led item title.
+- D10: English snake_case keys; `fraktion`/`sprechrolle` split as in `speeches`.
+
+The original options follow for the record.
 
 A global hook may answer gstack's questions. These are logged here either way, each with a recommendation.
 
@@ -416,7 +430,7 @@ A global hook may answer gstack's questions. These are logged here either way, e
 
 ### Eng review (/gstack-plan-eng-review, 2026-11-01)
 
-This run was a subagent with no AskUserQuestion tool. Per the batch brief, every decision took the recommended option, and each is logged here and under Open owner decisions.
+This run was a subagent with no AskUserQuestion tool. Per the batch brief, every decision took the recommended option, and each is logged here and under Owner decisions.
 
 - The gstack upgrade prompt (1.91.176.0 → 1.91.379.0) was skipped: it is out of scope, and `~/.claude/skills` is not writable from the sandbox.
 - No design doc for this branch was found by gstack's lookup. The prerequisite /office-hours offer was skipped (recommended B, standard review). The relevant design record is `docs/designs/puls-wochenradar.md`, which was read.
@@ -586,7 +600,7 @@ Passes:
    - DR2: `white-space:nowrap` on the date range only. The longest range (≈220 px) fits a 320 px screen less its gutters. The 980, 700 and 460 px breakpoints need no new rule.
    - The inline link is exempt from target size (WCAG 2.5.8).
    - No `aria-live` (the text is set at load), and `hidden` covers screen readers. **Accepted.**
-7. **Unresolved decisions.** D3, D4, D9 and D10 are recorded under Open owner decisions. DR1 (date first, one link) and DR6 (RSS description with denominator, method note and source line) are **accepted**.
+7. **Unresolved decisions.** D3, D4, D9 and D10 are recorded under Owner decisions. DR1 (date first, one link) and DR6 (RSS description with denominator, method note and source line) are **accepted**.
 
 NOT in scope (design):
 - a DESIGN.md (separate TODO);
@@ -607,5 +621,5 @@ NOT in scope (design):
 - **VERDICT:** No review is CLEAR. Eng and design findings are folded into the plan, and the owner decisions below are open. eng review required (re-run once the owner has answered D1–D10).
 
 **UNRESOLVED DECISIONS:**
-- D1–D10 under "Open owner decisions" were auto-decided to the recommendation (no AskUserQuestion in this subagent run); the owner confirms or overrides each.
+- D1–D10 under "Owner decisions" were auto-decided to the recommendation (no AskUserQuestion in this subagent run); the owner confirms or overrides each.
 - The `gstack-review-log` writes for both reviews failed (`~/.gstack/…reviews.jsonl: Operation not permitted`, sandbox), so neither review is on the gstack dashboard.

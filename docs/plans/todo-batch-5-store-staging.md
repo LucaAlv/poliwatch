@@ -172,7 +172,17 @@ Semantic check: A3's added lines (`^+`) contain no new call of `private_dir`, `e
 
 The same-file risk is in `build_dip_pulse_site.py` and `person_registry.py` only, and in both the nearest A3 hunk is at least 38 lines away from any edited line. Whichever branch lands second rebases with no textual conflict expected; the implementer re-runs `git diff main...worktree-a3-plan` before committing in case A3 moved.
 
-## Open owner decisions
+## Owner decisions
+
+**Answered by the owner on 2026-11-01. Every recommendation is accepted:**
+- D1: refuse before persisting and leave the store untouched.
+- D2: leave a first store's group as created.
+- D3: fix only the filesystem-root case; document the path rule as a naming convention.
+- D4: no override in this batch, only clearer errors; decide with hosting.
+- D5: fold the 0600 export CSV fix in as change 2d, with its test.
+- D6: strict euid ownership rule; any opt-out waits for the hosting session.
+
+The original options follow for the record.
 
 The implementer takes each recommendation unless the owner says otherwise. Each is the owner's call because it fixes a deployment assumption, adds or rejects a knob, or changes scope.
 
@@ -319,4 +329,4 @@ No UI scope, so the review was not applicable and stopped at UI scope detection 
 - **VERDICT:** no review CLEAR. Eng review findings are folded into the plan, and the owner decisions D1-D6 above are open for the owner. The eng review log was not persisted: run the `PERSIST:` line in the eng review section to record it. eng review required
 
 **UNRESOLVED DECISIONS:**
-- D1-D6 (Open owner decisions above): each has a recommendation the implementer takes unless the owner overrides it. None was answered by the owner during this review.
+- D1-D6 (Owner decisions above): each has a recommendation the implementer takes unless the owner overrides it. None was answered by the owner during this review.
