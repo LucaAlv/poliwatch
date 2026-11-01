@@ -116,6 +116,8 @@ import antrag_text
 import person_registry as registry
 import build_revision
 import release_version
+import sitzungskalender
+import week_radar_feed
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
     speech_rede_id,
@@ -6246,6 +6248,7 @@ def render_front_page(
     today: date | datetime | None = None,
     week: tuple[int, int] | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    sitzungskalender_cache: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
     today = resolve_today(today)
@@ -6320,6 +6323,14 @@ def render_front_page(
             f'<p class="week-note">{pulse_html.format_count(len(undated), "neuere Sitzung", "neuere Sitzungen")} '
             "ohne Datum nicht ber&uuml;cksichtigt</p>"
         )
+    # The planned Sitzungswochen (data/sitzungskalender.json). Without a cache, or with
+    # no planned week from the shown week on, the line, its style and its script are
+    # all empty strings and the page is byte-identical to one built without them.
+    next_sitting_html = sitzungskalender.render_next_sitting(
+        sitzungskalender.page_weeks(sitzungskalender_cache, selected_week), shown_week=selected_week, today=today
+    )
+    next_sitting_css = sitzungskalender.NEXT_SITTING_STYLE if next_sitting_html else ""
+    next_sitting_script = sitzungskalender.NEXT_SITTING_SCRIPT if next_sitting_html else ""
     radar_html = render_radar_section(radar, stats, features, pdf_urls)
     week_compare_html = render_week_comparison_section(
         comparison, weeks, selected_week, current_stats=stats, features=features, returning=returning
@@ -6737,7 +6748,7 @@ def render_front_page(
     }}
     @media print {{
       .page-actions {{ display:none; }}
-    }}
+    }}{next_sitting_css}
   </style>
 </head>
 <body>
@@ -6748,7 +6759,7 @@ def render_front_page(
         <span class="eyebrow">{header["eyebrow"]}</span>
         <h1>{header["h1"]}</h1>{stale_flag}
         <nav class="week-chips" aria-label="Sitzungen dieser Woche">{render_sitting_chips(week_entries)}</nav>
-        <p class="week-facts">{header["facts"]}</p>{undated_note}
+        <p class="week-facts">{header["facts"]}</p>{undated_note}{next_sitting_html}
       </div>
       <nav class="page-actions" aria-label="Seitenaktionen">
         <a href="#wochenvergleich">Wochenvergleich</a>
@@ -6761,7 +6772,7 @@ def render_front_page(
       <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
     </footer>
   </div>
-  {pulse_html.page_scripts(features)}
+  {pulse_html.page_scripts(features)}{next_sitting_script}
 </body>
 </html>
     """
@@ -11904,8 +11915,12 @@ def render_site(
         render_front_page(
             entries, database_href=database_href, features=features, today=today, week=week,
             vorgang_cache=vorgang_cache,
+            sitzungskalender_cache=sitzungskalender.load_cache(output_dir),
         ),
         encoding="utf-8",
+    )
+    week_radar_feed.write(
+        output_dir, entries, today=today, week=week, vorgang_cache=vorgang_cache, dossier_href_for=dossier_href
     )
     overview_path.write_text(
         render_overview(
@@ -13467,6 +13482,8 @@ def main() -> int:
     # site around the dossiers.
     if not args.no_persist and database_path.exists():
         log_politikfelder_summary(database_path, vorgang_cache)
+    if not args.no_persist:
+        sitzungskalender.refresh_if_due(output_dir)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
             args=args,
