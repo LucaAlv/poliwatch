@@ -257,5 +257,67 @@ class ExportCheckTest(unittest.TestCase):
         self.assertTrue(any("protocols" in problem for problem in problems))
 
 
+class OrderIndependenceTest(unittest.TestCase):
+    NAMES = [f"plenarprotokoll-18-{n}.json" for n in range(1, 5)]
+
+    def site(self, root: Path) -> Path:
+        data = root / "site" / "data"
+        data.mkdir(parents=True)
+        for name in (*self.NAMES, "plenarprotokoll-catalog.json"):
+            (data / name).write_text("{}")
+        return root / "site"
+
+    def run_steps(self, root: Path, exit_codes: list[int], same: bool = False) -> tuple[dict, list[list[str]]]:
+        seen: list[list[str]] = []
+        codes = iter(exit_codes)
+
+        def persist(clone: Path, today: str, log: Path) -> dict:
+            seen.append(sorted(p.name for p in (clone / "data").glob("plenarprotokoll-*.json")))
+            return {"exit_code": next(codes)}
+
+        with mock.patch.object(gate, "_persist_clone", side_effect=persist), \
+                mock.patch.object(gate, "grouping_fingerprint", side_effect=lambda path, **_: {"store": "same" if same else path.parent.parent.name}):
+            return gate.order_independence(self.site(root), root / "scratch", "2026-11-01"), seen
+
+    # Value: protects=the order-independence check really replays a half-built store, then all reports, against a fresh one; fails_when=the half step keeps every report (the check passes vacuously) or the held-back reports are not returned before the final step; why_new=only the clone helpers are tested, not the three-step sequence; seam=none; no_claim=the grouping fingerprint itself, tested above
+    def test_the_half_store_holds_back_every_second_report_and_the_last_step_has_them_all(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result, seen = self.run_steps(Path(tmp), [0, 0, 0])
+        catalog = "plenarprotokoll-catalog.json"
+        everything = sorted([*self.NAMES, catalog])
+        self.assertEqual(seen, [everything, sorted([self.NAMES[0], self.NAMES[2], catalog]), everything])
+        self.assertEqual(result["half"]["reports"], 2)
+
+    # Value: protects=the gate calls the stores equal only when all three persist steps succeed and their groupings match; fails_when=equal ignores a failed step or the fingerprint comparison; why_new=same as above; seam=none
+    def test_equal_needs_every_step_to_succeed_and_the_groupings_to_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            same, _ = self.run_steps(Path(tmp) / "a", [0, 0, 0], same=True)
+            differs, _ = self.run_steps(Path(tmp) / "b", [0, 0, 0])
+            failed, _ = self.run_steps(Path(tmp) / "c", [0, 1, 0], same=True)
+        self.assertTrue(same["equal"])
+        self.assertFalse(differs["equal"])
+        self.assertFalse(failed["equal"])
+        self.assertNotIn("grouping", failed["fresh"])
+
+
+class GateVerdictTest(unittest.TestCase):
+    # Value: protects=the gate exits 1 and writes its receipt, all_passed false, when the replay fails, even if the order-independence check says equal; fails_when=a failed replay or a missing check leaves the exit code 0 or the receipt unwritten; why_new=only the usage errors of main() are tested; seam=none; no_claim=the passing run, which needs a real store and takes about 20 minutes
+    def test_a_failed_replay_fails_the_gate_and_the_receipt_says_so(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "site" / "data" / "xml").mkdir(parents=True)
+            receipt = root / "out" / "receipt.json"
+            failed = {"exit_code": 1, "store_replaced": False, "store_kept": False, "tail": []}
+            with mock.patch.object(gate, "replay", return_value=failed), \
+                    mock.patch.object(gate, "order_independence", return_value={"equal": True}), \
+                    mock.patch("sys.stderr"):
+                code = gate.main([str(root / "site"), "--scratch", str(root / "scratch"), "--receipt", str(receipt)])
+            written = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(code, 1)
+        self.assertFalse(written["checks"]["replay_exit_0"])
+        self.assertFalse(written["checks"]["all_passed"])
+        self.assertNotIn("integrity", written)
+
+
 if __name__ == "__main__":
     unittest.main()
