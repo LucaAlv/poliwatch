@@ -483,3 +483,4 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [docs/data-license.md](docs/data-license.md) — long-form licence/provenance notes for the published data, including which SQLite columns are DIP-sourced vs. derived.
 - [docs/data-changelog.md](docs/data-changelog.md) — format of the public per-release data changelog (`CHANGES.md`, `changes.json`) that `scripts/publish_dip_pulse_data.sh` writes. [CITATION.cff](CITATION.cff) — citation metadata (working title; no DOI or version yet).
 - [CHANGELOG.md](CHANGELOG.md) — release history. [TODOS.md](TODOS.md) — tracked follow-up work.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development checks and how to report errors; [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — rules for issues and pull requests; [SECURITY.md](SECURITY.md) — how to report a vulnerability privately.

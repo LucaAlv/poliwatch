@@ -197,7 +197,8 @@ Page anatomy, top to bottom (wireframe: docs/designs/puls-wochenradar-sketch.png
    show. Past the shown week, a second sentence counts the planned weeks the page has not
    evaluated: "Seit KW 43 lagen laut Sitzungskalender 2 weitere Sitzungswochen; sie sind
    hier noch nicht ausgewertet." The line is hidden when the shown week is the running
-   Sitzungswoche and past the last listed week. It is the one part of the header that follows
+   Sitzungswoche, and when no planned week ends on or after the reader's date (past the last
+   listed week). It is the one part of the header that follows
    the reader's date (Europe/Berlin, a tiny inline script); the no-script text is computed
    for the build date. Not amber and not a chip: the amber flag stays reserved for "Nicht
    aktuell". The rest of the page keeps "Woche mit Sitzung"; "Sitzungswoche" is right here
