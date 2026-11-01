@@ -14,6 +14,7 @@ const root = path.resolve(__dirname, '..');
 const check = fs.readFileSync(path.join(__dirname, 'bills_browser_check.js'), 'utf8');
 const recipeCheck = fs.readFileSync(path.join(__dirname, 'recipe_copy_browser_check.js'), 'utf8');
 const weekCheck = fs.readFileSync(path.join(__dirname, 'week_comparison_browser_check.js'), 'utf8');
+const radarCheck = fs.readFileSync(path.join(__dirname, 'radar_browser_check.js'), 'utf8');
 const chrome = process.env.CHROME_BIN || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(fs.existsSync);
 if (!chrome || !fs.existsSync(chrome)) throw new Error('Chrome/Chromium not found; install Chromium or set CHROME_BIN to its executable path');
 if (typeof WebSocket !== 'function') throw new Error('Node 21+ with native WebSocket is required');
@@ -81,6 +82,8 @@ async function main() {
   if (recipeFixture.status !== 0) throw new Error(`recipe fixture generation failed (${py}): ${recipeFixture.error?.message || recipeFixture.stderr || recipeFixture.stdout}`);
   const weekFixture = spawnSync(py, [path.join(__dirname, 'test_build_dip_pulse_site.py'), '--browser-fixture', path.join(publicDir, 'weeks')], { cwd: root, encoding: 'utf8', timeout: 30000 });
   if (weekFixture.status !== 0) throw new Error(`week fixture generation failed (${py}): ${weekFixture.error?.message || weekFixture.stderr || weekFixture.stdout}`);
+  const radarFixture = spawnSync(py, [path.join(__dirname, 'test_politikfelder.py'), '--browser-fixture', path.join(publicDir, 'radar')], { cwd: root, encoding: 'utf8', timeout: 30000 });
+  if (radarFixture.status !== 0) throw new Error(`radar fixture generation failed (${py}): ${radarFixture.error?.message || radarFixture.stderr || radarFixture.stdout}`);
   server = http.createServer((req, res) => {
     let file = path.resolve(publicDir, '.' + decodeURIComponent(new URL(req.url, 'http://local').pathname));
     if (!file.startsWith(publicDir + path.sep)) { res.writeHead(403).end(); return; }
@@ -113,6 +116,12 @@ async function main() {
   const weekComparisonLoaded = ws.waitEvent('Page.loadEventFired');
   await ws.call('Page.navigate', { url: origin + '/weeks/comparison.html' }); await weekComparisonLoaded;
   console.log(`PASS ordinary week comparison: ${JSON.stringify(await ws.evaluate(`(${weekCheck})()`))}`);
+  for (const [label, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
+    await ws.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+    const radarLoaded = ws.waitEvent('Page.loadEventFired');
+    await ws.call('Page.navigate', { url: origin + '/radar/radar.html' }); await radarLoaded;
+    console.log(`PASS ${label} radar filter: ${JSON.stringify(await ws.evaluate(`(${radarCheck})()`))}`);
+  }
   for (const [label, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
     await ws.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
     for (const [name, file] of [['overview', '/site/index.html'], ['detail', '/site/detail.html'], ['protocol', '/protocols/plenarprotokoll-21-1.html#speech-4-ID0']]) {

@@ -434,6 +434,12 @@ class AttentionRankingTests(unittest.TestCase):
         css = self._page_css(self._render([self._item(1, 1)]))
         self.assertIn('.vote-abweichler-list li + li::before { content:"; "; }', css)
 
+    # Value: protects=the opened "Worum es geht" text replaces its teaser without :has(), so a browser lacking it never shows the text twice; fails_when=the teaser rule goes back to :has(); why_new=B4 review item 18; seam=none
+    def test_teaser_hides_on_open_without_has(self) -> None:
+        css = self._page_css(self._render([self._item(1, 1)]))
+        self.assertIn(".vote-context-more[open] > summary .vote-context-teaser { display:none; }", css)
+        self.assertNotIn(":has(", css)
+
     def test_runtime_is_guarded_on_pages_without_a_toggle(self) -> None:
         # The script ships on every dossier, including the empty states that
         # render no #attention-list and no toggle; it must return before it

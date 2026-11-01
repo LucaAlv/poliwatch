@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import contextlib
 import copy
 import io
 import json
 import os
 import sqlite3
+import sys
 import tempfile
 import time
 import unittest
@@ -1057,6 +1059,29 @@ def fixture_report() -> dict[str, Any]:
     return json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
 
 
+def write_radar_browser_fixture(output: Path) -> None:
+    """A week page whose radar has three rows (Verkehr, Gesundheit, Verkehr) for tests/radar_browser_check.js."""
+    report = fixture_report()
+    report["protocol"]["datum"] = "2024-05-15"
+    items = []
+    for number in (1, 2, 3):
+        top = copy.deepcopy(report["agenda_items"][0])
+        top["index"] = number
+        top["top_id"] = f"TOP {number}"
+        top["heading"] = f"TOP {number} Beratung Testgesetz {number}"
+        top["api"]["positions"] = [position(f"v{number}", "Gesetzgebung")]
+        for speech_number, speech in enumerate(top["xml_speakers"]):
+            speech["rede_id"] = f"r{number}-{speech_number}"
+        items.append(top)
+    report["agenda_items"] = items
+    cache = cache_of({"v1": vorgang("Verkehr"), "v2": vorgang("Gesundheit"), "v3": vorgang("Verkehr")})
+    entry = {"report": report, "page_path": Path("plenarprotokoll-20-999.html"), "report_path": Path("x.json"), "slug": "x"}
+    output.mkdir(parents=True, exist_ok=True)
+    with contextlib.redirect_stderr(io.StringIO()):
+        markup = build.render_front_page([entry], today=date(2024, 5, 20), vorgang_cache=cache)
+    (output / "radar.html").write_text(markup, encoding="utf-8")
+
+
 class PersistTests(unittest.TestCase):
     def persisted(self, cache: dict[str, Any] | None):
         tmp = tempfile.TemporaryDirectory()
@@ -1279,8 +1304,11 @@ class RepersistGuardTests(unittest.TestCase):
                     pulse_store.persist_politikfelder(conn, entry["report"], {}, cache)
                 self.assertEqual(conn.execute("SELECT source FROM vote_politikfelder WHERE vote_id='v1'").fetchone()[0],
                                  "not_fetched" if final_missing else "drucksache")
-                # Also exercise overwrite order within a single report.
-                late["sitting_votes"] = early["sitting_votes"] + late["sitting_votes"]
+                # Within one report ids equal after cleaning are one vote (derive.vote_identity
+                # cleans as persist does), so the first copy decides, here the plain "v1".
+                # The original order (" v1 " first, last copy decides) cannot hold any more: it
+                # is the behaviour change, pinned in test_derive and test_persist_dip_pulse_store.
+                late["sitting_votes"] = late["sitting_votes"] + early["sitting_votes"]
                 if final_missing:
                     with self.assertRaises(build.DatabaseRebuildError):
                         build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, [{"report": late}])
@@ -1465,6 +1493,23 @@ class RenderTests(unittest.TestCase):
         self.assertIn("data-politikfelder='[&quot;Verkehr&quot;]'", markup)
         self.assertIn('<ul class="radar-list">', markup)
 
+    def test_the_browser_fixture_has_three_tagged_radar_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            write_radar_browser_fixture(Path(tmp))
+            markup = (Path(tmp) / "radar.html").read_text(encoding="utf-8")
+        self.assertEqual(markup.count('<li class="radar-row"'), 3)
+        self.assertEqual(markup.count("data-radar-chip="), 2)
+        # The browser check addresses the chips by name; keep both sides in step.
+        check = (Path(__file__).resolve().parent.parent / "tests/radar_browser_check.js").read_text(encoding="utf-8")
+        for name in ("Verkehr", "Gesundheit"):
+            self.assertIn(f"chip('{name}')", check)
+            self.assertIn(f'data-radar-chip="{name}"', markup)
+
 
 if __name__ == "__main__":
-    unittest.main()
+    if "--browser-fixture" in sys.argv:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--browser-fixture", type=Path, required=True)
+        write_radar_browser_fixture(parser.parse_args().browser_fixture)
+    else:
+        unittest.main()

@@ -745,7 +745,7 @@
         "profile_url": {
           "meaning": "Personenprofil-URL: bevorzugt abgeordnetenwatch, bei Abstimmungsmitgliedern ersatzweise eine gültige Bundestagsbiografie.",
           "unit": "URL als Text.",
-          "source": "Gemischte Herkunft: abgeordnetenwatch-Profil/API oder profilbezogener Link der Bundestags-Abstimmungsliste; derive.member_profile_url wählt die URL, das Personenregister kann sie bei Konflikten entfernen.",
+          "source": "Gemischte Herkunft: abgeordnetenwatch-Profil/API oder profilbezogener Link der Bundestags-Abstimmungsliste; derive.member_profile_url wählt die URL (das abgeordnetenwatch-Profil nur bei einem Treffer über die Redner-ID, Treffer-Art ext_id; sonst der eigene Link der Abstimmungsliste), das Personenregister kann sie bei Konflikten entfernen.",
           "license": "abgeordnetenwatch-mit-bundestag-fallback"
         },
         "party_id": {
@@ -832,7 +832,7 @@
           "license": "eigene-metadaten"
         },
         "name": {
-          "meaning": "Anzeigename des parlamentarischen Zusammenschlusses.",
+          "meaning": "Anzeigename des parlamentarischen Zusammenschlusses. Die Zeile „Unbekannt“ ist kein Zusammenschluss der Quellen, sondern der Platzhalter des Projekts für ein abstimmendes Mitglied, dessen Abstimmungsliste keinen erkennbaren Zusammenschluss nennt.",
           "unit": "Zusammenschlussname als Text; enthält vereinzelt Parserfehler aus dem Protokoll, etwa 'Bremen' oder einen Zwischenrufsatz.",
           "source": "Projektseitig normalisierter Zusammenschlussname aus DIP-Roster-/Protokollschreibweisen.",
           "license": "dip"
