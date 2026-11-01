@@ -1,5 +1,11 @@
 # Contributing
 
+## Fehler melden und Regeln
+
+Fehler und Datenfehler werden als Issue gemeldet, über eines der [beiden Formulare](https://github.com/LucaAlv/poliwatch/issues/new/choose); dafür ist ein kostenloses GitHub-Konto nötig. Für Beiträge gelten die [Regeln für Beiträge](CODE_OF_CONDUCT.md). Sicherheitslücken gehören nicht in ein öffentliches Issue: siehe [SECURITY.md](SECURITY.md).
+
+## Development
+
 Before your first fetch, check `.env.local`: the empty `DIP_API_KEY=` copied from `.env.example` overrides an exported key and makes the preview stop. Fill it in or remove the empty line. See [First-time setup (§2)](README.md#2-first-time-setup).
 
 Run these from the repository root:
@@ -13,7 +19,7 @@ Runs the fixture-based test suite without network access. See [First-time setup 
 The browser checks require Node 22 or newer and Chrome or Chromium; CI uses
 Node 24. They generate local fixtures and run in a temporary headless browser
 profile, checking repeated speech-link keyboard activation, recipe copy,
-responsive week-comparison layouts, the week radar filter, and bill-search matching and URL/history:
+responsive week-comparison layouts, the week radar filter, the votes archive filter, the "Nächste Sitzungswoche" line of `puls.html` for several reader dates, and bill-search matching and URL/history:
 
 ```bash
 node tests/run_bills_browser_check.mjs python3.13

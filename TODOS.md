@@ -429,18 +429,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Effort:** S
 **Priority:** P3
 **Depends on:** `worktree-a3-plan` merged (it rewrites r2)
-### "Nächste Sitzungswoche" in the puls.html header
-
-**What:** Show the next planned sitting week from the Bundestag Sitzungskalender when the page is opened during a non-sitting week.
-
-**Why:** The Bundestag sits about 21 weeks a year; most visits land in a non-sitting week and today the page can only say how old the last week is ("vor 13 Wochen · Auswertung vom …").
-
-**Context:** Needs a fetch of the Sitzungskalender and a cache field; the offline rebuild must keep working without it. Header wording and placement are specified in the week-radar design doc (stale-archive state). Start: `scripts/build_dip_pulse_site.py` fetch step + `render_front_page` header.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
-
 ### LLM five-word topic label per Tagesordnungspunkt
 
 **What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier "Meiste Reden" row title, replacing the deterministic boilerplate-stripped fallback now used there.
@@ -465,16 +453,20 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Week radar as data: `data/week-radar.json` and an RSS feed
+### Puls outward (batch 7): deferred review findings
 
-**What:** Emit the radar rows (titles, shares, Fraktion split, trace, links) as JSON and as an RSS item per sitting week.
+**What:** The /gstack-review of `fix/todo-batch-7-puls-outward` and the v0.28.0.0 /ship (2026-11-01) left these:
+1. Verify `data/sitzungskalender.json` against the first real bundestag.de fetch. The fixtures are hand-written. The parser accepts only `DTSTART;VALUE=DATE`, an exclusive `DTEND` and "Sitzungswoche" in SUMMARY, so a datetime or TZID start rejects the whole file and the old cache stays. Expect about 22 weeks for 2026, Monday to Friday, and no `warning: [sitzungskalender]` line. Record the real event shape in the module docstring. With it, decide: a SUMMARY like "Keine Sitzungswoche" or `STATUS:CANCELLED` still counts as planned; the same week listed twice (or split into two events) is counted twice in the gap sentence and in `MIN_WEEKS_PER_YEAR`, so collapse weeks per ISO week; a parse with 10–15 weeks silently replaces a cached 22-week year, so refuse one that loses cached future weeks; a week spanning New Year rejects its whole year; two files for one year do not merge.
+2. A failed calendar fetch never advances `fetched_at`, so while bundestag.de is down or blocking, every online persisting build retries, at up to about 15 minutes each (5 fetches, 60 s timeout, 2 retries). Record the last attempt and add a total time budget. A `fetched_at` in the future (clock jump) makes the cache never due; treat a negative age as due.
+3. `week_radar_feed._cut` and `render_rss` keep XML-1.0-illegal control characters such as `\x01`, which make the RSS ill-formed. Strip `[\x00-\x08\x0b\x0c\x0e-\x1f]`. `valid_site_url` also accepts a URL with a user name and password before the host, and a netloc with spaces, which would then be published in the feed; reject both, as `publication_state.validate_external_url` does.
+4. An RSS item is published (fixed GUID, fixed pubDate) for any finished week, even when DIP's Plenarprotokoll lag or an incomplete backfill leaves the week with only some sittings; feed readers never re-fetch an item under an unchanged GUID. Hold the item until the week is complete, or add a completeness field. Decide before `BUNDESTAG_PULSE_SITE_URL` is set for a public site.
+5. The gap sentence ("… sind hier noch nicht ausgewertet") is false on a pinned `--week`/`--today` build whose archive does hold later weeks; count only planned weeks with no sitting in the archive, or drop the clause when the week is pinned.
+6. Smaller: the calendar index page and `.ics` files are read without a size cap, and the index goes through stdlib `html.parser` (quadratic on hostile markup before the 2025 patch releases); `urlopen` follows a redirect from bundestag.de to any host, and the host check ignores the port; the cache and feed temp files are a fixed name in the published `data/` and `feeds/`, with no lock; `refresh_if_due` and `render_site` both load a damaged cache, so it warns twice; `CHANNEL_TITLE` repeats the puls.html `<title>` literal (its comment says it is the one place to change); the feed calls `render_dip_pulse_html._entry_protocol` (private); `_is_due` uses bare literals for October and the daily retry; `build_payload(weeks_back=)` and `refresh_if_due(max_age_days=)` are parameters no caller sets; the RSS range parses `datum` without `[:10]` where week grouping uses it.
 
-**Why:** The week's five topics reach readers without a visit; `week_topic_rows()` is already the data product, so this is a second renderer over the same rows.
-
-**Context:** Add to `render_site()` next to the existing `data/` outputs; keep the offline rebuild path. Feed item = one sitting week; GUID = ISO week key.
+**Why:** (1) is the one unverified input format. The rest fail soft, need an operator mistake, or have no current input (RSS is written only with `BUNDESTAG_PULSE_SITE_URL`, which nothing sets yet).
 
 **Effort:** M
-**Priority:** P3
+**Priority:** P2 ((1) on the first online build, (4) before a public feed)
 **Depends on:** None
 
 ## Fakten
@@ -695,24 +687,45 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 ## Community
 
-### Contribution governance: SECURITY.md, conduct rules, issue forms, contact channels
+### Contribution governance: the half that needs the domain
 
-**What:** Implement ADR 0003 D5:
-- `SECURITY.md` with a scope section, and GitHub private vulnerability reporting switched on.
+**What:** The parts of ADR 0003 D5 that need no domain shipped in v0.28.0.0 (2026-11-01): `SECURITY.md`, `CODE_OF_CONDUCT.md` (linked from `CONTRIBUTING.md`), the „Datenfehler" and „Fehler auf der Seite" issue forms with triage labels, `config.yml` with `blank_issues_enabled: false` and a security contact link, and the documented `issues_url` that pre-fills the page in the Datenfehler form. Left:
+- Switch on GitHub private vulnerability reporting when the repository goes public (SECURITY.md already points to it and says it is not public yet).
 - `/.well-known/security.txt` on the site.
-- Short German conduct rules (no party politics in issues, no disparaging statements about people), linked from `CONTRIBUTING.md`.
-- `.github/ISSUE_TEMPLATE/` with the „Datenfehler" and „Fehler auf der Seite" forms, auto-applying triage labels, and `config.yml` with `blank_issues_enabled: false` and a contact link to the Impressum e-mail for private matters.
-- The site's `issues_url` link pre-fills the page URL in the Datenfehler form.
+- A `config.yml` contact link to the Impressum e-mail for private matters (GDPR, corrections from the people concerned, press).
 
-Done when a new issue can only be opened through one of the two forms and `security.txt` is served by the preview.
+Done when `security.txt` is served by the preview and the private-matters contact link is in the chooser.
 
-**Why:** Data-error reports are the most valuable contribution and need structure. Private requests (GDPR, corrections from the people concerned, press) need a non-public channel. On a political site, the conduct risk is party-political debate, which a generic code of conduct does not address.
+**Why:** Private requests need a non-public channel; vulnerability reports need the GitHub channel SECURITY.md names.
 
-**Context:** Decided 2026-09-29 ([ADR 0003](docs/adr/0003-licences-and-impressum.md), D5). E-mail is answered at the owner's discretion and only for matters that cannot be public. `security.txt` needs the final domain and the dedicated e-mail address, both also needed by the Impressum item.
+**Context:** Decided 2026-09-29 ([ADR 0003](docs/adr/0003-licences-and-impressum.md), D5, amended 2026-11-01). `security.txt` and the contact link need the final domain and the dedicated e-mail address, both also needed by the Impressum item.
 
 **Effort:** S
 **Priority:** P3
 **Depends on:** Domain and contact address (Impressum item)
+
+### Contribution governance (batch 8): deferred review findings
+
+**What:** The /gstack-review of `fix/todo-batch-8-governance` (2026-11-01) found three things. (1) The page shows the release notation `Release 2026.10.31`, but the Datenfehler `datenstand` placeholder is `data-2026.10.31`, the tag name. SECURITY.md's `data-<YYYY.MM.DD>` also omits the `.N` same-day suffix. Pick one notation. (2) `tests/test_issue_forms.py` checks only ids, labels, quoting and URL drift. Negative controls passed with these breaks: a missing field `label`, `type: textfield`, `body:` renamed, a label typo, broken `config.yml` indentation, a duplicate field label, and a plain scalar ending in `:` (which Psych rejects). Add dependency-free checks for each. (3) `ID_LINE = re.compile(r"^\s*id:\s*(\S+)\s*$", re.MULTILINE)` also matches an `id:` line inside a markdown block. Scope it to field indentation. (4) From the v0.28.0.0 /ship red team: the Daten footer link always reads „Datenfehler melden (GitHub)", but `--data-issues-url` also accepts `mailto:` and a site-relative path; show „(GitHub)" only for a github.com URL, or accept only the form URL.
+
+**Why:** These are wording and test hygiene. Real schema validity stays an owner check on GitHub (below).
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
+### Owner checks after the v0.28.0.0 merge
+
+**What:** Checks that need main or the real store, accepted as pending at the v0.28.0.0 /ship (2026-11-01):
+1. GitHub (needs main): the chooser at `/issues/new/choose` lists Datenfehler first, then „Fehler auf der Seite", plus the security link, and blank issues are off; both forms render with no template error; SECURITY.md shows on the Security tab; a Daten page built with the documented `--data-issues-url` opens the Datenfehler form with `seite` filled and the labels applied (repository private: owner only). The three labels exist (checked with `gh label list`).
+2. Real store (with A3's owed rebuild): batch 5's replay on main vs. the branch (equal `_content_digests`, mode, gid and lock path, no staged leftovers; with `--force-export` identical file hashes except table CSV modes 0600→0644); batch 6's panel hashes on `a3/full` and `b4-local` (expect 0 of 556 and 0 of 217 to change); batch 7's `--offline` build before and after with the same `--today` (differences only in `feeds/`, the cache file and the puls.html line plus script), and one online persisting build logging a single `[sitzungskalender]` line with about 22 weeks for 2026.
+3. A look at the ▸/▾ vote-context toggles in Safari and VoiceOver.
+
+**Why:** The v0.28.0.0 /ship could run only the demo build (puls.html byte-identical to main without the cache), the abstract replay (0 of 8,737 change) and the browser checks (25/25); every batch measurement predates A3.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** v0.28.0.0 merged; A3's post-merge store rebuild
 
 ## Plenarwatch-Lücken
 
@@ -1064,7 +1077,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 ### B4 review findings: lower-priority edges
 
 **What:** Edges the B4 `/ship` adversarial passes found (2026-10-22, Codex and a Claude subagent) and left open; the four that could lose stored data or stop a build were fixed on the B4 branch the same day:
-1. No per-vote cap on "Worum es geht" blocks.
+1. ~~No per-vote cap on "Worum es geht" blocks.~~ Done in v0.28.0.0 (2026-11-01): the panel shows 3 Vorgang blocks and folds the rest behind "N weitere Vorgänge anzeigen" when 2 or more would be hidden; the not-fetched note stays outside the fold. 0 of 556 panels change (none has more than 3 Vorgänge).
 2. ~~`abstract_text` output can differ across Python patch levels (it feeds the content-hashed export).~~ Done 2026-10-31: `abstract_text` no longer uses html.parser. `dip_text` scans markup by its own rule (`_tag_ends`, `_markup_end`), so the 2025 parser changes (end-of-input tags, comment closers, script and CDATA handling) cannot reach it. The 3,922 cached abstracts read alike on 3.11.15, 3.13.2 and 3.13.12 before and after (0 differ between interpreters; 0 of 3,922 changed by the rewrite). The full suite passes on 3.11.15, 3.13.2, 3.13.12 and 3.15.1. Only malformed markup reads differently from before: abstracts the old fallback read as one paragraph now keep their paragraphs, and an unclosed `<!--` with a later `>` ends there.
 3. CSV formula injection now reaches free-text DIP columns (`proceedings.abstract`, titles). **Decision pending, recommendation 2026-10-31 (code unchanged):** keep cell values verbatim (SQLite and CSV stay byte-faithful to DIP, DATA.md's „unverändert“ stays true); the risk is a spreadsheet double-click evaluating a cell that starts with `=`, `+`, `-` or `@`, and the source is the official DIP, not user input. Reference store (`~/agent-runs/a3/full`): 45 text cells start with one of those characters, all DIP titles beginning „- “ (e.g. „- Sammelübersicht 730 des Petitionsausschusses…“, 15 values in `proceedings.title`, `proceeding_positions.title`, `documents.title`), 0 in `proceedings.abstract`. DATA.md now warns about this in plain words. Alternative if the owner wants safety over fidelity: prefix such cells with `'` only in the CSVs and say so in DATA.md and the manifest; that alters 45 cells and breaks CSV-to-SQLite equality for them. Recipe CSVs follow whichever choice is made.
 4. ~~The teaser can cut after "(Abs.".~~ Done 2026-10-30: an opening bracket or quote is stripped off the token before the abbreviation test. 10 of 3,922 cached abstracts had a teaser ending in "(sog."; they now end at a word with " …" or at an earlier sentence end. For example, "Umsetzung der Erneuerbare-Energie-Richtlinie (sog." became "Umsetzung der Erneuerbare-Energie-Richtlinie (sog. RED III) zur Verkürzung … für Windenergieanlagen an Land …". Render-only, no stored value moves.
@@ -1089,8 +1102,8 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 19. ~~The trim reads tags by hand to guess where html.parser ends them, and three review rounds each found a shape it reads differently. Two empty a whole over-limit abstract where main keeps it: an end tag, `<?…?>` or `<!…>` holding `="` before the cut with a quote after it (`'Anfang </p class="x> ' + 'wort ' * 3000 + 'ende "> z'`: 6 characters, main 9,987), and a quote after "=" inside an unquoted value (`'<b data=x=">Anfang ' + 'wort ' * 2500 + '">'`: 0, main 9,988). A trailing `&` plus letters is dropped as a partial reference even when it is none (`GmbH&C|o.` at the cut keeps `GmbH`). The scan reads the whole raw abstract, not 10,000 characters (about 2 s and 16 MB at 2 million). The comment rule copies Python 3.13.2's html.parser (`<!-->` and `--!>` close a comment in later patch levels; see item 2). Candidate fixes: bound it (look 2,000 characters past the cut, drop only a tag that starts within 2,000 before it, check `&x` against real entity names), or revert to main's plain cut and accept the visible fragment. `_strip_tags`, the malformed-markup fallback, shares the quote rule and loses words on the end-tag/PI shapes too ("Anfang Ende"), on main as well.~~ Done 2026-10-31 with item 2: one scanner (`dip_text._tag_ends`, a right-to-left pass, linear) decides where every tag, end tag, `<?…>`, `<!…>` and comment ends, for the cut and for the text alike; a quote opens an attribute value only after "=" and spaces, an end tag, `<?…>` and `<!…>` end at their first ">", a comment at its first "-->". The cut reads only the first 10,000 + 2,000 characters (2 million characters: about 0.4 s before, a few ms now); a tag that starts before the cut and ends after it, or has no end in the window and starts within 2,000 before it, is dropped. A trailing "&" and letters is dropped only when it reads whole as a different character reference (`GmbH&Co.` keeps `GmbH&C`). Both listed reproducers now keep the abstract (6 and 0 characters before; the text after the tag, cut at 10,000, now). One regression test per reproducer. 0 of 3,922 cached texts move. Left, no reference abstract reaches it: a tag that begins more than 2,000 characters before the cut and ends beyond the window shows as text. Malformed markup also reads differently in spacing, found in review: an unclosed `<script>`/`<style>` no longer adds a space (`a<script>x` was `a x`, now `ax`), a `<![` declaration now inserts one, and a self-closing `<script/>` is special-cased; no cached abstract has any of them (0 of 3,922 move).
 20. Judgement calls left from the review of item 19's scanner (`dip_text.py`), not defects: the tag `kind` is a bare string ("tag"/"end"/"comment"/"other"/"block"), so an enum or NamedTuple would catch a typo; `(text, cut, truncated)` travel together and `truncated` is derivable from them; `_tag_ends` and the `end = len(text) + 1` sentinel in `_paragraphs` want clearer names. **Priority:** P4, **Effort:** S.
 21. Found by the review of the 2026-10-31 vote-panel batch (items 5, 8, 10, 17, 18), deferred (P3/P4, S): (a) when the aw profile is not trusted, `derive.member_profile_url` still links the member's own `profile_url`, and `person_profile_url` accepts an abgeordnetenwatch host there too, so a name-guessed aw URL could arrive through that field; unlikely from the Bundestag source (0 of 173,407 reference rows carry an aw URL in either field). (b) `derive._clean` and `persist_dip_pulse_store.clean` repeat the same whitespace body (one returns "", the other None); one should call the other. (c) "First copy wins" (item 5) changes which of two ids equal after cleaning the store keeps within one report (before: the last, via INSERT OR REPLACE); 0 reference cases, all 246 ids numeric and unique per report.
-22. Found by the v0.26.1.0 /ship review cycles (2026-11-01), deferred because no cached abstract reaches them (longest 5,111 characters, 0 of 3,922 differ from main). The scanner (`dip_text.py`) still differs from html.parser (Python 3.13.12) on malformed or truncated markup: (a) P2: a `<script>` or `<style>` that starts shortly before the 10,000-character cut and closes beyond the 12,000-character window looks unclosed, so its body stays as text (`"x"*9990 + "<script>" + "y"*2500 + "</script>tail"` keeps the `y`s; html.parser on main drops them). Fix: when truncated, drop to the cut from a skipped tag with no close in the window, or search the close tag in the whole raw text. (b) `_tag_ends` treats an attribute that starts with "=" as the "=" sign, so a following quote swallows text (`A <script ="> z </script> B` shows the tag and `z`; html.parser reads `="` as an attribute name). (c) A quote after "= " with no closing quote makes the tag run to the end in `_tag_ends` and `_self_closing`, where html.parser backtracks to an empty value (`A <b a= "x> B </b> C`). (d) The docstrings of `_markup_end` and `abstract_text` do not say that an unclosed comment ends at its first ">". P2 for (a), P3 for the rest, S.
-23. Found by the same review cycles, deferred (P3/P4, S): (a) `validate_dip_protocol.py` (lines ~1616, 1781, 2421) still keys votes on the raw `str(vote["id"])` while derive, persist and the anchors clean it (`derive.vote_identity`); latent while ids are numeric. (b) `.vote-context .vote-context-more > summary { display:block }` removes the disclosure triangle; the blue "Ganze Beschreibung" toggle still marks it. (c) Test hygiene: `test_a_huge_abstract_is_read_in_bounded_time` asserts a 0.5 s wall-clock bound (assert a bounded scan length instead); `test_teaser_hides_on_open_without_has` asserts the whole page CSS has no `:has(` (scope it to the vote-context rules); `tests/test_politikfelder.py` doubles as the radar fixture CLI in its `__main__` (move the writer to a helper both runners import).
+22. Found by the v0.26.1.0 /ship review cycles (2026-11-01), deferred because no cached abstract reaches them (longest 5,111 characters, 0 of 3,922 differ from main). The scanner (`dip_text.py`) still differs from html.parser (Python 3.13.12) on malformed or truncated markup: (a) P2: a `<script>` or `<style>` that starts shortly before the 10,000-character cut and closes beyond the 12,000-character window looks unclosed, so its body stays as text (`"x"*9990 + "<script>" + "y"*2500 + "</script>tail"` keeps the `y`s; html.parser on main drops them). Fix: when truncated, drop to the cut from a skipped tag with no close in the window, or search the close tag in the whole raw text. (b) `_tag_ends` treats an attribute that starts with "=" as the "=" sign, so a following quote swallows text (`A <script ="> z </script> B` shows the tag and `z`; html.parser reads `="` as an attribute name). (c) A quote after "= " with no closing quote makes the tag run to the end in `_tag_ends` and `_self_closing`, where html.parser backtracks to an empty value (`A <b a= "x> B </b> C`). (d) The docstrings of `_markup_end` and `abstract_text` do not say that an unclosed comment ends at its first ">". P2 for (a), P3 for the rest, S. (a) and (d) are done in v0.28.0.0 (2026-11-01): the close tag of a script/style skipped before the cut is searched in the raw text past the window (memoised per tag name, linear), and the docstrings say an unclosed comment ends at its first ">"; 0 of 8,737 cached abstracts change. (b) and (c) stay open.
+23. Found by the same review cycles, deferred (P3/P4, S): (a) `validate_dip_protocol.py` (lines ~1616, 1781, 2421) still keys votes on the raw `str(vote["id"])` while derive, persist and the anchors clean it (`derive.vote_identity`); latent while ids are numeric. (b) ~~`.vote-context .vote-context-more > summary { display:block }` removes the disclosure triangle; the blue "Ganze Beschreibung" toggle still marks it.~~ Done in v0.28.0.0 (2026-11-01): the three vote-context toggles carry a ▸/▾ marker with empty alt text. (c) Test hygiene: `test_a_huge_abstract_is_read_in_bounded_time` asserts a 0.5 s wall-clock bound (assert a bounded scan length instead); `test_teaser_hides_on_open_without_has` asserts the whole page CSS has no `:has(` (scope it to the vote-context rules); `tests/test_politikfelder.py` doubles as the radar fixture CLI in its `__main__` (move the writer to a helper both runners import).
 
 **Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export. 11 is the one item that can make a public statement false.
 
@@ -1108,6 +1121,16 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Effort:** S
 **Priority:** P3
 **Depends on:** `worktree-a3-plan` merged (it rewrites the backfill block of `main()`)
+### Vote panel tail (batch 6): deferred review findings
+
+**What:** The /gstack-review of `fix/todo-batch-6-vote-panel-tail` (2026-11-01) found three things. (1) `test_a_huge_abstract_is_read_in_bounded_time` keeps a 0.5 s wall-clock bound, `self.assertLess(time.perf_counter() - started, 0.5)`, and now covers two 1.8M-character script-close inputs as well. Add a `gstack-timing-ok` reason or bound the operation count. (2) The `@media print` block does not open `details.vote-context-overflow`, or the abstract fold, so folded Vorgänge are missing on paper. (3) A folded block with a record but no abstract and no Antrag text keeps its `CONTEXT_TEXT_NOT_FETCHED` note inside the fold. The DD3 trailing note covers only a missing record. From the v0.28.0.0 /ship (2026-11-01): (4) `render_vote_context`'s docstring does not mention the fold or where the gap note sits; (5) `test_context_toggles_show_their_state_and_folded_blocks_stay_separated` asserts exact CSS strings, so a reformat breaks it; a browser check of the computed `::before` content and the 44 px target would prove the behaviour.
+
+**Why:** (2) and (3) need 5 or more Vorgänge per vote; the maximum today is 3. (1) could flake on a slow CI runner.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
 ### Politikfelder: findings deferred from the B3 review
 
 **What:** Nine findings of the /ship review (2026-10-09) that B3 does not fix:
@@ -1115,7 +1138,7 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 2. A non-empty Sachgebiet or resolved number is never refreshed, so a changed DIP label never reaches the tags. Use `aktualisiert` (already cached) to refetch Vorgänge DIP has updated.
 3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Since B4 the same holds for the vote panels' DIP abstracts and their Vorgang selection (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). Put a cache digest into `datenstand`, or render from the store; one fix covers all three.
 4. The cache sits in the published `data/` directory and holds DIP `abstract` and `titel` text, which the vote panels now show (B4), so dropping it is no longer an option. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so, hosting must exclude `data/dip-vorgang-cache.json` or the cache moves out of `data/`.
-5. The week radar's inline filter script is now checked by `tests/radar_browser_check.js` (run by `node tests/run_bills_browser_check.mjs`, 2026-10-31). Still open: the inline filter script on `votes/index.html` is checked only by a headless-Chromium probe run by hand (2026-10-09); add a browser check for it the same way.
+5. The week radar's inline filter script is now checked by `tests/radar_browser_check.js` (run by `node tests/run_bills_browser_check.mjs`, 2026-10-31). ~~Still open: the inline filter script on `votes/index.html` is checked only by a headless-Chromium probe run by hand (2026-10-09); add a browser check for it the same way.~~ Done in v0.28.0.0 (2026-11-01): `tests/votes_archive_browser_check.js` checks the filter and the `?politikfeld` preload on desktop and mobile, run by `node tests/run_bills_browser_check.mjs`.
 6. A Vorgang DIP does not return, or a number it resolves to nothing, is stored as "fetched, nothing known" and counted as fetched, so an offline repersist stores `untagged`, not `not_fetched`, until the next online build. Empty Sachgebiet records (4,086 of 7,511 cached Vorgänge, most pulled in by numbers with a huge fan-out) and empty lookups are asked again on every online build, about 40 batches and a pause each; bound that with `aktualisiert` or a fetched-at date.
 7. A Sachgebiet label the mapping does not know is skipped at tag time, so tagging can fall through to a weaker source; the build summary names the label afterwards. Consider a `not_fetched`-like source for an unmapped label.
 8. A TOP that names many specific Drucksachen (a bundled Beratung) is tagged with the three most frequent of up to eight fields, in first-seen order on ties: the plan's cap of 3, not a measure of what the TOP is about (65 of 207 TOPs tagged through their Drucksachen carry more than 3 fields). Decide whether a TOP over some breadth should stay untagged.
@@ -1160,7 +1183,7 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 
 ### A.2 follow-up ship review: deferred findings
 
-**What:** Findings of the v0.19.0.0 ship review (2026-10-18) deferred by decision, P1 first: (1) **done** (lane/correctness): `run_facts_engine` now applies `pulse_store.require_build_store` (the distribution-copy guard `connect` uses) before computing or staging, so an exported SQLite given as `--database-path` is refused and left byte-identical; the /ship QA of that branch (2026-10-31, probes 004/005) found the rebuild replacing such a file (user_version 1 became 0, new inode), so `_rebuild_database_from_entries` now applies the same guard before staging. Still open from that review: the read-only paths that open `--database-path` as the build store (online pre-check, mp-pages read, post-rebuild read, export source check in `build_dip_pulse_site.py`) call only `require_current_schema`, so a distribution copy is read as the build store instead of refused up front (no write, no figure known to move). Open: (2) `_replace_store` keeps the file mode but not the group, so a group-shared web root can lose read access after a rebuild or facts write (staging moved out of `data/`, whose group the old temp file inherited); (3) the staging sweep `glob(f"{name}.*.tmp*")` also matches a prefix-named sibling store's temp files and a lock of a store literally named `<name>.x.tmp`; restrict it to this store's mkstemp names; (4) `private_dir` treats any store whose directory is named `data` as `OUTPUT/data`, so an explicit `--database-path ~/stores/data/x.sqlite` stages in `~/.stores.private` and `/data/x.sqlite` in `/..private`; derive it from the real OUTPUT or fall back to the store's own directory; (5) the private directory needs a writable OUTPUT parent on the same file system, so OUTPUT as a mount point (container bind mount, CI volume) or under a read-only parent fails every rebuild, facts write and export; add an override or a fallback; (6) the private directory and its `exports/` are not checked for symlink or foreign owner before the sweep deletes their contents (shared `/tmp`); (7) the Daten export reads the store by path (schema check, stat, hash, backup) without the writer lock, so a concurrent rebuild can mislabel `datenstand.json` until the next export; (8) a forced same-name re-export killed between `published.replace(aside)` and `gen_dir.replace(published)` loses the published generation, and the next sweep deletes the set-aside copy; restore `replaced` on sweep; (9) `require_applied_partitions` catches a partition removed from the corrections file but not one added after the build (offline pages apply it, the registry does not); (10) a store from before DIP-id canonicalization holding `dip:07` splits that person on replay (new `dip:7` record, two pages; the real store has no such id); (11) `REPRESENTATIVE_SQL` orders `is_mdb DESC, xml_redner_id IS NULL, identity_key` but `collect_abgeordnete` orders `is_mdb` rows by `identity_key` only, so r1/r3 and the Personenseite can name a person with two MdB rows differently (0 such persons in the real store); (12) persist skips XML Drucksachen off the bundestag-xml host without a count or warning (all 4,699 real ones pass); (13) smaller: `_write_new_file` unlinks then creates, so a person page is briefly missing; an href-less date-like "21/09" folds into Drucksache 21/9; `document_issuer` falls back to BT without herausgeber or URL; a legacy `-journal` sidecar beside the store is not removed before the swap; `canonical_dip_person_id` raises on a >4,300-digit id; a local `document_id` in persist shadows the imported `stable_ids.document_id`; `tests/test_facts.py` computes two goldens with `facts._id_sort_key` (accepted, D25A).
+**What:** Findings of the v0.19.0.0 ship review (2026-10-18) deferred by decision, P1 first: (1) **done** (lane/correctness): `run_facts_engine` now applies `pulse_store.require_build_store` (the distribution-copy guard `connect` uses) before computing or staging, so an exported SQLite given as `--database-path` is refused and left byte-identical; the /ship QA of that branch (2026-10-31, probes 004/005) found the rebuild replacing such a file (user_version 1 became 0, new inode), so `_rebuild_database_from_entries` now applies the same guard before staging. Still open from that review: the read-only paths that open `--database-path` as the build store (online pre-check, mp-pages read, post-rebuild read, export source check in `build_dip_pulse_site.py`) call only `require_current_schema`, so a distribution copy is read as the build store instead of refused up front (no write, no figure known to move). (2)–(4) and (6) are done (Done in v0.28.0.0 (2026-11-01), TODO batch 5): the staged copy gets the store's group before persisting (a group the builder cannot set stops the write), the sweep matches only this store's mkstemp names, a `data` directory directly under `/` keeps its private directory beside the store, and `person_registry.ensure_private_dir` refuses a symlinked, non-directory or foreign-owned private directory before any write or sweep; (5) now fails with a message naming the requirement (OUTPUT's parent writable and on the store's file system, docs/stable-ids.md), no override yet. Was: (2) `_replace_store` keeps the file mode but not the group, so a group-shared web root can lose read access after a rebuild or facts write (staging moved out of `data/`, whose group the old temp file inherited); (3) the staging sweep `glob(f"{name}.*.tmp*")` also matches a prefix-named sibling store's temp files and a lock of a store literally named `<name>.x.tmp`; restrict it to this store's mkstemp names; (4) `private_dir` treats any store whose directory is named `data` as `OUTPUT/data`, so an explicit `--database-path ~/stores/data/x.sqlite` stages in `~/.stores.private` and `/data/x.sqlite` in `/..private`; derive it from the real OUTPUT or fall back to the store's own directory; (5) the private directory needs a writable OUTPUT parent on the same file system, so OUTPUT as a mount point (container bind mount, CI volume) or under a read-only parent fails every rebuild, facts write and export; add an override or a fallback; (6) the private directory and its `exports/` are not checked for symlink or foreign owner before the sweep deletes their contents (shared `/tmp`); (7) the Daten export reads the store by path (schema check, stat, hash, backup) without the writer lock, so a concurrent rebuild can mislabel `datenstand.json` until the next export; (8) a forced same-name re-export killed between `published.replace(aside)` and `gen_dir.replace(published)` loses the published generation, and the next sweep deletes the set-aside copy; restore `replaced` on sweep; (9) `require_applied_partitions` catches a partition removed from the corrections file but not one added after the build (offline pages apply it, the registry does not); (10) a store from before DIP-id canonicalization holding `dip:07` splits that person on replay (new `dip:7` record, two pages; the real store has no such id); (11) `REPRESENTATIVE_SQL` orders `is_mdb DESC, xml_redner_id IS NULL, identity_key` but `collect_abgeordnete` orders `is_mdb` rows by `identity_key` only, so r1/r3 and the Personenseite can name a person with two MdB rows differently (0 such persons in the real store); (12) persist skips XML Drucksachen off the bundestag-xml host without a count or warning (all 4,699 real ones pass); (13) smaller: `_write_new_file` unlinks then creates, so a person page is briefly missing; an href-less date-like "21/09" folds into Drucksache 21/9; `document_issuer` falls back to BT without herausgeber or URL; a legacy `-journal` sidecar beside the store is not removed before the swap; `canonical_dip_person_id` raises on a >4,300-digit id; a local `document_id` in persist shadows the imported `stable_ids.document_id`; `tests/test_facts.py` computes two goldens with `facts._id_sort_key` (accepted, D25A).
 
 **Why:** (1) can modify a downloaded distribution file; (2)-(6) break deployments other than the default layout; the rest are latent on the reference cache.
 
@@ -1168,6 +1191,26 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 
 **Effort:** M
 **Priority:** P2 (the P1 item (1) is done)
+**Depends on:** None
+
+### Store staging (batch 5): deferred review findings
+
+**What:** The /gstack-review of `fix/todo-batch-5-store-staging` (2026-11-01) found four things. (1) `export_distribution_data` creates `work_dir` with `work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)` (`build_dip_pulse_site.py:~4116`) instead of `person_registry.ensure_private_dir`. Three effects follow. A symlinked private directory still gets an empty `exports/` before the refusal. When an export runs before any writer lock, `.OUTPUT.private` ends at 0755, because `mode` applies only to the leaf and `ensure_private_dir` repairs only `0o022`. A dangling `exports` symlink reports a bare "File exists" instead of the symlink refusal. Fix: create it through `ensure_private_dir`, and have that function repair `0o077`. (2) `_write_csv` runs `os.fchmod(fd, 0o644)` outside the `try` that closes the fd and unlinks the temp file. (3) `import glob` in `build_dip_pulse_site.py` is unused since the sweep rewrite. From the v0.28.0.0 /ship (2026-11-01): (4) the cross-file-system refusal in `_staged_store_path` has no test (needs a `Path.stat` st_dev mock); (5) both group-keeping tests in `tests/test_private_staging.py` skip on a user without a second group (single-group CI), so the chown branch can go unexercised there: add a variant that patches `os.chown` and the store's gid; (6) a pre-existing private directory owned by another user (an earlier `sudo` run) is now a hard refusal where it was reused before; the message names the fix; (7) `politikfelder.write_atomic` falls back to staging beside the target in `data/` when `ensure_private_dir` refuses; (8) `_staged_store_path`'s sweep raises if a directory matches `_is_staged_copy`.
+
+**Why:** These are latent. No figure moves. With a standalone export, only file names in the private directory are readable; the staged copies stay 0600.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### `test_help_documents_argument_order_cohort_default_and_exit_codes` fails in a narrow terminal
+
+**What:** The test looks for `Read-only` in `compare_store_values.py --help`, but argparse wraps the help to `$COLUMNS` and can break the word at its hyphen ("Read- only"). It fails at COLUMNS=66 and passes at 200. Pin the width in the test (`COLUMNS` env or a `HelpFormatter` width) or match without the hyphen.
+
+**Why:** The test has been there since v0.19.0.0 (fe7143f). A local run in a narrow terminal shows a false failure; CI is not a tty, so it passes there.
+
+**Effort:** S
+**Priority:** P4
 **Depends on:** None
 
 ### Split the dataset from the site: the site builds from a release alone
@@ -1355,6 +1398,34 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### "Nächste Sitzungswoche" in the puls.html header
+
+**What:** Show the next planned sitting week from the Bundestag Sitzungskalender when the page is opened during a non-sitting week.
+
+**Why:** The Bundestag sits about 21 weeks a year; most visits land in a non-sitting week and today the page can only say how old the last week is ("vor 13 Wochen · Auswertung vom …").
+
+**Context:** Needs a fetch of the Sitzungskalender and a cache field; the offline rebuild must keep working without it. Header wording and placement are specified in the week-radar design doc (stale-archive state). Start: `scripts/build_dip_pulse_site.py` fetch step + `render_front_page` header.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.28.0.0 (2026-11-01). `scripts/sitzungskalender.py` reads the official `.ics` files linked from the Sitzungskalender page into `data/sitzungskalender.json` (online persisting builds only, fail-soft); puls.html shows "Nächste Sitzungswoche" or "Sitzungswoche läuft" for the reader's date, and is byte-identical without the cache.
+
+### Week radar as data: `data/week-radar.json` and an RSS feed
+
+**What:** Emit the radar rows (titles, shares, Fraktion split, trace, links) as JSON and as an RSS item per sitting week.
+
+**Why:** The week's five topics reach readers without a visit; `week_topic_rows()` is already the data product, so this is a second renderer over the same rows.
+
+**Context:** Add to `render_site()` next to the existing `data/` outputs; keep the offline rebuild path. Feed item = one sitting week; GUID = ISO week key.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.28.0.0 (2026-11-01). `scripts/week_radar_feed.py` writes `feeds/week-radar.json` on every build (12 weeks with a Sitzung) and `feeds/week-radar.xml` (one item per finished week, GUID = ISO week) when `BUNDESTAG_PULSE_SITE_URL` is set. It lives in `feeds/`, not `data/`.
 
 ### v1 coverage: every Sitzung from WP 18 to the present
 

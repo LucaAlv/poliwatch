@@ -31,6 +31,14 @@ from test_facts import StoreCase, week_specs
 STAMP = "2026-09-28T10:00:00Z"
 
 
+def setUpModule() -> None:
+    # The online persisting builds here reach the Sitzungskalender refresh; never
+    # reach bundestag.de from a test.
+    patcher = mock.patch.object(build.sitzungskalender, "refresh_if_due")
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 def catalog_protocol(number: str, protocol_id: str, day: str, *, xml: bool = True) -> dict:
     protocol = {"id": protocol_id, "dokumentnummer": number, "datum": day, "titel": f"Protokoll {number}"}
     if xml:

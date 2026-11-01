@@ -4,6 +4,11 @@ DIP gives an abstract as HTML and a committee as a bare name; this module turns
 them into the text a page shows: plain abstract paragraphs and their teaser, and
 a committee's name in the genitive. It does no I/O and escapes nothing (the
 caller escapes the result).
+
+The abstract scanner (``abstract_text``) aims at the same text on every Python and
+at no hidden content (``<script>`` and ``<style>`` bodies) showing as text. It does
+not aim at html.parser's output on every malformed shape: a difference in spacing
+or in where a broken attribute ends is not chased unless a real abstract hits it.
 """
 
 from __future__ import annotations
@@ -27,7 +32,8 @@ _OPENERS = "([„\"‚'"
 MAX_ABSTRACT_CHARS = 10_000
 #: How far past the cut a tag, comment or character reference is followed to see
 #: where it ends, and how far before the cut a tag with no end in sight still
-#: counts as one the cut splits.
+#: counts as one the cut splits. It does not bound the search for the end tag of a
+#: ``<script>`` or ``<style>``, which looks at the whole abstract (``_paragraphs``).
 CUT_LOOKAHEAD = 2_000
 # A numeric character reference past U+10FFFF names no character; with more than
 # 4,300 digits html.unescape raises instead of reading it as U+FFFD; int() counts
@@ -105,8 +111,9 @@ def _markup_end(text: str, i: int, ends: list[int]) -> tuple[int, str | None, st
     end -1 if it never ends and so stays text. kind is "tag", "end" (end tag),
     "comment" or "other"; name is a tag's lowercased name. A comment ends at its
     first "-->" on every Python (newer releases also end one at "--!>" or "<!-->");
-    an end tag, "<?...>" and "<!...>" at their first ">"; a start tag as
-    ``_tag_ends`` reads it."""
+    a "<!--" with no "-->" is read by the "<!...>" rule: it ends at its first ">",
+    or stays text if there is none. An end tag, "<?...>" and "<!...>" end at their
+    first ">"; a start tag as ``_tag_ends`` reads it."""
     if text.startswith("<!--", i):
         end = text.find("-->", i + 4)
         if end != -1:
@@ -159,14 +166,33 @@ def _self_closing(text: str, i: int, end: int) -> bool:
     return False
 
 
-def _paragraphs(text: str, cut: int, truncated: bool) -> list[list[str]]:
+def _paragraphs(text: str, cut: int, truncated: bool, raw: str = "") -> list[list[str]]:
     """The paragraphs of ``text[:cut]`` as runs of read text. ``text`` is the
     abstract, or when ``truncated`` its first ``cut`` + ``CUT_LOOKAHEAD``
-    characters: a tag, comment or ``<script>`` block that starts before the cut and
-    ends after it is dropped; so is one with no end in the text that starts
-    within ``CUT_LOOKAHEAD`` before the cut, which may end beyond it."""
+    characters and ``raw`` the whole abstract: a tag, comment or ``<script>`` or
+    ``<style>`` block that starts before the cut and ends after it is dropped; so
+    is a tag or comment with no end in the text that starts within
+    ``CUT_LOOKAHEAD`` before the cut, which may end beyond it. A block whose end
+    tag the window does not hold whole is looked up in ``raw``: a complete end tag
+    there drops the block (a ``<script>`` that never closes anywhere stays a plain
+    tag, as in an abstract that fits), and ``CUT_LOOKAHEAD`` does not bound that
+    search."""
     paragraphs: list[list[str]] = [[]]
     ends = _tag_ends(text)
+    last_gt = raw.rfind(">") if truncated else -1
+    # Per tag name: where the last search of ``raw`` started and what it found. The
+    # tags are visited left to right, so a search that found nothing, or a match
+    # beyond a later start, answers that start too: ``raw`` is read about twice per
+    # name, not once per tag.
+    searched: dict[str, tuple[int, re.Match[str] | None]] = {}
+
+    def closes_in_raw(name: str, start: int) -> bool:
+        cached = searched.get(name)
+        if cached is None or start < cached[0] or (cached[1] is not None and cached[1].start() < start):
+            cached = searched[name] = (start, _SKIPPED_CLOSE[name].search(raw, start))
+        match = cached[1]
+        return match is not None and match.end() - 1 <= last_gt
+
     pos = 0
     for match in _MARKUP_OPEN.finditer(text):
         i = match.start()
@@ -178,6 +204,8 @@ def _paragraphs(text: str, cut: int, truncated: bool) -> list[list[str]]:
         if kind == "tag" and name in _SKIPPED and end != -1 and not _self_closing(text, i, end):
             close = _SKIPPED_CLOSE[name].search(text, end)
             close_end = text.find(">", close.end() - 1) if close else -1
+            if close_end == -1 and truncated and closes_in_raw(name, end):
+                close_end = len(text)  # ends past the window, so past the cut
             # An unclosed <script> is a plain tag: the rest stays text.
             kind, end = ("block", close_end + 1) if close_end != -1 else (kind, end)
         if end == -1:
@@ -203,16 +231,21 @@ def abstract_text(raw: Any) -> str:
     Read by this module's own scanner, not html.parser, whose treatment of
     malformed markup changed in 2025 (3.11.13, 3.12.11, 3.13.4): the same text
     reads alike on every Python. A "<" whose markup never ends stays text; a
-    ``<script>`` or ``<style>`` that never closes is dropped as a tag only.
-    Only the first ``MAX_ABSTRACT_CHARS`` characters are read, less a tag,
-    comment or character reference the cut splits."""
+    ``<script>`` or ``<style>`` that never closes is dropped as a tag only; a
+    "<!--" with no "-->" ends at its first ">" like any "<!...>", or stays text if
+    there is none. Of an abstract over ``MAX_ABSTRACT_CHARS`` the first
+    ``MAX_ABSTRACT_CHARS`` + ``CUT_LOOKAHEAD`` characters are scanned and the text
+    ends at the first ``MAX_ABSTRACT_CHARS``, less a tag, comment or character
+    reference the cut splits; the rest is searched once per tag name for the end
+    tag of a ``<script>`` or ``<style>`` that opens before the cut, so such a block
+    never leaks its body."""
     if not raw:
         return ""
     raw = str(raw)
     truncated = len(raw) > MAX_ABSTRACT_CHARS
     text = raw[: MAX_ABSTRACT_CHARS + CUT_LOOKAHEAD] if truncated else raw
     cut = MAX_ABSTRACT_CHARS if truncated else len(text)
-    paragraphs = (" ".join("".join(parts).split()) for parts in _paragraphs(text, cut, truncated))
+    paragraphs = (" ".join("".join(parts).split()) for parts in _paragraphs(text, cut, truncated, raw))
     return "\n\n".join(p for p in paragraphs if p)
 
 

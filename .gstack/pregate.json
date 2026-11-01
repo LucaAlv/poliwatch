@@ -52,7 +52,13 @@
     "tests/fixtures/a3-rule5/18-70.xml": ["tests/test_a3_rule5.py"],
     "tests/fixtures/a3-rule5/18-71.xml": ["tests/test_a3_rule5.py"],
     "tests/fixtures/a3-wp18-18-150.xml": ["tests/test_wp18_19_pipeline.py"],
-    "tests/fixtures/a3-wp19-19-100.xml": ["tests/test_wp18_19_pipeline.py"]
+    "tests/fixtures/a3-wp19-19-100.xml": ["tests/test_wp18_19_pipeline.py"],
+    "scripts/sitzungskalender.py": ["tests/test_sitzungskalender.py", "tests/test_build_dip_pulse_site.py"],
+    "scripts/week_radar_feed.py": ["tests/test_week_radar_feed.py"],
+    "tests/fixtures/sitzungskalender/*": ["tests/test_sitzungskalender.py"],
+    "tests/next_sitting_browser_check.js": ["tests/test_sitzungskalender.py"],
+    "tests/votes_archive_browser_check.js": ["tests/test_politikfelder.py"],
+    "tests/votes_archive_browser_fixture.py": ["tests/test_politikfelder.py"]
   },
   "empty_lanes": ["docs/plans/*.json", "docs/plans/*.txt", "docs/plans/*.tsv", "docs/plans/*.patch"]
 }
