@@ -597,7 +597,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (8), including one without `votes.debate_url` or the quoted Antrag-passage fields, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written; build the store with `--offline --repersist` or an online update. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (8), including one without `votes.debate_url` or the quoted Antrag-passage fields, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -645,7 +645,7 @@ scripts/preview_dip_pulse_site.sh
 
 ## SQLite Store
 
-When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock (both in `.OUTPUT.private/` beside the output directory, never published) and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store of an older schema needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
+An online build, like `--offline --repersist`, always stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock (both in `.OUTPUT.private/` beside the output directory, never published) and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store of an older schema needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
 
 - `schema_migrations`
 - `parties`
