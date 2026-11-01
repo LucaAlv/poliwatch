@@ -1,6 +1,6 @@
 """The week radar as data: ``feeds/week-radar.json`` and, once a domain exists, an RSS feed.
 
-puls.html shows the newest sitting week. This module renders the same rows
+puls.html shows the newest week with a Sitzung. This module renders the same rows
 (``week_topic_rows``, one computation) a second way, for the newest 12 weeks:
 a versioned JSON file and an RSS 2.0 feed with one item per finished week.
 
@@ -40,7 +40,7 @@ RSS_NAME = "week-radar.xml"
 SITE_URL_ENV = "BUNDESTAG_PULSE_SITE_URL"
 #: The page title of puls.html ("Bundestag-Puls · Wochenübersicht"); one place to change on a rename.
 CHANNEL_TITLE = "Bundestag-Puls · Wochenübersicht"
-CHANNEL_DESCRIPTION = "Die Tagesordnungspunkte mit den meisten Reden je Sitzungswoche des Deutschen Bundestages."
+CHANNEL_DESCRIPTION = "Die Tagesordnungspunkte mit den meisten Reden je Woche mit Sitzung des Deutschen Bundestages."
 WEEKS_BACK = 12
 ITEM_TITLE_CHARS = 90
 STABILITY = (
