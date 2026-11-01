@@ -49,6 +49,46 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** across the 716 WP 18–21 files, three `<rede>` elements have no `<redner>`. The other two (18/46 `ID1804617400`, 18/76 `ID1807611000`) are Anlage texts that begin with `<p klasse="N_Anlage">`.
 - **Effect on poliwatch:** the speech has no Fraktion, so Redeanteil for WP 18 lists one Rede under "(ohne Zuordnung)". It is the only such Rede in WP 18–21 (a3-phase4.md, step 3).
 
+### E4. WP 19/20 roll-calls file MdBs under the wrong group (Fraktion changes dated wrong)
+
+- **Status:** verified 2026-11-01.
+- **Sources:**
+  - `https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=750` (2021-06-24, "Verwendung geschlechtergerechter Sprache"): AfD 86 Mitglieder, fraktionslos 10.
+  - The earlier votes of the same day (`id=747`, `id=748`) list AfD 88 and fraktionslos 8.
+  - `id=753` (2021-08-25, "Bundeswehreinsatz zur Evakuierung aus Afghanistan"): AfD 84, fraktionslos 12.
+  - The store's member rows (`vote_members`) name the moved members:
+    - Uwe Witt and Johannes Huber are listed as fraktionslos from `id=750` on.
+    - Bruno Hollnagel and Heiko Heßenkemper are listed as fraktionslos on `id=753`.
+- **What is wrong:** the Bundestag's own Textarchiv (`https://www.bundestag.de/dokumente/textarchiv/2024/kw32-fraktionslose-1014020`) dates these exits as follows:
+  - Witt and Huber: "am 31. Dezember 2021", which is in WP 20.
+  - Hollnagel: 25 June 2021.
+  - Heßenkemper: 30 June 2021, and "trat allerdings am 24. August 2021 der AfD-Fraktion erneut bei".
+
+  On 2021-06-24 the AfD-Fraktion therefore still had 88 members. On 2021-08-25 it had 87 (Hollnagel out, Heßenkemper back), with 9 fraktionslos. The roll-call pages show three members too few for the AfD from `id=750` to the end of WP 19.
+- **What it should be:** each member listed under the Fraktion they belonged to on the vote's date.
+- **Effect on poliwatch:**
+  - **Vote data:** `vote_fractions` and `vote_members` copy the pages. These four MdBs' votes in the affected WP 19 roll-calls count for fraktionslos, not the AfD, which affects the vote panel's group blocks and Abweichler.
+  - **Seat counts:** the planned seat counts derived from roll-calls (`docs/plans/c1-seat-counts.md`) inherit the error.
+  - **Scale:** not measured beyond these votes. An independent membership source (the MdB-Stammdaten) is needed to find other cases.
+- **Scale, measured 2026-11-01:** the MdB-Stammdaten (`MDB_STAMMDATEN.XML`, VERSION 1777449783, 29.04.2026) were compared with all 556 stored roll-calls. 47 roll-calls in WP 19 and WP 20 file six MdBs under the wrong group. In each case the Textarchiv dates agree with the Stammdaten and not with the roll-call page:
+  - **Uwe Kamann:** listed as fraktionslos from 2017-12-12 to 2018-12-13 (31 roll-calls). Textarchiv: he left the AfD-Fraktion "am 2. Januar 2019".
+  - **Marco Bülow:** listed as fraktionslos from 2017-12-12 to 2018-11-23 (29 roll-calls, in the same votes as Kamann). Textarchiv: he left the SPD-Fraktion "am 28. November 2018".
+  - **Frank Pasemann:** listed as AfD from 2020-11-18 to 2020-12-11 (9 roll-calls). Textarchiv: he left "am 15. November 2020". This is the only case in the other direction.
+  - **Witt and Huber:** listed as fraktionslos in WP 19 votes 750–754 and again in WP 20 votes 756–757 (2021-11-18).
+  - **Heßenkemper:** listed as fraktionslos in votes 753–754 (above).
+
+  No single pattern explains the errors. Most move an MdB to fraktionslos too early, while Pasemann's lags.
+
+### E5. 2016-11-09: two CDU/CSU members missing from one roll-call list
+
+- **Status:** verified 2026-11-01.
+- **Source:** `https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=440` (Änderungsantrag Hilde Mattheis und Sabine Dittmar): CDU/CSU 308 Mitglieder, Gesamt 628.
+- **What is wrong:** the votes before and after it on the same day (`id=439`, `id=441`) list CDU/CSU 310 and a total of 630. Veronika Bellmann and Michael Grosse-Brömer appear in both of those but not in `id=440`, not even as "nicht abgegeben".
+- **What it should be:** CDU/CSU 310, with both members counted (as "nicht abgegeben" if they did not vote).
+- **Effect on poliwatch:**
+  - **Vote 440:** its absent count is two short for CDU/CSU.
+  - **Seat counts:** the planned rule takes a day's last roll-call, so this one does not reach the seat counts.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
