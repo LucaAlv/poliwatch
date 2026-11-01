@@ -62,7 +62,7 @@ Comparable sites:
 - **AI summaries** are the only content preference a visitor can set. They are optional, permanently labelled `KI-generiert · nicht redaktionell geprüft`, carry 3–5 citations that each resolve to a source, and can be collapsed globally. The browser stores only that collapse preference.
 - Main surfaces today: the sitting catalog, sitting Dossiers, Puls/Wochenradar (`puls.html`), Fakt der Woche (weekly and monthly), Abgeordnete roster and profile pages, votes and the votes archive, Gesetzgebung, sources/method, and Daten (`database.html`). None of the long-term analyses exist yet.
 - Domain vocabulary (Rede vs. Kurzintervention vs. Befragung, Sprechrolle, Abweichler, Wahlperiode, Sitzung mit Dossier, and others) is defined in `CONTEXT.md`, with decisions in `docs/adr/`. Use those definitions rather than inventing new ones.
-- **Licences are decided** (ADR 0003): layered data licence, MIT for code, and an Impressum naming a private person. Implementing them is still open.
+- **Licences are decided** (ADR 0003): layered data licence (`LICENSE-DATA.md`, shipped with every export), MIT for code (`LICENSE`), and an Impressum naming a private person. The files, `impressum.html` and `datenschutz.html` are built; the Impressum values (address, e-mail, host, supervisory authority) wait on the owner and a lawyer's answer on the address, and render as marked placeholders until then.
 - **Open decisions:**
   - The product name. "Bundestag-Puls" appears in the code and README, "poliwatch" is the repo name, and IDEAS.md suggests "open-parlament". Nothing is final, so design work must not build identity around any of these names.
   - The public host.

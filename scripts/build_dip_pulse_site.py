@@ -11591,7 +11591,7 @@ def render_datenschutz_page(
          f"Browser mitsendet. Wie lange der Hoster diese Server-Logs speichert: {_operator_value(operator, 'hosting.log_retention')}. "
          f"Datenschutzhinweise des Hosters: {_operator_link(operator, 'hosting.privacy_url')}.</p>"),
         ("Keine Cookies, kein Tracking, keine fremden Inhalte",
-         "<p>Diese Website setzt keine Cookies und verwendet keine Analyse- oder Tracking-Werkzeuge. Seiten, "
+         "<p>Die Seiten dieser Website setzen keine Cookies und enthalten keine Analyse- oder Tracking-Werkzeuge. Seiten, "
          "Skripte, Stile und Bilder kommen vom selben Server; Schriften, Skripte oder andere Inhalte von "
          f"fremden Servern werden nicht geladen.{download_sentence}</p>"),
         ("Speicherung in Ihrem Browser",
@@ -11747,8 +11747,8 @@ def render_sources_page(
          f'<a href="{DIP_TERMS_URL}">Nutzungsbedingungen des DIP</a>. Quellenangabe „Deutscher Bundestag/Bundesrat – DIP“; '
          "zitierte Plenarprotokolle als „BT-PlPr.“ mit Nummer, etwa „BT-PlPr. 21/84“."),
         ("Namentliche Abstimmungen: Ergebnisse und Einzelstimmen",
-         "Quelle „Deutscher Bundestag“. Grundlage ist das Plenarprotokoll, das das endgültige Ergebnis mit den Einzelstimmen abdruckt."),
-        ("abgeordnetenwatch.de: Wahlkreis, Bundesland, Geburtsjahr, Beruf, Geschlecht und Profil-Link",
+         "Quelle „Deutscher Bundestag“ (Ergebnisse und Namenslisten auf bundestag.de). Die Einzelstimmen druckt auch das Plenarprotokoll als endgültiges Ergebnis ab."),
+        ("abgeordnetenwatch.de: Wahlkreis, Bundesland, Geburtsjahr, Beruf, Geschlecht, Profil-ID und Profil-Link",
          '<a href="https://creativecommons.org/publicdomain/zero/1.0/deed.de">CC0 1.0</a>; die Quelle wird ohne Pflicht genannt.'),
         ("Eigene Auswertungen: Zählungen, Zuordnungen, Politikfelder, Fakten und Personenregister",
          f'<a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>, Namensnennung „{ATTRIBUTION_NAME}, Luca Veh“. '

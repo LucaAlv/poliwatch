@@ -1,6 +1,6 @@
 # Impressum, Datenschutz and licence files
 
-Status: implementation plan only, 2026-11-01. Nothing implemented.
+Status: implemented 2026-11-01 on this branch (steps 1–9; deviations under "Implementation notes" at the end). The owner inputs below are still missing.
 Branch: `claude/pre-public-items-plan-e8d01d` (cut from main 4705fb3, v0.27.0.0).
 Backlog: `TODOS.md`, roadmap D, "Impressum, Datenschutz and licence files before the site goes public". This is the first open D item. The other open D items wait on the owner: the roll-call e-mail, a Zenodo account, and the hosting decision.
 Decisions it implements: [ADR 0003](../adr/0003-licences-and-impressum.md) D1, D3, D4. D5 (governance) stays in the Community item, apart from the e-mail address both items share.
@@ -747,3 +747,16 @@ None.
 - **OUTSIDE COVERAGE:** codex, plan-review phase, unavailable. Codex exec failed with "Operation not permitted" in the sandbox; the native Plan fallback was stopped after the 5-minute timer. No findings, and no clean credit.
 - **VERDICT:** no review is CLEAR. Eng Review found 5 issues and resolved all of them (D2–D5 and corrections; the status stays issues_open by rule). The plan is ready to implement with the amendments above. eng review required
 NO UNRESOLVED DECISIONS
+
+## Implementation notes, 2026-11-01
+
+Where the build differs from the steps above, and why:
+
+- **O4, branch order.** Batches 7 and 8 were not on main. The owner chose to build on 4705fb3 anyway. Expect small conflicts at rebase: the Daten footer's issues label and `tests/test_daten_page.py` (batch 8), and a few lines of ADR 0003 and `docs/project-documentation.md`.
+- **10a.** The plan said to also run `build_dip_pulse_site.validate_manifest` on `--previous-manifest`. That validator refuses every export format but the current one, so the release after this branch's format bump (11 to 12) could never name its predecessor. `publish_dip_pulse_data.previous_manifest_problem` checks the fields `release_changes` reads instead, and refuses `null`, numbers and lists.
+- **10c.** The release script has no "requested version" input. The build itself now refuses: `parse_args` rejects a release `--data-tag` with `--no-persist` or `--data-manifest`, and `run_data_pipeline` raises when no export carries the tag (no store, `DataExportUnavailable`, `$BUNDESTAG_PULSE_DATA_MANIFEST`).
+- **10d.** Both sides are normalised (`build_revision.text_sha256`), not one, so the outcome does not depend on the checkout the release script runs in.
+- **Step 3, release check.** `verify_export` checks the licence file for every run, dry or `--publish`. The file must be listed, non-empty, and its `sha256` must equal `codebook_inputs["LICENSE-DATA.md"]`, which is already verified against the manifest commit. The licence file is written before `DATA.md`, so `DATA.md`'s file table lists it.
+- **Step 3, preamble.** The old preamble was for maintainers. `LICENSE-DATA.md` has a new short one for someone who opens it in a download. The maintainer notes moved to `docs/project-documentation.md`.
+- **Step 6, URL check.** The site's `safe_href` allowlists Bundestag hosts, and a host's or authority's URL cannot be on that list. Operator URLs must be `https://` with a host and no credentials, the rules `validate_external_url` applies without its allowlist. Unknown fields in the operator file are refused, so a typo in a key does not silently become a placeholder.
+- **Footer coverage.** The demo build has no Abgeordnete detail pages, Fakt week or month pages, or bill detail pages. The D5 comparison covers the 16 pages it does build. The other footers got the same one-line insertion, reviewed by hand.

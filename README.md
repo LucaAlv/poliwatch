@@ -40,7 +40,13 @@ pd.read_sql("SELECT * FROM speeches", conn)
 pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={"mp_id": "string"})
 ```
 
-SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Formel-Escaping (in Tabellenkalkulationen als Text importieren). Einen versionierten Release über GitHub Releases bereitet `scripts/publish_dip_pulse_data.sh` vor (Trockenlauf als Voreinstellung; jeder Export enthält die Datenlizenz als `LICENSE-DATA.md`). Bisher wurde kein Release veröffentlicht, und die Links der Seite setzen die Verzeichnisstruktur des Release-Verzeichnisses voraus, die GitHub-Release-URLs nicht abbilden (offen, TODOS „Site hosting plan“). Die Lizenz-/Nutzungsformulierung steht ebenfalls noch aus (Platzhalter auf der Seite: "siehe Quellen und Methode").
+SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Formel-Escaping (in Tabellenkalkulationen als Text importieren). Einen versionierten Release über GitHub Releases bereitet `scripts/publish_dip_pulse_data.sh` vor (Trockenlauf als Voreinstellung; jeder Export enthält die Datenlizenz als `LICENSE-DATA.md`). Bisher wurde kein Release veröffentlicht, und die Links der Seite setzen die Verzeichnisstruktur des Release-Verzeichnisses voraus, die GitHub-Release-URLs nicht abbilden (offen, TODOS „Site hosting plan“). Die Daten stehen unter den geschichteten Bedingungen von [LICENSE-DATA.md](LICENSE-DATA.md) (je Quelle eine Schicht: DIP-Nutzungsbedingungen, Deutscher Bundestag, CC0 1.0, CC BY 4.0), der Code unter MIT ([LICENSE](LICENSE)); jeder Download enthält `LICENSE-DATA.md`, und die Seite „Quellen und Methode“ zeigt die Schichten unter „Lizenz und Weiterverwendung“.
+
+### Lizenz
+
+- **Code:** MIT, siehe [LICENSE](LICENSE). Die MIT-Lizenz gilt nur für den Code.
+- **Daten:** [LICENSE-DATA.md](LICENSE-DATA.md), geschichtet nach Quelle (ADR 0003). Jeder Export legt die Datei neben `DATA.md`; ihr Kurzstring ist der voreingestellte `--data-license`.
+- **Impressum und Datenschutz:** `impressum.html` und `datenschutz.html` entstehen bei jedem Build. Name, Anschrift, E-Mail, Hoster und Aufsichtsbehörde kommen aus einer lokalen Datei außerhalb von git (`--operator-file`, siehe [docs/project-documentation.md](docs/project-documentation.md)); ohne sie zeigen beide Seiten markierte Platzhalter („Angabe folgt.“).
 
 ## 1. Prerequisites
 

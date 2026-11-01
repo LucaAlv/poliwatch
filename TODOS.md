@@ -783,11 +783,13 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 - `datenschutz.html`.
 - Both linked from every footer.
 - `LICENSE` (MIT, code only, pointing to `LICENSE-DATA.md` for data).
-- The short string from `docs/data-license.md` set as the default `--data-license`.
+- The short string from `LICENSE-DATA.md` (formerly `docs/data-license.md`) set as the default `--data-license`.
 - The `lizenz` item on `sources.html` (the "Die genaue Lizenzformulierung … steht noch aus" placeholder in `scripts/build_dip_pulse_site.py`) replaced by the layer table.
 - The site's machine-generated summaries labelled as such.
 
-Done when `grep -rn "steht noch aus"` over the generated site is empty and every footer links Impressum and Datenschutz.
+Done when no generated page carries `data-operator-missing` and every footer links Impressum and Datenschutz (eng review D2 A: a text grep for „steht noch aus“ also hits speech text).
+
+**Built 2026-11-01** (branch `claude/pre-public-items-plan-e8d01d`, plan `docs/plans/impressum-datenschutz-licence.md`): `LICENSE` (MIT), the root `LICENSE-DATA.md` (the one licence source, shipped in every export), the short string as default `--data-license`, `impressum.html` and `datenschutz.html` from `--operator-file`, `Impressum · Datenschutz` in every footer, the four-layer licence table on `sources.html#lizenz`, and a test pinning the AI label. **Not done until the owner supplies:** the postal address (after lawyer question 1), the dedicated Impressum e-mail (D5: not a personal address), the host and its log retention (after the hosting decision), and the supervisory authority (the Landesdatenschutzbehörde of the operator's Land). Until then both pages render those values as `data-operator-missing` placeholders. Also still open for the lawyer: § 25 TDDDG on the two localStorage entries (ADR 0003 question 8).
 
 **Why:** Name and address are required for any non-private Telemedium (§ 18 Abs. 1 MStV). The DIP terms require naming the source and marking changes on redistribution. Hosting can't ship without either.
 
@@ -896,7 +898,7 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 
 ### A DOI per release and a citation file
 
-**Done (lane/release, 2026-10-31):** `CITATION.cff` at the repository root (CFF 1.2.0, author Luca Veh, title "poliwatch" until the product name is settled, `license: MIT`, the layered data licences of ADR 0003 stated in `message` and `abstract`; CFF allows no free `note:` key). It claims no DOI, version, date or `repository-code` (the repository is private; add `repository-code` and `url` when it is public, and the version DOI once one exists). `tests/test_citation_file.py` guards the required and the allowed top-level keys. **Still open:** the Zenodo upload from the release script (needs a Zenodo account and token), the DOI per release, and the "Zitieren als …" line on the Daten page and in the codebook. There is no `LICENSE` file at the repository root yet (ADR 0003 D3, out of scope here).
+**Done (lane/release, 2026-10-31):** `CITATION.cff` at the repository root (CFF 1.2.0, author Luca Veh, title "poliwatch" until the product name is settled, `license: MIT`, the layered data licences of ADR 0003 stated in `message` and `abstract`; CFF allows no free `note:` key). It claims no DOI, version, date or `repository-code` (the repository is private; add `repository-code` and `url` when it is public, and the version DOI once one exists). `tests/test_citation_file.py` guards the required and the allowed top-level keys. **Still open:** the Zenodo upload from the release script (needs a Zenodo account and token), the DOI per release, and the "Zitieren als …" line on the Daten page and in the codebook. The root `LICENSE` (MIT, code only) exists since 2026-11-01.
 
 **What:** A `CITATION.cff` in the repo and a DOI for every data release. Zenodo's GitHub integration archives the repository's source zip on each GitHub release, not the release's data assets. So archive the data files through Zenodo's upload API from the release script instead, which gives a concept DOI plus one DOI per version. Show "Zitieren als …" with the version DOI on the Daten page and in the codebook.
 
