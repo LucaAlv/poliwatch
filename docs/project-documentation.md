@@ -36,6 +36,9 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- dip_text.py                  # DIP abstracts and committee names as display text
     |-- person_corrections.json
     |-- facts.py
+    |-- dip_cache.py                 # cross-run DIP caches (Vorgang Drucksachen, /person records)
+    |-- prefetch_dip_bulk.py         # fills those caches for a closed Wahlperiode from a few bulk DIP lists
+    |-- validate_store_gate.py       # the merged-store gate: replay, integrity, order independence, links, export (run on a clone)
     |-- build_revision.py            # the build revision an export cites; the release gate
     |-- publish_dip_pulse_data.sh    # wrapper for publish_dip_pulse_data.py: versioned data release (dry run by default)
     |-- release_changes.py           # changes.json / CHANGES.md of a release
@@ -159,7 +162,7 @@ Important generated files:
 | `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
 | `database.html` | "Daten" page: download panel, Datenstand, the executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
-| `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
+| `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it. A build fetches it in full (48 DIP requests) when it is missing or its last full fetch (`full_fetched_at`) is more than 7 days old; otherwise the closed Wahlperioden and the Sonderdrucke come from the cache and only the newest Wahlperiode (plus any closed one whose sittings still disagree on having XML) is fetched, and the merge is used only when it adds up to DIP's total count |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch; `--fetch-xml` fills it for reports built before |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol. Each vote panel introduces the recorded subject, date, outcome and raw counts, then shows the committee citation when available, an associated Bundestag report link when available, the DIP abstract of each named Vorgang, the tallies, the Abweichler per Zusammenschluss (a vote-wide "Niemand stimmt anders" only when every group's Einzelstimmen are complete, the groups add up to the vote's total and there is no Abweichler; one vote-wide gap note when no group lists its Einzelstimmen, a group lists Einzelstimmen but has no tally row, or the complete groups do not add up to the total; a group with missing Einzelstimmen carries its own note) and the Einzelstimmen; its first panel carries `id="vote-<id>"`, which the archive links to |
@@ -175,6 +178,10 @@ Important generated files:
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 | `data/dip-drucksache-text-cache.json.gz` | For votes whose Vorgang has no DIP abstract: the DIP `/drucksache` metadata of each Drucksache number the vote names (type, Urheber, Vorgangsbezug, PDF URL), and the `/drucksache-text` full text of the Anträge and Entschließungsanträge among them. The vote panel and `documents.forderung` quote the Antrag's operative part from it (`scripts/antrag_text.py`, re-extracted on every persist and render, so a rule change needs only `--offline --repersist`). Filled by the online build after the Vorgang cache (skipped when that fetch found DIP down), only for misses and for numbers DIP had no record for or had not yet linked to a Vorgang; saved atomically, only when something was fetched, and byte-identically for unchanged content (gzip without timestamp). An unsupported version or a read error stops the build with the file untouched; corrupt content is moved to a `.corrupt` file and read as empty. `--offline --repersist` refuses if a vote with a known passage (`extracted` or `no_passage` in `votes.passage_state`) would become `not_fetched` |
 | `data/dip-vorgang-cache.json` | DIP Vorgang records (Sachgebiet, Sachbegriffe, abstract) and the Vorgang each Drucksache number resolves to, which the Politikfelder are derived from. Only an online build fetches it (batches of 100 ids, then one lookup per Drucksache number; the fetch pauses 0.5 s before every DIP request and a lookup takes two requests, so it stays near 1.5 requests a second and the first fill of about 2,400 numbers takes about 45 minutes; later builds fetch only what is new or has no Sachgebiet yet). Drucksache numbers are taken by the store's rules: DIP's `herausgeber` and the XML host decide what is a Bundestag Drucksache, and numbers are in canonical form. The cache is saved atomically, its temporary file staged in the private directory beside OUTPUT (`.OUTPUT.private/`, `person_registry.private_dir`); corrupt JSON is moved to a uniquely named `.corrupt` file, preferably there. Unsupported versions and read errors stop the build before fetch or writes, leaving the cache untouched. `--offline` builds read it and never call DIP; a TOP or vote whose entry is missing is stored as `untagged` with source `not_fetched`, and the build log counts them. `--offline --repersist` refuses if a previously known TOP or vote would become `not_fetched`; already-missing identities may remain missing or recover, and new missing identities do not block replay |
+| `data/dip-vorgang-drucksachen-cache.json` | A Vorgang's Drucksache positions, kept only for a Vorgang met in a sitting of a closed Wahlperiode (one before the catalog's newest) and without expiry; a current-Wahlperiode Vorgang is still extended by DIP, so it is cached within one build only. Written by `scripts/dip_cache.py` after every sitting (atomic; an unreadable file is an empty cache) and filled in bulk by `scripts/prefetch_dip_bulk.py`. Delete it to fetch afresh |
+| `data/dip-person-cache.json` | DIP `/person` records with their fetch time, kept 30 days (`PERSON_MAX_AGE_DAYS`); only successful fetches are cached. Written like the file above. Delete it to fetch afresh |
+| `data/dip-bulk/wp<N>/` | Staging of `scripts/prefetch_dip_bulk.py`: one `drucksachen-<from>_<to>.json` per month chunk of Wahlperiode N, each written only once it matches DIP's own count, plus `total.json` and `vorgaenge.json`, so a run DIP stops resumes at the first chunk not staged. Never read by the build |
+| `data/coverage-exclusions.json` | The reviewed exclusion list: sittings kept out of the build whatever the parser says, recorded by `--exclude-document-number` with the reason `excluded` and counted on the Daten page as "nicht erfasst (ausgeschlossen)". Every later run, online or offline, leaves each recorded sitting out; `--include-document-number` takes one off |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
 
@@ -407,7 +414,7 @@ Common options:
 | `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
 | `--limit N` | `0` | Acquire only the newest N protocols of `--protocol-wahlperiode`; `0` means no cap. The catalog is always fetched whole |
-| `--protocol-wahlperiode N` | `21` | Select this Wahlperiode only when `--limit` is positive; `0` selects across all Wahlperioden. With `--limit 0`, no Wahlperiode filter applies. The catalog is always fetched whole |
+| `--protocol-wahlperiode N` | `0` | Acquire only sittings of this Wahlperiode: `--limit` counts its newest protocols and `--backfill-incomplete` acquires only its gaps; `0` means every Wahlperiode. A plain update with `--limit 0` is not narrowed by it. The catalog is always fetched whole |
 | `--detail-limit N` | `5` | Number of fetched protocols to enrich into detail pages; `0` means all, `-1` means none |
 | `--document-number NUM` | none | Acquire only this protocol; can be repeated. The catalog and every cached dossier are kept |
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
@@ -419,15 +426,17 @@ Common options:
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. Both `puls.html` and the homepage use that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path. A downloaded distribution copy (an exported release SQLite, marked by a nonzero `user_version` or a `datenstand` table) is refused as the store before anything is computed, staged or replaced, and the file is left as it was |
 | `--no-persist` | off | Skip SQLite graph-store generation |
-| `--backfill-incomplete` | off | Acquire exactly the sittings the build reports as incomplete (missing, or votes/speeches not fully acquired); ignores `--limit` and `--detail-limit`; not combinable with `--document-number`. Every cached dossier is kept whatever an update acquires |
+| `--backfill-incomplete` | off | Acquire exactly the sittings the build reports as incomplete (missing, or votes/speeches not fully acquired); ignores `--limit` and `--detail-limit` but keeps `--protocol-wahlperiode`; not combinable with `--document-number`. Judged from the first sitting of Wahlperiode 18 (v1 coverage), prints the judged range and the selected sittings per Wahlperiode before acquiring, and by default waits 2 s between DIP requests and scans up to 200 roll-call pages. Every cached dossier is kept whatever an update acquires |
+| `--exclude-document-number NUM` | none | Keep this sitting out of the build whatever the parser says (repeatable) and record it in `data/coverage-exclusions.json`; add a number only after reading its rejection diagnostic. Any other rejected source still stops the build before the store is replaced |
+| `--include-document-number NUM` | none | Take this sitting off the exclusion record (repeatable; needs an online run) |
 | `--person-limit N` | `0` | Number of distinct person records fetched per dossier; `0` means all seen people |
-| `--vote-scan-pages N` | `30` | Roll-call list pages scanned per sitting. `0` turns votes off (like `--no-votes`); a sitting older than the window is `partial` (`scan_budget_exhausted`) |
+| `--vote-scan-pages N` | `30` (`200` with `--backfill-incomplete`) | Roll-call list pages scanned per sitting. `0` turns votes off (like `--no-votes`); a sitting older than the window is `partial` (`scan_budget_exhausted`) |
 | `--roll-call-list-id ID` | `BT_ROLL_CALL_LIST_ID` or `484422-484422` | Bundestag roll-call vote filterlist id used for list-page scraping |
-| `--sleep SECONDS` | `0.0` | Delay between DIP API requests |
+| `--sleep SECONDS` | `0.0` (`2.0` with `--backfill-incomplete`) | Delay between DIP API requests |
 | `--no-abgeordnetenwatch` | deprecated | Explicitly veto profile resolution during the compatibility window |
 | `--abgeordnetenwatch-cache PATH` | `OUTPUT_DIR/data/abgeordnetenwatch-cache.json` | Profile cache location |
 | `--abgeordnetenwatch-sleep SECONDS` | `0.5` | Minimum delay between abgeordnetenwatch API requests |
-| `--roster-wahlperiode N` | `21` | Legislative period used for full MdB roster pages |
+| `--roster-wahlperiode N` | every period from 18 to the catalog's newest | Legislative period whose full MdB roster `--enrich mp-roster` fetches; repeatable. The Abgeordnete index lists the members of the newest |
 | `--no-roster` | deprecated | Explicitly veto full-roster acquisition during the compatibility window |
 
 Daten export options (`data/exports/`, the Daten page's download panel, Datenstand and recipes):
@@ -561,6 +570,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `GOOGLE_API_KEY` | validation | Optional Gemini fallback | Alternative Gemini key name |
 | `BT_ROLL_CALL_LIST_ID` | build/validation | No | Bundestag roll-call vote filterlist id override; `--roll-call-list-id` wins when both are set |
 | `BT_NAMENSLISTEN_LIST_ID` | build/validation | No | Bundestag Namenslisten (XLSX export) list id override; no CLI flag equivalent |
+| `DIP_REQUEST_LOG` | build/validation/prefetch | No | A file path: every DIP API, XML and bundestag.de request attempt appends one tab-separated line (UTC time, `dip` or the host, path and query, attempt, status or error, seconds); the API key is never written |
 | `SOURCE_DATE_EPOCH` | build | No | Integer Unix timestamp read as UTC; pins the build clock for puls.html (`--today` wins when both are set) |
 | `PORT` | preview script | No | HTTP server port |
 | `PREVIEW_BIND` | preview script | No | HTTP server bind host; defaults to localhost-only |
