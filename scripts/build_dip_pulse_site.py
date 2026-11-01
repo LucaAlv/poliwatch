@@ -8898,32 +8898,66 @@ def render_abgeordnete_script() -> str:
     (() => {
       const search = document.querySelector("[data-mp-search]");
       const rows = Array.from(document.querySelectorAll("[data-mp-row]"));
+      const formerRows = Array.from(document.querySelectorAll("[data-former-mp-row]"));
+      const formerSection = document.querySelector("[data-former-mps]");
       const rednerRows = Array.from(document.querySelectorAll("[data-redner-row]"));
       const rednerEmpty = document.querySelector("[data-redner-empty]");
       const partyButtons = Array.from(document.querySelectorAll("[data-party-filter]"));
       const counter = document.querySelector("[data-mp-count]");
       let activeParty = "";
-      const apply = () => {
-        const q = (search ? search.value : "").trim().toLowerCase();
-        let visible = 0;
-        rows.forEach((row) => {
+      let visible = 0;
+      let formerVisible = 0;
+      let rednerVisible = 0;
+      // Set while the former-MdB section is open only because a filter found
+      // matches in it, so clearing the filter closes it again.
+      let formerAutoOpened = false;
+      const filterRows = (list, q, byParty) => {
+        let shown = 0;
+        list.forEach((row) => {
           const matchesText = !q || row.dataset.search.includes(q);
-          const matchesParty = !activeParty || row.dataset.party === activeParty;
+          const matchesParty = !byParty || !activeParty || row.dataset.party === activeParty;
           const show = matchesText && matchesParty;
           row.hidden = !show;
-          if (show) visible += 1;
+          if (show) shown += 1;
         });
-        // The Fraktion filter narrows the Abgeordnete list only: Redner outside
-        // it are listed without one, so the search alone filters them.
-        let rednerVisible = 0;
-        rednerRows.forEach((row) => {
-          const show = !q || row.dataset.search.includes(q);
-          row.hidden = !show;
-          if (show) rednerVisible += 1;
-        });
-        if (rednerEmpty && rednerRows.length) rednerEmpty.hidden = rednerVisible > 0;
-        if (counter) counter.textContent = String(visible + rednerVisible);
+        return shown;
       };
+      // "Angezeigt" counts the rows on screen: rows of the former-MdB section
+      // count only while it is open.
+      const updateCount = () => {
+        const formerShown = formerSection && formerSection.open ? formerVisible : 0;
+        if (counter) counter.textContent = String(visible + formerShown + rednerVisible);
+      };
+      const apply = () => {
+        const q = (search ? search.value : "").trim().toLowerCase();
+        // The Fraktion filter narrows the Abgeordnete lists (current and former)
+        // only: Redner outside them are listed without one, so the search alone
+        // filters them.
+        visible = filterRows(rows, q, true);
+        formerVisible = filterRows(formerRows, q, true);
+        rednerVisible = filterRows(rednerRows, q, false);
+        if (formerSection) {
+          const filtering = Boolean(q || activeParty);
+          if (filtering && formerVisible > 0) {
+            if (!formerSection.open) {
+              formerSection.open = true;
+              formerAutoOpened = true;
+            }
+          } else if (formerAutoOpened) {
+            formerSection.open = false;
+            formerAutoOpened = false;
+          }
+        }
+        if (rednerEmpty && rednerRows.length) rednerEmpty.hidden = rednerVisible > 0;
+        updateCount();
+      };
+      if (formerSection) {
+        formerSection.addEventListener("toggle", () => {
+          // A section the reader closed or opened by hand is theirs to keep.
+          if (!formerSection.open) formerAutoOpened = false;
+          updateCount();
+        });
+      }
       if (search) search.addEventListener("input", apply);
       partyButtons.forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -8936,6 +8970,16 @@ def render_abgeordnete_script() -> str:
     })();
   </script>
 """
+
+
+# Lower-cased search text of a roster row (current or former MdB): name,
+# Fraktion, Wahlkreis and Bundesland, as the search box placeholder promises.
+def _mp_search_key(mp: dict[str, Any]) -> str:
+    return " ".join(
+        str(value).lower()
+        for value in (mp.get("name"), mp.get("party"), mp.get("wahlkreis"), mp.get("bundesland"))
+        if value
+    )
 
 
 # "Wahlkreis · Bundesland" for the roster table, or an em dash when unknown.
@@ -8974,7 +9018,7 @@ def render_abgeordnete_index(
     )
     former_rows = "".join(
         f"""
-            <tr data-former-mp-row>
+            <tr data-former-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(_mp_search_key(mp))}">
               <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
               <td>{pulse_html.esc(mp.get('party') or '—')}</td>
               <td>{pulse_html.esc(', '.join(str(number) for number in mp.get('roster_wahlperioden') or []))}</td>
@@ -8984,7 +9028,7 @@ def render_abgeordnete_index(
         for mp in former
     )
     former_section = (
-        f'<details class="former-mps" id="fruehere-abgeordnete"><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
+        f'<details class="former-mps" id="fruehere-abgeordnete" data-former-mps><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
         f"({pulse_html.format_int(len(former))})</summary>"
         '<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlperioden</th>'
         f'<th class="num">Reden</th></tr></thead><tbody>{former_rows}</tbody></table></details>'
@@ -9004,14 +9048,9 @@ def render_abgeordnete_index(
     )
     rows = []
     for mp in listed:
-        search_key = " ".join(
-            str(value).lower()
-            for value in (mp.get("name"), mp.get("party"), mp.get("wahlkreis"), mp.get("bundesland"))
-            if value
-        )
         rows.append(
             f"""
-            <tr data-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(search_key)}">
+            <tr data-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(_mp_search_key(mp))}">
               <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
               <td>{pulse_html.esc(mp.get('party') or '—')}</td>
               <td>{pulse_html.esc(_location_label(mp))}</td>
