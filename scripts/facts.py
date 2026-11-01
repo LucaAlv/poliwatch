@@ -1936,7 +1936,9 @@ def tables_exist(conn: sqlite3.Connection) -> bool:
     )
 
 
-def metric_row(metric: Mapping[str, Any]) -> list[Any]:
+def metric_row(metric: Mapping[str, Any], coverage: str | None = None) -> list[Any]:
+    """One fact_metrics row. ``coverage`` (coverage_label of the store) fills the
+    caveat's coverage slot, so the stored and exported caveat reads as the cards do."""
     return [
         str(metric["id"]),
         int(metric["version"]),
@@ -1949,7 +1951,7 @@ def metric_row(metric: Mapping[str, Any]) -> list[Any]:
         int(metric["min_history_weeks"]),
         int(metric["tie_rank"]),
         metric.get("depends_on"),
-        metric.get("caveat"),
+        fill_caveat(metric.get("caveat"), coverage),
     ]
 
 
@@ -1981,7 +1983,7 @@ def _source_values(receipt: Mapping[str, Any]) -> list[Any]:
 
 
 def snapshot_from_rows(
-    registry: Iterable[Mapping[str, Any]], rows: Iterable[Mapping[str, Any]]
+    registry: Iterable[Mapping[str, Any]], rows: Iterable[Mapping[str, Any]], *, coverage: str | None = None
 ) -> dict[str, list[list[Any]]]:
     """The three tables as one comparable value.
 
@@ -1999,7 +2001,7 @@ def snapshot_from_rows(
         for receipt in sorted(row.get("receipts") or [], key=lambda r: int(r["position"])):
             source_rows.append(key + _source_values(receipt))
     return {
-        "fact_metrics": [metric_row(metric) for metric in sorted(registry, key=lambda m: str(m["id"]))],
+        "fact_metrics": [metric_row(metric, coverage) for metric in sorted(registry, key=lambda m: str(m["id"]))],
         "facts": facts_rows,
         "fact_sources": source_rows,
     }
@@ -2290,7 +2292,7 @@ def compute_and_store(
     rows = compute(
         conn, registry, completeness if completeness is not None else {}, catalog=catalog, built=built, today=today
     )
-    snapshot = snapshot_from_rows(registry, rows)
+    snapshot = snapshot_from_rows(registry, rows, coverage=coverage_label(conn))
     posted = sum(1 for row in rows if row["publishable"])
     periods = {(row["period_kind"], row["period_key"]) for row in rows}
     report: dict[str, Any] = {

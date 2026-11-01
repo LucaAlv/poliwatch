@@ -616,6 +616,20 @@ class CoverageCaveatTests(StoreCase):
         self.seed(week_specs(2, wp=21, start_number=1, year=2025))
         self.assertEqual(facts.coverage_label(self.conn), "seit Beginn der 21. Wahlperiode")
 
+    # Value (review 2026-11-01): protects=the stored and exported fact_metrics.caveat (Daten
+    # download fact_metrics-local.csv.gz) carries the filled caveat the cards show; fails_when=the
+    # raw "{abdeckung}" template is written to the store; seam=facts.compute_and_store.
+    def test_the_stored_caveat_has_its_coverage_slot_filled(self) -> None:
+        self.seed(week_specs(2, wp=20, start_number=14, year=2022))
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet())
+        caveats = dict(conn.execute("SELECT id, caveat FROM fact_metrics"))
+        self.assertFalse([metric for metric, caveat in caveats.items() if facts.COVERAGE_SLOT in str(caveat or "")])
+        self.assertEqual(
+            caveats[ERSTE],
+            "Erste Rede in unserer Abdeckung seit Januar 2022, nicht zwingend die erste Rede im Bundestag.",
+        )
+
 
 class ErsteRedenTests(StoreCase):
     # The live store splits one person across an "aw:" and an "xml:" mps row
@@ -1713,7 +1727,8 @@ class EngineTests(StoreCase):
         for row in monthly_posted:
             self.assertGreaterEqual(row["rank"], 1)
             self.assertTrue(row["receipts"])
-        self.assertEqual(facts.read_snapshot(conn), facts.snapshot_from_rows(facts.ALL_REGISTRY, report["rows"]))
+        self.assertEqual(facts.read_snapshot(conn), facts.snapshot_from_rows(
+            facts.ALL_REGISTRY, report["rows"], coverage=facts.coverage_label(conn)))
 
     def test_receipts_round_trip_with_their_fact(self) -> None:
         conn, _ = self.store_all()
@@ -1917,7 +1932,7 @@ class EngineTests(StoreCase):
         conn, _ = self.store_all()
         snapshot = facts.read_snapshot(conn)
         self.assertEqual(
-            snapshot, facts.snapshot_from_rows(facts.REGISTRY, self.compute())
+            snapshot, facts.snapshot_from_rows(facts.REGISTRY, self.compute(), coverage=facts.coverage_label(self.conn))
         )
 
 
