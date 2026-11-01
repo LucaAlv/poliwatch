@@ -15,7 +15,7 @@ body:
     attributes:
       label: Seite
       description: Adresse aus der Adresszeile des Browsers. Über den Link auf der Daten-Seite steht hier schon „database.html"; liegt der Fehler auf einer anderen Seite, bitte deren Adresse eintragen.
-      placeholder: https://…/sitzung/21-84.html
+      placeholder: https://…/protocols/plenarprotokoll-21-84.html
     validations:
       required: true
   - type: textarea
