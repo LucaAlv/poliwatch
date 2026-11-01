@@ -545,7 +545,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         first = self.export(commit=None)
         # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
         first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
-        self.assertIn("(`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        self.assertIn("sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
         self.assertIn("beim bloßen Öffnen per Doppelklick", first_codebook)
         self.assertIn("entschärfen solchen Quelltext nicht", first_codebook)
         with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
@@ -553,7 +553,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertNotEqual(first["generation"], second["generation"])
         manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
-        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertIn("Lizenzhinweis (der Kurzstring aus `LICENSE-DATA.md`, sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired

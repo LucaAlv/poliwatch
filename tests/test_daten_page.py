@@ -71,6 +71,24 @@ class DatenPageTests(unittest.TestCase):
         self.assertRegex(provenance("abc123def456-dirty-0123abcd"), r"Commit abc123def456-dirty-0123abcd.*Änderungen")
         self.assertRegex(provenance("abc123def456-unverified-0123abcd"), r"Commit abc123def456-unverified-0123abcd.*nicht prüfen")
 
+    # Value: protects=the download panel shows the manifest's licence string with its "LICENSE-DATA.md" mention linked to this generation's copy and keeps the sources.html#lizenz link, and a manifest without a licence shows only the placeholder pointer; fails_when=the string is dropped, the file link points at the repository or another generation, or the placeholder shows beside a real string; why_new=step 4 of the Impressum/licence plan; seam=render_daten_downloads; no_claim=the string's content
+    def test_the_licence_line_links_the_generation_licence_file(self) -> None:
+        def licence_line(manifest, base="data/exports/") -> str:
+            html = b.render_daten_downloads(manifest, data_base_url=base, is_remote=False)
+            return re.search(r'<p class="licence-line">(.*?)</p>', html, re.S).group(1)
+
+        short = b.default_license_text()
+        for base in ("data/exports/", "https://example.org/releases/v-test/"):
+            with self.subTest(base=base):
+                line = licence_line(dict(self.manifest, license=short), base)
+                href = f'{base}{self.manifest["generation"]}/LICENSE-DATA.md'
+                self.assertIn(f'Details in <a href="{href}">LICENSE-DATA.md</a>.', line)
+                self.assertIn('<a href="sources.html#lizenz">', line)
+                self.assertNotIn("siehe Quellen und Methode", line)
+        custom = licence_line(dict(self.manifest, license="CC BY 4.0 <b>"))
+        self.assertIn("CC BY 4.0 &lt;b&gt; (<a href=", custom)
+        self.assertEqual(licence_line(dict(self.manifest, license="")), '<a href="sources.html#lizenz">Lizenzhinweis: siehe Quellen und Methode</a>')
+
     def test_no_sample_table_or_search_box(self) -> None:
         # The shared dark-theme stylesheet still lists .sample-table in an
         # unrelated selector (harmless, unrelated to this page); this page

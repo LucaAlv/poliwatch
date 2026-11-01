@@ -3947,7 +3947,7 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
         f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` ({REVISION_SUFFIX_NOTE}).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
-        f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): {_license_line_text(manifest['license'])}", "",
+        f"Schema-SHA-256: `{manifest['schema_hash']}`. Lizenzhinweis (der Kurzstring aus `LICENSE-DATA.md`, sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): {_license_line_text(manifest['license'])}", "",
         "## Dateien und Verwendung", "",
         "Alle folgenden Dateien gehören zu dieser Generation. `datenstand.json` liegt eine Ebene darüber und enthält auch den SHA-256 von `DATA.md`. Das Codebook enthält keinen eigenen Hash.",
         "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren: beim bloßen Öffnen per Doppelklick wertet eine Tabellenkalkulation Zellen, die mit `=`, `+`, `-` oder `@` beginnen, als Formel aus (etwa DIP-Titel, die mit „- “ beginnen), und die Dateien entschärfen solchen Quelltext nicht. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",
@@ -4658,11 +4658,18 @@ def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_r
         for file in csv_files
     )
     license_text = manifest.get("license") or ""
-    license_line = (
-        pulse_html.esc(license_text)
-        if license_text
-        else "Lizenzhinweis: siehe Quellen und Methode"
-    )
+    # The string names the file ("Details in LICENSE-DATA.md"); that mention
+    # becomes the link to this generation's copy. A manifest without a licence
+    # (an older remote one) keeps the pointer to the sources page alone.
+    if license_text:
+        name = pulse_html.esc(license_file["name"])
+        link = f'<a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, license_file["name"]))}">{name}</a>'
+        escaped = pulse_html.esc(license_text)
+        license_line = (escaped.replace(name, link, 1) if name in escaped else f"{escaped} ({link})") + (
+            ' &middot; <a href="sources.html#lizenz">Lizenzschichten</a>'
+        )
+    else:
+        license_line = '<a href="sources.html#lizenz">Lizenzhinweis: siehe Quellen und Methode</a>'
     state_line = f"Release {manifest.get('tag') or '?'}" if is_remote else "lokaler Build"
     return f"""
       <div class="download-panel">
@@ -4677,7 +4684,7 @@ def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_r
           <ul class="file-list">{csv_rows}</ul>
         </details>
         <p class="transformation-note">{pulse_html.esc(manifest.get('transformation') or '')}</p>
-        <p class="licence-line"><a href="sources.html#lizenz">{license_line}</a></p>
+        <p class="licence-line">{license_line}</p>
       </div>
     """
 
@@ -13319,7 +13326,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-license",
         default=None,
-        help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE).",
+        help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE). Default: the short string of LICENSE-DATA.md.",
     )
     parser.add_argument(
         "--data-issues-url",
@@ -13391,6 +13398,22 @@ def dossier_database_page_href(args: argparse.Namespace, database_path: Path) ->
     return None
 
 
+# The default --data-license: the blockquote under "## Short string" in
+# LICENSE-DATA.md, so the string is written once.
+def default_license_text() -> str:
+    path = REPO_ROOT / CODEBOOK_INPUT_FILES["license"]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError(f"default licence string: cannot read {path}: {exc}") from exc
+    section = re.search(r"^## Short string[ \t]*\n(.*?)(?=^## |\Z)", text, flags=re.MULTILINE | re.DOTALL)
+    quoted = [line[1:].strip() for line in section.group(1).splitlines() if line.startswith(">")] if section else []
+    short = " ".join(part for part in quoted if part)
+    if not short:
+        raise RuntimeError(f'default licence string: {path} has no blockquote under "## Short string"; pass --data-license')
+    return short
+
+
 # CLI > env > default, read in the layer that actually runs the build (not in
 # parse_args itself), per the DX addendum. getattr() throughout: main() must
 # keep working against the pre-existing test stub that mocks parse_args() with
@@ -13400,7 +13423,7 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
         getattr(args, "data_base_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_BASE_URL") or "data/exports/"
     )
     manifest_raw = data_manifest_source(args)
-    license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or ""
+    license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or default_license_text()
     issues_url = getattr(args, "data_issues_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_ISSUES_URL")
     issues_url = (issues_url or "").strip() or None
     if issues_url and safe_issues_url(issues_url) is None:

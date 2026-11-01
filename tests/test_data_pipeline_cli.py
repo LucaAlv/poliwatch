@@ -112,7 +112,27 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
                     for key in env_keys:
                         os.environ.pop(key, None)
                     result = b.resolve_data_export_options(args)
-                self.assertEqual(result, ("data/exports/", None, "", None))
+                self.assertEqual(result, ("data/exports/", None, b.default_license_text(), None))
+
+    # Value: protects=with no --data-license the export records the short string, read from the blockquote under "## Short string" in LICENSE-DATA.md, and a file without that section stops with a clear error; fails_when=the default stays empty (the Daten page shows only the placeholder), the string is written a second time in code, or a missing section yields "" or a traceback; why_new=step 4 of the Impressum/licence plan; seam=default_license_text; no_claim=the string's legal content
+    def test_the_default_licence_string_is_the_short_string_of_license_data(self) -> None:
+        text = b.default_license_text()
+        self.assertTrue(text.startswith("Quelldaten: Deutscher Bundestag/Bundesrat – DIP"), text)
+        self.assertTrue(text.endswith("Details in LICENSE-DATA.md."), text)
+        self.assertIn(f"> {text}", (b.REPO_ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8"))
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, root, ignore_errors=True)
+        for label, content in (
+            ("no section", "# Datenlizenz\n\n## Terms per layer\n\n> not the short string\n"),
+            ("section without a quote", "# Datenlizenz\n\n## Short string\n\nNur Fließtext.\n\n## Terms per layer\n"),
+        ):
+            with self.subTest(label):
+                (root / "LICENSE-DATA.md").write_text(content, encoding="utf-8")
+                with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string"):
+                    b.default_license_text()
+        (root / "LICENSE-DATA.md").unlink()
+        with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "cannot read"):
+            b.default_license_text()
 
 
 class ResolveCommitTests(unittest.TestCase):
