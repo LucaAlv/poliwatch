@@ -874,6 +874,18 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("not_fetched", err)  # no cache in this fixture: every tag is a cache miss, and the build says so
         self.assertIn("Fix: run an online update.", err)
 
+    # Value: protects=an --offline --repersist build runs the C1 seat cross-check on the store it
+    #   just rebuilt and writes its report into the private directory; fails_when=main stops calling
+    #   log_seat_crosscheck, or calls it before the rebuild, so the report describes the old store;
+    #   why_new=C1 step 5 wires the cross-check; seam=main with read_cached_stammdaten patched
+    def test_an_offline_repersist_writes_the_seat_crosscheck(self) -> None:
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached(stammdaten_wp21())):
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        self.assertIn("stammdaten: cross-check of ", err)
+        report = json.loads(stammdaten.crosscheck_path(self.database).read_text(encoding="utf-8"))
+        self.assertEqual(report["sha256"], "ab" * 32)
+
     # Value: protects=the Vorgang cache file in the site directory is loaded by main and its Sachgebiete reach the store on --offline --repersist; fails_when=main stops loading or passing the cache, so every tag silently becomes not_fetched; why_new=other tests hand the cache to persist_report directly or have none; seam=none
     def test_an_offline_repersist_reads_the_cache_file_and_stores_sachgebiet_tags(self) -> None:
         cache = {

@@ -2109,6 +2109,73 @@ def refresh_drucksache_texts(
             save()
 
 
+#: How the summary line names each cross-check cause (stammdaten.CAUSES).
+_CROSSCHECK_CAUSE_LABELS = {
+    "after_stand": "after the Stand",
+    "change_on_vote_day": "change on the vote's day",
+    "shift_between_groups": "shift between groups",
+    "roll_call_short": "roll-call short",
+    "unexplained": "unexplained",
+}
+
+
+def _roll_calls(count: int) -> str:
+    return f"{count} roll-call" + ("" if count == 1 else "s")
+
+
+def log_seat_crosscheck(database_path: Path) -> None:
+    """C1 step 5: the store's seat counts against its roll-call totals. Writes
+    every disagreement to ``stammdaten.crosscheck_path`` (private, D9), prints
+    one summary line, and warns for disagreements after the Stand (drift, D6),
+    in no known shape, or not comparable. Never fails the build: a new
+    misattribution on a roll-call page must not stop a routine update."""
+    path = stammdaten.crosscheck_path(database_path)
+    try:
+        conn = sqlite3.connect(f"{Path(database_path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            result = stammdaten.crosscheck(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        print(f"note: [stammdaten] no cross-check, the store could not be read: {exc}", file=sys.stderr)
+        return
+    if result is None:
+        # A report left from an earlier build would describe seat counts the store no longer holds.
+        path.unlink(missing_ok=True)
+        print("stammdaten: no cross-check, MdB-Stammdaten nicht geladen", file=sys.stderr)
+        return
+    by_cause: dict[str, list[str]] = {cause: [] for cause in stammdaten.CAUSES}
+    for row in result.disagreements:
+        if row["vote_id"] not in by_cause[row["cause"]]:
+            by_cause[row["cause"]].append(row["vote_id"])
+    disagreeing = sum(len(ids) for ids in by_cause.values())
+    not_compared = {"without_seat_count": result.without_seat_count, "without_totals": result.without_totals,
+                    "with_unbekannt": result.with_unbekannt}
+    report = {
+        "stand": result.stand, "sha256": result.sha256,
+        "compared": result.compared, "agree": result.compared - disagreeing,
+        "roll_calls_by_cause": by_cause, "not_compared": not_compared,
+        "disagreements": result.disagreements,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dip.write_text_atomic(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    causes = ", ".join(f"{len(ids)} {_CROSSCHECK_CAUSE_LABELS[cause]}" for cause, ids in by_cause.items() if ids)
+    skipped = sum(map(len, not_compared.values()))
+    print(f"stammdaten: cross-check of {_roll_calls(result.compared)} against the seat counts: "
+          f"{report['agree']} agree, {disagreeing} disagree" + (f" ({causes})" if causes else "")
+          + (f"; {skipped} not compared" if skipped else "") + f"; report: {path}", file=sys.stderr)
+    stand_day = datetime.fromisoformat(result.stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
+    for ids, message in (
+        (by_cause["unexplained"], "disagreement with the seat counts in no known shape"),
+        (by_cause["after_stand"], f"disagreement after the Stand ({stand_day}) with the carried-forward seat counts (drift)"),
+        (result.with_unbekannt, "not compared, a group named Unbekannt"),
+        (result.without_seat_count, "not compared, no seat count on the date"),
+        (result.without_totals, "not compared, no group totals"),
+    ):
+        if ids:
+            print(f"warning: [stammdaten] {message}, {_roll_calls(len(ids))}: {', '.join(ids)}", file=sys.stderr)
+
+
 def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:
     """One line per build, on every path: how many TOPs and votes the store tags by
     source, how many of them are ``not_fetched`` (a cache miss: run an online update),
@@ -13758,6 +13825,7 @@ def main() -> int:
         )
         if not args.no_persist and database_path.exists():
             log_politikfelder_summary(database_path, vorgang_cache)
+            log_seat_crosscheck(database_path)
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
                 args=args,
@@ -14084,6 +14152,7 @@ def main() -> int:
     # site around the dossiers.
     if not args.no_persist and database_path.exists():
         log_politikfelder_summary(database_path, vorgang_cache)
+        log_seat_crosscheck(database_path)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
             args=args,

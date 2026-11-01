@@ -14,6 +14,7 @@ import hashlib
 import http.client
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import urllib.error
@@ -66,6 +67,10 @@ def cache_path(database_path: Path) -> Path:
 
 def etag_path(database_path: Path) -> Path:
     return registry.private_dir(database_path) / ETAG_NAME
+
+
+def crosscheck_path(database_path: Path) -> Path:
+    return registry.private_dir(database_path) / CROSSCHECK_NAME
 
 
 def _fields(element: ET.Element, names: tuple[str, ...]) -> dict[str, str | None]:
@@ -146,6 +151,118 @@ def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple
     if not seats:
         raise StammdatenError(f"no Mandat from Wahlperiode {since_wahlperiode} on")
     return zugehoerigkeiten, seats
+
+
+#: The causes a disagreeing roll-call is filed under, in the order they are
+#: tried (``crosscheck``): drift after the Stand (D6), a Zugehörigkeit change
+#: dated on the vote's day, members filed under another group (the totals
+#: agree), members missing from the roll-call, and anything else.
+CAUSES = ("after_stand", "change_on_vote_day", "shift_between_groups", "roll_call_short", "unexplained")
+#: The cross-check report, beside the cached file: never published (D9).
+CROSSCHECK_NAME = "seat-crosscheck.json"
+
+
+@dataclass(frozen=True)
+class CrossCheck:
+    """The stored seat counts against every stored roll-call's group totals.
+    ``compared`` counts the roll-calls checked; ``disagreements`` holds one row
+    per roll-call and group whose figures differ, with the roll-call's cause.
+    Roll-calls with nothing to compare are listed by id instead: no seat count
+    on their date, no group totals, or a group the roll-call could not name
+    (``Unbekannt``, plan F3)."""
+
+    stand: str
+    sha256: str
+    compared: int
+    disagreements: list[dict[str, Any]]
+    without_seat_count: list[str]
+    without_totals: list[str]
+    with_unbekannt: list[str]
+
+
+def _cause(differences: dict[str, int], changes: dict[str, int]) -> str:
+    """How a roll-call's differences (roll-call minus Stammdaten, per group) are
+    filed, by their shape, first fit wins. ``changes`` counts the Zugehörigkeiten
+    of each group that start or end on the roll-call's day: a change explains a
+    group's difference only when there are as many as the difference is large,
+    so an unrelated Nachrücker that day explains nothing."""
+    if all(changes.get(party, 0) >= abs(difference) for party, difference in differences.items()):
+        return "change_on_vote_day"
+    if sum(differences.values()) == 0:
+        return "shift_between_groups"
+    if all(difference <= 0 for difference in differences.values()):
+        return "roll_call_short"
+    return "unexplained"
+
+
+def crosscheck(conn: sqlite3.Connection) -> CrossCheck | None:
+    """Each roll-call's ``vote_fractions.total_count`` per group against that
+    group's ``party_seats`` on the roll-call's date, in the roll-call's
+    Wahlperiode (C1 plan step 5). Roll-calls go in date and id order. None when
+    the store holds no Stammdaten."""
+    provenance = conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+    if provenance is None:
+        return None
+    # The Stand is a UTC instant; the file covers the whole of its day.
+    stand_day = datetime.fromisoformat(provenance[0]).astimezone(timezone.utc).date().isoformat()
+    totals: dict[str, dict[str, int]] = {}
+    for vote_id, party, total in conn.execute(
+        "SELECT vf.vote_id, p.name, vf.total_count FROM vote_fractions vf JOIN parties p ON p.id = vf.party_id"
+    ):
+        totals.setdefault(vote_id, {})[party] = total
+    votes = conn.execute(
+        """SELECT v.id, v.date, CAST(substr(pr.document_number, 1, instr(pr.document_number, '/') - 1) AS INTEGER)
+           FROM votes v LEFT JOIN protocols pr ON pr.id = v.protocol_id
+           ORDER BY v.date, CAST(v.id AS INTEGER), v.id"""
+    ).fetchall()
+    compared, disagreements = 0, []
+    without_seat_count, without_totals, with_unbekannt = [], [], []
+    for vote_id, day, protocol_wahlperiode in votes:
+        listed = totals.get(vote_id)
+        if not listed:
+            without_totals.append(vote_id)
+            continue
+        if "Unbekannt" in listed:
+            with_unbekannt.append(vote_id)
+            continue
+        # On the day one Bundestag hands over to the next both may have seat rows;
+        # the vote's protocol says which one it belongs to.
+        by_wahlperiode: dict[int, dict[str, int]] = {}
+        for wahlperiode, party, count in conn.execute(
+            """SELECT ps.wahlperiode, p.name, ps.seats FROM party_seats ps JOIN parties p ON p.id = ps.party_id
+               WHERE ps.valid_from <= ? AND (ps.valid_until IS NULL OR ? < ps.valid_until)""",
+            (day, day),
+        ):
+            by_wahlperiode.setdefault(wahlperiode, {})[party] = count
+        if protocol_wahlperiode:
+            by_wahlperiode = {protocol_wahlperiode: by_wahlperiode.get(protocol_wahlperiode, {})}
+        if len(by_wahlperiode) != 1 or not next(iter(by_wahlperiode.values())):
+            without_seat_count.append(vote_id)
+            continue
+        [(wahlperiode, seats)] = by_wahlperiode.items()
+        compared += 1
+        differences = {party: listed.get(party, 0) - seats.get(party, 0)
+                       for party in sorted(seats.keys() | listed.keys())
+                       if listed.get(party, 0) != seats.get(party, 0)}
+        if not differences:
+            continue
+        if day > stand_day:
+            cause = "after_stand"
+        else:
+            changes = dict(conn.execute(
+                """SELECT p.name, COUNT(*) FROM mdb_zugehoerigkeiten z JOIN parties p ON p.id = z.party_id
+                   WHERE z.wahlperiode = ? AND (z.valid_from = ? OR z.valid_until = ?) GROUP BY p.name""",
+                (wahlperiode, day, day),
+            ))
+            cause = _cause(differences, changes)
+        disagreements += [
+            {"vote_id": vote_id, "date": day, "wahlperiode": wahlperiode, "party": party,
+             "stammdaten_seats": seats.get(party, 0), "roll_call_total": listed.get(party, 0),
+             "difference": difference, "cause": cause}
+            for party, difference in differences.items()
+        ]
+    return CrossCheck(stand=provenance[0], sha256=provenance[1], compared=compared, disagreements=disagreements,
+                      without_seat_count=without_seat_count, without_totals=without_totals, with_unbekannt=with_unbekannt)
 
 
 def _stand_day(stand: str) -> str:

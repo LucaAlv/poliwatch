@@ -155,12 +155,14 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
    - Tests with a small fixture under `tests/fixtures/`, built from the step 1b structure. No network in tests.
    - Done (2026-11-01), see "Step 4 result".
 5. **Cross-check.** The disagreement report and its summary line. A test with a fixture vote whose total disagrees.
+   - Done (2026-11-01), see "Step 5 result".
 6. **Export.**
    - Done in step 3 (the export refuses a table without a dictionary entry): the source tags, the `bundestag-stammdaten` layer, the dictionary entries, the captions, `EXPORT_FORMAT` 12 and the `tests/test_daten_export.py` pins.
    - A `column_source` test (beside `tests/test_build_dip_pulse_site.py:3182`).
    - `tests/_daten_fixture.py` with Stammdaten-derived rows.
 7. **R2.**
    - `sitzanteil_prozent` and its definition.
+   - D6's caveat line in the recipe caveat: the Stand date, and that the seats are carried forward after it (from step 5).
    - The replay test.
    - A new test: the column sums to 100 over the groups with seats in each WP, and is NULL for the Sprechrollen.
    - Re-check `tests/test_daten_export.py:34, 1299, 1340, 1433` and `tests/test_sprechrolle.py:266`.
@@ -356,6 +358,68 @@ The acquisition is in, test-first. The owner settled three questions first: the 
 - **Python 3.13.12:** not reached; `html.parser` is untouched.
 - **Adversarial lenses:** owed once, on the C1 tip handed to `/gstack-ship`.
 
+## Step 5 result (2026-11-01)
+
+The cross-check is in, built test-first. The owner chose two seams and the private directory for the report.
+
+**What changed**
+- **`stammdaten.crosscheck(conn)`.** For each roll-call it compares `vote_fractions.total_count` per group with `party_seats` on the roll-call's date.
+  - **Which Wahlperiode:** the one in the vote's protocol number. A vote without a protocol is compared only when exactly one WP has seat rows on its date.
+  - **Order:** roll-calls go by `(date, CAST(id AS INTEGER))` (F2).
+  - **A group missing on one side** counts as 0, but only on a date that has seat rows.
+  - **Not compared, listed by id instead:**
+    - no seat count on the date;
+    - no group totals;
+    - a group named `Unbekannt` (F3).
+- **Causes (`stammdaten.CAUSES`).** Each roll-call is filed under one cause, judged on all its groups' differences. The first that fits wins:
+  1. `after_stand`: the date is after the Stand's day, whatever the shape (D6: drift, which warns and never fails the gate).
+  2. `change_on_vote_day`: each group that disagrees has at least as many Zugehörigkeiten starting or ending that day as its difference. An unrelated Nachrücker that day therefore explains nothing. This test must run before the shift test, because the 2024-02-02 Gruppen votes also net to zero.
+  3. `shift_between_groups`: the differences net to zero. This is the E4 shape, named by its shape: the code cannot tell a misattribution on the roll-call page from a fault in the derivation.
+  4. `roll_call_short`: no group shows more members on the roll-call than in the Stammdaten (every difference ≤ 0, as with E5).
+  5. `unexplained`.
+- **`build.log_seat_crosscheck(database_path)`.**
+  - **Report:** writes `seat-crosscheck.json` to the store's private directory (`stammdaten.crosscheck_path`, which is never published, as D9 requires), with:
+    - the Stand and sha256;
+    - the counts;
+    - the roll-call ids by cause and those not compared;
+    - one row per roll-call and group that disagree (vote id, date, WP, group, Stammdaten seats, roll-call total, difference, cause).
+
+    It carries no build time, so an unchanged store writes the same file.
+  - **Output:** one summary line, plus warnings for unexplained roll-calls, for roll-calls after the Stand, and for each kind not compared.
+  - **Never fails the build.** A new misattribution on a roll-call page must not stop a routine update. The gate is judged on the report.
+  - **Without Stammdaten** it removes an earlier report and prints one line.
+- **Wiring.** The cross-check runs beside the Politikfeld summary on both persisting paths. `--no-persist` skips it.
+
+**Tests**
+- `tests/test_seat_crosscheck.py` (9): each cause and their order, the narrow change rule, the Stand-day boundary, absent vs zero, the vote's own WP, no Stammdaten, the report and summary line, and removal of a stale report.
+- `tests/test_repersist.py`: `--offline --repersist` writes the report. Without the call in `main`, this test fails.
+
+**Real data.** Function (a) was replayed from a scratch script on the real file (Stand 29.04.2026, sha256 `29ae4ba1…`) and the 556 roll-calls of the A3 reference store (`~/agent-runs/a3/full`). The result: 556 compared, 497 agree, 59 disagree. These are the S4 totals.
+
+| Cause | Roll-calls | Votes |
+|---|---:|---|
+| shift between groups | 47 | the S4 E4 set by id: 31 from 487 to 571 (Kamann, Bülow), 9 from 696 to 706 (Pasemann), 750–754 and 756–757 (Witt, Huber, Heßenkemper) |
+| change on the vote's day | 10 | 897, 898, 912 (Gruppen recognised 2024-02-02); 639, 779, 781–784, 802 (below) |
+| roll-call short | 1 | 440 (E5) |
+| after the Stand | 1 | 1004 |
+| unexplained | 0 | |
+
+**The seven one-seat cases from S4 need no source-errors entry.** In each, a Nachrücker's Mandat begins on the vote's day. The roll-call's member list (`vote_members`, copied from the page) leaves that member out, and the next roll-call lists them:
+- **639** (2019-11-15, FDP 80/79): Thomas L. Kemmerich leaves and Reginald Hanke enters that day. Hanke is not listed in 639; he is listed from 642 on (2019-11-29, the next roll-call).
+- **779, 781–784** (2022-06-03, SPD 206/205): Daniela De Ridder's Mandat begins. She is listed from 785 on.
+- **802** (2022-09-30, SPD 206/205): Daniel Rinkert's Mandat begins. He is listed from 803 on.
+
+These fall under the gate's "change on the vote's day". The bundestag.de page check S4 planned is not needed, because the member rows are copies of those pages.
+
+**Gate status.** Every disagreement in the replay has a cause from the closed list, and the 47 shifts are the E4 roll-calls by id. The gate itself is judged in step 9, on the rebuilt store through the build.
+
+**Left open**
+- The online path's call has no test of its own; the offline one does. The Politikfeld summary beside it is in the same position.
+- A real misattribution on a day whose Zugehörigkeit changes cover it would be filed as a change on the vote's day. The count rule narrows this, and the replay has no such case.
+- A shift could be a derivation fault rather than a source error. Step 9 compares the ids with E4 again.
+- **D6's caveat line** for roll-calls after the Stand is not in step 5, which only warns. It goes into R2's recipe caveat in step 7, beside the Stand date.
+- If the store cannot be read when the cross-check runs, an earlier report stays in place. No current input reaches this: the build has just written the store.
+
 ## Decisions
 
 | | Question | Recommendation |
@@ -478,12 +542,12 @@ These are the stretches before each WP's first roll-call, which the roll-call so
 | Roll-call page misattributes MdBs (E4, extended) | 47 | Kamann and Bülow (WP 19, 2017-12 to 2018-12), Pasemann (WP 19, 2020-11/12, the reverse direction), Witt and Huber (WP 19 votes 750–754 and WP 20 votes 756–757), Heßenkemper (753–754). The Textarchiv backs the Stammdaten in every case |
 | Group change on the vote's day | 3 | 2024-02-02, votes 897, 898, 912: the roll-calls list the 38 as fraktionslos on the day the Gruppen were recognised; the Stammdaten counts the Gruppen from that day |
 | Member missing from one list (E5) | 1 | vote 440, 2016-11-09 |
-| One seat fewer on the roll-call, no member filed under another group | 7 | 639 (FDP 80/79, 2019-11-15); 779–784 and 802 (SPD 206/205, 2022-06-03 and 2022-09-30). A vacancy or a member missing from the list, not yet checked: **new source-errors candidates** |
+| One seat fewer on the roll-call, no member filed under another group | 7 | 639 (FDP 80/79, 2019-11-15); 779–784 and 802 (SPD 206/205, 2022-06-03 and 2022-09-30). A vacancy or a member missing from the list, not yet checked: **new source-errors candidates**. Resolved in step 5: a Nachrücker missing on the day the Mandat begins, so no entry |
 | After the Stand date | 1 | vote 1004, 2026-05-22: CDU/CSU 208 vs 206 (back to 208 on 2026-06-11 in the roll-calls); 1 of the 33 roll-calls after the Stand disagrees |
 
 **Consequences for the plan:**
 - **The gate's causes become a closed list:** misattribution (E4), change on the vote's day, dropout (E5), a seat missing from the roll-call, and after the Stand. Any disagreement outside these fails the gate.
-- **The 7 one-seat cases** get checked on their bundestag.de pages in step 5 and entered as candidates.
+- **The 7 one-seat cases** get checked on their bundestag.de pages in step 5 and entered as candidates. Resolved in step 5 without a page check: Nachrücker timing, no entry ("Step 5 result").
 - **E4's existing-figure TODO grows:** 47 roll-calls, six MdBs, affecting the vote panel's group blocks and Abweichler for those votes. The fix can now use the Stammdaten.
 - **D6, evidence for (a):** across five months after the Stand, one roll-call disagrees, by two seats that the roll-calls themselves show return three weeks later. Carrying the Stand composition forward with the drift flag costs little.
 - **Acquisition can use a conditional GET** with `If-None-Match` and the ETag, because the server sends no `Last-Modified`. The Stand stored in `datenstand` is `VERSION` decoded, plus the sha256.
