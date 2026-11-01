@@ -310,6 +310,20 @@ class RssTests(unittest.TestCase):
         self.assertEqual(next(root.iter("item")).find("title").text, "KW 24/2026: Wochenübersicht")
         self.assertNotIn("<ul>", next(root.iter("item")).find("description").text)
 
+    # Value: protects=an item's date range covers a weekend Sondersitzung that supplies its counts, and a platform without an IANA tz database still writes the feed (pubDate at midnight UTC); fails_when=the range is fixed to Monday-Friday (20/19 on Sunday 27.2.2022 read "21.-25. Februar") or ZoneInfo is resolved at import; why_new=every other week here sits on weekdays; seam=render_rss; no_claim=a real tz-less platform
+    def test_a_weekend_sitting_widens_the_range_and_a_missing_tz_database_falls_back_to_utc(self) -> None:
+        item = make_item(1, [("SPD", 3)], [pos("A1", "Antrag")])
+        payload = build(
+            [make_entry("2022-02-24", "20/18", [item]), make_entry("2022-02-27", "20/19", [item])],
+            today=date(2022, 3, 9),
+        )
+        _text, root = self.rss(payload)
+        description = next(root.iter("item")).find("description").text
+        self.assertIn("21.–27. Februar 2022", description)
+        with mock.patch.object(feed, "ZoneInfo", side_effect=feed.ZoneInfoNotFoundError("no tzdata")):
+            _text, root = self.rss(payload)
+        self.assertEqual(next(root.iter("item")).find("pubDate").text, "Mon, 28 Feb 2022 00:00:00 +0000")
+
 
 class WriteTests(unittest.TestCase):
     def setUp(self) -> None:

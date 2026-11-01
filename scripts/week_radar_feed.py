@@ -21,12 +21,12 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import derive
 import render_dip_pulse_html as pulse_html
@@ -50,7 +50,6 @@ STABILITY = (
     "a Rede in a Sprechrolle is counted on that side only, so a row need not equal "
     "GROUP BY fraktion, sprechrolle on the release."
 )
-_BERLIN = ZoneInfo("Europe/Berlin")
 #: The radar names a Sprechrolle side by its display label; the release stores the code.
 _ROLE_CODES = {label: code for code, label in derive.SPRECHROLLE_LABELS.items()}
 
@@ -237,7 +236,13 @@ def valid_site_url(value: str | None) -> bool:
 
 
 def _berlin_midnight(day: date) -> datetime:
-    return datetime(day.year, day.month, day.day, tzinfo=_BERLIN)
+    # Resolved here, not at import: a platform without an IANA tz database still
+    # builds, with the pubDate at midnight UTC (as format_datenstand_timestamp falls back).
+    try:
+        zone = ZoneInfo("Europe/Berlin")
+    except ZoneInfoNotFoundError:
+        zone = timezone.utc
+    return datetime(day.year, day.month, day.day, tzinfo=zone)
 
 
 def _cut(text: str, limit: int) -> str:
@@ -267,7 +272,14 @@ def _item_description(week: dict[str, Any], site_url: str) -> str:
         return f'<a href="{esc(site_url + href)}">{esc(text)}</a>'
 
     monday = date.fromisoformat(week["monday"])
-    span = sitzungskalender.range_text(monday, monday + timedelta(days=4))
+    # Monday to Friday, or to the last sitting when a Sondersitzung fell on the weekend.
+    last = monday + timedelta(days=4)
+    for sitting in week["sittings"]:
+        try:
+            last = max(last, date.fromisoformat(str(sitting["datum"])))
+        except ValueError:
+            continue
+    span = sitzungskalender.range_text(monday, min(last, date.fromisoformat(week["sunday"])))
     counts = (
         f"{pulse_html.format_count(week['speech_count'], 'Rede', 'Reden')} in "
         f"{pulse_html.format_count(week['top_count'], 'Tagesordnungspunkt', 'Tagesordnungspunkten')}"

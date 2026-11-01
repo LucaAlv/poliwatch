@@ -32,6 +32,7 @@ from urllib.parse import urljoin, urlparse
 import validate_dip_protocol as dip
 
 INDEX_URL = "https://www.bundestag.de/parlament/plenum/sitzungskalender"
+_INDEX_HOST = urlparse(INDEX_URL).hostname
 CACHE_NAME = "sitzungskalender.json"
 CACHE_VERSION = 1
 #: At most this many .ics files are followed from the index page.
@@ -84,9 +85,13 @@ def discover_ics_urls(index_html: str) -> list[str]:
     for href in collector.hrefs:
         try:
             absolute = urljoin(INDEX_URL, href.strip())
-            path = urlparse(absolute).path
+            parsed = urlparse(absolute)
         except ValueError:
             continue  # a malformed href (e.g. an unclosed IPv6 bracket) is skipped, the others still count
+        # Only the Bundestag's own https blobs: a file:// or off-host link is never fetched.
+        if parsed.scheme != "https" or parsed.hostname != _INDEX_HOST:
+            continue
+        path = parsed.path
         if path.lower().endswith(".ics") and "/resource/blob/" in path and absolute not in urls:
             urls.append(absolute)
     return urls[:MAX_ICS_FILES]

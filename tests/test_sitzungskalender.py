@@ -126,6 +126,14 @@ class ParseIcsTests(unittest.TestCase):
         many = "".join(f'<a href="/resource/blob/{n}/x{n}.ics">x</a>' for n in range(9))
         self.assertEqual(len(cal.discover_ics_urls(many)), cal.MAX_ICS_FILES)
         self.assertEqual(cal.discover_ics_urls("<p>kein Link</p>"), [])
+        # Only https on the Bundestag's own host is followed: a file://, plain-http or off-host blob path is not.
+        foreign = (
+            '<a href="file:///etc/resource/blob/1/x.ics">f</a>'
+            '<a href="http://www.bundestag.de/resource/blob/2/x.ics">h</a>'
+            '<a href="https://evil.example/resource/blob/3/x.ics">o</a>'
+            '<a href="/resource/blob/4/ok.ics">ok</a>'
+        )
+        self.assertEqual(cal.discover_ics_urls(foreign), ["https://www.bundestag.de/resource/blob/4/ok.ics"])
 
 
 class RefreshIfDueTests(unittest.TestCase):
