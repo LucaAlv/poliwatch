@@ -341,6 +341,23 @@ class WriteTests(unittest.TestCase):
         self.assertTrue(feed.valid_site_url(SITE))
         self.assertTrue(feed.valid_site_url("https://example.org/pulse/"))
 
+    # Value: protects=a malformed BUNDESTAG_PULSE_SITE_URL (an unclosed IPv6 bracket, an impossible port) takes the documented invalid-URL path: the JSON is written, no RSS exists, a stale RSS is removed, one warning, and the build does not raise; fails_when=urlparse's ValueError (or the port check) escapes write() and aborts the build; why_new=Codex review found valid_site_url crashing on "https://[example.org/"; seam=valid_site_url, write; no_claim=that every possible malformed string is listed
+    def test_malformed_site_url_does_not_abort_the_build(self) -> None:
+        self.write({feed.SITE_URL_ENV: SITE})
+        rss = self.out / "feeds" / "week-radar.xml"
+        self.assertTrue(rss.is_file())
+        for bad in ("https://[example.org/", "https://example.org:99999999/", "https://example.org:abc/"):
+            with self.subTest(url=bad):
+                self.assertFalse(feed.valid_site_url(bad))
+                self.write({feed.SITE_URL_ENV: SITE})
+                (self.out / "feeds" / "week-radar.json").unlink()
+                log = self.write({feed.SITE_URL_ENV: bad})
+                self.assertTrue((self.out / "feeds" / "week-radar.json").is_file())
+                self.assertFalse(rss.exists())
+                self.assertEqual(log.count("warning: [week-radar]"), 1, log)
+                data = json.loads((self.out / "feeds" / "week-radar.json").read_text(encoding="utf-8"))
+                self.assertIsNone(data["site_url"])
+
     # Value: protects=the JSON carries the configured site URL and the RSS the week's items when a valid URL is set; fails_when=site_url stays null or the feed is empty; why_new=the route-B switch is the env var; seam=write; no_claim=none
     def test_valid_site_url_writes_both(self) -> None:
         log = self.write({feed.SITE_URL_ENV: SITE}, today=date(2026, 9, 15))

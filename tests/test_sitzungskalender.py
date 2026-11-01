@@ -118,6 +118,9 @@ class ParseIcsTests(unittest.TestCase):
         self.assertEqual(urls, [ICS_2026_URL, ICS_2027_URL])
         self.assertIn("2026", ICS_2027_URL)
         self.assertEqual({s.year for s, _ in cal.parse_ics(ics_text("parlamentstermine_2026_ics-1-.ics"))}, {2027})
+        # One malformed href (an unclosed IPv6 bracket) is skipped, not fatal for the other links.
+        broken = '<a href="http://[bad/x.ics">x</a><a href="/resource/blob/7/ok.ics">ok</a>'
+        self.assertEqual(cal.discover_ics_urls(broken), ["https://www.bundestag.de/resource/blob/7/ok.ics"])
         many = "".join(f'<a href="/resource/blob/{n}/x{n}.ics">x</a>' for n in range(9))
         self.assertEqual(len(cal.discover_ics_urls(many)), cal.MAX_ICS_FILES)
         self.assertEqual(cal.discover_ics_urls("<p>kein Link</p>"), [])

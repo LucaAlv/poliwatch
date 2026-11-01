@@ -224,10 +224,15 @@ def build_payload(
 
 
 def valid_site_url(value: str | None) -> bool:
-    """An absolute https URL with a host, ending in "/"."""
+    """An absolute https URL with a host, ending in "/". A string urlparse or the port check
+    rejects ("https://[example.org/", "https://example.org:99999999/") is simply not valid."""
     if not value:
         return False
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+        parsed.port  # raises ValueError for a non-numeric or out-of-range port
+    except ValueError:
+        return False
     return parsed.scheme == "https" and bool(parsed.netloc) and value.endswith("/") and not parsed.query and not parsed.fragment
 
 

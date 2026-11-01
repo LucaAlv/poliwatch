@@ -82,8 +82,11 @@ def discover_ics_urls(index_html: str) -> list[str]:
     collector.feed(index_html)
     urls: list[str] = []
     for href in collector.hrefs:
-        absolute = urljoin(INDEX_URL, href.strip())
-        path = urlparse(absolute).path
+        try:
+            absolute = urljoin(INDEX_URL, href.strip())
+            path = urlparse(absolute).path
+        except ValueError:
+            continue  # a malformed href (e.g. an unclosed IPv6 bracket) is skipped, the others still count
         if path.lower().endswith(".ics") and "/resource/blob/" in path and absolute not in urls:
             urls.append(absolute)
     return urls[:MAX_ICS_FILES]
