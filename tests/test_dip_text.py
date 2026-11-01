@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import unittest
 
 import _support  # noqa: F401
@@ -35,8 +36,8 @@ class AbstractTextTests(unittest.TestCase):
     def test_markup_the_parser_cannot_read_keeps_its_words(self) -> None:
         cases = [
             ("Vor <![oops]> nach &amp; mehr", "Vor nach & mehr"),
-            ("<p>Eins</p> <script>zwei", "Eins zwei"),
-            # A closed <script> or <style> loses its text, as on the parser's path.
+            ("<p>Eins</p> <script>zwei", "Eins\n\nzwei"),
+            # A closed <script> or <style> loses its text; an unclosed one is a plain tag and the text after it stays.
             ("<style>p{}</style>Eins <SCRIPT>x()</script ><![oops]> zwei", "Eins zwei"),
             # A "<" that opens no tag is text, not the start of one.
             ("a < b und c > d <![oops]>", "a < b und c > d"),
@@ -52,7 +53,7 @@ class AbstractTextTests(unittest.TestCase):
             ("vor <a title='>GEHEIM'>sichtbar</a> <![oops]>", "vor sichtbar"),
             ("x <!-- a > b --> y <![oops]>", "x y"),
             ("x <!-- a\n> b\n--> y <!-- c --> z <![oops]>", "x y z"),
-            ("x <![oops]> y <!-- nie > geschlossen", "x y"),
+            ("x <![oops]> y <!-- nie > geschlossen", "x y geschlossen"),  # an unclosed comment ends at its first ">"
         ]
         for raw_text, expected in cases:
             with self.subTest(raw=raw_text):
@@ -60,8 +61,6 @@ class AbstractTextTests(unittest.TestCase):
 
     # Value: protects=unclosed quotes in tags on the fallback cost linear time, not a hang; fails_when=the tag scan backtracks or restarts at every "<" (a regex took 61 s on 20,000 unclosed tags); why_new=quoted values are new to the fallback; seam=none
     def test_unclosed_quotes_on_the_fallback_return_quickly(self) -> None:
-        import time
-
         for raw in ('<![oops]> <a title="' + "x" * 100_000, "<![oops]> " + '<a title="' * 20_000):
             with self.subTest(size=len(raw)):
                 started = time.perf_counter()
@@ -154,8 +153,8 @@ class AbstractTextTests(unittest.TestCase):
         for raw in ["x </a hr", "x <!x", "x <?pi", "vor <!-- offen", "a <b> c <d e"]:
             with self.subTest(raw=raw):
                 self.assertEqual(abstract_text(raw), raw.replace("<b> ", ""))
-        # A marked section takes the fallback on every Python: older releases raise on it, newer read a comment.
-        self.assertEqual(abstract_text("a<![CDATA[ x ]]>b <p>c"), "a b c")
+        # A marked section ("<![...>") ends at its first ">" and reads as a space, the same on every Python.
+        self.assertEqual(abstract_text("a<![CDATA[ x ]]>b <p>c"), "a b\n\nc")
         self.assertEqual(abstract_text("x <![CDATA[ y"), "x <![CDATA[ y")
         # A comment ends at its first "-->" on every Python; newer releases also end one at "--!>" or "<!-->".
         self.assertEqual(abstract_text("a <!-- x --!> y --> b"), "a b")
@@ -163,6 +162,98 @@ class AbstractTextTests(unittest.TestCase):
         # A comment still parts the text: no entity spliced across it, a marked section inside it stays a comment.
         self.assertEqual(abstract_text("&am<!-- x -->p;"), "&amp;")
         self.assertEqual(abstract_text("a<!--[if mso]><![endif]-->b<p>c"), "ab\n\nc")
+
+    # Value: protects=where markup ends is this module's rule, not html.parser's, so the text is the same on every Python; fails_when=a shape here reads differently on 3.11, 3.13.2 or the newest patch release (quotes in end tags, "<?...>" and "<!...>", "=" or a quote inside an unquoted value, a script body holding "<"); why_new=B4 review items 2 and 19 (2026-10-31); seam=none; no_claim=none
+    def test_markup_ends_by_this_modules_rule_on_every_python(self) -> None:
+        cases = [
+            ('a </p class="x> b', "a\n\nb"),  # an end tag ends at its first ">", quote or not
+            ('a </p class="x> b "> c', 'a\n\nb "> c'),
+            ("a </ p>b", "a b"),  # "</" and a space opens no end tag, only a bogus comment
+            ('a <?pi x="y> b', "a b"),
+            ('a <!x y="z> b', "a b"),
+            ('<b data=x=">A b">', 'A b">'),  # a quote inside an unquoted value is part of the value
+            ('<b a=="x>y">z', "z"),  # a quote after "=" and spaces opens a value
+            ("<b a = 'x>y' c=d>z", "z"),
+            ("<b it's>z</b it's>w", "zw"),
+            ("x<script>if(a<b)y()</script >z", "xz"),
+            ("x<style>a>b{}</STYLE\n>z", "xz"),
+            ("x GmbH&C", "x GmbH&C"),
+            ("x<br/>y<br class='a'/>z", "x\n\ny\n\nz"),
+            ("x<script/>y</script>z", "xyz"),  # a self-closing <script/> opens no block; the later </script> is a stray end tag
+            # A block ends only at its own end tag; "/" ending an unquoted value is not "/>".
+            ('Vor<script>const s="</style>"; hidden();</script>nach', "Vornach"),
+            ("Vor<style>a{content:'</script>'}</style>nach", "Vornach"),
+            ("Vor<script src=x/>hidden</script>nach", "Vornach"),
+            ('x<script src="a" />y</script>z', "xyz"),
+            ("x<script async/>y</script>z", "xyz"),
+            ("A<script a = b/>hidden</script>B", "AB"),
+            ('A<script a=x"/>hidden</script>B', "AB"),
+            ("A<script a=\nb/>hidden</script>B", "AB"),
+            ("A<script a=<b/>h</script>B", "AB"),
+            ("A<script a= />hidden</script>B", "AB"),
+        ]
+        for raw_text, expected in cases:
+            with self.subTest(raw=raw_text):
+                self.assertEqual(abstract_text(raw_text), expected)
+
+    # Value: protects=a tag-like construct holding '="' before the cut with a quote after it still ends at its first ">" (end tag, processing instruction, declaration) and the abstract survives the cut; fails_when=the trim reads the quote as a value quote and drops the rest as one tag (end tag: 6 characters left, main kept 9,987); why_new=B4 review item 19 (2026-10-31); seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_keeps_the_abstract_after_a_construct_with_a_quote(self) -> None:
+        cases = [
+            ("end tag", 'Anfang </p class="x>', "Anfang\n\n"),
+            ("processing instruction", 'Anfang <?pi x="y>', "Anfang "),
+            ("declaration", 'Anfang <!x y="z>', "Anfang "),
+        ]
+        for name, prefix, head in cases:
+            with self.subTest(construct=name):
+                raw = prefix + " " + "wort " * 3000 + 'ende "> z'
+                self.assertEqual(abstract_text(raw), head + " ".join(raw[len(prefix) : MAX_ABSTRACT_CHARS].split()))
+
+    # Value: protects=a quote after "=" inside an unquoted value opens no quoted value, so the tag ends at its first ">" and the abstract survives; fails_when=the quote pairs with one past the cut (0 characters left, main kept 9,988); why_new=B4 review item 19; seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_keeps_the_abstract_after_a_quote_inside_an_unquoted_value(self) -> None:
+        prefix = '<b data=x=">'
+        raw = prefix + "Anfang " + "wort " * 2500 + '">'
+        self.assertEqual(abstract_text(raw), " ".join(raw[len(prefix) : MAX_ABSTRACT_CHARS].split()))
+
+    # Value: protects=a trailing "&" and letters that read whole are no character reference stay; one that is a reference the cut splits goes; fails_when=any "&" plus letters at the cut is dropped as partial (GmbH&Co. kept GmbH), or a real reference is shown cut; why_new=B4 review item 19; seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_drops_only_a_real_character_reference(self) -> None:
+        def filler(cut_after: int) -> str:
+            return "a" * (MAX_ABSTRACT_CHARS - cut_after)
+
+        cases = [
+            (filler(6) + "GmbH&Co. x", filler(6) + "GmbH&C"),  # cut after "&C": "&Co." is no reference
+            (filler(6) + "GmbH&Copf; x", filler(6) + "GmbH"),  # "&Copf;" is one
+            (filler(8) + "GmbH&ampx", filler(8) + "GmbH&"),  # cut after "&amp": that reads whole as "&" and "x"
+            (filler(7) + "GmbH&#65x", filler(7) + "GmbH"),  # the cut falls inside "&#65"
+        ]
+        for raw_text, expected in cases:
+            with self.subTest(tail=raw_text[MAX_ABSTRACT_CHARS - 12 :]):
+                self.assertEqual(abstract_text(raw_text), expected)
+
+    # Value: protects=the cut scans a bounded window, not the whole raw abstract, so persist and render stay fast on a huge one; fails_when=the tag scan reads every character of a 2-million-character abstract (about 2 s and 16 MB); why_new=B4 review item 19; seam=none
+    def test_a_huge_abstract_is_read_in_bounded_time(self) -> None:
+        for raw in ("x " * 1_000_000, '<a title="' * 200_000, "<p>" * 700_000, "&" * 2_000_000):
+            with self.subTest(raw=raw[:12]):
+                started = time.perf_counter()
+                text = abstract_text(raw)
+                # gstack-timing-ok: the bound is the contract; reading the whole text takes seconds, the window milliseconds
+                self.assertLess(time.perf_counter() - started, 0.5)
+                self.assertLessEqual(len(text), MAX_ABSTRACT_CHARS)
+
+    # Value: protects=a comment is dropped whole when the cut splits it, even where a newer Python would have ended it earlier at "--!>" or "<!-->"; fails_when=the comment rule follows the running Python, so the same text is cut at different places; why_new=B4 review item 19 (comment rule tied to 3.13.2); seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_reads_a_comment_by_the_same_rule_on_every_python(self) -> None:
+        filler = "a" * (MAX_ABSTRACT_CHARS - 7)  # the cut falls after the comment's first 7 characters
+        for comment in ("<!-- a --!> b --> c", "<!--> b --> c", "<!---> b --> c"):
+            with self.subTest(comment=comment):
+                self.assertEqual(abstract_text(filler + comment), filler)
+
+    # Value: protects=a tag that starts before the cut and has no end in the scanned window is dropped, so a cut tag never shows as text; fails_when=the window ends before the tag does and its start stays as visible "<a hr..."; why_new=B4 review item 19; seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_drops_a_tag_that_ends_beyond_the_window(self) -> None:
+        filler = "a" * (MAX_ABSTRACT_CHARS - 6)
+        raw = filler + '<a title="' + "x" * 5000 + '">y</a>'
+        self.assertEqual(abstract_text(raw), filler)
+        # Far before the cut, a "<" that never ends is text, as in an abstract that fits.
+        far = "<a title=" + "x " * 5000 + "y"
+        self.assertEqual(abstract_text(far), " ".join(far[:MAX_ABSTRACT_CHARS].split()))
 
 
 class AbstractTeaserTests(unittest.TestCase):

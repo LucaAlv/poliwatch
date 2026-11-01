@@ -1267,10 +1267,10 @@ def persist_contributions(
 def _vote_id(vote: dict[str, Any]) -> str:
     """A vote's id; report loading refuses a vote without one, so a missing id
     here is a scraper bug, never data to skip."""
-    vote_id = clean(vote.get("id"))
-    if not vote_id:
-        raise ValueError(f"roll-call vote without an id: {vote.get('title')!r} ({vote.get('date')})")
-    return vote_id
+    try:
+        return derive.vote_identity(vote)
+    except ValueError:
+        raise ValueError(f"roll-call vote without an id: {vote.get('title')!r} ({vote.get('date')})") from None
 
 
 def persist_vote(

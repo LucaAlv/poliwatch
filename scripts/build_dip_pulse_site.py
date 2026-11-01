@@ -3608,6 +3608,32 @@ def _surrogate_count(text: str) -> int:
     return sum(1 for ch in text if 0xD800 <= ord(ch) <= 0xDFFF)
 
 
+# One CSV cell as text. A BLOB has no faithful text form, so it refuses
+# instead of writing Python's b'...' repr; no stored column or recipe holds one.
+def _csv_cell_text(value: Any) -> str:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raise RuntimeError("export: a BLOB value has no CSV form; cast it to text in the recipe SQL")
+    return str(value)
+
+
+# Python 3.11 and 3.12 quote a field only for the delimiter, the quote
+# character and the characters of lineterminator, so with lineterminator "\n"
+# a bare "\r" stays unquoted (3.13 quotes it). A lone "\r" would read back as a
+# row break, so a row holding one is written here with the quoting rule 3.13
+# applies; every other row goes through csv.writer unchanged.
+# The hand quoting exists because csv.writer has no per-field way to force
+# quoting of one character; a QUOTE_ALL writer would change every cell of the row.
+def _write_csv_row(writer: Any, handle: Any, cells: list[str]) -> None:
+    if not any("\r" in cell for cell in cells):
+        writer.writerow(cells)
+        return
+    quoted = [
+        '"' + cell.replace('"', '""') + '"' if any(c in cell for c in ',"\r\n') else cell
+        for cell in cells
+    ]
+    handle.write(",".join(quoted) + "\n")
+
+
 # Stream one table into a gzip CSV: header row, NULL as empty string, ordered
 # by primary key (rowid when none), errors="replace" with a count of any lone
 # surrogates the source text contained (F2.2). Never fetchall()s (F7.1).
@@ -3636,10 +3662,10 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
                         if value is None:
                             cells.append("")
                             continue
-                        text_value = str(value)
+                        text_value = _csv_cell_text(value)
                         replacements += _surrogate_count(text_value)
                         cells.append(text_value)
-                    writer.writerow(cells)
+                    _write_csv_row(writer, text, cells)
                     row_count += 1
                 text.flush()
             finally:
@@ -3746,11 +3772,17 @@ def _load_data_dictionary(text: str, tables: list[dict[str, Any]]) -> dict[str, 
 # Small, already-computed results; staging protects publication on failure.
 # Same cell conventions and surrogate count as _write_csv.
 def _write_recipe_csv(path: Path, columns: list[str], rows: list[dict[str, Any]]) -> int:
-    cells = [["" if row[name] is None else str(row[name]) for name in columns] for row in rows]
+    # Rows are dicts keyed by output name, so a repeated name would carry one
+    # value twice; refuse it rather than write a column that is not the query's.
+    if len(set(columns)) != len(columns):
+        repeated = sorted({name for name in columns if columns.count(name) > 1})
+        raise RuntimeError(f"export: recipe output repeats the column name {repeated[0]!r}; alias it in the recipe SQL")
+    cells = [["" if row[name] is None else _csv_cell_text(row[name]) for name in columns] for row in rows]
     with path.open("w", encoding="utf-8", errors="replace", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(columns)
-        writer.writerows(cells)
+        for row_cells in cells:
+            _write_csv_row(writer, handle, row_cells)
     return sum(_surrogate_count(cell) for row in cells for cell in row)
 
 
@@ -3802,7 +3834,7 @@ def _check_license_layers(manifest_tables: list[dict[str, Any]], dictionary: dic
 
 
 def _md_cell(value: Any) -> str:
-    return str(value).replace("|", "\\|").replace("\n", "<br>")
+    return str(value).replace("|", "\\|").replace("\r\n", "<br>").replace("\r", "<br>").replace("\n", "<br>")
 
 
 # An embedded document's headings move down one level so they nest under the
@@ -3851,6 +3883,15 @@ def _latest_sitting(manifest: dict[str, Any]) -> str:
     return max(dates) if dates else "unbekannt"
 
 
+# The operator's licence text on one line, closed by exactly one full stop even
+# when the text already ends in one (the real short string does).
+def _license_line_text(text: str) -> str:
+    line = " ".join(text.split())
+    if not line:
+        return "keiner; es gelten die geschichteten Quellenbedingungen unten."
+    return line if line.endswith(".") else line + "."
+
+
 def _codebook_header(manifest: dict[str, Any]) -> list[str]:
     lines = [
         "# DATA — Datenwörterbuch dieses Exports", "",
@@ -3858,10 +3899,10 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
         f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` ({REVISION_SUFFIX_NOTE}).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
-        f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (--data-license): {' '.join(manifest['license'].split()) or 'keiner; es gelten die geschichteten Quellenbedingungen unten'}.", "",
+        f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): {_license_line_text(manifest['license'])}", "",
         "## Dateien und Verwendung", "",
         "Alle folgenden Dateien gehören zu dieser Generation. `datenstand.json` liegt eine Ebene darüber und enthält auch den SHA-256 von `DATA.md`. Das Codebook enthält keinen eigenen Hash.",
-        "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",
+        "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren: beim bloßen Öffnen per Doppelklick wertet eine Tabellenkalkulation Zellen, die mit `=`, `+`, `-` oder `@` beginnen, als Formel aus (etwa DIP-Titel, die mit „- “ beginnen), und die Dateien entschärfen solchen Quelltext nicht. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",
         "| Datei | Art | Zeilen | Bytes | SHA-256 |", "| --- | --- | ---: | ---: | --- |",
     ]
     for file in manifest["files"]:
@@ -5099,7 +5140,7 @@ def render_database_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="database", features=features)}
+    {pulse_html.render_global_header(active="database")}
     <main>
       <header class="page-header">
         <div>
@@ -5191,7 +5232,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="database", features=features)}
+    {pulse_html.render_global_header(active="database")}
     <main class="panel">
       <span class="eyebrow">Primärquellen</span>
       <h1>Daten nicht erzeugt</h1>
@@ -5319,7 +5360,7 @@ def render_landing_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(features=features)}
+    {pulse_html.render_global_header()}
     <main>
       <header class="home-intro">
         <h1>Debatten und Entscheidungen im Bundestag</h1>
@@ -5589,7 +5630,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="votes", features=features)}
+    {pulse_html.render_global_header(depth=1, active="votes")}
     <header class="page-header">
       <div>
         <h1>Abstimmungen</h1>
@@ -6143,7 +6184,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(features=features)}
+    {pulse_html.render_global_header()}
     <header class="page-header">
       <h1>Bundestag-Puls</h1>
       <p>{pulse_html.esc(message)}</p>
@@ -6416,11 +6457,14 @@ RADAR_FILTER_SCRIPT = """
           const active = new Set();
           const apply = () => {
             let visible = 0;
+            let last = null;
             rows.forEach(({ row, felder }) => {
               const show = active.size === 0 || felder.some((name) => active.has(name));
               row.hidden = !show;
-              if (show) visible += 1;
+              row.classList.remove('is-last');
+              if (show) { visible += 1; last = row; }
             });
+            if (last) last.classList.add('is-last');
             if (empty) empty.hidden = visible !== 0 || active.size === 0;
             chips.forEach((chip) => {
               const on = active.has(chip.dataset.radarChip);
@@ -6716,7 +6760,7 @@ def render_front_page(
       border-bottom:1px solid var(--line);
       break-inside:avoid;
     }}
-    .radar-row:last-child {{ border-bottom:0; }}
+    .radar-row:last-child, .radar-row.is-last {{ border-bottom:0; }}
     .radar-main {{ display:grid; gap:6px; align-content:start; }}
     .radar-main > .eyebrow {{ display:block; }}
     .radar-title {{ display:block; font-size:16px; font-weight:750; line-height:1.3; overflow-wrap:anywhere; }}
@@ -7032,7 +7076,7 @@ def render_front_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="pulse", features=features)}
+    {pulse_html.render_global_header(active="pulse")}
     <header class="page-header">
       <div>
         <span class="eyebrow">{header["eyebrow"]}</span>
@@ -8065,7 +8109,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
 </head>
 <body class="bill-page">
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="bills", features=features)}
+    {pulse_html.render_global_header(depth=1, active="bills")}
     <header class="page-header"><div><h1>Gesetzesvorhaben</h1>
       <p>Finde Gesetzesvorhaben und lies nach, wie sie im Bundestag beraten wurden.</p></div></header>
     <main data-bills-index>{controls}{results}</main>
@@ -8241,7 +8285,7 @@ def render_bill_detail(
 </head>
 <body class="bill-page">
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="bills", features=features)}
+    {pulse_html.render_global_header(depth=1, active="bills")}
     <header class="page-header"><div>
       <nav class="local-nav" aria-label="Gesetzesvorhaben-Navigation"><a href="index.html">Alle Gesetzesvorhaben</a></nav>
       <span class="eyebrow">Gesetzesvorhaben</span><h1>{pulse_html.esc(bill.get('title') or 'Unbenanntes Gesetzesvorhaben')}</h1>
@@ -9002,7 +9046,7 @@ def render_abgeordnete_index(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="abgeordnete", features=features)}
+    {pulse_html.render_global_header(depth=1, active="abgeordnete")}
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
@@ -9201,7 +9245,7 @@ def render_abgeordnete_detail(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="abgeordnete", features=features)}
+    {pulse_html.render_global_header(depth=1, active="abgeordnete")}
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Abgeordneten-Navigation">
@@ -9883,7 +9927,7 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    {pulse_html.render_global_header(depth=1, active="fakten")}
     <header>
       <h1>Fakt der Woche</h1>
       <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Woche mit Sitzung und je Monat
@@ -9966,7 +10010,7 @@ def render_facts_week(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    {pulse_html.render_global_header(depth=1, active="fakten")}
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
       <h1>{pulse_html.esc(period_text)}</h1>
@@ -10025,7 +10069,7 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    {pulse_html.render_global_header(depth=1, active="fakten")}
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
       <h1>Wie „Fakt der Woche“ berechnet wird</h1>
@@ -10543,7 +10587,7 @@ def render_overview(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="overview", features=features)}
+    {pulse_html.render_global_header(active="overview")}
     <header class="page-header">
       <div>
         <h1>Bundestag-Puls</h1>
@@ -11070,7 +11114,7 @@ def render_catalog_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="catalog", features=features)}
+    {pulse_html.render_global_header(active="catalog")}
     <header class="page-header">
       <div>
         <h1>Alle API-Sitzungen</h1>
@@ -11258,7 +11302,7 @@ def render_bundestag_page(features: Selection | None = None) -> str:
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="bundestag", features=features)}
+    {pulse_html.render_global_header(active="bundestag")}
     <header class="page-header">
       <div>
         <h1>So arbeitet der Bundestag</h1>
@@ -11594,7 +11638,7 @@ def render_sources_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="sources", features=features)}
+    {pulse_html.render_global_header(active="sources")}
     <header class="page-header">
       <div>
         <h1>Quellen</h1>
