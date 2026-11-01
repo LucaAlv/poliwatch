@@ -803,7 +803,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 12. Not run in the review: the reference-store export replay (format 12, one re-export, no moved figures).
 13. Browser check (375px, dark, 2026-11-01, demo build plus both legal pages rendered from a dummy operator file): no horizontal scroll, dark tokens apply, links and the `cdn.example.net` host sentence correct, no operator marker left when the file is complete. Cosmetic only:
     - the Impressum heading wraps between „§“ and „18“ (use `&nbsp;` after each `§`);
-    - the placeholder state reads „Angabe folgt., Anschrift wie oben.“ and „Angabe folgt..“ (doubled punctuation; publication refuses these pages anyway);
+    - the placeholder state reads „Angabe folgt., Anschrift wie oben.“ and „Angabe folgt..“ (doubled punctuation; only the deploy gate planned under "Site hosting plan" will refuse these pages: `validate_publication_directory` accepts them, since CI validates the placeholder demo build);
     - Datenschutz grammar breaks on some operator values: „erhält dessen Server“ after a feminine provider („die … GmbH“) and „etwa bei Berliner Beauftragte für …“ (needs a dative article/ending); rephrase so the inserted names stand alone („Server des Hosters“, „Aufsichtsbehörde: …“);
     - the footer Impressum/Datenschutz links are 14px tall, below the 24px touch-target minimum;
     - in `sources.html#lizenz` the intro sentence renders at 16px while the layer texts render at 14px.
@@ -813,6 +813,26 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **Effort:** M
 **Priority:** P2 (items 3, 4, 6 and 12 before the site goes public), P3 (rest)
+**Depends on:** None
+
+### Impressum/licence branch: deferred /gstack-ship findings (2026-11-01)
+
+**What:** Non-correctness findings from the /gstack-ship review of `claude/pre-public-items-plan-e8d01d` (merged specialists, red team, functional QA), not already listed above:
+1. The release run's follow-up × `--publish` cell has no test: every `--publish` test in `tests/test_publish_dip_pulse_data.py` passes `--initial`. Add a `FollowUpReleaseTests` case running `--previous-manifest <file> --changes <file> --publish` with `Runner(gh_tags=[<previous tag>])` that asserts exit 0, one `gh release create`, `changes.json` `previous_version`, and that the previous tag does not block.
+2. `test_a_release_tag_that_exports_nothing_stops_the_build` (`tests/test_data_pipeline_cli.py`) does not clear `$BUNDESTAG_PULSE_DATA_MANIFEST`; with that variable exported, the manifest refusal fires first and the test fails. Wrap it in `mock.patch.dict(os.environ)` without the variable.
+3. `_operator_authority`'s half-filled branch (only `supervisory_authority.name` or only `.url`) has no test row.
+4. `test_the_default_licence_string_is_the_short_string_of_license_data` pins the live prefix „Quelldaten: Deutscher Bundestag/Bundesrat – DIP“, so rewording the short string fails it; keep the `endswith("Details in LICENSE-DATA.md.")` check (`render_daten_downloads` links that mention) and use `tempfile.TemporaryDirectory` instead of `__import__("shutil")`.
+5. `verify_export`'s `licence["bytes"] == 0` clause cannot decide the outcome (an empty file never matches a non-empty commit blob, and `_read_codebook_inputs` refuses an empty one); drop it and reword the message, or give it a test.
+6. `render_datenschutz_page`'s `except ValueError` is unreachable from the CLI (`resolve_data_base_url` refuses such bases first).
+7. `load_operator` echoes the e-mail value into its error message; once a scheduled build reads the operator file from a repository secret, a malformed address would print into public CI logs. Drop the value from the message before that workflow exists.
+8. The `--data-base-url` and `--data-issues-url` refusals run inside `run_data_pipeline`, after fetch, persist and facts; a typo wastes a whole online update. Resolve both at the top of `main()` beside `resolve_operator`.
+9. The footer of the legal pages and of the database-unavailable page reads „Quellen und Methode Impressum · Datenschutz“ with no separator before „Impressum“.
+10. Predates this branch: in dark mode the two hint boxes on `abgeordnete/index.html` („Der vollständige Abgeordnetenkader wurde nicht abgerufen“) show pale text on a pale background.
+
+**Why:** Deferred under the CLAUDE.md fix-now-or-defer rule. The ship review fixed the two false statements it found: `--data-base-url` now refuses a backslash (browsers read `/\host/` as another site while the privacy page named no host) and credentials, and `datenschutz.html` names a download host only when the build renders a manifest.
+
+**Effort:** S
+**Priority:** P2 (items 1 and 7), P3 (rest)
 **Depends on:** None
 
 ### Impressum, Datenschutz and licence files before the site goes public
@@ -1161,7 +1181,7 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 
 **What:** The 103 TOPs of the real store whose heading names a Gesetz or Antrag but that have no Vorgangsposition and name no Drucksache, and the 31 "other" ones, stay `untagged` after B3. Tag them from the heading with a model, restricted to the closed list, stored with a source of its own (for example `llm`) so a reader can tell it from a DIP-derived tag. Leave Fragestunde, Befragung, Wahlen and Geschäftsordnung untagged: they have no policy area.
 
-**Why:** B3 stays deterministic on purpose, so the Daten export carries no model output (docs/data-license.md). Measure first how many of the 134 a better deterministic rule can still reach, for example matching the heading against `/vorgang` titles.
+**Why:** B3 stays deterministic on purpose, so the Daten export carries no model output (LICENSE-DATA.md). Measure first how many of the 134 a better deterministic rule can still reach, for example matching the heading against `/vorgang` titles.
 
 **Effort:** S
 **Priority:** P3

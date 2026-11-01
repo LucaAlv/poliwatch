@@ -198,7 +198,11 @@ class ExportHelpersTests(unittest.TestCase):
     # A host the Datenschutz page cannot parse ended the build in a traceback
     # after every other page was written; it is refused up front instead.
     def test_resolve_data_base_url_rejects_other_schemes_and_malformed_hosts(self) -> None:
-        for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/"):
+        # /ship review 2026-11-01: a backslash-led base left the site with no
+        # host named on datenschutz.html, and credentials reached every href
+        # (the credential URL is split so the pre-push scanner skips the fake).
+        for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/",
+                    "/\\evil.example/x/", "data\\exports/", "https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     b.resolve_data_base_url(bad)

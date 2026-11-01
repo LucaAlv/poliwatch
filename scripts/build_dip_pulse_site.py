@@ -11570,15 +11570,16 @@ def render_impressum_page(operator: dict[str, Any] | None, features: Selection |
 
 
 def render_datenschutz_page(
-    operator: dict[str, Any] | None, *, data_base_url: str = "data/exports/", features: Selection | None = None
+    operator: dict[str, Any] | None, *, data_base_url: str | None = "data/exports/", features: Selection | None = None
 ) -> str:
     storage_items = "".join(
         f"<li><code>{pulse_html.esc(key)}</code>: {pulse_html.esc(meaning)}.</li>" for key, meaning in DATENSCHUTZ_STORAGE_KEYS
     )
     # Absolute and protocol-relative ("//host/") bases leave the site; a site
-    # path has no host. resolve_data_base_url refused unparseable hosts.
+    # path has no host, and None means the build offers no downloads.
+    # resolve_data_base_url refused unparseable hosts.
     try:
-        download_host = urllib.parse.urlsplit(data_base_url).hostname
+        download_host = urllib.parse.urlsplit(data_base_url).hostname if data_base_url else None
     except ValueError:
         download_host = None
     download_sentence = (
@@ -12699,8 +12700,11 @@ def render_site(
         )
     settings_path.write_text(render_settings_page(), encoding="utf-8")
     (output_dir / "impressum.html").write_text(render_impressum_page(operator, features=features), encoding="utf-8")
+    # Without a manifest the Daten page offers no downloads (--no-persist, a
+    # failed export), so the privacy page names no download host either.
     (output_dir / "datenschutz.html").write_text(
-        render_datenschutz_page(operator, data_base_url=data_base_url, features=features), encoding="utf-8"
+        render_datenschutz_page(operator, data_base_url=data_base_url if manifest is not None else None, features=features),
+        encoding="utf-8",
     )
     if not include_dev_view:
         publication.validate_publication_directory(output_dir)
@@ -13009,15 +13013,23 @@ _ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
 # https://, http:// or a leading /; any other scheme:// is a build-time error
 # (F3.1) rather than a silently broken or unsafe href.
 def resolve_data_base_url(value: str) -> str:
+    # Browsers read a backslash as "/", so "/\host/" leaves the site while
+    # urlsplit sees no host and datenschutz.html would name none.
+    if "\\" in value:
+        raise ValueError(f"--data-base-url {value!r} contains a backslash")
     if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
         # A host part (also a protocol-relative "//host/") must parse and be
         # non-empty: datenschutz.html names it as the download host.
         try:
-            host = urllib.parse.urlsplit(value).hostname
+            parsed = urllib.parse.urlsplit(value)
+            host = parsed.hostname
         except ValueError as exc:
             raise ValueError(f"--data-base-url {value!r} is not a valid URL: {exc}") from exc
         if host is None and (value.startswith("//") or not value.startswith("/")):
             raise ValueError(f"--data-base-url {value!r} names no host")
+        # Every download href would carry them; the value is not echoed.
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("--data-base-url contains credentials (user:password@); remove them")
         return value if value.endswith("/") else value + "/"
     if _ABSOLUTE_SCHEME_RE.match(value):
         raise ValueError(

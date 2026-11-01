@@ -442,6 +442,45 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             self.assertNotIn("Datenbank erkunden", index_content)
 
 
+    # Value: protects=a build with a manifest writes the real Daten page with the legal links in its footer, and render_site hands the build's --data-base-url and operator values to datenschutz.html and impressum.html; fails_when=the Daten page footer loses the legal span (the demo only builds the "nicht erzeugt" page), or render_site passes the default base so the privacy page says downloads stay on this server while they leave it, or drops operator=; why_new=no other test renders database.html from a manifest through render_site and reads the legal pages it writes; seam=render_site; no_claim=wording of the legal pages
+    def test_render_site_gives_the_daten_page_legal_links_and_the_legal_pages_their_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            output_dir = tmp_path / "site"
+            (output_dir / "data").mkdir(parents=True)
+            manifest, lookup = build_manifest(tmp_path)
+            b.render_site(
+                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", no_persist=False, protocols=[], entries=[],
+                abg_mps=[], mp_lookup=lookup, manifest=manifest, data_base_url="https://cdn.example.net/releases/",
+                operator={"name": "Erika Muster", "email": "impressum@example.org"},
+            )
+            database = (output_dir / "database.html").read_text(encoding="utf-8")
+            impressum = (output_dir / "impressum.html").read_text(encoding="utf-8")
+            datenschutz = (output_dir / "datenschutz.html").read_text(encoding="utf-8")
+        footer = database.split("<footer")[-1]
+        self.assertIn('<span class="legal-links"><a href="impressum.html">Impressum</a>', footer)
+        self.assertIn('<a href="datenschutz.html">Datenschutz</a>', footer)
+        self.assertIn("Die Datendownloads der Seite „Daten“ liegen auf cdn.example.net;", datenschutz)
+        self.assertIn("Erika Muster", impressum)
+        self.assertIn('<a href="mailto:impressum@example.org">', impressum)
+        self.assertNotIn('data-operator-missing="name"', impressum)
+
+    # Value: protects=a build without a manifest (--no-persist, a failed export) offers no downloads, so datenschutz.html names no download host even for a remote --data-base-url; fails_when=render_site hands the base to the privacy page unconditionally and it describes downloads that do not exist; why_new=/ship red-team review 2026-11-01, the manifest test above only covers a build with downloads; seam=render_site; no_claim=the Daten unavailable page's own text
+    def test_without_a_manifest_the_privacy_page_names_no_download_host(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            output_dir = tmp_path / "site"
+            (output_dir / "data").mkdir(parents=True)
+            b.render_site(
+                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", no_persist=True, protocols=[], entries=[],
+                abg_mps=[], mp_lookup={}, manifest=None, data_base_url="https://cdn.example.net/releases/",
+                data_export_error="no store",
+            )
+            datenschutz = (output_dir / "datenschutz.html").read_text(encoding="utf-8")
+        self.assertNotIn("Die Datendownloads der Seite", datenschutz)
+        self.assertNotIn("cdn.example.net", datenschutz)
+
+
 def write_browser_fixture(output: Path) -> None:
     block = '<div class="recipe-sql"><pre><code>SELECT 1; SELECT 1;</code></pre><button type="button" class="recipe-copy" hidden>Kopieren</button></div>'
     output.write_text(
