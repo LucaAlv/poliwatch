@@ -1103,12 +1103,11 @@ class RepersistTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_the_flag_needs_offline_and_persistence(self) -> None:
-        for argv in (["build", "--repersist"], ["build", "--offline", "--repersist", "--no-persist"]):
-            with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit) as caught:
-                    build.parse_args()
-            self.assertEqual(caught.exception.code, 2)
+    def test_the_flag_needs_offline(self) -> None:
+        with mock.patch.object(sys, "argv", ["build", "--repersist"]), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                build.parse_args()
+        self.assertEqual(caught.exception.code, 2)
 
 
 if __name__ == "__main__":

@@ -147,7 +147,6 @@ class DemoSiteTests(unittest.TestCase):
         site.render_site(
             output_dir=output,
             database_path=output / "data" / "bundestag-pulse.sqlite",
-            no_persist=True,
             protocols=protocols,
             entries=entries,
             abg_mps=[],

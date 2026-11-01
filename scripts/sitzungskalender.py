@@ -13,7 +13,7 @@ a summary (one all-day VEVENT per week, ``DTSTART;VALUE=DATE`` and an exclusive
 calendar is the first check of those assumptions; a changed layout fails soft
 (a warning, the cache stays) and never breaks the build.
 
-Only an online build that persists refreshes the cache (``refresh_if_due``),
+Only an online build refreshes the cache (``refresh_if_due``),
 and only when it is due. ``--offline`` reads the cache and nothing else.
 """
 

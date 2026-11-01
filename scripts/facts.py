@@ -2098,9 +2098,8 @@ def write_snapshot(conn: sqlite3.Connection, snapshot: Mapping[str, list[list[An
 def load_facts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Every stored fact with its receipts, oldest period first.
 
-    Returns [] when the tables do not exist, so a ``--no-persist`` render of a
-    store that has never seen the engine shows an empty archive instead of
-    crashing (D3A).
+    Returns [] when the tables do not exist, so a render of a store that has
+    never seen the engine shows an empty archive instead of crashing (D3A).
     """
     if not tables_exist(conn):
         return []
@@ -2248,7 +2247,6 @@ def compute_and_store(
     *,
     catalog: SittingCatalog | None,
     built: Iterable[str] = ("votes",),
-    no_persist: bool = False,
     out=sys.stderr,
     today: date | None = None,
     write: Callable[[Mapping[str, list[list[Any]]]], None] | None = None,
@@ -2256,8 +2254,7 @@ def compute_and_store(
     """Compute every fact and write the three tables when they changed.
 
     Writes nothing when the snapshot is unchanged (the store's mtime stays put
-    and the Daten export's skip rule holds) and nothing at all under
-    ``no_persist``. ``write`` replaces the in-place ``write_snapshot(conn, ...)``,
+    and the Daten export's skip rule holds). ``write`` replaces the in-place ``write_snapshot(conn, ...)``,
     so a caller holding a read-only connection to a published store can write
     the snapshot into a staged copy instead. A metric whose SQL raises aborts
     the build naming the metric, via FactsError.
@@ -2306,9 +2303,6 @@ def compute_and_store(
         "sitting_gaps": sitting_gaps(load_protocols(conn), completeness or {}, catalog),
         "incomplete_periods": incomplete_periods(load_protocols(conn), completeness or {}, catalog),
     }
-    if no_persist:
-        print("facts: --no-persist, nothing written", file=out)
-        return report
     previous = read_snapshot(conn)
     if _comparable(previous) == _comparable(snapshot):
         print(f"facts: unchanged ({posted} Fakten in {len(periods)} Perioden), store untouched", file=out)

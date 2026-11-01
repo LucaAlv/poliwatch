@@ -18,6 +18,7 @@ from typing import Any
 from unittest import mock
 
 import _support  # noqa: F401
+import _site_store_fixture
 import build_dip_pulse_site
 import facts
 import persist_dip_pulse_store as pulse_store
@@ -470,7 +471,6 @@ class CollectAbgeordneteTests(unittest.TestCase):
                 output_dir=output_dir,
                 database_path=None,
                 offline=True,
-                no_persist=False,
             )
             with (
                 mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
@@ -904,7 +904,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             kwargs: dict[str, Any] = dict(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[protocol for protocol, _ in sittings],
                 entries=entries,
                 abg_mps=[],
@@ -929,7 +928,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=protocols,
                 entries=entries,
                 abg_mps=[],
@@ -1115,7 +1113,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[protocol],
                 entries=[entry],
                 abg_mps=[],
@@ -1151,7 +1148,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=protocols,
                 entries=[],
                 abg_mps=[],
@@ -1179,7 +1175,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[self._protocol("21/84", "5799", "2026-06-12")],
                 entries=[],
                 abg_mps=[],
@@ -1212,7 +1207,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[protocol],
                 entries=[self._entry(output_dir, protocol)],
                 abg_mps=[],
@@ -1227,7 +1221,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
             # votes archive - like bills and abgeordnete - is always written,
             # not gated by the reduced default_selection() passed here.
             self.assertTrue((output_dir / "votes" / "index.html").exists())
-            self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
+            self.assertIn("keine SQLite-Datei exportiert", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
             self.assertIn('href="bills/index.html"', rendered)
             self.assertNotIn('data-feature=', rendered)
@@ -1239,7 +1233,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             kwargs = dict(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[protocol],
                 entries=[self._entry(output_dir, protocol)],
                 abg_mps=[],
@@ -1268,7 +1261,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[protocol],
                 entries=[],
                 abg_mps=[],
@@ -1726,9 +1718,10 @@ class SittingWeekComparisonTests(unittest.TestCase):
         slug = document_number.replace("/", "-")
         return {
             "report": {
-                "protocol": {"datum": datum, "dokumentnummer": document_number, "titel": "T"},
+                # A protocol id and the current speech rule, so a build can persist it (A4 R1).
+                "protocol": {"id": f"pp-{slug}", "datum": datum, "dokumentnummer": document_number, "titel": "T"},
                 "agenda_items": items,
-                "validation_summary": {},
+                "validation_summary": {"speech_kinds_version": speech_kinds.VERSION},
             },
             "page_path": Path(f"plenarprotokoll-{slug}.html"),
             "report_path": Path(f"plenarprotokoll-{slug}.json"),
@@ -2647,7 +2640,7 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 report = {"protocol": {"dokumentnummer": "21/82"}, **shape}
                 (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
                 args = SimpleNamespace(
-                    output_dir=Path(tmp), database_path=None, offline=mode == "offline", no_persist=True,
+                    output_dir=Path(tmp), database_path=None, offline=mode == "offline",
                     week=None, today=None, fetch_xml=mode == "fetch_xml",
                 )
                 with (
@@ -2678,7 +2671,7 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
                 protocols = [{"dokumentnummer": "21/82"}]
                 args = SimpleNamespace(
-                    output_dir=Path(tmp), database_path=None, offline=False, no_persist=True,
+                    output_dir=Path(tmp), database_path=None, offline=False,
                     week=None, today=None, api_key="test-key", no_abgeordnetenwatch=True, sleep=0,
                     protocol_wahlperiode=0, backfill_incomplete=backfill, document_number=None, limit=None,
                     detail_limit=None, dossier_document_number=[],
@@ -3223,6 +3216,14 @@ class BuildClockAndWeekTests(unittest.TestCase):
         patcher = mock.patch.object(sys, "stderr", new_callable=io.StringIO)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # An online build persists (A4 R1); its Vorgang refresh must never reach DIP from a test.
+        refresh = mock.patch.object(build_dip_pulse_site, "refresh_vorgang_cache", return_value={})
+        refresh.start()
+        self.addCleanup(refresh.stop)
+        # Every online build refreshes the Sitzungskalender; never reach bundestag.de from a test.
+        calendar = mock.patch.object(build_dip_pulse_site.sitzungskalender, "refresh_if_due")
+        calendar.start()
+        self.addCleanup(calendar.stop)
 
     _item = SittingWeekComparisonTests._item
     _entry = SittingWeekComparisonTests._entry
@@ -3322,7 +3323,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
             protocols = [CurrentPulseOrderTests._protocol(doc, doc, datum) for doc, datum in (
                 ("21/70", "2026-05-20"), ("21/71", "2026-05-21"), ("21/84", "2026-06-12"), ("21/99", "2026-09-15"))]
             entries = [CurrentPulseOrderTests._entry(output_dir, protocol) for protocol in protocols[:3]]
-            kwargs = dict(output_dir=output_dir, database_path=output_dir / 'data' / 'bundestag-pulse.sqlite', no_persist=True,
+            kwargs = dict(output_dir=output_dir, database_path=output_dir / 'data' / 'bundestag-pulse.sqlite',
                           protocols=protocols, entries=entries, abg_mps=[], mp_lookup={})
             for week, count, start, end in ((None, 1, "2026-06-08", "2026-06-14"), ((2026, 21), 2, "2026-05-18", "2026-05-24")):
                 build_dip_pulse_site.render_site(**kwargs, today=date(2026, 9, 15), week=week)
@@ -3412,7 +3413,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
             entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
-            args = SimpleNamespace(output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=(2030, 1), today=None)
+            args = SimpleNamespace(output_dir=output_dir, database_path=None, offline=True, week=(2030, 1), today=None)
             with (
                 mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
                 mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached", "datum": "2026-06-12"}]),
@@ -3512,7 +3513,6 @@ class BuildClockAndWeekTests(unittest.TestCase):
             kwargs: dict[str, Any] = dict(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[protocol],
                 entries=entries,
                 abg_mps=[],
@@ -3534,10 +3534,11 @@ class BuildClockAndWeekTests(unittest.TestCase):
 
     def test_offline_main_threads_a_known_week_and_the_clock_into_render_site(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
+            output_dir = Path(tmp) / "site"
             entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            _site_store_fixture.build_site_store(output_dir, [entry])
             args = SimpleNamespace(
-                output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=(2026, 24), today=date(2026, 9, 15)
+                output_dir=output_dir, database_path=None, offline=True, week=(2026, 24), today=date(2026, 9, 15)
             )
             with (
                 mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}),  # --today wins, the env is never read
@@ -3554,14 +3555,14 @@ class BuildClockAndWeekTests(unittest.TestCase):
             rebuild.assert_called_once()
             # The dossiers loaded for the --week check are handed on, not parsed twice.
             self.assertEqual(rebuild.call_args.kwargs["cached_entries"], [entry])
-            # --no-persist: no export will run, so the dossier footers get no Daten link.
-            self.assertIsNone(rebuild.call_args.kwargs["database_page_href"])
+            # The store exists, so the export will run and the dossier footers link the Daten page.
+            self.assertEqual(rebuild.call_args.kwargs["database_page_href"], "../database.html")
             self.assertEqual(render_site.call_args.kwargs["today"], date(2026, 9, 15))
             self.assertEqual(render_site.call_args.kwargs["week"], (2026, 24))
             self.assertIs(render_site.call_args.kwargs["entries"][0], entry)
 
     def _online_argv(self, output_dir: Path, *extra: str) -> list[str]:
-        return ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir), *extra]
+        return ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir), *extra]
 
     @staticmethod
     def _catalog_protocol(document_number: str, protocol_id: str, datum: str) -> dict[str, Any]:
@@ -3729,8 +3730,9 @@ class BuildClockAndWeekTests(unittest.TestCase):
             output_dir = Path(tmp) / "site"
             (output_dir / "data").mkdir(parents=True)
             entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            _site_store_fixture.build_site_store(output_dir, [entry])
             args = SimpleNamespace(
-                output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=None, today=date(2026, 9, 15)
+                output_dir=output_dir, database_path=None, offline=True, week=None, today=date(2026, 9, 15)
             )
             cached = [{"id": "5799", "datum": "2026-06-12", "dokumentnummer": "21/84"}]
             path = output_dir / "data" / "plenarprotokoll-catalog.json"
@@ -3799,14 +3801,18 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
 
     @staticmethod
     def _seed(tmp: str) -> Path:
+        """The fixture report, stamped with the current speech rule, cached and
+        persisted: an offline render reads the store (A4 R1)."""
         output_dir = Path(tmp) / "site"
         (output_dir / "data").mkdir(parents=True)
-        report = (_support.FIXTURES / "report.json").read_bytes()
-        (output_dir / "data" / "plenarprotokoll-20-999.json").write_bytes(report)
+        report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        (output_dir / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(report), encoding="utf-8")
+        _site_store_fixture.build_site_store(output_dir, [{"report": report}])
         return output_dir
 
     def _build(self, output_dir: Path, *extra: str) -> tuple[int, str]:
-        argv = ["build", "--offline", "--no-persist", "--output-dir", str(output_dir), *extra]
+        argv = ["build", "--offline", "--output-dir", str(output_dir), *extra]
         with (
             mock.patch.dict(os.environ, {}, clear=False),
             mock.patch.object(sys, "argv", argv),
@@ -3848,27 +3854,99 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             pinned_dossier = (first_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
             self.assertEqual(plain_dossier, pinned_dossier)
 
-    # Value: protects=a plain --offline render warns once, naming '1 of 2', about a cached report from before the A1 Rede rule, and stays silent when all are stamped;
-    #   fails_when=the offline path stops calling warn_unparsed_reports, or warns for a stamped report or once per report;
+    # Value: protects=a plain --offline render warns once, naming '1 of 2', about a cached report from before the A1 Rede rule, then refuses because the store cannot hold it (R2), and stays silent and renders once it is stamped and persisted;
+    #   fails_when=the offline path stops calling warn_unparsed_reports, warns for a stamped report or once per report, or renders a report the store does not hold;
     #   why_new=the warning was tested as a function and inside --repersist, never on the plain offline render that reads the cache; seam=none
     def test_offline_rebuild_warns_once_about_a_cached_report_from_before_the_a1_rule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._seed(tmp)
-            stamped = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
-            stamped["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
-            stamped["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            old = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+            old["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
             path = output_dir / "data" / "plenarprotokoll-20-998.json"
-            path.write_text(json.dumps(stamped), encoding="utf-8")
+            path.write_text(json.dumps(old), encoding="utf-8")
             code, stderr = self._build(output_dir)
-            self.assertEqual(code, 0, stderr)
+            self.assertEqual(code, 1, stderr)
             self.assertEqual(stderr.count("predate the current speech-counting rule"), 1)
             self.assertIn("1 of 2 cached reports predate", stderr)
-            old = json.loads((output_dir / "data" / "plenarprotokoll-20-999.json").read_text(encoding="utf-8"))
+            self.assertIn("1 cached report(s) are not in the store (20/998)", stderr)
+            self.assertFalse((output_dir / "puls.html").exists())
             old["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
-            (output_dir / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(old), encoding="utf-8")
+            path.write_text(json.dumps(old), encoding="utf-8")
+            code, stderr = self._build(output_dir, "--repersist")
+            self.assertEqual(code, 0, stderr)
+            self.assertNotIn("predate the current speech-counting rule", stderr)
             code, stderr = self._build(output_dir)
             self.assertEqual(code, 0, stderr)
             self.assertNotIn("predate the current speech-counting rule", stderr)
+
+    @staticmethod
+    def _cache_second_sitting(output_dir: Path) -> dict[str, Any]:
+        report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+        report["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        (output_dir / "data" / "plenarprotokoll-20-998.json").write_text(json.dumps(report), encoding="utf-8")
+        return report
+
+    # Value: protects=F7 (A4): an offline render with no store file exits 1 naming the repair and writes no page; fails_when=main renders the site without the store it reads, or dies with sqlite's "unable to open database file" traceback; why_new=--no-persist used to make a store-less render legal; seam=none
+    def test_offline_render_without_a_store_names_the_repair_and_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            _site_store_fixture.store_path(output_dir).unlink()
+            code, stderr = self._build(output_dir)
+            self.assertEqual(code, 1, stderr)
+            self.assertIn(f"no store at {_site_store_fixture.store_path(output_dir)}", stderr)
+            self.assertIn("Fix: run --offline --repersist", stderr)
+            self.assertNotIn("Traceback", stderr)
+            self.assertNotIn("unable to open database file", stderr)
+            self.assertFalse((output_dir / "puls.html").exists())
+            self.assertEqual(list((output_dir / "protocols").iterdir()), [])
+            self.assertFalse(_site_store_fixture.store_path(output_dir).exists())
+
+    # Value: protects=the offline render only reads the store: with the facts unchanged it leaves the file byte for byte as it was; fails_when=a render path opens the store for writing or rewrites it; why_new=T0.1 (A4) makes every render read the store; seam=none
+    def test_offline_render_leaves_the_store_byte_identical(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            before = _site_store_fixture.store_path(output_dir).read_bytes()
+            code, stderr = self._build(output_dir, "--today", "2026-09-15")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(_site_store_fixture.store_path(output_dir).read_bytes(), before)
+
+    # Value: protects=R2 (A4): a stored sitting whose cached report is gone stops the offline render, naming the sitting and the repair, before any page is written; fails_when=the coverage check runs one direction only and the pages mix a store sitting with no dossier; why_new=require_current_speech_rules sees only stored sittings; seam=none
+    def test_offline_render_refuses_a_stored_sitting_without_its_cached_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            first = json.loads((output_dir / "data" / "plenarprotokoll-20-999.json").read_text(encoding="utf-8"))
+            second = self._cache_second_sitting(output_dir)
+            _site_store_fixture.build_site_store(output_dir, [{"report": first}, {"report": second}])
+            (output_dir / "data" / "plenarprotokoll-20-998.json").unlink()
+            code, stderr = self._build(output_dir)
+            self.assertEqual(code, 1, stderr)
+            self.assertIn("1 stored sitting(s) have no cached report (20/998)", stderr)
+            self.assertIn("restore their reports", stderr)
+            self.assertNotIn("cached report(s) are not in the store", stderr)
+            self.assertFalse((output_dir / "puls.html").exists())
+            self.assertEqual(list((output_dir / "protocols").iterdir()), [])
+
+    # Value: protects=R2 (A4): a sitting whose exclusion an online run recorded before its rebuild failed is still in the store; the offline render names that case and the repersist that drops it, not a restore; fails_when=the check reports the excluded sitting as a missing report and sends the operator to restore a file that is there; why_new=update_coverage_exclusions writes the record before the staged rebuild; seam=none
+    def test_offline_render_names_a_recorded_exclusion_the_store_still_holds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            first = json.loads((output_dir / "data" / "plenarprotokoll-20-999.json").read_text(encoding="utf-8"))
+            second = self._cache_second_sitting(output_dir)
+            _site_store_fixture.build_site_store(output_dir, [{"report": first}, {"report": second}])
+            (output_dir / "data" / "coverage-exclusions.json").write_text(
+                json.dumps({"exclusions": [{"document_number": "20/998", "reason": "excluded"}]}), encoding="utf-8"
+            )
+            code, stderr = self._build(output_dir)
+            self.assertEqual(code, 1, stderr)
+            self.assertIn("1 sitting(s) recorded as excluded are still in the store (20/998)", stderr)
+            self.assertIn("Fix: run --offline --repersist, which drops them from the store.", stderr)
+            self.assertNotIn("have no cached report", stderr)
+            self.assertFalse((output_dir / "puls.html").exists())
+            code, stderr = self._build(output_dir, "--repersist")
+            self.assertEqual(code, 0, stderr)
+            code, stderr = self._build(output_dir)
+            self.assertEqual(code, 0, stderr)
 
     def test_offline_rebuild_with_an_unknown_week_writes_no_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3879,12 +3957,15 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             self.assertFalse((output_dir / "puls.html").exists())
             self.assertFalse((output_dir / "index.html").exists())
             self.assertEqual(list((output_dir / "protocols").iterdir()), [])
-            self.assertEqual([p.name for p in (output_dir / "data").iterdir()], ["plenarprotokoll-20-999.json"])
+            self.assertEqual(
+                sorted(p.name for p in (output_dir / "data").iterdir()),
+                ["bundestag-pulse.sqlite", "plenarprotokoll-20-999.json"],
+            )
 
     def test_offline_rebuild_with_a_bad_epoch_exits_before_reading_the_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._seed(tmp)
-            argv = ["build", "--offline", "--no-persist", "--output-dir", str(output_dir)]
+            argv = ["build", "--offline", "--output-dir", str(output_dir)]
             with (
                 mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}),
                 mock.patch.object(sys, "argv", argv),
@@ -3894,6 +3975,55 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("SOURCE_DATE_EPOCH must be an integer Unix timestamp, got 'gestern'", stderr.getvalue())
             self.assertFalse((output_dir / "protocols").exists())
+
+
+class StoreCoverageGapTests(unittest.TestCase):
+    """R2 (A4): the cached reports and the store's protocols must name the same sittings."""
+
+    @staticmethod
+    def _store(rows: list[tuple[str, str]]) -> sqlite3.Connection:
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT)")
+        conn.executemany("INSERT INTO protocols VALUES (?, ?)", rows)
+        return conn
+
+    @staticmethod
+    def _entries(*pairs: tuple[str, str]) -> list[dict[str, Any]]:
+        return [{"report": {"protocol": {"id": pid, "dokumentnummer": number}}} for pid, number in pairs]
+
+    def test_the_same_sittings_pass_whatever_the_order(self) -> None:
+        store = self._store([("pp-2", "21/2"), ("pp-1", "21/1")])
+        self.assertIsNone(build_dip_pulse_site.store_coverage_gap(store, self._entries(("pp-1", "21/1"), ("pp-2", "21/2"))))
+
+    def test_matches_on_the_protocol_id_the_store_is_keyed_by(self) -> None:
+        # A report whose id is padded is the same sitting to persist (clean), so not a gap.
+        store = self._store([("pp-1", "21/1")])
+        self.assertIsNone(build_dip_pulse_site.store_coverage_gap(store, self._entries((" pp-1 ", "21/1"))))
+        gap = build_dip_pulse_site.store_coverage_gap(store, self._entries(("pp-9", "21/1")))
+        self.assertIn("1 cached report(s) are not in the store (21/1)", gap)
+        self.assertIn("1 stored sitting(s) have no cached report (21/1)", gap)
+
+    def test_names_both_directions_up_to_the_limit_and_counts_the_rest(self) -> None:
+        store = self._store([(f"s-{n}", f"21/{n}") for n in range(1, 8)])
+        gap = build_dip_pulse_site.store_coverage_gap(store, self._entries(("r-1", "20/1")), limit=5)
+        self.assertIn("1 cached report(s) are not in the store (20/1). Fix: run --offline --repersist", gap)
+        self.assertIn("7 stored sitting(s) have no cached report (21/1, 21/2, 21/3, 21/4, 21/5 and 2 more)", gap)
+
+    def test_a_stored_sitting_recorded_as_excluded_is_its_own_case(self) -> None:
+        store = self._store([("pp-1", "21/1"), ("pp-2", "21/2"), ("pp-3", "21/3")])
+        gap = build_dip_pulse_site.store_coverage_gap(store, self._entries(("pp-1", "21/1")), excluded={" 21/2"})
+        self.assertIn("1 stored sitting(s) have no cached report (21/3)", gap)
+        self.assertIn("1 sitting(s) recorded as excluded are still in the store (21/2)", gap)
+        self.assertIsNone(build_dip_pulse_site.store_coverage_gap(self._store([("pp-1", "21/1")]), self._entries(("pp-1", "21/1")), excluded={"21/2"}))
+
+    # Value: protects=a cached report with no dokumentnummer that the store lacks is named by its protocol id, not by a blank or a crash; fails_when=the label falls back to None/"" or the sort of mixed labels raises;
+    #   why_new=every row above carries a number; unnumbered reports reach the build (cached_report_fix has a placeholder for them); seam=none; no_claim=none beyond protects
+    def test_an_unnumbered_report_is_named_by_its_protocol_id(self) -> None:
+        gap = build_dip_pulse_site.store_coverage_gap(self._store([]), self._entries(("pp-7", None), ("pp-8", "21/8")))
+        self.assertIn("2 cached report(s) are not in the store (21/8, pp-7)", gap)
+
+    def test_an_empty_store_and_no_reports_agree(self) -> None:
+        self.assertIsNone(build_dip_pulse_site.store_coverage_gap(self._store([]), []))
 
 
 class SourceLinkGuardTests(unittest.TestCase):
@@ -4430,8 +4560,8 @@ class DossierDatenLinkTests(unittest.TestCase):
     """Dossiers are written before the manifest exists, so their footer
     predicts it from the export's own condition."""
 
-    def _href(self, *, no_persist: bool, store: bool, data_manifest: str | None = None, env: str | None = None):
-        args = SimpleNamespace(no_persist=no_persist, data_manifest=data_manifest)
+    def _href(self, *, store: bool, data_manifest: str | None = None, env: str | None = None):
+        args = SimpleNamespace(data_manifest=data_manifest)
         environ = {"BUNDESTAG_PULSE_DATA_MANIFEST": env} if env else {}
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, environ, clear=False):
             if not env:
@@ -4442,15 +4572,14 @@ class DossierDatenLinkTests(unittest.TestCase):
             return build_dip_pulse_site.dossier_database_page_href(args, database_path)
 
     def test_persisted_store_links_daten(self) -> None:
-        self.assertEqual(self._href(no_persist=False, store=True), "../database.html")
+        self.assertEqual(self._href(store=True), "../database.html")
 
-    def test_no_persist_or_missing_store_omits_daten(self) -> None:
-        self.assertIsNone(self._href(no_persist=True, store=True))
-        self.assertIsNone(self._href(no_persist=False, store=False))
+    def test_missing_store_omits_daten(self) -> None:
+        self.assertIsNone(self._href(store=False))
 
     def test_manifest_override_links_daten_even_without_a_store(self) -> None:
-        self.assertEqual(self._href(no_persist=True, store=False, data_manifest="m.json"), "../database.html")
-        self.assertEqual(self._href(no_persist=True, store=False, env="https://example.org/m.json"), "../database.html")
+        self.assertEqual(self._href(store=False, data_manifest="m.json"), "../database.html")
+        self.assertEqual(self._href(store=False, env="https://example.org/m.json"), "../database.html")
 
     def test_written_dossier_carries_the_link_only_when_given(self) -> None:
         report = {

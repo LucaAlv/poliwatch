@@ -1853,30 +1853,6 @@ class EngineTests(StoreCase):
             facts.write_snapshot(conn, broken)
         self.assertEqual(facts.read_snapshot(conn), good)
 
-    def test_no_persist_computes_without_writing(self) -> None:
-        self.seed(week_specs(12))
-        conn = self.writable()
-        conn.close()
-        before = self.path.stat().st_mtime_ns
-        again = sqlite3.connect(self.path)
-        again.row_factory = sqlite3.Row
-        try:
-            report = facts.compute_and_store(
-                again,
-                facts.REGISTRY,
-                self.seeded["completeness"],
-                catalog=self.seeded["catalog"],
-                no_persist=True,
-                out=quiet(),
-            )
-            self.assertFalse(facts.tables_exist(again))
-            self.assertEqual(facts.load_facts(again), [])
-        finally:
-            again.close()
-        self.assertTrue(report["rows"])
-        self.assertFalse(report["written"])
-        self.assertEqual(self.path.stat().st_mtime_ns, before)
-
     def test_reading_a_store_without_the_tables_yields_an_empty_archive(self) -> None:
         self.seed(week_specs(2))
         self.assertIsNone(facts.read_snapshot(self.conn))
@@ -2394,7 +2370,7 @@ class PageTests(StoreCase):
         output_dir = Path(self.tmp.name) / output_name
         output_dir.mkdir(exist_ok=True)
         document_numbers = {spec["document_number"] for spec in weeks}
-        result = build.write_facts_pages(output_dir, self.path, False, mp_lookup or {}, document_numbers, set())
+        result = build.write_facts_pages(output_dir, self.path, mp_lookup or {}, document_numbers, set())
         return output_dir, result
 
     def test_speech_receipt_resolves_through_a_join_and_links_the_speaker_and_protocol(self) -> None:
@@ -2420,7 +2396,7 @@ class PageTests(StoreCase):
         conn.close()
         output_dir = Path(self.tmp.name) / "person-key-site"
         output_dir.mkdir()
-        build.write_facts_pages(output_dir, self.path, False, {person_id: person_id}, {spec["document_number"] for spec in weeks}, set())
+        build.write_facts_pages(output_dir, self.path, {person_id: person_id}, {spec["document_number"] for spec in weeks}, set())
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn(f'<a href="../abgeordnete/{person_id}.html">Ada Lovelace</a>', html)
 
@@ -2446,7 +2422,7 @@ class PageTests(StoreCase):
         output_dir = Path(self.tmp.name) / "null-quadrant-site"
         output_dir.mkdir()
         document_numbers = {spec["document_number"] for spec in weeks}
-        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        build.write_facts_pages(output_dir, self.path, {}, document_numbers, set())
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn('<section id="laengste-debatte"', html)
         self.assertIn("Haushaltsbegleitgesetz 2027", html)
@@ -2485,7 +2461,7 @@ class PageTests(StoreCase):
         stale = output_dir / "fakt" / "2020-W01-knappste-abstimmung.svg"
         stale.write_bytes(b"<svg/>")
         document_numbers = {spec["document_number"] for spec in weeks}
-        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        build.write_facts_pages(output_dir, self.path, {}, document_numbers, set())
         self.assertFalse(stale.exists())
         self.assertTrue((output_dir / "fakt" / "index.html").exists())
 
@@ -2521,7 +2497,7 @@ class PageTests(StoreCase):
         output_dir = Path(self.tmp.name) / "drucksache-site"
         output_dir.mkdir()
         document_numbers = {spec["document_number"] for spec in specs}
-        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        build.write_facts_pages(output_dir, self.path, {}, document_numbers, set())
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn(
             '<li><a href="https://www.bundestag.de/drucksache/500">BT-Drs. 21/500</a></li>', html
@@ -2544,7 +2520,7 @@ class PageTests(StoreCase):
         output_dir = Path(self.tmp.name) / "stale-site"
         output_dir.mkdir()
         document_numbers = {spec["document_number"] for spec in week_specs(9)}
-        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        build.write_facts_pages(output_dir, self.path, {}, document_numbers, set())
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn('<section id="laengste-rede"', html)
         self.assertIn("Die zitierte Quelle ist in diesem Build nicht mehr auffindbar.", html)
@@ -2603,7 +2579,7 @@ class PageTests(StoreCase):
         output_dir, _ = self.write_pages(specs)
         first = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
         document_numbers = {spec["document_number"] for spec in specs}
-        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        build.write_facts_pages(output_dir, self.path, {}, document_numbers, set())
         second = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
         self.assertEqual(first, second)
 
@@ -2618,11 +2594,11 @@ class PageTests(StoreCase):
         week_page = (output_dir / "fakt" / "2025-W03.html").read_text(encoding="utf-8")
         self.assertIn("keinen Fakt über die Veröffentlichungsschwelle", week_page)
 
-    def test_no_persist_on_a_store_without_the_tables_renders_an_empty_archive(self) -> None:
+    def test_a_store_without_the_tables_renders_an_empty_archive(self) -> None:
         self.seed(week_specs(3))
-        output_dir = Path(self.tmp.name) / "no-persist-site"
+        output_dir = Path(self.tmp.name) / "no-facts-site"
         output_dir.mkdir()
-        result = build.write_facts_pages(output_dir, self.path, True, {}, set(), set())
+        result = build.write_facts_pages(output_dir, self.path, {}, set(), set())
         self.assertEqual(result["periods"], 0)
         self.assertEqual(result["posted"], 0)
         archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
@@ -2637,7 +2613,7 @@ class PageTests(StoreCase):
         output_dir = Path(self.tmp.name) / output_name
         output_dir.mkdir(exist_ok=True)
         document_numbers = {spec["document_number"] for spec in months}
-        result = build.write_facts_pages(output_dir, self.path, False, mp_lookup or {}, document_numbers, set())
+        result = build.write_facts_pages(output_dir, self.path, mp_lookup or {}, document_numbers, set())
         return output_dir, result
 
     def test_a_monthly_page_and_svg_cards_are_written_with_speeches_and_proceeding_receipts(self) -> None:
@@ -2662,7 +2638,7 @@ class PageTests(StoreCase):
         output_dir, _ = self.write_monthly_pages(month_specs(7, year=2020))
         first = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
         document_numbers = {spec["document_number"] for spec in month_specs(7, year=2020)}
-        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        build.write_facts_pages(output_dir, self.path, {}, document_numbers, set())
         second = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
         self.assertEqual(first, second)
 
@@ -2670,30 +2646,25 @@ class PageTests(StoreCase):
         output_dir = Path(self.tmp.name) / "missing-store-site"
         output_dir.mkdir()
         missing = Path(self.tmp.name) / "does-not-exist.sqlite"
-        result = build.write_facts_pages(output_dir, missing, False, {}, set(), set())
+        result = build.write_facts_pages(output_dir, missing, {}, set(), set())
         self.assertEqual(result["periods"], 0)
         self.assertTrue((output_dir / "fakt" / "index.html").is_file())
 
-    def test_a_no_persist_rerun_never_deletes_a_prior_builds_published_pages(self) -> None:
-        # A --no-persist dev render, or a build that runs before the store
-        # exists, must not touch what an earlier real build already
-        # published to the same output_dir: expected only lists what THIS
-        # run looked at, and a run that skipped the store looked at nothing.
+    def test_a_missing_store_rerun_never_deletes_a_prior_builds_published_pages(self) -> None:
+        # A render with no store file must not touch what an earlier real
+        # build already published to the same output_dir: expected only lists
+        # what THIS run looked at, and a run without a store looked at nothing.
         output_dir, _ = self.write_pages(week_specs(9))
         published = {path.name for path in (output_dir / "fakt").glob("*")}
         self.assertIn("2025-W11.html", published)
         self.assertTrue(any(name.endswith(".svg") for name in published))
 
-        build.write_facts_pages(output_dir, self.path, True, {}, set(), set())
-        after_no_persist = {path.name for path in (output_dir / "fakt").glob("*")}
-        self.assertEqual(after_no_persist, published)
-
         missing = Path(self.tmp.name) / "does-not-exist.sqlite"
-        build.write_facts_pages(output_dir, missing, False, {}, set(), set())
+        build.write_facts_pages(output_dir, missing, {}, set(), set())
         after_missing_store = {path.name for path in (output_dir / "fakt").glob("*")}
         self.assertEqual(after_missing_store, published)
 
-    def test_a_no_persist_rerun_does_not_overwrite_the_archive_with_a_false_empty_state(self) -> None:
+    def test_a_missing_store_rerun_does_not_overwrite_the_archive_with_a_false_empty_state(self) -> None:
         # The index would otherwise say "nothing published" right above a
         # set of period pages and cards that are still there and still
         # linkable - preserving the files but not the index that lists them
@@ -2704,11 +2675,8 @@ class PageTests(StoreCase):
         self.assertIn("2025-W11", published_archive)
         self.assertNotIn("Noch keine Fakten veröffentlicht", published_archive)
 
-        build.write_facts_pages(output_dir, self.path, True, {}, set(), set())
-        self.assertEqual(archive_path.read_text(encoding="utf-8"), published_archive)
-
         missing = Path(self.tmp.name) / "does-not-exist.sqlite"
-        build.write_facts_pages(output_dir, missing, False, {}, set(), set())
+        build.write_facts_pages(output_dir, missing, {}, set(), set())
         self.assertEqual(archive_path.read_text(encoding="utf-8"), published_archive)
 
     def test_methodik_states_the_floor_both_absolute_gates_and_every_caveat(self) -> None:

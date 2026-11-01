@@ -15,7 +15,7 @@ Done means every class below is either answered for this diff, with the file and
 
 ## Diff classes
 
-1. **Sibling path.** A new guard, refusal or invariant was added to one entry point. Grep every other caller and write path that reaches the same state, and state why each is covered: online, `--offline`, `--no-persist`, `--repersist`, facts engine, release script. _Example: `run_facts_engine` skipped the distribution-copy refusal that `persist_dip_pulse_store.connect` applies (PR #91)._
+1. **Sibling path.** A new guard, refusal or invariant was added to one entry point. Grep every other caller and write path that reaches the same state, and state why each is covered: online, `--offline`, `--repersist`, facts engine, release script. _Example: `run_facts_engine` skipped the distribution-copy refusal that `persist_dip_pulse_store.connect` applies (PR #91)._
 
 2. **Stale beats fresh.** A carry-forward, cache or merge can restore an old value over a freshly computed one, or a refetch replaces a record whole and drops fields the old one had. When the fresh value is absent or different, decide whether that means missing data or a changed truth. _Example: `carry_forward_vote_provenance` reverted parser fixes (PR #73). Still open: `cache["vorgaenge"].update(records)` drops cached titel (TODOS.md "B4 review findings: lower-priority edges", item 9)._
 
@@ -33,7 +33,7 @@ Done means every class below is either answered for this diff, with the file and
 
 9. **Input shape.** Every new CLI flag, JSON file, URL or id that reaches a path, a DIP request or a label gets null, wrong type, blank, `..`, backslash, userinfo and over-long values. Each must end in a clear refusal, never a traceback or silent acceptance. _Example, still open: a `--previous-manifest` of JSON `null` labels the release "Erste Veröffentlichung" (TODOS.md "Release pipeline: deferred /ship review findings", item 10a)._
 
-10. **Interrupted run.** For each write, rename, swap or cleanup, state what is left on disk if the process stops right after it. Check that no cleanup runs in a mode that keeps no new output (`--no-persist`, `--offline`, missing store). _Example: `write_facts_pages` deleted the previous build's pages after a `--no-persist` run (6578a1a)._
+10. **Interrupted run.** For each write, rename, swap or cleanup, state what is left on disk if the process stops right after it. Check that no cleanup runs in a mode that keeps no new output (`--offline`, missing store). _Example: `write_facts_pages` deleted the previous build's pages after a `--no-persist` run (6578a1a)._
 
 11. **Claims.** For every new or changed sentence in DATA.md, the codebook, recipe texts, UI copy, the CHANGELOG or the PR body, cite the code line that makes it true. Where the sentence states a figure, also cite the real-store value. Check each table separately; a rule that holds for one table is not proof for another. When DATA.md or `docs/data-methods.md` changed, audit every touched definition against the writing code before any other review. _Example: this ended the codebook loop of PR #121, where 20 false statements were fixed in one commit (16a3509) and review then converged in 2 cycles._
 
