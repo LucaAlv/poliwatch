@@ -800,7 +800,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 9. A release `--data-tag` with `$BUNDESTAG_PULSE_DATA_MANIFEST` is refused only after `run_facts_engine` wrote the facts tables (idempotent, a wasted pass); move the check before it.
 10. A blob committed with CRLF is exported as LF, so the shipped `LICENSE-DATA.md` is not byte-identical to "the one that commit holds" (docstring and docs); add `.gitattributes` `eol=lf` for the three codebook inputs or soften the claim.
 11. Smaller: `_read_codebook_inputs` normalises CRLF and `text_sha256` normalises again; the `os.chdir` in `test_relative_directories_reach_gh_as_absolute_paths_and_a_hash_is_refused` should be `contextlib.chdir`; README, `CONTEXT.md` and `docs/stable-ids.md` still name "export format 11" in sentences that stay true but cite an old number; the C1 seat-count work also plans export format 12, so whichever lands second takes 13.
-12. Not run in the review: the reference-store export replay (format 12, one re-export, no moved figures).
+12. ~~Not run in the review: the reference-store export replay.~~ **Done 2026-11-01** in the /gstack-ship run: a clone of the reference store, repersisted with this branch, then offline builds. 290 protocols, every row count, vote, Rede character sum, Sprechrolle and Beitrag count and all 710 stored Fakten unchanged; the store's SQLite hash unchanged by the offline build; a format-12 export listing `LICENSE-DATA.md` with the default short string; a further build on identical inputs printed `export: reused data/exports (unchanged)`.
 13. Browser check (375px, dark, 2026-11-01, demo build plus both legal pages rendered from a dummy operator file): no horizontal scroll, dark tokens apply, links and the `cdn.example.net` host sentence correct, no operator marker left when the file is complete. Cosmetic only:
     - the Impressum heading wraps between „§“ and „18“ (use `&nbsp;` after each `§`);
     - the placeholder state reads „Angabe folgt., Anschrift wie oben.“ and „Angabe folgt..“ (doubled punctuation; only the deploy gate planned under "Site hosting plan" will refuse these pages: `validate_publication_directory` accepts them, since CI validates the placeholder demo build);
@@ -812,7 +812,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Why:** Deferred under the CLAUDE.md fix-now-or-defer rule. The review fixed the crashes (operator-file lone surrogate, deep nesting and unparseable URL host; a malformed or host-less `--data-base-url`), the Datenschutz download host for a protocol-relative base URL, the Datenschutz source sentence (roll-call results were credited to abgeordnetenwatch.de too), „LICENSE-DATA.md in jedem Download“ (only the export carries it), and two stale claims.
 
 **Effort:** M
-**Priority:** P2 (items 3, 4, 6 and 12 before the site goes public), P3 (rest)
+**Priority:** P2 (items 3, 4 and 6 before the site goes public), P3 (rest)
 **Depends on:** None
 
 ### Impressum/licence branch: deferred /gstack-ship findings (2026-11-01)
@@ -828,11 +828,18 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 8. The `--data-base-url` and `--data-issues-url` refusals run inside `run_data_pipeline`, after fetch, persist and facts; a typo wastes a whole online update. Resolve both at the top of `main()` beside `resolve_operator`.
 9. The footer of the legal pages and of the database-unavailable page reads „Quellen und Methode Impressum · Datenschutz“ with no separator before „Impressum“.
 10. Predates this branch: in dark mode the two hint boxes on `abgeordnete/index.html` („Der vollständige Abgeordnetenkader wurde nicht abgerufen“) show pale text on a pale background.
+11. `resolve_data_base_url` still accepts bases a browser misreads or cannot use: a scheme without `//` (`javascript:x` becomes the prefix of every download href; `https:/host/`, `https:host`), a bad port (`https://h:abc/`, `https://h:99999/`), whitespace in the host, a leading space or tab before `//host` (it takes the relative-path branch, so the host and credential checks never run; browsers strip the whitespace), and a query or fragment (`https://h/?x` becomes `https://h/?x/`). Refuse any `scheme:` other than `https://`/`http://`, touch `parsed.port` inside the existing `try`, and refuse whitespace, control characters, `?` and `#`. Owner-supplied input; the datenschutz host sentence can disagree with the hrefs for some of these.
+12. The credential refusal promises not to echo the value, but the test rows only assert `ValueError`; assert the userinfo and host are absent from the message.
+13. The operator file: duplicate JSON keys pass silently (the last one wins, so a pasted-twice `email` changes the Impressum without an error; refuse them with an `object_pairs_hook`); there is no size or file-type check, so a FIFO, `/dev/zero` or a huge file hangs or exhausts memory (stat for a regular file, read at most about 64 KiB); the e-mail regex accepts a digit-only TLD and refuses IDN domains (punycode works).
+14. `previous_manifest_problem` refuses a previous `datenstand.json` that lacks any of `release_changes.SCHEMA_FIELDS`, although `release_changes.assemble` reads them with `.get()`. No release exists yet; decide before the second release whether such a manifest is refused or tolerated.
+15. Predates this branch: `publish_dip_pulse_data._read_json` catches `JSONDecodeError` but not a plain `ValueError`, so a `--previous-manifest` or `--changes` file with an integer past 4300 digits ends in a traceback (`load_operator` got the same fix on this branch).
+16. `default_license_text` reads `LICENSE-DATA.md` a second time, apart from `_read_codebook_inputs`; an edit between the two reads gives `manifest["license"]` from another revision than the shipped copy. Derive the default from `CodebookInputs.license` (the consequence is item 3 of the section above).
+17. For the lawyer: the Datenschutz page states purposes but no legal basis (Art. 6 DSGVO) for the server logs, the e-mail contact or the people in the data; ADR 0003 open question 8 asks this only for localStorage.
 
-**Why:** Deferred under the CLAUDE.md fix-now-or-defer rule. The ship review fixed the two false statements it found: `--data-base-url` now refuses a backslash (browsers read `/\host/` as another site while the privacy page named no host) and credentials, and `datenschutz.html` names a download host only when the build renders a manifest.
+**Why:** Deferred under the CLAUDE.md fix-now-or-defer rule. The ship review fixed the three correctness defects it found: `--data-base-url` now refuses a backslash (browsers read `/\host/` as another site while the privacy page named no host) and credentials, `datenschutz.html` names a download host only when the build renders a manifest, and an operator file with an integer past 4300 digits is refused instead of ending in a traceback. Codex could not run in this session (it must write `~/.codex`, and the out-of-sandbox run was refused), so the outside review is missing.
 
 **Effort:** S
-**Priority:** P2 (items 1 and 7), P3 (rest)
+**Priority:** P2 (items 1, 7, 11 and 17 before the site goes public), P3 (rest)
 **Depends on:** None
 
 ### Impressum, Datenschutz and licence files before the site goes public
