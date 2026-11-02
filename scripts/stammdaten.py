@@ -116,7 +116,8 @@ def read_zip(path: Path) -> Stammdaten:
     data = _xml_bytes(path)
     try:
         root = ET.fromstring(data)
-    except ET.ParseError as exc:
+    # LookupError: an XML declaration naming an encoding expat does not know.
+    except (ET.ParseError, LookupError) as exc:
         raise StammdatenError(f"{path.name}: {XML_MEMBER} does not parse ({exc})") from None
     if root.tag != "DOCUMENT":
         raise StammdatenError(f"{path.name}: root element {root.tag!r}, not DOCUMENT")

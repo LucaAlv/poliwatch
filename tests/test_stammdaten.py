@@ -114,6 +114,8 @@ class ReadZipTests(unittest.TestCase):
             # str.isdigit accepts superscripts, which int() rejects.
             "non-ascii version digit": ({"MDB_STAMMDATEN.XML": XML.replace(b"1777449783", "177744978²".encode(), 1)}, "VERSION"),
             "non-ascii wp digit": ({"MDB_STAMMDATEN.XML": XML.replace(b"<WP>20</WP>", "<WP>2²</WP>".encode(), 1)}, "WP '2²'"),
+            # expat raises LookupError, not ParseError, for an encoding it does not know.
+            "unknown encoding": ({"MDB_STAMMDATEN.XML": XML.replace(b'encoding="UTF-8"', b'encoding="foo"', 1)}, "does not parse"),
         }
         for label, (members, message) in cases.items():
             with self.subTest(label):
