@@ -39,7 +39,6 @@ def _pipeline_args(**overrides) -> SimpleNamespace:
         force_export=False,
         data_license=None,
         data_issues_url=None,
-        no_persist=False,
         offline=False,
     )
     base.update(overrides)
@@ -112,7 +111,109 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
                     for key in env_keys:
                         os.environ.pop(key, None)
                     result = b.resolve_data_export_options(args)
-                self.assertEqual(result, ("data/exports/", None, "", None))
+                self.assertEqual(result, ("data/exports/", None, b.default_license_text(), None))
+
+    # Value: protects=with no --data-license the export records the short string, read from the blockquote under "## Short string" in LICENSE-DATA.md, and a file without that section stops with a clear error; fails_when=the default stays empty (the Daten page shows only the placeholder), the string is written a second time in code, or a missing section yields "" or a traceback; why_new=step 4 of the Impressum/licence plan; seam=default_license_text; no_claim=the string's legal content
+    def test_the_default_licence_string_is_the_short_string_of_license_data(self) -> None:
+        text = b.default_license_text()
+        self.assertTrue(text.startswith("Quelldaten: Deutscher Bundestag/Bundesrat – DIP"), text)
+        self.assertTrue(text.endswith("Details in LICENSE-DATA.md."), text)
+        self.assertIn(f"> {text}", (b.REPO_ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8"))
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, root, ignore_errors=True)
+        for label, content in (
+            ("no section", "# Datenlizenz\n\n## Terms per layer\n\n> not the short string\n"),
+            ("section without a quote", "# Datenlizenz\n\n## Short string\n\nNur Fließtext.\n\n## Terms per layer\n"),
+        ):
+            with self.subTest(label):
+                (root / "LICENSE-DATA.md").write_text(content, encoding="utf-8")
+                with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string"):
+                    b.default_license_text()
+        (root / "LICENSE-DATA.md").unlink()
+        with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "cannot read"):
+            b.default_license_text()
+
+
+class OperatorFileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+
+    def write(self, content, name: str = "operator.json") -> Path:
+        path = self.tmp / name
+        path.write_bytes(content if isinstance(content, bytes) else json.dumps(content).encode("utf-8"))
+        return path
+
+    # Value: protects=a complete operator file loads into the flattened fields the pages read, and absent or empty fields are left out (placeholders); fails_when=a nested value is lost, a field is renamed, or an empty string counts as given; why_new=O1 A, the operator data comes from a local file outside git; seam=load_operator; no_claim=page wording
+    def test_a_complete_file_loads_flattened_and_partial_fields_stay_missing(self) -> None:
+        complete = {
+            "name": " Erika Muster ", "street": "Musterstraße 1", "postal_code": "12345", "city": "Musterstadt",
+            "email": "impressum@example.org",
+            "hosting": {"provider": "Hoster", "address": "Hostweg 2", "privacy_url": "https://h.example.org/ds", "log_retention": "7 Tage"},
+            "supervisory_authority": {"name": "LfD", "url": "https://lfd.example.org/"},
+        }
+        operator = b.load_operator(self.write(complete))
+        self.assertEqual(operator["name"], "Erika Muster")
+        self.assertEqual(operator["hosting.log_retention"], "7 Tage")
+        self.assertEqual(set(operator), set(b.OPERATOR_FIELDS) | {f"{k}.{f}" for k, fs in b.OPERATOR_OBJECTS.items() for f in fs})
+        self.assertEqual(b.load_operator(self.write({"name": "Erika Muster", "city": "", "hosting": {"provider": "Hoster"}})), {"name": "Erika Muster", "hosting.provider": "Hoster"})
+
+    # Value: protects=every malformed operator file stops with an OperatorFileError naming the path and the problem, never a traceback or a page carrying the bad value; fails_when=null/list/number, a non-string or nested non-object, an over-long value, a control character, an address that is no e-mail, a javascript: or http URL, invalid JSON, non-UTF-8 bytes or an unknown field get through; why_new=checklist class 9, eng review A3; seam=load_operator; no_claim=deliverability of the address
+    def test_malformed_operator_files_are_refused_naming_the_path(self) -> None:
+        cases = [
+            ("null", None, "must hold a JSON object"),
+            ("list", ["Erika"], "must hold a JSON object"),
+            ("number", 7, "must hold a JSON object"),
+            ("non-string field", {"name": 42}, "name must be a string"),
+            ("hosting not an object", {"hosting": "Hoster"}, "hosting must be an object"),
+            ("over-long value", {"street": "x" * (b.OPERATOR_MAX_LENGTH + 1)}, "street is longer than"),
+            ("control character", {"name": "Erika\nMuster"}, "name contains a control character"),
+            ("bidi control", {"name": "Erika\u202eMuster"}, "name contains a control character"),
+            ("bad e-mail", {"email": "kein-at-zeichen"}, "is not an e-mail address"),
+            ("e-mail with markup", {"email": "a<b>@example.org"}, "is not an e-mail address"),
+            ("javascript: URL", {"hosting": {"privacy_url": "javascript:alert(1)"}}, "hosting.privacy_url must be an https:// URL"),
+            ("http URL", {"supervisory_authority": {"url": "http://lfd.example.org/"}}, "supervisory_authority.url must be an https:// URL"),
+            # Split so the pre-push credential scanner does not flag this fake value.
+            ("credentials in URL", {"supervisory_authority": {"url": "https://u:p" + "@lfd.example.org/"}}, "must be an https:// URL"),
+            ("invalid JSON", b"{nope", "is not valid JSON"),
+            # /gstack-ship adversarial review 2026-11-01: ended in a traceback.
+            ("integer past the digit limit", b'{"name": 1' + b"0" * 5000 + b"}", "is not valid JSON"),
+            ("not UTF-8", b"\xff\xfe{}", "is not UTF-8"),
+            ("unknown field", {"phone": "123"}, "unknown field(s) phone"),
+            ("unknown nested field", {"hosting": {"ip": "1.2.3.4"}}, "unknown field(s) hosting.ip"),
+            # /gstack-review 2026-11-01: these three ended in a traceback.
+            ("lone surrogate", b'{"name": "Erika\\ud800"}', "name contains a control character"),
+            ("nested too deeply", b"[" * 100_000, "nested too deeply"),
+            ("unparseable URL host", {"hosting": {"privacy_url": "https://[::1"}}, "hosting.privacy_url must be an https:// URL"),
+        ]
+        for label, content, fragment in cases:
+            with self.subTest(label):
+                path = self.write(content)
+                with self.assertRaises(b.OperatorFileError) as caught:
+                    b.load_operator(path)
+                self.assertIn(str(path), str(caught.exception))
+                self.assertIn(fragment, str(caught.exception))
+
+    # Value: protects=with neither --operator-file nor $BUNDESTAG_PULSE_OPERATOR_FILE there is no operator data (placeholders), the flag beats the env, and a set path that does not exist stops main() with exit 1 naming the path before any page is written; fails_when=a mistyped path renders an Impressum of placeholders with exit 0, or the env var is ignored; why_new=eng review D3 A; seam=resolve_operator, main; no_claim=what the pages say
+    def test_operator_resolution_and_a_missing_path_stops_the_build(self) -> None:
+        good = self.write({"name": "Aus der Datei"})
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BUNDESTAG_PULSE_OPERATOR_FILE", None)
+            self.assertIsNone(b.resolve_operator(SimpleNamespace()))
+            self.assertIsNone(b.resolve_operator(_pipeline_args(operator_file=None)))
+            os.environ["BUNDESTAG_PULSE_OPERATOR_FILE"] = str(good)
+            self.assertEqual(b.resolve_operator(SimpleNamespace()), {"name": "Aus der Datei"})
+            other = self.write({"name": "Vom Flag"}, "flag.json")
+            self.assertEqual(b.resolve_operator(_pipeline_args(operator_file=str(other))), {"name": "Vom Flag"})
+        missing = self.tmp / "tippfehler.json"
+        args = SimpleNamespace(validate_publication=None, operator_file=str(missing), output_dir=self.tmp / "site")
+        with mock.patch.object(b, "parse_args", return_value=args), mock.patch.object(b, "render_site") as render, mock.patch.object(b.dip, "load_local_env"), contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(b.main(), 1)
+        render.assert_not_called()
+        self.assertIn(str(missing), err.getvalue())
+        self.assertIn("cannot be read", err.getvalue())
+        self.assertFalse((self.tmp / "site").exists())
 
 
 class ResolveCommitTests(unittest.TestCase):
@@ -165,15 +266,16 @@ class LoadRemoteManifestTests(unittest.TestCase):
 
 
 class ParseArgsValidationTests(unittest.TestCase):
-    def test_force_export_with_no_persist_is_rejected(self) -> None:
+    # Value: protects=R1 (A4) removed --no-persist, since every page renders from a store; fails_when=the flag comes back and a run skips the store the pages read; seam=none
+    def test_no_persist_is_no_longer_an_option(self) -> None:
         with (
-            mock.patch.object(sys, "argv", ["build", "--force-export", "--no-persist"]),
+            mock.patch.object(sys, "argv", ["build", "--no-persist"]),
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
         ):
             with self.assertRaises(SystemExit) as ctx:
                 b.parse_args()
         self.assertEqual(ctx.exception.code, 2)
-        self.assertIn("--force-export cannot be combined with --no-persist", stderr.getvalue())
+        self.assertIn("unrecognized arguments: --no-persist", stderr.getvalue())
 
     # Value: protects=--fetch-xml downloads and exits, so it refuses --offline, --repersist and --backfill-incomplete with a parser error naming it, and alone it parses;
     #   fails_when=parse_args drops one of the three refusals (the run would silently ignore the other flag) or also refuses --fetch-xml alone;
@@ -228,15 +330,15 @@ class ParseArgsValidationTests(unittest.TestCase):
                     b.parse_args()
                 self.assertIn("--data-tag", err.getvalue())
 
-    def test_data_base_url_with_no_persist_warns_but_does_not_exit(self) -> None:
-        with (
-            mock.patch.object(sys, "argv", ["build", "--no-persist", "--data-base-url", "https://cdn.example/"]),
-            mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
-        ):
-            args = b.parse_args()
-        self.assertEqual(args.data_base_url, "https://cdn.example/")
-        self.assertIn("warning: --data-base-url has no effect with --no-persist", stderr.getvalue())
-
+    # Value: protects=a release --data-tag cannot be combined with --data-manifest, which skips the export; fails_when=the build accepts it and exits 0 with no export carrying the tag; why_new=release item 10c (P1); seam=parse_args; no_claim=the local tag
+    def test_a_release_tag_refuses_a_data_manifest(self) -> None:
+        argv = ["build", "--data-tag", "2026.11.01", "--data-manifest", "elsewhere/datenstand.json"]
+        with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(io.StringIO()) as err:
+            with self.assertRaises(SystemExit):
+                b.parse_args()
+            self.assertIn("--data-manifest", err.getvalue())
+        with mock.patch.object(sys, "argv", ["build", "--data-tag", "local", "--data-manifest", "elsewhere/datenstand.json"]):
+            self.assertEqual(b.parse_args().data_manifest, "elsewhere/datenstand.json")
 
 class RunDataPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -265,7 +367,7 @@ class RunDataPipelineTests(unittest.TestCase):
             catalog=None,
         )
 
-    def test_exports_when_the_store_exists_and_not_no_persist(self) -> None:
+    def test_exports_when_the_store_exists(self) -> None:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote = self._run()
         self.assertIsNotNone(manifest)
         self.assertIsNone(data_export_error)
@@ -289,32 +391,9 @@ class RunDataPipelineTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_no_persist_leaves_the_store_without_facts_tables(self) -> None:
-        # D3A: --no-persist writes nothing; the pages render whatever the store
-        # already holds, which here is nothing.
-        b.run_data_pipeline(
-            args=_pipeline_args(no_persist=True),
-            output_dir=self.output_dir,
-            database_path=self.database_path,
-            entries=[],
-            protocols=[],
-            abg_mps=self.mps,
-            mp_lookup=self.lookup,
-            catalog=None,
-        )
-        conn = pulse_store.connect(self.database_path)
-        try:
-            self.assertFalse(facts.tables_exist(conn))
-            self.assertEqual(facts.load_facts(conn), [])
-        finally:
-            conn.close()
-
-    def test_skips_export_when_no_persist_or_the_database_is_missing(self) -> None:
+    def test_skips_export_when_the_database_is_missing(self) -> None:
         missing_db = self.output_dir / "data" / "does-not-exist.sqlite"
         cases = {
-            "no_persist": dict(
-                args=_pipeline_args(no_persist=True), database_path=self.database_path
-            ),
             "missing_database": dict(args=_pipeline_args(), database_path=missing_db),
         }
         for label, kwargs in cases.items():
@@ -360,9 +439,30 @@ class RunDataPipelineTests(unittest.TestCase):
     def test_data_tag_becomes_the_export_tag_and_defaults_to_local(self) -> None:
         for given, expected in ((None, "local"), ("2026.11.01", "2026.11.01")):
             with self.subTest(tag=given), mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("stop")) as export_mock, mock.patch.object(b, "resolve_commit", return_value="0123456789ab"):
-                self._run(data_tag=given)
+                if given is None:
+                    self._run(data_tag=given)
+                else:
+                    with self.assertRaises(RuntimeError):
+                        self._run(data_tag=given)
             self.assertEqual(export_mock.call_args.kwargs["tag"], expected)
             self.assertEqual(export_mock.call_args.kwargs["commit"], "0123456789ab")
+
+    # Value: protects=a release --data-tag that exports nothing (store missing, old SQLite, a $BUNDESTAG_PULSE_DATA_MANIFEST override) stops the build instead of exiting 0 beside an older release-tagged export; fails_when=any of the three is reported as a warning and the build succeeds; why_new=release item 10c (P1), reachable once --publish opens; seam=run_data_pipeline; no_claim=the local tag (unchanged: a warning)
+    def test_a_release_tag_that_exports_nothing_stops_the_build(self) -> None:
+        missing_db = self.output_dir / "data" / "does-not-exist.sqlite"
+        with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: there is no store"):
+            b.run_data_pipeline(
+                args=_pipeline_args(data_tag="2026.11.01"), output_dir=self.output_dir, database_path=missing_db,
+                entries=[], protocols=[], abg_mps=self.mps, mp_lookup=self.lookup, catalog=None,
+            )
+        with mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("SQLite too old")):
+            with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: SQLite too old"):
+                self._run(data_tag="2026.11.01")
+        override_path = self._override_manifest()
+        with mock.patch.dict(os.environ, {"BUNDESTAG_PULSE_DATA_MANIFEST": str(override_path)}), mock.patch.object(b, "export_distribution_data") as export_mock:
+            with self.assertRaisesRegex(RuntimeError, "BUNDESTAG_PULSE_DATA_MANIFEST"):
+                self._run(data_tag="2026.11.01")
+        export_mock.assert_not_called()
 
     def test_force_export_still_exports_under_a_data_manifest_override(self) -> None:
         override_path = self._override_manifest()
@@ -505,7 +605,6 @@ class RenderSiteUnavailablePageWiringTests(unittest.TestCase):
             b.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[],
                 entries=[],
                 abg_mps=[],

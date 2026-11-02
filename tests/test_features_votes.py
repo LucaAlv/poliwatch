@@ -657,6 +657,66 @@ class VoteContextPanelTests(unittest.TestCase):
         recordless = self.panel(["1", "2"], "not_fetched", cache)
         self.assertEqual(recordless.count(CONTEXT_NOT_FETCHED), 1)
 
+    def _many(self, count: int, *, missing: tuple[str, ...] = (), state: str = "resolved") -> str:
+        ids = [str(n) for n in range(1, count + 1)]
+        records = {i: {"titel": f"T{i}", "abstract": f"A{i}."} for i in ids if i not in missing}
+        return self.panel(ids, state, _context_cache(**records))
+
+    # Value: protects=a vote with many Vorgänge shows 3 blocks and folds the rest best-first, with a counted summary, and a vote with 4 shows all 4 (a fold of one block saves nothing); fails_when=the cap goes, reorders, folds a single block, or the count is wrong; why_new=no test has more than 2 ids (B4 edges item 1); seam=none; no_claim=browser rendering
+    def test_more_than_four_vorgaenge_fold_the_rest_in_order(self) -> None:
+        five = self._many(5)
+        head, fold = five.split('<details class="vote-context-overflow">')
+        self.assertEqual(five.count('<details class="vote-context-overflow">'), 1)
+        self.assertEqual([f">T{n} · DIP<" in head for n in (1, 2, 3, 4, 5)], [True, True, True, False, False])
+        self.assertTrue(fold.startswith("<summary>2 weitere Vorgänge anzeigen</summary>"))
+        self.assertLess(fold.index(">T4 · DIP<"), fold.index(">T5 · DIP<"))
+        self.assertNotIn(">T3 · DIP<", fold)
+        self.assertEqual(five.count("vote-context-block"), 5)
+        # The count names the hidden blocks only: 12 Vorgänge hide 9.
+        self.assertIn("<summary>9 weitere Vorgänge anzeigen</summary>", self._many(12))
+        for count in (1, 3, 4):
+            with self.subTest(count=count):
+                markup = self._many(count)
+                self.assertNotIn("vote-context-overflow", markup)
+                self.assertEqual(markup.count('class="vote-context-block"'), count)
+
+    # Value: protects=a nested abstract fold inside the overflow keeps its own class and the overflow summary is not styled as the abstract toggle; fails_when=the overflow reuses vote-context-more or vote-context-toggle; why_new=B4 edges item 1 (the shared descendant CSS rule); seam=none
+    def test_an_abstract_fold_nested_in_the_overflow_keeps_its_own_class(self) -> None:
+        long_abstract = "<p>" + "Satz. " * 120 + "</p><p>Zweiter Absatz.</p>"
+        ids = [str(n) for n in range(1, 6)]
+        records = {i: {"titel": f"T{i}", "abstract": long_abstract} for i in ids}
+        markup = self.panel(ids, "resolved", _context_cache(**records))
+        overflow = markup.split('<details class="vote-context-overflow">')[1]
+        self.assertIn('<details class="vote-context-more">', overflow)
+        self.assertEqual(overflow.count('<details class="vote-context-more">'), 2)
+        summary = overflow[: overflow.index("</summary>")]
+        self.assertNotIn("vote-context-toggle", summary)
+        self.assertNotIn("vote-context-more", summary)
+
+    # Value: protects=the D7 gap note stays visible when blocks fold, also for a folded block without a record (DD3), and stays once; fails_when=the note moves inside the details, is dropped for a folded missing record, or doubles for an open one; why_new=the fold is new; seam=none
+    def test_the_not_fetched_note_stays_outside_the_fold(self) -> None:
+        note = f'<p class="vote-context-gap">{CONTEXT_NOT_FETCHED}</p>'
+        # Every record present, a number unresolved: the note follows the fold, once.
+        complete = self._many(5, state="not_fetched")
+        self.assertEqual(complete.count(CONTEXT_NOT_FETCHED), 1)
+        self.assertIn("</details>" + note, complete)
+        # Block 5 sits in the fold and has no record: its own block says so inside
+        # the fold, and the note after the fold keeps the gap visible.
+        folded = self._many(5, missing=("5",), state="not_fetched")
+        self.assertEqual(folded.count(CONTEXT_NOT_FETCHED), 2)
+        self.assertIn("</details>" + note, folded)
+        self.assertEqual(folded.count("</details>" + note), 1)
+        self.assertLess(folded.index(CONTEXT_NOT_FETCHED), folded.index("</details>" + note))
+        # Block 1 is open and has no record: it says so itself, no trailing note.
+        open_gap = self._many(5, missing=("1",), state="not_fetched")
+        self.assertEqual(open_gap.count(CONTEXT_NOT_FETCHED), 1)
+        self.assertLess(open_gap.index(CONTEXT_NOT_FETCHED), open_gap.index("<details"))
+        # Not folded at all: unchanged (no trailing note while a record is missing).
+        self.assertEqual(self._many(3, missing=("2",), state="not_fetched").count(CONTEXT_NOT_FETCHED), 1)
+        self.assertEqual(self._many(3, state="not_fetched").count(CONTEXT_NOT_FETCHED), 1)
+        # A resolved vote never gets the note.
+        self.assertNotIn(note, self._many(5))
+
     # Value: protects=a vote's two panels and its vote_proceedings name the same Vorgänge (D13); fails_when=the context is narrowed per rendering TOP; why_new=new block; seam=none
     def test_a_vote_under_two_tops_shows_one_selection_on_both_panels(self) -> None:
         vote = _vote(document_numbers=["20/1", "20/2"])

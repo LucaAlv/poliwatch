@@ -621,10 +621,21 @@ def format_percent(value: float) -> str:
     return f"{value:.1f}".replace(".", ",") + "%"
 
 
+# The legal pages, appended to every page's footer (not the navigation,
+# which tests/test_features.py pins); same prefix scheme as the header.
+def render_legal_links(*, depth: int = 0) -> str:
+    prefix = "../" * depth
+    return (
+        f'<span class="legal-links"><a href="{prefix}impressum.html">Impressum</a>'
+        f' &middot; <a href="{prefix}datenschutz.html">Datenschutz</a></span>'
+    )
+
+
 def global_header_styles() -> str:
     return """
     :root { --party-cdu:#222222; }
     a:visited { color:var(--teal, #0f766e); }
+    .legal-links { white-space:nowrap; }
     :is(a, .site-nav summary, .theme-toggle):focus-visible {
       outline:2px solid var(--blue);
       outline-offset:2px;
@@ -3804,15 +3815,26 @@ def render_html(
     .vote-context-quote blockquote {{ margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); }}
     .vote-context-quote blockquote p + p {{ margin-top:4px; }}
     .vote-context-quote + .vote-context-quote {{ margin-top:8px; }}
-    .vote-context-more summary, .vote-context-quote-more summary {{
+    .vote-context-more summary, .vote-context-quote-more summary, .vote-context-overflow > summary {{
       display:inline-flex;
       align-items:center;
+      gap:4px;
       min-height:24px;
       cursor:pointer;
       color:var(--blue, #174ea6);
       font-size:13px;
       font-weight:650;
     }}
+    .vote-context-overflow > summary {{ margin-top:8px; }}
+    @media (pointer:coarse) {{
+      .vote-context-overflow > summary, .vote-context-quote-more summary {{ min-height:44px; }}
+    }}
+    /* The folded blocks keep the dashed rule: the "+" rule above misses the first one, whose sibling is the summary. */
+    .vote-context-overflow > .vote-context-block {{ padding-top:8px; border-top:1px dashed var(--line); }}
+    /* The three vote-context toggles show their state: a native marker needs display:list-item, which the blue toggle text lacks. */
+    :is(.vote-context-more, .vote-context-overflow, .vote-context-quote-more) > summary::-webkit-details-marker {{ display:none; }}
+    .vote-context-more > summary .vote-context-toggle::before, :is(.vote-context-overflow, .vote-context-quote-more) > summary::before {{ content:"▸ "; content:"▸ " / ""; }}
+    .vote-context-more[open] > summary .vote-context-toggle::before, :is(.vote-context-overflow, .vote-context-quote-more)[open] > summary::before {{ content:"▾ "; content:"▾ " / ""; }}
     .vote-committee, .vote-abweichler-none {{ margin:10px 0 0; font-size:13px; }}
     .vote-lead {{ margin:12px 0 0; max-width:85ch; line-height:1.6; overflow-wrap:anywhere; }}
     .vote-debate {{ margin:10px 0 0; font-size:13px; }}
@@ -4202,7 +4224,7 @@ def render_html(
     {sitting_contributions_html}
       {protocol_dev_sections}
     <footer>
-      <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
+      <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html} {render_legal_links(depth=1)}</span>
     </footer>
   </div>
   {speech_hash_runtime_script()}

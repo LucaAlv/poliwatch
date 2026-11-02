@@ -405,6 +405,25 @@ class CollectTests(unittest.TestCase):
 
 
 class PageTests(unittest.TestCase):
+    # Value: protects=the bill detail page, the Abgeordneten profile page and the empty-archive Puls page each end in the Impressum/Datenschutz links with the prefix of their depth; fails_when=one of these footers loses the legal span (the demo build never renders them, so test_demo_site cannot see it); why_new=test_demo_site checks only the pages the demo builds, and these three footers were asserted nowhere; seam=render_bill_detail, render_abgeordnete_detail, render_pulse_shell; no_claim=other footer text; the Fakt-Woche page (test_facts) and the Daten page (test_daten_page)
+    def test_pages_the_demo_does_not_build_still_link_the_legal_pages(self) -> None:
+        bill = build.collect_bill_pages([entry([GESETZ], DOCS)])[0]
+        person = {
+            "id": 1, "name": "Ada", "party": "SPD", "profile_url": None, "wahlperioden": [], "function": [],
+            "person_roles": [], "speeches": [], "speech_count": 0, "total_chars": 0, "votes": [],
+        }
+        pages = (
+            ("bill detail", build.render_bill_detail(bill), 1),
+            ("Abgeordneten profile", build.render_abgeordnete_detail(person, None, None), 1),
+            ("empty Puls page", build.render_pulse_shell(build.publication_selection(), "Es wurden noch keine Sitzungen erzeugt."), 0),
+        )
+        for label, markup, depth in pages:
+            with self.subTest(label):
+                prefix = "../" * depth
+                footer = markup.split("<footer")[-1]
+                self.assertIn(f'<span class="legal-links"><a href="{prefix}impressum.html">Impressum</a>', footer)
+                self.assertIn(f'<a href="{prefix}datenschutz.html">Datenschutz</a>', footer)
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)

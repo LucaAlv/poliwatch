@@ -1,12 +1,8 @@
 # Data licence and attribution
 
-**Status: decided 2026-09-28** ([ADR 0003](adr/0003-licences-and-impressum.md)). The export applies it: each column's layer is in `DATA.md` and checked against its source tag. The release copy as `LICENSE-DATA.md` is not built yet.
+This file states the terms for the data of Bundestag-Puls (working title): the SQLite file, the CSV tables, the recipe results and `DATA.md` of every data export, and the figures the site shows. The project's code is under the MIT licence (`LICENSE` in the repository); that licence does not cover the data.
 
-The Daten page's download panel and manifest (`data/exports/datenstand.json`, field `license`) show whatever `--data-license` (or `$BUNDESTAG_PULSE_DATA_LICENSE`) is set to. The placeholder "Lizenzhinweis: siehe Quellen und Methode" stays until the short string below is set.
-
-This file is the long-form counterpart of that string. It is copied into a public release as `LICENSE-DATA.md` (`scripts/publish_dip_pulse_data.sh`), and `--publish` there refuses to run while the licence string is empty or `LICENSE-DATA.md` is missing at the repository root.
-
-Everything from „Short string“ on is also embedded unchanged, headings one level down, in each export's `DATA.md` (`_license_notice` in `scripts/build_dip_pulse_site.py`). This status note and the paragraphs above it are for maintainers and stay out of `DATA.md`; keep researcher-facing text below the first `##` heading.
+Every data export carries this file as `LICENSE-DATA.md` next to its `DATA.md`, which also quotes it from „Short string" on. The decision behind it is ADR 0003 in the project repository (`docs/adr/0003-licences-and-impressum.md`), which also lists the questions still open for a lawyer.
 
 ## Short string
 

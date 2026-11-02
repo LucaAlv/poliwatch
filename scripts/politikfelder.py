@@ -282,10 +282,13 @@ def preserve_corrupt(path: Path) -> str:
     """Move a corrupt cache file out of the way to a uniquely named ``.corrupt``
     file, preferably in the private directory, so a later save cannot overwrite
     what it held. Returns a note for the warning."""
-    for directory in (registry.private_dir(path), path.parent):
+    for position, directory in enumerate((registry.private_dir(path), path.parent)):
         kept = None
         try:
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if position == 0:
+                registry.ensure_private_dir(directory)
+            else:
+                directory.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
                 kept = Path(handle.name)
             path.replace(kept)
@@ -330,7 +333,7 @@ def write_atomic(path: Path, data: bytes) -> None:
     candidates = [path.parent]
     try:
         private = registry.private_dir(path)
-        private.mkdir(mode=0o700, parents=True, exist_ok=True)
+        registry.ensure_private_dir(private)
         if private.stat().st_dev == path.parent.stat().st_dev:
             candidates.insert(0, private)
     except OSError:

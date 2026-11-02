@@ -78,6 +78,7 @@ def build_demo(
     fixture: Path = DEFAULT_FIXTURE,
     *,
     include_dev_view: bool = False,
+    operator: dict[str, str] | None = None,
 ) -> Path:
     output_dir = output_dir.resolve()
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
@@ -101,7 +102,6 @@ def build_demo(
     index_path = site.render_site(
         output_dir=output_dir,
         database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-        no_persist=True,
         protocols=[protocol],
         entries=[entry],
         abg_mps=[],
@@ -110,6 +110,7 @@ def build_demo(
         summary_mode="off",
         acquisition_attempted=False,
         include_dev_view=include_dev_view,
+        operator=operator,
     )
     if not include_dev_view:
         publication.validate_publication_directory(output_dir)

@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title: "poliwatch"
-message: "If you use this software or its data, please cite it using these metadata. The data is licensed in layers, one per source (ADR 0003, docs/adr/0003-licences-and-impressum.md); every data release states them in its DATA.md. A release has a version (calendar version YYYY.MM.DD, tag data-<version>) that you should name in the citation."
+message: "If you use this software or its data, please cite it using these metadata. The data is licensed in layers, one per source (ADR 0003, docs/adr/0003-licences-and-impressum.md); LICENSE-DATA.md states them, and every data export carries that file next to its DATA.md. A release has a version (calendar version YYYY.MM.DD, tag data-<version>) that you should name in the citation."
 type: software
 authors:
   - family-names: "Veh"

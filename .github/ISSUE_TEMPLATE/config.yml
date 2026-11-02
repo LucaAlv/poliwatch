@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Sicherheitslücke melden
+    url: https://github.com/LucaAlv/poliwatch/security/policy
+    about: Bitte nicht als öffentliches Issue melden. Der vertrauliche Weg steht in SECURITY.md.

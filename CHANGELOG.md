@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0.0] - 2026-11-01
+
+### Added
+
+- **Impressum and Datenschutz.** Every build writes `impressum.html` and `datenschutz.html`, and every page's footer links both at its depth. The Impressum gives the operator's name, address and e-mail (§ 5 DDG, § 18 MStV), the contact routes and the sources. The Datenschutz page names the hoster and its server logs, the two settings stored in the browser (theme and KI-Zusammenfassungen, each only after a click), that no cookies, tracking or third-party content are used, the download host when the downloads live elsewhere, the people in the data and the reader's rights under the DSGVO. The publication check refuses an output without either page.
+- **`--operator-file` (or `$BUNDESTAG_PULSE_OPERATOR_FILE`).** The operator's details come from a local JSON file outside git, so an address never enters the repository history. `docs/project-documentation.md` shows its shape. A value the file does not give renders as a marked „Angabe folgt.“ placeholder (`data-operator-missing`), so an incomplete build is visible. A path that is set but unreadable, or a file with unknown fields, wrong types, control characters, a malformed e-mail or a URL that is not https or carries credentials, stops the build before any work, naming the path.
+- **Licence files.** `LICENSE` puts the code under MIT. `LICENSE-DATA.md` at the repository root is the one data-licence source: each source layer keeps its own terms (DIP terms of use, roll-call results from bundestag.de, CC0 for abgeordnetenwatch.de, CC BY 4.0 for the project's own derivations). Every export carries it as `LICENSE-DATA.md` beside `DATA.md`, and the Daten page links that copy. `sources.html#lizenz` shows the four layers as a table instead of the placeholder that said the wording was still open.
+
+### Changed
+
+- **The default licence string is the short string of `LICENSE-DATA.md`.** Without `--data-license`, `datenstand.json`, the DATA.md header and the Daten page now carry it instead of an empty string. On the Daten page, its mention of `LICENSE-DATA.md` links the export's copy.
+- **Export format 12.** The manifest lists the licence file as a file of its own (kind `license`) with its SHA-256, and a reused export re-hashes it. The first build after this release re-exports once.
+- **A release checks the export's licence file.** `scripts/publish_dip_pulse_data.sh` verifies that the export's `LICENSE-DATA.md` is non-empty and identical to the one its commit holds, and copies nothing from the working tree. `--publish` refuses an export without a licence string.
+- **`--data-base-url` refuses more bad input.** A host that does not parse, a base with no host, a backslash (browsers read `/\host/` as another site) and a URL with credentials are refused at the start of the export.
+
+### Fixed
+
+- **The release script before its first real run.** A `--previous-manifest` holding JSON `null`, a number or a list, or missing the counts the changelog reads, is refused instead of labelling the release the first one; a previous manifest of an older export format stays usable. Relative `--output-dir`/`--exports-dir` are made absolute before `gh` sees them, and an `--output-dir` containing `#` is refused. A release `--data-tag` refuses `--data-manifest`, and the build stops when no export carries the tag instead of leaving an older release-tagged export behind. A checkout with `core.autocrlf=true` no longer builds an export the release script refuses as "differs from commit".
+
+## [0.29.0.0] - 2026-11-01
+
+### Changed
+
+- **Every page renders from the SQLite store.** An online update always rebuilds the store, and an `--offline` render reads it. To preview a sitting without touching the site you serve, build into a clone copy of the output directory (README "Try a fetch or a backfill in a scratch directory"). Every online build now also refreshes the Sitzungskalender when it is due.
+- **An `--offline` render refuses instead of rendering from half the data.** With no store it exits 1 with `error: no store at …`, naming `--offline --repersist` (or an online update). When the store and the cached reports cover different sittings, it exits 1, names up to 5 sittings per case and the repair: a cached report the store lacks (`--offline --repersist`), a stored sitting whose report is gone (restore the report, or exclude the sitting), or an excluded sitting the store still holds (`--offline --repersist`). The offline render checks before any page is written. An online build runs the same check after its rebuild.
+- No page changes. A full-site render of the 716-sitting reference store before and after this change (measured against 40fa3bc, before the merge of 0.28.0.0) differed only in timestamps, generation names and the hashes that follow from them; 0 of 1,908 Fakt values moved.
+
+### Removed
+
+- **`--no-persist`.** Passing it is now an error. The `database.html` fallback no longer mentions it.
+
+## [0.28.0.0] - 2026-11-01
+
+### Added
+
+- **"Nächste Sitzungswoche" on puls.html.** The header names the next planned Sitzungswoche from the Bundestag's Sitzungskalender, for example "Nächste Sitzungswoche: 5.–9. Oktober 2026 (KW 41), laut Sitzungskalender". While a planned week is running it says "Sitzungswoche läuft". When planned weeks after the shown week have passed, it adds how many and that they are not evaluated yet. A small script picks the line for the reader's date (Europe/Berlin), and the build date's text is the fallback. The calendar is cached in `data/sitzungskalender.json`. An online build that persists refreshes it when it is more than 7 days old, and from October on daily until next year's calendar is listed. A failed fetch keeps the old cache with a warning. `--offline` and `--no-persist` never fetch, and without the cache puls.html is byte-identical to before.
+- **The week radar as data.** Every build writes `feeds/week-radar.json`, with the radar rows of the last 12 weeks with a Sitzung: titles, shares, the Redeanteil per Fraktion or Sprechrolle (with the release's codes) and links. With `BUNDESTAG_PULSE_SITE_URL` set (https, ending in `/`), it also writes `feeds/week-radar.xml`, an RSS feed with one item per finished week. Without it, an old RSS file is removed. The publication check scans both files.
+- **Reporting data errors.** Two GitHub issue forms ("Datenfehler" and "Fehler auf der Seite") apply triage labels, and blank issues are off. `SECURITY.md` explains how to report a vulnerability privately, and `CODE_OF_CONDUCT.md` sets short German conduct rules (no party politics, no disparaging statements about people). The Daten page footer link reads "Datenfehler melden (GitHub)". `docs/project-documentation.md` gives the form URL that pre-fills the page.
+
+### Changed
+
+- **Long "Worum es geht" lists fold.** A vote panel shows the first 3 Vorgang blocks and folds the rest behind "N weitere Vorgänge anzeigen" when 2 or more would be hidden. The note about a Vorgang whose record was not fetched stays outside the fold. The panel's three toggles show a ▸/▾ marker again. No current panel has more than 3 Vorgänge, so none changes.
+
+### Fixed
+
+- **A rebuild keeps the store's group.** A store chgrp'ed to the web server's group stayed readable only until the next rebuild or facts write. Now the staged copy gets the store's group before anything is persisted, and a group the builder cannot set stops the write with a message.
+- **The private staging directory is checked before it is used.** A symlink, a non-directory or a directory owned by another user is refused before anything is written or swept. A group-writable one is repaired to 0700. The sweep removes only this store's own staged copies, not a similarly named store's. A store in a `data` directory directly under the filesystem root keeps its private directory beside itself.
+- **Daten export CSV files are world-readable (0644).** They were written 0600, so a web server running as another user could not serve them.
+- **An abstract's script or style block is dropped even when its close tag lies past the 12,000-character window.** Before, its body could show as text in an over-long abstract. 0 of 8,737 cached abstracts change.
+
+### For contributors
+
+- The browser checks now cover the votes archive filter and the next-Sitzungswoche line (`node tests/run_bills_browser_check.mjs <python>`).
+
 ## [0.27.0.0] - 2026-11-01
 
 ### Added

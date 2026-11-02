@@ -1457,7 +1457,7 @@ class RenderTests(unittest.TestCase):
                 entry = {"report": copy.deepcopy(report), "report_path": report_path, "page_path": page_path, "slug": slug}
                 with contextlib.redirect_stderr(io.StringIO()):
                     build.render_site(
-                        output_dir=output_dir, database_path=output_dir / "data" / "bundestag-pulse.sqlite", no_persist=True,
+                        output_dir=output_dir, database_path=output_dir / "data" / "bundestag-pulse.sqlite",
                         protocols=[report["protocol"]], entries=[entry], abg_mps=[], mp_lookup={}, today=date(2026, 9, 15),
                         vorgang_cache=cache_of({"v1": vorgang("Verkehr")}) if cached else None,
                     )

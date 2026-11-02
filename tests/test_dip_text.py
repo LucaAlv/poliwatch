@@ -4,7 +4,14 @@ import time
 import unittest
 
 import _support  # noqa: F401
-from dip_text import CONTEXT_TEASER, MAX_ABSTRACT_CHARS, abstract_teaser, abstract_text, committee_genitive
+from dip_text import (
+    CONTEXT_TEASER,
+    CUT_LOOKAHEAD,
+    MAX_ABSTRACT_CHARS,
+    abstract_teaser,
+    abstract_text,
+    committee_genitive,
+)
 
 
 class AbstractTextTests(unittest.TestCase):
@@ -231,13 +238,60 @@ class AbstractTextTests(unittest.TestCase):
 
     # Value: protects=the cut scans a bounded window, not the whole raw abstract, so persist and render stay fast on a huge one; fails_when=the tag scan reads every character of a 2-million-character abstract (about 2 s and 16 MB); why_new=B4 review item 19; seam=none
     def test_a_huge_abstract_is_read_in_bounded_time(self) -> None:
-        for raw in ("x " * 1_000_000, '<a title="' * 200_000, "<p>" * 700_000, "&" * 2_000_000):
+        # The last two stress the close-tag search past the window: 250,000 unclosed
+        # <script>, and 1,500 of them followed by closes that start past the window
+        # and have no ">" after them (every tag asks for the first close, none is complete).
+        for raw in (
+            "x " * 1_000_000,
+            '<a title="' * 200_000,
+            "<p>" * 700_000,
+            "&" * 2_000_000,
+            "<script>" * 250_000,
+            "<script>" * 1_500 + "</script " * 200_000,
+        ):
             with self.subTest(raw=raw[:12]):
                 started = time.perf_counter()
                 text = abstract_text(raw)
                 # gstack-timing-ok: the bound is the contract; reading the whole text takes seconds, the window milliseconds
                 self.assertLess(time.perf_counter() - started, 0.5)
                 self.assertLessEqual(len(text), MAX_ABSTRACT_CHARS)
+
+    # Value: protects=no script or style body leaks into an over-limit abstract (or into the stored proceedings.abstract) when its close tag lies past the 12,000-character window; fails_when=the close is looked for only inside the window, so the body of a block that opens before the cut shows as text; why_new=B4 review item 22(a); seam=none; no_claim=no reference abstract reaches the cut
+    def test_a_script_or_style_closing_past_the_window_is_dropped(self) -> None:
+        window = MAX_ABSTRACT_CHARS + CUT_LOOKAHEAD
+        for name in ("script", "style"):
+            opening, closing = f"<{name}>", f"</{name}>"
+            lead = "x" * 7000
+
+            def with_close_at(position: int, close: str) -> str:
+                body = "y" * (position - len(lead) - len(opening))
+                return lead + opening + body + close + "tail" + "z" * 100
+
+            rows = {
+                # The TODO's reproducer: opens 10 characters before the cut, closes past the window.
+                "reproducer": ("x" * 9990 + opening + "y" * 2500 + closing + "tail", "x" * 9990),
+                # Opens more than CUT_LOOKAHEAD before the cut: 3,000 body characters sat before it.
+                "opens early": (lead + " " + opening + "y" * 6000 + closing + "tail", lead),
+                # The close tag straddles the window's edge (its ">" is the first character past it).
+                "straddles": (with_close_at(window - len(closing) + 1, closing), lead),
+                "straddles later": (with_close_at(window - 5, closing), lead),
+                # The close's name and separator are inside the window, its ">" 50 characters past it.
+                "name inside": (with_close_at(window - 10, f"</{name}" + " " * 50 + ">"), lead),
+                # Never closed anywhere: a plain tag, the body stays text (as in an abstract that fits).
+                "never closed": ("x" * 9990 + opening + "y" * 2500, "x" * 9990 + "y" * (10 - len(opening))),
+                # A close with no ">" anywhere after it is no close either.
+                "close without >": (
+                    lead + opening + "y" * 6000 + f"</{name} " + "z" * 100,
+                    lead + "y" * (3000 - len(opening)),
+                ),
+            }
+            for label, (raw, expected) in rows.items():
+                with self.subTest(name=name, row=label):
+                    self.assertGreater(len(raw), window)
+                    self.assertEqual(abstract_text(raw), expected)
+        # Several tags before the cut: the first one whose close lies past the window ends the text.
+        raw = "a<script>b</script>c<style>" + "d" * 12_000 + "</style>e"
+        self.assertEqual(abstract_text(raw), "ac")
 
     # Value: protects=a comment is dropped whole when the cut splits it, even where a newer Python would have ended it earlier at "--!>" or "<!-->"; fails_when=the comment rule follows the running Python, so the same text is cut at different places; why_new=B4 review item 19 (comment rule tied to 3.13.2); seam=none; no_claim=no reference abstract reaches the cut
     def test_the_cut_reads_a_comment_by_the_same_rule_on_every_python(self) -> None:
