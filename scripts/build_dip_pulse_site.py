@@ -13139,7 +13139,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help=(
-            "Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable. "
+            "Update-time data enrichment: votes, aw-profiles, mp-roster, mdb-stammdaten, or all; repeatable. "
             "votes is on by default (turn it off with --no-votes). A config file's enrich list "
             "replaces earlier config layers but never removes a default; only a veto does "
             "(see --explain-config for the precedence)."
