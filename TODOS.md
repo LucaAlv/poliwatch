@@ -20,7 +20,7 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 
 **A. Counts and coverage: fix what A3 and C1 surfaced, then finish the split**
 1. Correctness P1s. Each one moves published figures:
-   - "Unmatched roll-call votes never reach the report (`sitting_votes`)": 63 votes in 41 sittings are fetched and then dropped.
+   - "Unmatched roll-call votes never reach the report (`sitting_votes`)": 63 votes in 41 sittings were dropped. Probably fixed by #109. It needs a check on a store repersisted from main, not new code.
    - "Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten".
    - "The carried-forward registry diverges from a fresh build after A3", part 2: 289 pages of persons who hold only retired bindings. Fix it together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs". The MdB-Stammdaten from C1 can be the membership source.
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". This needs an owner decision on the kinds first. 18/1 and 19/1 stay excluded until then.
@@ -50,6 +50,7 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
   - A Zenodo account for "A DOI per release and a citation file".
 - **Hosting:** "Site hosting plan for the 2.5 GB generated site" (P1). After A3 the site is 5.4 GB, and still 1.35 GB without `data/` (2026-10-29). The plan also settles the link layout the first real release needs (owner decision (b) in "Write the release script").
 - **The first release:**
+  - items 1–5 of "Release pipeline: deferred /ship review findings"
   - the first real `--publish` of "Write the release script"
   - CHANGES.md on the Daten page ("Public data changelog per release")
   - the DOI
@@ -60,7 +61,12 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
 
 ### Unmatched roll-call votes never reach the report (`sitting_votes`)
 
-**What:** `enrich_with_api` returns the fetched roll-call votes that match no TOP as `sitting_votes`. But the report dict built at the end of `build_report` (`scripts/validate_dip_protocol.py`, near line 3520) does not copy that key; only `api_records.sitting_votes` keeps the votes. Persist (`derive.py`) and render ("TOP nicht zugeordnet") read the top-level key, so these votes are never stored or shown. Copy the key, then replay the cache offline with `--repersist`. No request is needed, because the cached reports hold the full vote details. Done when the 63 votes appear in the store and in their dossiers under "TOP nicht zugeordnet", with an old/new report.
+**Probably fixed, check before working on it (2026-11-02):**
+- Since v0.22.0.0 (#109), `build_report` copies the key into the report (`"sitting_votes": enrichment["sitting_votes"]`, `scripts/validate_dip_protocol.py`).
+- `interpret_report_votes` restores it from `api_records` for reports written before that.
+- What is left: count the stored votes without a TOP on a store repersisted from main, and look at one sitting under "TOP nicht zugeordnet". If the 63 votes are there, close this item.
+
+**What (as found):** `enrich_with_api` returns the fetched roll-call votes that match no TOP as `sitting_votes`. But the report dict built at the end of `build_report` (`scripts/validate_dip_protocol.py`, near line 3520) does not copy that key; only `api_records.sitting_votes` keeps the votes. Persist (`derive.py`) and render ("TOP nicht zugeordnet") read the top-level key, so these votes are never stored or shown. Copy the key, then replay the cache offline with `--repersist`. No request is needed, because the cached reports hold the full vote details. Done when the 63 votes appear in the store and in their dossiers under "TOP nicht zugeordnet", with an old/new report.
 
 **Why:** A3 Phase 4 (2026-10-29): 63 votes in 41 sittings are fetched and then dropped. Examples: 261 EUFOR RCA, 510 MINUSMA, 1008 Jahresemissionsgesamtmengen-Verordnung. The Completed item "Match roll-call votes to a TOP when Drucksache numbers fail" (v0.10.0.0) promised this section; it has never shown a vote.
 
@@ -335,7 +341,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 - **Adversarial pass leftovers:** (a) `DIP_REQUEST_LOG` logs `parts.netloc` and the full query of a non-DIP URL, so userinfo or a foreign token would land in the log (only DIP-supplied XML/roll-call URLs reach it today); log `hostname` and drop the query. (b) `prefetch_dip_bulk` never refreshes `total.json`, so with `--overlap-only` on the current Wahlperiode a grown DIP count makes every run stop on the final count check until the staging directory is deleted; and early in a Wahlperiode one month chunk can hold every position, which the `below=` guard rejects. Both stop the run; nothing wrong is written. (c) The Daten scope line says "jede Sitzung ab der 18. Wahlperiode, für die der DIP-Katalog ein XML-Protokoll führt" while 85 such sittings are excluded; the next line names them, but the sentence could say "bis auf die ausgeschlossenen".
 - **Roster Wahlperioden, rule edges (adversarial pass on 8f13bf1):** (a) `land_office_wahlperioden` trusts `wahlperiode_nummer` to be a list of ints: an int raises TypeError and aborts the whole roster ingest, "²" raises ValueError, "19" becomes {1, 9} (no real record has these shapes); check `isinstance(list)` and `isinstance(n, int)`. (b) The cut is per whole Wahlperiode and only ~200 of 1,360 MdB records carry a Fraktion role, so an MdB who takes a Land office mid-period (e.g. after a 2026 Landtag election) loses that whole period, and with no other period, the roster row; none on today's cache. Require sitting evidence (a vote or speech in that period) before cutting, or accept and document it. (c) Stores keep the old lists until `--enrich mp-roster` runs again (`preserve_roster`).
 - **Roster Wahlperioden, residue:** `land_office_wahlperioden` drops the Wahlperioden DIP gives only a Land-government role (fixed in this review: 11 of the 1,360 cached MdB records, e.g. Scholz, Habeck, Högl). An office without a `bundesland` still counts: Eva Högl keeps WP 20, when she was Wehrbeauftragte and no MdB. DIP's `person_roles` mark Fraktion membership for only some periods, so a full rule needs another source (the Bundestag's MdB Stammdaten) or per-WP vote/speech evidence.
-- **Plan item 1.5 (Deferred from plan: docs/plans/a3-coverage.md):** the share of WP 18/19 Redner whose redner-id finds an abgeordnetenwatch `ext_id_bundestagsverwaltung` was never measured (a3-pilot.md: "not measured"; Phase 3 ran no aw-profiles). Measure it with `--enrich aw-profiles` on a clone of the A3 store and record it in the A3 Completed entry.
+- **Plan item 1.5 (Deferred from plan: docs/plans/a3-coverage.md):** the share of WP 18/19 Redner whose redner-id finds an abgeordnetenwatch `ext_id_bundestagsverwaltung` was never measured (a3-pilot.md: "not measured"; Phase 3 ran no aw-profiles). Measure it with `--enrich aw-profiles` on a clone of the A3 store and record it in the [Phase 4 record](docs/plans/a3-phase4.md).
 
 **Why:** Recorded by the ship review so the PR could land; each is a latent edge, a guard gap no current input reaches, or test hygiene.
 
@@ -1023,10 +1029,13 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 - Versions are calendar dates `YYYY.MM.DD` (`scripts/release_version.py`).
 - What it refuses is listed in the script and in CHANGELOG 0.26.0.0.
 
-Since v0.30.0.0 every export carries `LICENSE-DATA.md`, and item 10 of "Release pipeline: deferred /ship review findings" is fixed, so `--publish` can run.
+Since v0.30.0.0 every export carries `LICENSE-DATA.md`, and items 6 and 10 of "Release pipeline: deferred /ship review findings" are fixed, so `--publish` is reachable.
 
 **What is left:**
-- The first real `--publish`. It waits for the roll-call source decision ("Settle the roll-call source for redistribution") and for a host the site can link to.
+- The first real `--publish`. It waits for three things:
+  - items 1–5 of "Release pipeline: deferred /ship review findings", which that entry says to fix first
+  - the roll-call source decision ("Settle the roll-call source for redistribution")
+  - a host the site can link to
 - Open owner decisions:
   - (a) The version scheme is a default. Change `release_version.py` to switch to semver.
   - (b) The hosting layout. GitHub release assets are flat, but the site links `<base><generation>/<file>`. So no GitHub release URL works as `--data-base-url` until the site's link scheme (`generation_file_href`) or the host changes. The dry run says so. See "Site hosting plan for the 2.5 GB generated site".
@@ -1162,7 +1171,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
 
-**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. The remaining interpretation and replay defects are fixed in v0.22.0.0: see the completed "Vote reading misses half the inverted votes and never stores it" item. Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
+**Context:** Correctness items come first. "Inverted-vote reading for Beschlussempfehlungen" shipped in v0.10.0.0. A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. The remaining interpretation and replay defects are fixed in v0.22.0.0: see the completed "Vote reading misses half the inverted votes and never stores it" item. Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
 
 **Effort:** M
 **Priority:** P2
@@ -1198,7 +1207,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Why:** The local audit found actual errors in quoted older-period texts. The reference population has now been read; fidelity beyond that population remains unproven until the failing sample documents are fixed or safely refused.
 
-**Context:** PR #113, branch `claude/charming-lovelace-4a229o`; `EXTRACTOR_VERSION` 9 (7 at PR #113). The Drucksache cache rides in the in-memory Vorgang cache under `antrag_text.CACHE_NAMESPACE`; A3 coordination is on the A3 entry.
+**Context:** PR #113, branch `claude/charming-lovelace-4a229o`; `EXTRACTOR_VERSION` 9 (7 at PR #113). The Drucksache cache rides in the in-memory Vorgang cache under `antrag_text.CACHE_NAMESPACE`; A3 coordination was on the former A3 entry (`git show c932255:TODOS.md`).
 
 **Effort:** M (remaining source fidelity and measured anchor follow-ups)
 **Priority:** P2
@@ -1558,11 +1567,11 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ## Completed
 
-One line per finished item, newest first: the version and PR that shipped it, or the date it closed. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`); CHANGELOG.md has what each version changed.
+One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
 - Validate final merged A1/A2 before the A3 backfill: 2026-10-19 (A3 Phase 0; [gate record](docs/plans/a3-gate-validation.md))
 - Stable ids for every row a release publishes: v0.12.0.0 (#81), 2026-10-02 (A.2; [key and backup contract](docs/stable-ids.md))
-- Store loses roll-call member rows in 22 groups of 11 votes: fixed by v0.21.0.0 (#107); 0 of 3,866 groups short on the A4 slice 0 check, 2026-11-01
+- Store loses roll-call member rows in 22 groups of 11 votes: fixed by v0.21.0.0 (#107); 0 of 3,866 groups short on the repersisted A3 clone, 2026-11-01 (slice map in `docs/plans/a4-site-from-release.md`)
 - Bundesrat members are ingested as MdBs (`_has_mdb_funktion` matches "MdBR"): fixed by v0.24.1.0 (#119), the same fix as "Call only current MdBs" below: `derive.is_mdb_funktion` takes "MdB" as an exact value, and `_has_mdb_funktion` no longer exists
 - Cached report 21/50 no longer matches its XML: closed 2026-11-02: the reference store accepts 21/50 (2026-10-19), and the `right-counts-a1/after` cache it was found on no longer exists
 - Fraktion seat counts in the store: v0.31.0.0 (#130), 2026-11-02 (C1)
