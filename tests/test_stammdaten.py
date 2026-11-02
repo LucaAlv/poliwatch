@@ -108,6 +108,12 @@ class ReadZipTests(unittest.TestCase):
             "blank id": ({"MDB_STAMMDATEN.XML": no_id}, "MDB without ID"),
             "bad wp": ({"MDB_STAMMDATEN.XML": bad_wp}, "MdB 11009901: WP 'XX'"),
             "no version": ({"MDB_STAMMDATEN.XML": no_version}, "VERSION"),
+            # datetime raises ValueError past year 9999 and OverflowError past time_t.
+            "version past year 9999": ({"MDB_STAMMDATEN.XML": XML.replace(b"1777449783", b"99999999999999", 1)}, "VERSION"),
+            "version past time_t": ({"MDB_STAMMDATEN.XML": XML.replace(b"1777449783", b"999999999999999999999", 1)}, "VERSION"),
+            # str.isdigit accepts superscripts, which int() rejects.
+            "non-ascii version digit": ({"MDB_STAMMDATEN.XML": XML.replace(b"1777449783", "177744978²".encode(), 1)}, "VERSION"),
+            "non-ascii wp digit": ({"MDB_STAMMDATEN.XML": XML.replace(b"<WP>20</WP>", "<WP>2²</WP>".encode(), 1)}, "WP '2²'"),
         }
         for label, (members, message) in cases.items():
             with self.subTest(label):
@@ -118,6 +124,17 @@ class ReadZipTests(unittest.TestCase):
                     path = self.zip(members)
                 with self.assertRaisesRegex(derive.StammdatenError, message):
                     stammdaten.read_zip(path)
+        with self.subTest("corrupt deflate stream"):
+            path = self.tmp / "MdB-Stammdaten.zip"
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("MDB_STAMMDATEN.XML", XML)
+            data = bytearray(path.read_bytes())
+            # Overwrite the start of the compressed stream, after the 30-byte local header and the name.
+            start = 30 + len("MDB_STAMMDATEN.XML")
+            data[start:start + 16] = b"\xff" * 16
+            path.write_bytes(bytes(data))
+            with self.assertRaisesRegex(derive.StammdatenError, "not a zip file"):
+                stammdaten.read_zip(path)
 
     def test_an_oversized_xml_member_is_refused_before_it_is_read(self) -> None:
         path = self.zip({"MDB_STAMMDATEN.XML": XML})
@@ -259,6 +276,36 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(self.cache.read_bytes(), self.good)
         self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"old"')
         self.assertEqual(self.leftovers(), [])
+
+    # Value: protects=a conditional GET is sent only for a cached file that reads and an ETag sidecar that
+    #   parses to a string; an unreadable cache or a damaged sidecar sends none, so the server's full body
+    #   replaces the file instead of a 304 keeping it; fails_when=refresh sends the stale ETag for a corrupt
+    #   cache (a 304 would pin the bad file forever) or a damaged sidecar raises out of refresh;
+    #   why_new=TODOS C1 deferred item 18 names the corrupt-cache half, the sidecar variants are new;
+    #   seam=none; no_claim=the real server's ETag handling (urlopen is faked)
+    def test_a_conditional_get_needs_a_readable_cache_and_a_well_formed_sidecar(self) -> None:
+        sidecars = {
+            "not json": "{{",
+            "not an object": json.dumps(["etag"]),
+            "etag not a string": json.dumps({"etag": 7}),
+            "no etag": json.dumps({"fetched_at": "2026-05-01T00:00:00+00:00"}),
+        }
+        with self.subTest("corrupt cache, stale sidecar"):
+            self.seed(b"<html>half a zip</html>")
+            err = self.refresh((self.newer, '"new"'))
+            self.assertIsNone(self.requests[-1].get_header("If-none-match"))
+            self.assertEqual(self.cache.read_bytes(), self.newer)
+            self.assertIn("stammdaten: fetched, Stand", err)
+            self.assertEqual(self.leftovers(), [])
+        for label, sidecar in sidecars.items():
+            with self.subTest(label):
+                self.seed(self.good)
+                stammdaten.etag_path(self.database).write_text(sidecar, encoding="utf-8")
+                err = self.refresh((self.newer, '"new"'))
+                self.assertIsNone(self.requests[-1].get_header("If-none-match"))
+                self.assertEqual(self.cache.read_bytes(), self.newer)
+                self.assertIn("stammdaten: fetched, Stand", err)
+                self.assertNotIn("warning:", err)
 
     def test_a_download_over_the_size_cap_is_refused(self) -> None:
         self.seed(self.good)

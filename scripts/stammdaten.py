@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +83,11 @@ def _children(element: ET.Element, container: str) -> list[ET.Element]:
     return list(found) if found is not None else []
 
 
+def _ascii_digits(text: str) -> bool:
+    # str.isdigit alone accepts superscripts such as "²", which int() rejects.
+    return text.isascii() and text.isdigit()
+
+
 def _xml_bytes(path: Path) -> bytes:
     try:
         with zipfile.ZipFile(path) as archive:
@@ -94,7 +100,9 @@ def _xml_bytes(path: Path) -> bytes:
                 raise StammdatenError(f"{path.name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
             with archive.open(info) as member:
                 data = member.read(MAX_XML_BYTES + 1)
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError) as exc:
+    # zlib.error: a corrupt deflate stream; RuntimeError: an encrypted member;
+    # NotImplementedError: a compression method zipfile lacks.
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError, zlib.error, RuntimeError, NotImplementedError) as exc:
         raise StammdatenError(f"{path.name}: not a zip file the Stammdaten can be read from ({exc})") from None
     if len(data) > MAX_XML_BYTES:
         raise StammdatenError(f"{path.name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
@@ -113,7 +121,11 @@ def read_zip(path: Path) -> Stammdaten:
     if root.tag != "DOCUMENT":
         raise StammdatenError(f"{path.name}: root element {root.tag!r}, not DOCUMENT")
     version = (root.findtext("VERSION") or "").strip()
-    if not version.isdigit():
+    try:
+        stand = datetime.fromtimestamp(int(version), timezone.utc).isoformat() if _ascii_digits(version) else None
+    except (OverflowError, OSError, ValueError):
+        stand = None
+    if stand is None:
         raise StammdatenError(f"{path.name}: VERSION {version!r} is not a Unix timestamp")
     records = []
     for mdb in root.iter("MDB"):
@@ -123,7 +135,7 @@ def read_zip(path: Path) -> Stammdaten:
         periods = []
         for period in _children(mdb, "WAHLPERIODEN"):
             fields = _fields(period, _WAHLPERIODE_FIELDS)
-            if not (fields["WP"] or "").isdigit():
+            if not _ascii_digits(fields["WP"] or ""):
                 raise StammdatenError(f"{path.name}: MdB {mdb_id}: WP {fields['WP']!r} is not a number")
             fields["INSTITUTIONEN"] = [_fields(item, _INSTITUTION_FIELDS) for item in _children(period, "INSTITUTIONEN")]
             periods.append(fields)
@@ -134,7 +146,7 @@ def read_zip(path: Path) -> Stammdaten:
         })
     return Stammdaten(
         records=records,
-        stand=datetime.fromtimestamp(int(version), timezone.utc).isoformat(),
+        stand=stand,
         sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
     )
 

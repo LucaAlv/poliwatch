@@ -704,7 +704,7 @@
         "party_id": {
           "meaning": "Kennung des Zusammenschlusses an diesen Tagen; die Zeile „fraktionslos“ in parties steht für Tage ohne Zugehörigkeit und ist kein Zusammenschluss.",
           "unit": "Projektkennung des Zusammenschlusses als Text (Verweis auf parties.id).",
-          "source": "Projektseitig über eine geschlossene Namensliste (derive.STAMMDATEN_ZUSAMMENSCHLUESSE) aus INS_LANG der Fraktions- und Gruppenmitgliedschaften zugeordnet; ein Name außerhalb der Liste bricht den Build ab.",
+          "source": "Projektseitig über eine geschlossene Namensliste (derive.STAMMDATEN_ZUSAMMENSCHLUESSE) aus INS_LANG der Fraktions- und Gruppenmitgliedschaften zugeordnet; eine neu heruntergeladene Datei mit einem Namen außerhalb der Liste wird nicht übernommen (die zuvor geladene bleibt), eine bereits geladene bricht den Build ab.",
           "license": "eigene-metadaten"
         },
         "valid_from": {

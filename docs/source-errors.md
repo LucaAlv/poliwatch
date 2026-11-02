@@ -64,11 +64,11 @@ A list of places where an official source file says something wrong or files con
   - Hollnagel: 25 June 2021.
   - Heßenkemper: 30 June 2021, and "trat allerdings am 24. August 2021 der AfD-Fraktion erneut bei".
 
-  On 2021-06-24 the AfD-Fraktion therefore still had 88 members. On 2021-08-25 it had 87 (Hollnagel out, Heßenkemper back), with 9 fraktionslos. The roll-call pages show three members too few for the AfD from `id=750` to the end of WP 19.
+  On 2021-06-24 the AfD-Fraktion therefore still had 88 members. On 2021-08-25 it had 87 (Hollnagel out, Heßenkemper back), with 9 fraktionslos. The roll-call pages show two members too few for the AfD from `id=750` (86 against 88), and three from `id=753` (84 against 87) to the end of WP 19.
 - **What it should be:** each member listed under the Fraktion they belonged to on the vote's date.
 - **Effect on poliwatch:**
   - **Vote data:** `vote_fractions` and `vote_members` copy the pages. These four MdBs' votes in the affected WP 19 roll-calls count for fraktionslos, not the AfD, which affects the vote panel's group blocks and Abweichler.
-  - **Seat counts:** the planned seat counts derived from roll-calls (`docs/plans/c1-seat-counts.md`) inherit the error.
+  - **Seat counts:** not affected. The seat tables come from the MdB-Stammdaten, not from roll-calls; the seat cross-check files these roll-calls as `shift_between_groups` (see "Scale on the rebuilt store" below).
   - **Scale:** not measured beyond these votes. An independent membership source (the MdB-Stammdaten) is needed to find other cases.
 - **Scale, measured 2026-11-01:** the MdB-Stammdaten (`MDB_STAMMDATEN.XML`, VERSION 1777449783, 29.04.2026) were compared with all 556 stored roll-calls. 47 roll-calls in WP 19 and WP 20 file six MdBs under the wrong group. In each case the Textarchiv dates agree with the Stammdaten and not with the roll-call page:
   - **Uwe Kamann:** listed as fraktionslos from 2017-12-12 to 2018-12-13 (31 roll-calls). Textarchiv: he left the AfD-Fraktion "am 2. Januar 2019".
@@ -95,7 +95,7 @@ A list of places where an official source file says something wrong or files con
 - **What it should be:** CDU/CSU 310, with both members counted (as "nicht abgegeben" if they did not vote).
 - **Effect on poliwatch:**
   - **Vote 440:** its absent count is two short for CDU/CSU.
-  - **Seat counts:** the planned rule takes a day's last roll-call, so this one does not reach the seat counts.
+  - **Seat counts:** not affected. The seat tables come from the MdB-Stammdaten; the seat cross-check files vote 440 as `roll_call_short`.
 
 ## Candidates
 
