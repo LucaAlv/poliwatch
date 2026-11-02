@@ -28,11 +28,14 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 2. "Split the dataset from the site: the site builds from a release alone" (A4).
    - Slice 1, the votes archive from the store, is planned down to tasks in `docs/plans/a4-site-from-release.md`.
    - Its schema and export-format numbers have to be picked again: C1 took schema 9 and export format 13.
+   - T1.1–T1.3 can go ahead. T1.4 waits for "Decide the frontend stack".
 
 **B. Abstimmungen (daily view)**
 1. "B4 extractive fallback: finish validation locally": no population reaches the 90% coverage gate yet. Add one extractor rule at a time. The entry's P1 gate applies before the fallback runs on a larger Drucksache cache.
 2. The rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". The AI sentence is deferred.
 3. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
+
+**Frontend:** "Decide the frontend stack" (owner decision 2026-11-02: hold, prototype first). First "DESIGN.md, tokens and a typeface decision via /design-consultation", then a chart prototype, then a written go/no-go.
 
 **C. Analysen (long-term view)**
 
@@ -709,9 +712,36 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass.
 
+**Raised to P2 (owner decision, 2026-11-02):** this is step 1 of "Decide the frontend stack" below. Do it as plain CSS with one shared stylesheet, in the current Python renderer.
+
 **Effort:** M
-**Priority:** P3
+**Priority:** P2
 **Depends on:** None
+
+### Decide the frontend stack
+
+**What:** Decide whether the site stays Python-generated HTML (PRODUCT.md:58) or moves to a static site generator with islands (Astro-class), under the rule "the frontend computes no figure". A single-page app and a hybrid were rejected. The owner chose "Hold, prototype first" (R17). The order:
+1. "DESIGN.md, tokens and a typeface decision via /design-consultation" above, as plain CSS with one shared stylesheet.
+2. A chart prototype in a candidate generator, most likely the Diskursanalyse throwaway.
+3. A written go/no-go against the stdlib option (SVG charts drawn from Python). Write the criteria down before the prototype.
+
+If the answer is go:
+- Resolve outside-voice findings O4–O11 first.
+- Write ADR 0005 before building.
+
+**Why:**
+- The look is a design problem, and either stack has to solve it.
+- The case for a generator rests on interactive long-term charts, and only a chart prototype can show whether that case holds.
+- The pilot the eng review planned (the votes archive) tested neither goal: it had no chart and left design out of scope.
+
+**Context:**
+- The eng review of 2026-11-02 settled ledger entries R10–R16 and a scope record for the frontend plan: pilot votes archive, parallel build, state codes, payload-diff oracle, strict npm policy, raw-HTML ban, 50 KB island budget. They were meant to go into `docs/plans/a4-site-from-release.md`, but that text never reached main. Redo it from the review if the answer is go.
+- PRODUCT.md:58 stays in force until the decision.
+- A4 slice 1 tasks T1.1–T1.3 go ahead. T1.4 ("Rewire and delete") waits for this decision.
+
+**Effort:** M (design pass and prototype); L if the answer is go
+**Priority:** P2
+**Depends on:** "DESIGN.md, tokens and a typeface decision via /design-consultation"
 
 ## Publication
 
