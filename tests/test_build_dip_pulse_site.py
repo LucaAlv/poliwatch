@@ -1486,7 +1486,7 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
             ("--no-votes beats --vote-scan-pages", {}, {"args": {"no_votes": True, "vote_scan_pages": 5}}, set()),
             ("--vote-scan-pages 0 turns votes off", {}, {"args": {"vote_scan_pages": 0}}, set()),
             ("--enrich votes lifts a config veto", {"local": ["-votes"]}, {"args": {"enrich": ["votes"]}}, {"votes"}),
-            ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster"}),
+            ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster", "mdb-stammdaten"}),
         )
         for label, files, inputs, expected in scenarios:
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
@@ -3193,6 +3193,20 @@ class VotesArchiveTests(unittest.TestCase):
             self.assertEqual(build_dip_pulse_site.column_source("vote_proceedings", column), "derived", column)
         self.assertEqual(build_dip_pulse_site.column_source("votes", "context_state"), "derived")
         self.assertEqual(build_dip_pulse_site.column_source("proceedings", "abstract"), "dip")
+
+    # Value: protects=the Daten dictionary labels C1's seat tables by origin: the Stammdaten fields as bundestag.de, the interval bounds cut by the rules and the counted seats as derived; fails_when=a seat table drops out of _TABLE_SOURCE_BUNDESTAG/_TABLE_SOURCE_DERIVED (falling back to dip) or valid_from/valid_until lose their override, so a cut stretch is captioned as copied source data; why_new=schema 9 adds them; seam=none
+    def test_seat_count_columns_are_labelled_by_origin(self) -> None:
+        expected = {
+            "mdb_zugehoerigkeiten": {
+                "mdb_id": "bundestag.de", "name": "bundestag.de", "wahlperiode": "bundestag.de", "party_id": "bundestag.de",
+                "valid_from": "derived", "valid_until": "derived",
+            },
+            "party_seats": {column: "derived" for column in ("party_id", "wahlperiode", "valid_from", "valid_until", "seats")},
+            "mdb_stammdaten_stand": {"stand": "bundestag.de", "sha256": "bundestag.de"},
+        }
+        for table, columns in expected.items():
+            for column, source in columns.items():
+                self.assertEqual(build_dip_pulse_site.column_source(table, column), source, (table, column))
 
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
         self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")

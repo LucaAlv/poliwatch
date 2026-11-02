@@ -13,7 +13,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
-Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 29 CSV.gz-Dateien (eine je Tabelle), das Codebuch `DATA.md`, die Datenlizenz `LICENSE-DATA.md`, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und die bei jedem Build ausgeführten SQL-"Rezepte" mit Kopieren-Button, ihren Ergebniszeilen und je einer Ergebnis-CSV daneben.
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 32 CSV.gz-Dateien (eine je Tabelle), das Codebuch `DATA.md`, die Datenlizenz `LICENSE-DATA.md`, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und die bei jedem Build ausgeführten SQL-"Rezepte" mit Kopieren-Button, ihren Ergebniszeilen und je einer Ergebnis-CSV daneben.
 
 Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
 
@@ -171,7 +171,7 @@ Related knobs, in the order you will reach for them:
 | `--sleep S` | Seconds between DIP API requests. Default `0`, with `--backfill-incomplete` `2`. |
 | `--roster-wahlperiode N` | Wahlperiode whose MdB roster `--enrich mp-roster` fetches (repeatable). Default: every one from 18 to the catalog's newest; the Abgeordnete index lists the members of the newest. |
 | `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
-| `--enrich ID` | Add optional profile or full-roster acquisition to this update (`aw-profiles`, `mp-roster`, `all`). Votes are already on by default. |
+| `--enrich ID` | Add optional profile, full-roster or MdB-Stammdaten acquisition to this update (`aw-profiles`, `mp-roster`, `mdb-stammdaten`, `all`). Votes are already on by default. |
 | `--no-votes` | Skip roll-call vote acquisition for this update. Cached votes and their acquisition state are kept. |
 
 `--protocol-wahlperiode` narrows acquisition only together with `--limit N > 0` or `--backfill-incomplete`; it never narrows the catalog fetch. With the defaults (`--limit 0 --protocol-wahlperiode 0`), acquisition considers all Wahlperioden, and `--detail-limit 5` selects the newest five sittings with XML for dossiers. Setting `--protocol-wahlperiode 20` alone does not restrict a plain update to WP 20.
@@ -260,7 +260,7 @@ python3 -m unittest discover -s tests
 scripts/preview_dip_pulse_site.sh
 ```
 
-The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 8 (integer IDs, documents keyed by URL, no Politikfeld tables, no vote context, no `votes.debate_url` column, or no quoted Antrag passages) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
+The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 9 (integer IDs, documents keyed by URL, no Politikfeld tables, no vote context, no `votes.debate_url` column, no quoted Antrag passages, or no seat tables) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
@@ -293,7 +293,7 @@ Rule version 3 rejected unproven nested turns instead of counting them as Zwisch
 
 Each persisted protocol records its actual input rule version in `speech_rule_inputs`. Facts, export and the offline render refuse missing/stale versions before writing output. Fresh report JSON cannot certify an old database. Repair with the command above; missing XML requires `--fetch-xml` first. Replay validates the XML/report SHA when present and proves one-to-one TOP associations before updating DIP/vote enrichment. A changed or ambiguous source set requires reacquiring the whole sitting report. Detailed DIP kind differences are retained in `data/a1-classification-diagnostics.json`; one build warning points to that file. See [A1 source and scratch validation](docs/plans/a1-validation.md).
 
-Schema 8 / export format 12 uses stable text row IDs and issued person URLs. Export format 8 added the nullable `votes.debate_url` source link; format 9 added the B4 vote-passage data; format 10 added the generated `DATA.md` codebook, the recipe result CSVs and a typed file inventory; format 11 makes the Daten recipes r1–r6 Wahlperiode-aware; format 12 adds the data licence `LICENSE-DATA.md` to every export as a file of its own. Speech rules are version 6. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
+Schema 9 / export format 13 uses stable text row IDs and issued person URLs. Export format 8 added the nullable `votes.debate_url` source link; format 9 added the B4 vote-passage data; format 10 added the generated `DATA.md` codebook, the recipe result CSVs and a typed file inventory; format 11 makes the Daten recipes r1–r6 Wahlperiode-aware; format 12 adds the data licence `LICENSE-DATA.md` to every export as a file of its own; schema 9 / format 13 add the Zugehörigkeit and seat tables `mdb_zugehoerigkeiten` and `party_seats` from the MdB-Stammdaten, with the file's Stand and sha256 in `mdb_stammdaten_stand` and the manifest's `stammdaten`, and recipe r2 gains `sitzanteil_prozent`, the mean seat share over the Wahlperiode's sitting dates. Speech rules are version 6. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
 
 It applies what is derived when persisting, and re-reads the Reden and Beiträge of every report from its cached Plenarprotokoll XML (`data/xml/plenarprotokoll-<sitting>.xml`, written by every online update since A1), so a change to what counts as a Rede needs no re-fetch. A store built before A1 has no cached XML: run `python3 scripts/build_dip_pulse_site.py --fetch-xml --output-dir .context/dip-pulse-site` once (public bundestag.de files, no API key, about 0.3 s per sitting), then `--offline --repersist`. A report from before A1 with no cached XML stops the re-persist with the store untouched, so old Reden counts never sit next to new ones; a report whose XML cannot be fetched (no `xml_url`) has to be moved out of `data/` and its sitting re-fetched with an online update and `--document-number <its number>` (a plain update re-fetches only the newest sittings; the error prints the command with the number filled in). It does not re-resolve profiles or re-fetch anything else; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
 
@@ -360,6 +360,7 @@ python3 scripts/build_dip_pulse_site.py --explain-config
 | `votes` | Refresh roll-call totals, fraction results, individual votes, the Angenommen/Abgelehnt outcome, the XLSX Namensliste link, and the associated Bundestag report link where available. **On by default** for every online update. |
 | `aw-profiles` | Resolve public abgeordnetenwatch.de profile links |
 | `mp-roster` | Refresh the complete MdB roster from DIP |
+| `mdb-stammdaten` | Refresh the Bundestag's MdB-Stammdaten zip, the source of the seat tables (`mdb_zugehoerigkeiten`, `party_seats`), with a conditional GET. A file replaces the cache only after it passes the seat checks; a failed fetch keeps the previous file and warns. The cache lives in the store's private directory (`.OUTPUT.private/mdb-stammdaten.zip`), never in the published tree, because the file's redistribution terms are still open. Every rebuild, `--offline --repersist` included, derives the seat tables from that cache; without one they are empty and the build says so. |
 
 On `puls.html` the week radar ([docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md)) gates three blocks this way: the "namentlich abgestimmt" badge on a radar row and the "Namentliche Abstimmungen" card in the Wochenvergleich band (`votes`), and the KI-Zusammenfassung with its receipts under a radar row (`summaries`). All of them render into every build and are hidden by the visitor's setting, so the page reads correctly either way.
 
@@ -369,7 +370,7 @@ The ordinary offline preview needs no feature arguments:
 scripts/preview_dip_pulse_site.sh
 ```
 
-An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, or `all`:
+An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, `mdb-stammdaten`, or `all`:
 
 ```bash
 scripts/preview_dip_pulse_site.sh update --enrich aw-profiles

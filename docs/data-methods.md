@@ -50,6 +50,31 @@ Für Zeilenverknüpfungen die deklarierten Primär-/Fremdschlüssel verwenden, n
 
 Eine Abweichung ist also nur Ja gegen ein Nein-Mehrheitsvotum oder Nein gegen ein Ja-Mehrheitsvotum; Enthaltungen, nicht abgegebene Stimmen, ein fehlendes Mehrheitsvotum und fraktionslose Mitglieder ergeben keine. Wie das Rezept `r3-abweichler` daraus zählt, steht im Abschnitt „Veröffentlichte SQL-Rezepte“.
 
+## Sitzzahlen
+
+> **Zugehörigkeit**: “An MdB's membership in one Zusammenschluss over a date range. An MdB has at most one Zugehörigkeit at any date, and none while fraktionslos.”
+
+> **fraktionslos**: “The state of an MdB who belongs to no Fraktion and no Gruppe at a given date. It describes the absence of a membership, not an organisation.”
+
+Die Sitzzahlen stammen aus den MdB-Stammdaten des Bundestages (`MDB_STAMMDATEN.XML`, bundestag.de/services/opendata), nicht aus dem Abgeordnetenverzeichnis und nicht aus den Summen der namentlichen Abstimmungen. `mdb_zugehoerigkeiten` hält je MdB, Wahlperiode (ab WP 18) und ununterbrochenem Zeitraum, zu welchem Zusammenschluss das Mitglied gehörte; `party_seats` zählt daraus die Sitze je Zusammenschluss und Zeitraum. Fraktionslose Tage stehen unter der Zeile „fraktionslos“ in `parties`; sie ist kein Zusammenschluss, wird aber mitgezählt, sodass die Sitze eines Tages zusammen die Zahl der besetzten Mandate ergeben. In den Export gelangen aus den Stammdaten nur Personenkennung, Anzeigename, Wahlperiode und die daraus gebildeten Zeiträume, keine biografischen Angaben.
+
+Die Zeiträume werden nach festen Regeln gebildet:
+
+- Mehrere Zeilen derselben Mitgliedschaft (die Datei führt eine je Funktion in der Fraktion) zählen als eine.
+- `valid_from` ist der erste Tag (einschließlich), `valid_until` der erste Tag, den der Zeitraum nicht mehr umfasst (ausschließlich); leer heißt: zum Stand der Datei offen.
+- Ein Wechseltag, an dem eine Mitgliedschaft endet und die nächste beginnt, gehört zum neuen Zusammenschluss.
+- Eine Mitgliedschaft zählt nur innerhalb des Mandats der Wahlperiode; der letzte Mandatstag zählt mit. Beginnt am letzten Tag eines ausscheidenden Mitglieds ein Nachrücker desselben Zusammenschlusses, gehört dieser Tag dem Nachrücker.
+- Ein Mandatstag ohne Mitgliedschaft gilt als fraktionslos.
+- Als Regelverstoß gelten: zwei Mitgliedschaften am selben Tag (außer am Wechseltag), ein Fraktions- oder Gruppenname außerhalb der festen Namensliste, eine Tagessumme über der gesetzlichen Größe der Wahlperiode (631, 709, 736, 630 für WP 18 bis 21) und eine Wahlperiode, deren Summe diese Größe an keinem Tag erreicht. Eine neu heruntergeladene Datei mit einem Regelverstoß wird nicht übernommen: Die zuvor geladene Datei bleibt, und der Build warnt. Verstößt die bereits geladene Datei gegen eine Regel, bricht der Build ab.
+
+Die Sitze eines Zusammenschlusses an einem Tag sind die `party_seats`-Zeile seiner Wahlperiode mit `valid_from` ≤ Tag und leerem oder späterem `valid_until`; jede Zahl lässt sich aus den `mdb_zugehoerigkeiten`-Zeilen, die diesen Tag abdecken, nachzählen. Die Abfrage muss die Wahlperiode mit angeben: Der letzte Mandatstag einer Wahlperiode ist der Tag der konstituierenden Sitzung der nächsten und liegt daher in beiden. Gibt es keine Zeile, gibt es für diesen Tag keine Sitzzahl; sie ist nicht null.
+
+Das Rezept `r2-redeanteil-fraktion` stellt daraus je Wahlperiode den mittleren Sitzanteil (`sitzanteil_prozent`) neben den Redeanteil; seine Definition steht im Abschnitt „Veröffentlichte SQL-Rezepte“.
+
+**Stand.** Die Datei hat einen Stand, der in `mdb_stammdaten_stand` (mit dem sha256 der geladenen Datei), im Manifest unter `stammdaten` und auf der Daten-Seite steht. Spätere Wechsel, Austritte und Nachrücker fehlen, bis der Bundestag die Datei neu veröffentlicht. Zeiträume, die zum Stand offen sind, gelten über den Stand hinaus fort: Für spätere Tage liefert die Abfrage die Zusammensetzung am Stand. Ohne geladene Datei sind alle drei Tabellen leer, `stammdaten` im Manifest ist `null`, und die Daten-Seite sagt „Sitzzahlen: keine (MdB-Stammdaten nicht geladen)“.
+
+**Abgleich mit den namentlichen Abstimmungen.** `vote_fractions.total_count` ist keine Sitzzahl, sondern die Zahl der Mitglieder, die die Abstimmungsseite des Bundestages einem Zusammenschluss zuordnet. Der Build vergleicht sie für jede namentliche Abstimmung mit den Sitzzahlen am Abstimmungstag und ordnet jede Abweichung einer Ursache zu, in dieser Reihenfolge: Abstimmung nach dem Stand, Wechsel am Abstimmungstag, Verschiebung zwischen Zusammenschlüssen bei gleicher Summe, auf der Abstimmungsseite fehlende Mitglieder, ungeklärt. Bekannte Fälle sind Mitglieder, die die Abstimmungsseiten der WP 19 und 20 einem falschen Zusammenschluss zuordnen, und eine Abstimmung, in deren Liste zwei Mitglieder fehlen (`docs/source-errors.md`, E4 und E5), sowie Nachrücker, deren Mandat am Abstimmungstag beginnt und die die Liste dieses Tages noch nicht führt. Der Abgleich bricht den Build nie ab und gehört nicht zum Export; der Bericht liegt im privaten Verzeichnis des Stores.
+
 ## Abdeckung und bekannte Grenzen
 
 `DATA.md` weist beobachtete Protokolle, Sitzungsdaten, Reden, Beiträge und Abstimmungen je Wahlperiode ausschließlich aus der exportierten SQLite-Datei aus. Diese beobachtete Abdeckung ist von DIP-Katalogzahlen, gebauten Dossiers und Beschaffungs-/Periodenvollständigkeit getrennt. Wo erwartete Sollzahlen oder Erwerbsnachweise fehlen, ist Vollständigkeit **unbekannt**; fehlende Abstimmungen bedeuten nicht, dass keine Abstimmung stattfand. Kein Zeitraum ab WP 18 bis heute darf allein aus dem Export als vollständig gelten. Bei leerem Store ist Abdeckung ausdrücklich leer.

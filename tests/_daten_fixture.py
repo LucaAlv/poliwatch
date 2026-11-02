@@ -3,8 +3,8 @@
 seed_store(path) builds a small SQLite store covering every recipe, a
 consolidated MP pair, a vote-only person who never gets a page, a NULL
 mp_id speech, a synthetic rede_id, a dash-leading speech (CSV formula-cell
-taste decision), a roll-call vote with a deviating member, and one bill
-procedure. It returns the ids a test needs to assert against without
+taste decision), a roll-call vote with a deviating member, one bill
+procedure, and seat counts derived from four Stammdaten records (C1). It returns the ids a test needs to assert against without
 re-deriving them from the seeded rows.
 
 A literal lone surrogate cannot be stored as SQLite TEXT through the
@@ -19,9 +19,30 @@ from pathlib import Path
 from typing import Any
 
 import _support  # noqa: F401
+import derive
 import persist_dip_pulse_store as pulse_store
 from stable_ids import stable_key, synthetic_rede_id
 import person_registry
+
+STAMMDATEN_STAND = "2024-06-30T08:00:00+00:00"
+STAMMDATEN_SHA256 = "5e" * 32
+_SPD = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+_CDU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
+
+
+def _stammdaten_mdb(mdb_id: str, vorname: str, nachname: str, *memberships: tuple[str, str, str]) -> dict[str, Any]:
+    """One WP 20 ``MDB`` record as stammdaten.read_zip returns it: a Mandat
+    open at the Stand and one Fraktion/Gruppe row per (INS_LANG, VON, BIS)."""
+    return {
+        "ID": mdb_id,
+        "NAMEN": [{"VORNAME": vorname, "NACHNAME": nachname, "ADEL": "", "PRAEFIX": "", "ORTSZUSATZ": "",
+                   "HISTORIE_VON": "26.10.2021"}],
+        "WAHLPERIODEN": [{
+            "WP": "20", "MDBWP_VON": "26.10.2021", "MDBWP_BIS": "",
+            "INSTITUTIONEN": [{"INSART_LANG": "Fraktion/Gruppe", "INS_LANG": ins_lang, "MDBINS_VON": von, "MDBINS_BIS": bis}
+                              for ins_lang, von, bis in memberships],
+        }],
+    }
 
 
 def seed_store(path: Path) -> dict[str, Any]:
@@ -265,6 +286,31 @@ def seed_store(path: Path) -> dict[str, Any]:
                 title="Beschlussempfehlung zur Testbarkeit", origin=["Haushaltsausschuss"],
             )
             conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES ('v1', ?)", (beschlussempfehlung,))
+
+            # Seat counts (C1) from four made-up WP 20 Stammdaten records, run
+            # through the build's own derivation. stammdaten.seat_rows would
+            # also run the size check, which needs a whole Bundestag. Between
+            # the two sittings Otto leaves the CDU/CSU (2024-05-20), so the
+            # sitting dates have different compositions; Petra's switch to the
+            # CDU/CSU on 2024-06-01 comes after both, matching her speech-time
+            # SPD label.
+            zugehoerigkeiten = derive.mdb_zugehoerigkeiten(
+                [
+                    _stammdaten_mdb("11001", "Ada", "Lovelace", (_SPD, "26.10.2021", "")),
+                    _stammdaten_mdb("11002", "Karl", "Marx", (_CDU, "26.10.2021", "")),
+                    _stammdaten_mdb(
+                        "11003", "Petra", "Wechsel", (_SPD, "26.10.2021", "01.06.2024"), (_CDU, "01.06.2024", "")
+                    ),
+                    _stammdaten_mdb(
+                        "11004", "Otto", "Austritt", (_CDU, "26.10.2021", "20.05.2024"), ("Fraktionslos", "20.05.2024", "")
+                    ),
+                ],
+                since_wahlperiode=20,
+            )
+            pulse_store.persist_seat_counts(
+                conn, zugehoerigkeiten, derive.party_seats(zugehoerigkeiten),
+                stand=STAMMDATEN_STAND, sha256=STAMMDATEN_SHA256, now=now,
+            )
         person_registry.reconcile(conn)
         conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
         conn.commit()
@@ -280,4 +326,5 @@ def seed_store(path: Path) -> dict[str, Any]:
         "protocols": ["20/100", "20/101"],
         "proceeding_id": "vg-1",
         "vote_ids": ["v1", "v2"],
+        "stammdaten": {"stand": STAMMDATEN_STAND, "sha256": STAMMDATEN_SHA256},
     }

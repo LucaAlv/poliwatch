@@ -201,6 +201,34 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertIs(handed["catalog"], engine.call_args.kwargs["catalog"])
         self.assertTrue({"incomplete_periods", "sitting_gaps"} <= handed["facts_report"].keys())
 
+    # Value: protects=--enrich mdb-stammdaten refreshes the cached file for this store before the staged
+    #   rebuild reads it, and an online build without it fetches nothing; fails_when=main skips the refresh,
+    #   runs it after the rebuild (the new file would reach only the next build), or fetches by default;
+    #   why_new=C1 step 4; seam=stammdaten.refresh is a spy
+    def test_enrich_mdb_stammdaten_refreshes_the_cache_before_the_rebuild(self) -> None:
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        with mock.patch.object(build.stammdaten, "refresh", side_effect=lambda *a, **k: self.order.append("stammdaten")) as refresh:
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", generated=[refreshed])
+            self.assertEqual(code, 0, stderr)
+            refresh.assert_not_called()
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", "--enrich", "mdb-stammdaten", generated=[refreshed])
+        self.assertEqual(code, 0, stderr)
+        refresh.assert_called_once_with(self.database, since_wahlperiode=build.V1_FIRST_WAHLPERIODE)
+        self.assertLess(self.order.index("stammdaten"), self.order.index("rebuild"))
+
+    # Value: protects=an online build runs the C1 seat cross-check once, on the database path it just rebuilt
+    #   and before the next build steps read it; fails_when=main stops calling log_seat_crosscheck on the online
+    #   path (the merge with the --no-persist removal rewired that call site) or calls it before the rebuild, so
+    #   the report would describe the previous store; why_new=TODOS C1 deferred item 3 (only the offline
+    #   --repersist path is tested); seam=none (log_seat_crosscheck is wrapped by a spy); no_claim=the report content (test_seat_crosscheck)
+    def test_an_online_build_runs_the_seat_crosscheck_after_the_rebuild(self) -> None:
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        with mock.patch.object(build, "log_seat_crosscheck", side_effect=lambda *a, **k: self.order.append("crosscheck")) as crosscheck:
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", generated=[refreshed])
+        self.assertEqual(code, 0, stderr)
+        crosscheck.assert_called_once_with(self.database)
+        self.assertLess(self.order.index("rebuild"), self.order.index("crosscheck"))
+
     # Value: protects=a roster fetch that fails during an online build exits 1 with the staged-rebuild error, never swaps the store and names the roster; fails_when=the roster failure escapes as a traceback or is swallowed so protocols persist without the roster; why_new=the user confirmed the abort as intended, so the exit code, the message and the untouched store must be pinned at main(); seam=none
     def test_an_online_build_aborts_cleanly_when_the_roster_fetch_fails(self) -> None:
         before = self.database.read_bytes()

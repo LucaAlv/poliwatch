@@ -15,7 +15,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
 import speech_kinds
@@ -32,7 +32,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -53,6 +53,9 @@ def require_current_schema(conn):
     if votes and "passage_state" not in votes:
         # Schema 7: initialize() would add vote_passages empty and leave every
         # votes.passage_state NULL.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if columns and not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='party_seats'").fetchone():
+        # Schema 8: initialize() would add the seat tables empty and stamp version 9.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -421,6 +424,37 @@ def initialize(conn: sqlite3.Connection) -> None:
           party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
           vote TEXT NOT NULL,
           PRIMARY KEY (vote_id, mp_id)
+        );
+
+        -- C1: Zugehörigkeit and seat counts from the MdB-Stammdaten
+        -- (derive.mdb_zugehoerigkeiten / derive.party_seats), recomputed on
+        -- every rebuild. fraktionslos is the parties row of that name, as in
+        -- vote_fractions and speeches. valid_until is exclusive; NULL while
+        -- open at the Stammdaten's Stand.
+        CREATE TABLE IF NOT EXISTS mdb_zugehoerigkeiten (
+          mdb_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          wahlperiode INTEGER NOT NULL,
+          party_id TEXT NOT NULL REFERENCES parties(id),
+          valid_from TEXT NOT NULL,
+          valid_until TEXT,
+          PRIMARY KEY (mdb_id, wahlperiode, valid_from)
+        );
+
+        CREATE TABLE IF NOT EXISTS party_seats (
+          party_id TEXT NOT NULL REFERENCES parties(id),
+          wahlperiode INTEGER NOT NULL,
+          valid_from TEXT NOT NULL,
+          valid_until TEXT,
+          seats INTEGER NOT NULL CHECK (seats > 0),
+          PRIMARY KEY (party_id, wahlperiode, valid_from)
+        );
+
+        -- The MdB-Stammdaten file both tables were derived from: its Stand
+        -- (the VERSION stamp) and sha256. One row, none without a cached file.
+        CREATE TABLE IF NOT EXISTS mdb_stammdaten_stand (
+          sha256 TEXT PRIMARY KEY NOT NULL,
+          stand TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_agenda_items_protocol ON agenda_items(protocol_id);
@@ -1271,6 +1305,42 @@ def _vote_id(vote: dict[str, Any]) -> str:
         return derive.vote_identity(vote)
     except ValueError:
         raise ValueError(f"roll-call vote without an id: {vote.get('title')!r} ({vote.get('date')})") from None
+
+
+def persist_seat_counts(
+    conn: sqlite3.Connection,
+    zugehoerigkeiten: Iterable[Mapping[str, Any]],
+    seats: Iterable[Mapping[str, Any]],
+    *,
+    stand: str,
+    sha256: str,
+    now: str,
+) -> None:
+    """Replace ``mdb_zugehoerigkeiten`` and ``party_seats`` with the rows of
+    ``derive.mdb_zugehoerigkeiten`` and ``derive.party_seats`` (C1), and
+    ``mdb_stammdaten_stand`` with the Stand and sha256 of the file they came
+    from. Each ``party`` name, ``"fraktionslos"`` included, becomes its parties
+    row."""
+    party_ids: dict[str, str] = {}
+
+    def party_id(name: str) -> str:
+        if name not in party_ids:
+            party_ids[name] = upsert_party(conn, name, now)
+        return party_ids[name]
+
+    conn.execute("DELETE FROM mdb_zugehoerigkeiten")
+    conn.execute("DELETE FROM party_seats")
+    conn.execute("DELETE FROM mdb_stammdaten_stand")
+    conn.execute("INSERT INTO mdb_stammdaten_stand(sha256, stand) VALUES (?, ?)", (sha256, stand))
+    conn.executemany(
+        "INSERT INTO mdb_zugehoerigkeiten(mdb_id, name, wahlperiode, party_id, valid_from, valid_until) VALUES (?, ?, ?, ?, ?, ?)",
+        [(row["mdb_id"], row["name"], row["wahlperiode"], party_id(row["party"]), row["valid_from"], row["valid_until"])
+         for row in zugehoerigkeiten],
+    )
+    conn.executemany(
+        "INSERT INTO party_seats(party_id, wahlperiode, valid_from, valid_until, seats) VALUES (?, ?, ?, ?, ?)",
+        [(party_id(row["party"]), row["wahlperiode"], row["valid_from"], row["valid_until"], row["seats"]) for row in seats],
+    )
 
 
 def persist_vote(

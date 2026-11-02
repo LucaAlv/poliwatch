@@ -111,6 +111,7 @@ import dip_cache
 import abgeordnetenwatch as aw
 import derive
 import speech_kinds
+import stammdaten
 import publication_state as publication
 import facts
 import politikfelder
@@ -146,6 +147,9 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
     "parties": "Zusammenschlüsse (Fraktionen und Gruppen, etwa CDU/CSU oder Gruppe BSW) und fraktionslos für Abgeordnete ohne Zusammenschluss.",
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
+    "mdb_zugehoerigkeiten": "Zugehörigkeit jedes MdB je Wahlperiode und Zeitraum: welcher Zusammenschluss oder fraktionslos, aus den MdB-Stammdaten des Bundestages.",
+    "mdb_stammdaten_stand": "Stand und sha256 der MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats gebildet sind; leer ohne geladene Datei.",
+    "party_seats": "Sitzzahl je Zusammenschluss (und fraktionslos), Wahlperiode und Zeitraum, gezählt aus mdb_zugehoerigkeiten.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
     "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten oder namentlichen Abstimmungen verbunden werden; abstract ist die DIP-Zusammenfassung als Klartext (HTML entfernt, Leerraum normalisiert).",
@@ -1546,6 +1550,36 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         raise DatabaseRebuildError(str(exc)) from exc
 
 
+def read_cached_stammdaten(database_path: Path) -> stammdaten.Stammdaten | None:
+    """The MdB-Stammdaten cached for the store at ``database_path`` (in its
+    private directory, ``stammdaten.cache_path``), or None when no file is
+    cached. Raises StammdatenError for a cached file that cannot be read."""
+    path = stammdaten.cache_path(database_path)
+    return stammdaten.read_zip(path) if path.is_file() else None
+
+
+def rebuild_seat_counts(store: sqlite3.Connection, database_path: Path) -> None:
+    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the cached
+    MdB-Stammdaten into the staged store (C1). With no cached file the tables
+    stay empty and a warning says so; a file that cannot be read, or breaks an
+    interval or size rule, raises DatabaseRebuildError, so nothing is swapped in."""
+    try:
+        cached = read_cached_stammdaten(database_path)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    if cached is None:
+        print("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen): "
+              "mdb_zugehoerigkeiten and party_seats stay empty; fetch them with --enrich mdb-stammdaten", file=sys.stderr)
+        return
+    try:
+        zugehoerigkeiten, seats = stammdaten.seat_rows(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The MdB-Stammdaten break a seat rule: {exc}") from exc
+    with store:
+        pulse_store.persist_seat_counts(store, zugehoerigkeiten, seats, stand=cached.stand, sha256=cached.sha256,
+                                        now=pulse_store.utc_now())
+
+
 #: A staged copy is mkstemp's ``<store>.<random>.tmp`` (the random part never
 #: holds a dot), plus SQLite's sidecars of a crashed run.
 def _is_staged_copy(store_name: str, candidate: str) -> bool:
@@ -1759,6 +1793,7 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
+        rebuild_seat_counts(store, database_path)
         try:
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
@@ -2167,6 +2202,73 @@ def refresh_drucksache_texts(
     finally:
         if changed:
             save()
+
+
+#: How the summary line names each cross-check cause (stammdaten.CAUSES).
+_CROSSCHECK_CAUSE_LABELS = {
+    "after_stand": "after the Stand",
+    "change_on_vote_day": "change on the vote's day",
+    "shift_between_groups": "shift between groups",
+    "roll_call_short": "roll-call short",
+    "unexplained": "unexplained",
+}
+
+
+def _roll_calls(count: int) -> str:
+    return f"{count} roll-call" + ("" if count == 1 else "s")
+
+
+def log_seat_crosscheck(database_path: Path) -> None:
+    """C1 step 5: the store's seat counts against its roll-call totals. Writes
+    every disagreement to ``stammdaten.crosscheck_path`` (private, D9), prints
+    one summary line, and warns for disagreements after the Stand (drift, D6),
+    in no known shape, or not comparable. Never fails the build: a new
+    misattribution on a roll-call page must not stop a routine update."""
+    path = stammdaten.crosscheck_path(database_path)
+    try:
+        conn = sqlite3.connect(f"{Path(database_path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            result = stammdaten.crosscheck(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        print(f"note: [stammdaten] no cross-check, the store could not be read: {exc}", file=sys.stderr)
+        return
+    if result is None:
+        # A report left from an earlier build would describe seat counts the store no longer holds.
+        path.unlink(missing_ok=True)
+        print("stammdaten: no cross-check, MdB-Stammdaten nicht geladen", file=sys.stderr)
+        return
+    by_cause: dict[str, list[str]] = {cause: [] for cause in stammdaten.CAUSES}
+    for row in result.disagreements:
+        if row["vote_id"] not in by_cause[row["cause"]]:
+            by_cause[row["cause"]].append(row["vote_id"])
+    disagreeing = sum(len(ids) for ids in by_cause.values())
+    not_compared = {"without_seat_count": result.without_seat_count, "without_totals": result.without_totals,
+                    "with_unbekannt": result.with_unbekannt}
+    report = {
+        "stand": result.stand, "sha256": result.sha256,
+        "compared": result.compared, "agree": result.compared - disagreeing,
+        "roll_calls_by_cause": by_cause, "not_compared": not_compared,
+        "disagreements": result.disagreements,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dip.write_text_atomic(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    causes = ", ".join(f"{len(ids)} {_CROSSCHECK_CAUSE_LABELS[cause]}" for cause, ids in by_cause.items() if ids)
+    skipped = sum(map(len, not_compared.values()))
+    print(f"stammdaten: cross-check of {_roll_calls(result.compared)} against the seat counts: "
+          f"{report['agree']} agree, {disagreeing} disagree" + (f" ({causes})" if causes else "")
+          + (f"; {skipped} not compared" if skipped else "") + f"; report: {path}", file=sys.stderr)
+    stand_day = datetime.fromisoformat(result.stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
+    for ids, message in (
+        (by_cause["unexplained"], "disagreement with the seat counts in no known shape"),
+        (by_cause["after_stand"], f"disagreement after the Stand ({stand_day}) with the carried-forward seat counts (drift)"),
+        (result.with_unbekannt, "not compared, a group named Unbekannt"),
+        (result.without_seat_count, "not compared, no seat count on the date"),
+        (result.without_totals, "not compared, no group totals"),
+    ):
+        if ids:
+            print(f"warning: [stammdaten] {message}, {_roll_calls(len(ids))}: {', '.join(ids)}", file=sys.stderr)
 
 
 def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:
@@ -3061,7 +3163,8 @@ _COLUMN_SOURCE_ABGEORDNETENWATCH = {
     ("mps", "wahlkreis"),
     ("mps", "bundesland"),
 }
-_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes"}
+_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes", "mdb_zugehoerigkeiten",
+                           "mdb_stammdaten_stand"}
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
@@ -3076,6 +3179,8 @@ _TABLE_SOURCE_DERIVED = (
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
         "vote_proceedings", "vote_passages",
+        # Counted from mdb_zugehoerigkeiten (derive.party_seats), not read.
+        "party_seats",
         # The local store's own schema version counter, not source data.
         "schema_migrations",
     }
@@ -3114,6 +3219,10 @@ _COLUMN_SOURCE_DERIVED = {
     ("mps", "aw_match"),
     ("contributions", "parent_rede_id"),
     ("contributions", "sprechrolle"),
+    # The Zugehörigkeit stretches are cut from the Stammdaten dates by the
+    # interval rules (handover day, Mandat clipping, S5), not copied.
+    ("mdb_zugehoerigkeiten", "valid_from"),
+    ("mdb_zugehoerigkeiten", "valid_until"),
 }
 
 
@@ -3135,6 +3244,7 @@ LICENSE_LAYER_SOURCES = {
     "dip": {"dip"},
     "dip-quellenangabe": {"dip"},
     "bundestag-abstimmungen": {"bundestag.de"},
+    "bundestag-stammdaten": {"bundestag.de"},
     # Only mps.display_name/party_id use it, and the mps table is tagged dip.
     "dip-oder-bundestag-abstimmungen": {"dip"},
     "abgeordnetenwatch": {"abgeordnetenwatch"},
@@ -3146,7 +3256,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 12
+EXPORT_FORMAT = 13
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3286,18 +3396,44 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
-            "       CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
-            "                          WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
-            "                          ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
-            "       COUNT(*) AS reden,\n"
-            "       ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
+            "WITH sitting AS (\n"
+            "  SELECT DISTINCT " + _wahlperiode_sql("p") + " AS wahlperiode, p.date FROM protocols p\n"
+            "),\n"
+            "daily AS (\n"
+            "  SELECT si.wahlperiode, si.date, pa.name AS fraktion, ps.seats\n"
+            "  FROM sitting si\n"
+            "  JOIN party_seats ps ON ps.wahlperiode = si.wahlperiode AND ps.valid_from <= si.date\n"
+            "                     AND (ps.valid_until IS NULL OR si.date < ps.valid_until)\n"
+            "  JOIN parties pa ON pa.id = ps.party_id\n"
+            "),\n"
+            "complete AS (\n"
+            "  SELECT d.wahlperiode, SUM(d.seats) AS seat_days FROM daily d GROUP BY d.wahlperiode\n"
+            "  HAVING COUNT(DISTINCT d.date) = (SELECT COUNT(*) FROM sitting si WHERE si.wahlperiode = d.wahlperiode)\n"
+            "),\n"
+            "seat_share AS (\n"
+            "  SELECT d.wahlperiode AS seat_wahlperiode, d.fraktion AS seat_fraktion, 100.0 * SUM(d.seats) / c.seat_days AS sitzanteil\n"
+            "  FROM daily d JOIN complete c ON c.wahlperiode = d.wahlperiode\n"
+            "  GROUP BY d.wahlperiode, d.fraktion, c.seat_days\n"
+            "),\n"
+            "speech_share AS (\n"
+            "  SELECT " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
+            "         CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
+            "                            WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
+            "                            ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
+            "         COUNT(*) AS reden,\n"
+            "         ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
             + _wahlperiode_sql("p") + "), 1) AS anteil_prozent\n"
-            "FROM speeches s\n"
-            "JOIN protocols p ON p.id = s.protocol_id\n"
-            "JOIN mps m ON m.id = s.mp_id\n"
-            "LEFT JOIN parties pa ON pa.id = m.party_id\n"
-            "GROUP BY 1, 2\n"
+            "  FROM speeches s\n"
+            "  JOIN protocols p ON p.id = s.protocol_id\n"
+            "  JOIN mps m ON m.id = s.mp_id\n"
+            "  LEFT JOIN parties pa ON pa.id = m.party_id\n"
+            "  GROUP BY 1, 2\n"
+            ")\n"
+            "SELECT r.wahlperiode, r.fraktion, r.reden, r.anteil_prozent,\n"
+            "       CASE WHEN r.fraktion NOT IN ('Bundesregierung', 'Bundesrat', 'weitere Sprechrolle')\n"
+            "            THEN ROUND(ss.sitzanteil, 1) END AS sitzanteil_prozent\n"
+            "FROM speech_share r\n"
+            "LEFT JOIN seat_share ss ON ss.seat_wahlperiode = r.wahlperiode AND ss.seat_fraktion = r.fraktion\n"
             "ORDER BY wahlperiode DESC, reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
@@ -3306,7 +3442,15 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "fraktion", "meaning": "Gruppe der Rede: Bundesregierung, Bundesrat oder weitere Sprechrolle nach speeches.sprechrolle, sonst speeches.fraktion, ersatzweise die Partei der Redneraufzeichnung.", "align": "text"},
             {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe in dieser Wahlperiode mit Redneraufzeichnung.", "align": "num"},
             {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an den Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle.", "align": "num"},
+            {"name": "sitzanteil_prozent", "meaning": (
+                "Mittlerer Sitzanteil des Zusammenschlusses (oder der Fraktionslosen) über die Sitzungstage der "
+                "Wahlperiode im Store: Summe seiner Sitze an diesen Tagen (party_seats) geteilt durch die Summe aller "
+                "Sitze an denselben Tagen, Prozent mit einer Nachkommastelle. An Tagen ohne Sitz zählt er 0. Leer "
+                "für Sprechrollen, für Gruppen ohne Sitzzahl und für eine Wahlperiode, in der an einem Sitzungstag "
+                "keine Sitzzahl vorliegt."
+            ), "align": "num"},
         ),
+        "seat_caveat": True,
         "depends_on": None,
         "caveat": (
             "Anteile je Wahlperiode, die jüngste zuerst: Fraktionen gleichen Namens aus verschiedenen Wahlperioden "
@@ -3316,8 +3460,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
         ),
         "method": (
             "Der Nenner ist je Wahlperiode SUM(char_count) über dieselben Reden, die gezählt werden: Reden mit "
-            "Redneraufzeichnung in mps (innerer Join). Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann "
-            "Gruppenname. " + _WP_LIMIT_METHOD
+            "Redneraufzeichnung in mps (innerer Join). Der Sitzanteil mittelt über alle Sitzungstage der Wahlperiode "
+            "im Store (verschiedene protocols.date), dieselben Sitzungen mit Dossier, aus denen die Reden stammen; "
+            "die Sitze eines Tages sind die party_seats-Zeilen derselben Wahlperiode, die ihn abdecken. Der Nenner "
+            "enthält alle Zusammenschlüsse mit Sitzen und die Fraktionslosen, auch ohne Rede, sodass die gezeigten "
+            "Sitzanteile zusammen weniger als 100 % ergeben können. Ein Zusammenschluss, den es nur einen Teil der "
+            "Wahlperiode gab, zählt an den übrigen Tagen 0: Sein Wert ist der Mittelwert über die ganze Wahlperiode, "
+            "nicht sein Anteil, solange er bestand. Die Gruppe wird über den Namen zugeordnet (parties.name). "
+            "Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann Gruppenname. " + _WP_LIMIT_METHOD
         ),
     },
     {
@@ -3463,6 +3613,29 @@ RECIPES: tuple[dict[str, Any], ...] = (
 )
 RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
 
+
+def stammdaten_stand_day(source: Mapping[str, Any]) -> str:
+    """The Stand of the manifest's ``stammdaten`` as TT.MM.JJJJ (UTC)."""
+    return f"{datetime.fromisoformat(source['stand']).astimezone(timezone.utc):%d.%m.%Y}"
+
+
+def recipe_caveat(recipe: Mapping[str, Any], source: Mapping[str, Any] | None) -> str | None:
+    """The caveat a recipe is published with. A recipe with seat figures adds
+    the MdB-Stammdaten's Stand and that later sittings carry the composition at
+    the Stand forward (C1 D6 (a)), or that it has no seats without the file.
+    The export writes it to the manifest and DATA.md, and the Daten page builds
+    it here from the manifest's ``stammdaten``, so the two never disagree."""
+    caveat = recipe.get("caveat")
+    if not recipe.get("seat_caveat"):
+        return caveat
+    if source:
+        seats = (f"Sitzanteile aus den MdB-Stammdaten, Stand {stammdaten_stand_day(source)}: Spätere Wechsel "
+                 "fehlen dort, daher gilt für spätere Sitzungstage die Zusammensetzung am Stand.")
+    else:
+        seats = "sitzanteil_prozent ist leer: keine MdB-Stammdaten geladen."
+    return " ".join(part for part in (caveat, seats) if part)
+
+
 _NUMBER_WORDS = ("null", "eine", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf")
 
 
@@ -3498,6 +3671,7 @@ def _recipes_hash(recipes: tuple[dict[str, Any], ...]) -> str:
             "title": recipe["title"],
             "sql": recipe["sql"],
             "caveat": recipe.get("caveat"),
+            "seat_caveat": bool(recipe.get("seat_caveat")),
             "method": recipe.get("method"),
             "depends_on": recipe.get("depends_on"),
             "columns": [{"name": column["name"], "meaning": column["meaning"]} for column in recipe["columns"]],
@@ -4482,6 +4656,8 @@ def _run_export(
         ]
         _check_license_layers(manifest_tables, dictionary)
 
+        stammdaten_row = snapshot_conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+        stammdaten_source = {"stand": stammdaten_row["stand"], "sha256": stammdaten_row["sha256"]} if stammdaten_row else None
         recipe_rows: list[dict[str, Any]] = []
         for recipe in recipes:
             try:
@@ -4518,7 +4694,7 @@ def _run_export(
                     "sql": recipe["sql"],
                     "columns": columns,
                     "column_definitions": {name: definitions[name] for name in columns},
-                    "caveat": recipe.get("caveat"),
+                    "caveat": recipe_caveat(recipe, stammdaten_source),
                     "method": recipe.get("method"),
                     "file": csv_name,
                     "rows": rows,
@@ -4576,6 +4752,8 @@ def _run_export(
             "from": first_protocol["date"] if first_protocol else None,
             "to": last_protocol["date"] if last_protocol else None,
         },
+        # The MdB-Stammdaten file the seat tables come from; None without one (C1).
+        "stammdaten": stammdaten_source,
         "tables": manifest_tables,
         "relationships": relationships_count,
         "total_rows": total_rows,
@@ -4773,6 +4951,12 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         if "-" in manifest["commit"]:
             provenance_bits.append(REVISION_SUFFIX_NOTE.replace("`", ""))
     provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
+    source = manifest.get("stammdaten")
+    if source:
+        stammdaten_line = (f"Sitzzahlen: MdB-Stammdaten des Bundestages, Stand {stammdaten_stand_day(source)} &middot; sha256 "
+                           f"<code>{pulse_html.esc(source['sha256'])}</code>")
+    else:
+        stammdaten_line = "Sitzzahlen: keine (MdB-Stammdaten nicht geladen)"
     return f"""
     <section class="summary-band">
       <div><span class="eyebrow">Datenstand</span><strong><time datetime="{pulse_html.esc(iso)}">{pulse_html.esc(display)}</time></strong></div>
@@ -4781,6 +4965,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
       <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
     </section>
     <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
+    <p class="stammdaten-line">{stammdaten_line}</p>
     <p class="coverage-line">{coverage_line}</p>
     <p class="bausteine-line">{bausteine_line}</p>
     <p class="provenance-line">{provenance_line}</p>
@@ -4861,7 +5046,8 @@ def render_daten_recipes(
                 </table>
               </div>
             """
-        caveat = f'<p class="caveat">{pulse_html.esc(recipe.get("caveat"))}</p>' if recipe.get("caveat") else ""
+        caveat_text = recipe_caveat(recipe, manifest.get("stammdaten"))
+        caveat = f'<p class="caveat">{pulse_html.esc(caveat_text)}</p>' if caveat_text else ""
         title_id = f"recipe-{pulse_html.esc(recipe_row['id'])}-title"
         csv_link = (
             f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, recipe_row["file"]))}">Ergebnis als CSV</a></p>'
@@ -13298,7 +13484,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help=(
-            "Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable. "
+            "Update-time data enrichment: votes, aw-profiles, mp-roster, mdb-stammdaten, or all; repeatable. "
             "votes is on by default (turn it off with --no-votes). A config file's enrich list "
             "replaces earlier config layers but never removes a default; only a veto does "
             "(see --explain-config for the precedence)."
@@ -14178,6 +14364,7 @@ def main() -> int:
             vorgang_cache=vorgang_cache,
         )
         log_politikfelder_summary(database_path, vorgang_cache)
+        log_seat_crosscheck(database_path)
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
                 args=args,
@@ -14420,6 +14607,9 @@ def main() -> int:
             ):
                 return 2
             refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
+            if "mdb-stammdaten" in enrichments:
+                # Before the staged rebuild, which reads the cached file.
+                stammdaten.refresh(database_path, since_wahlperiode=V1_FIRST_WAHLPERIODE)
 
             roster_wahlperioden = roster_periods(args, protocols)
 
@@ -14502,6 +14692,7 @@ def main() -> int:
     # Step 4: export the Daten distribution files, then render the rest of the
     # site around the dossiers.
     log_politikfelder_summary(database_path, vorgang_cache)
+    log_seat_crosscheck(database_path)
     sitzungskalender.refresh_if_due(output_dir)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
