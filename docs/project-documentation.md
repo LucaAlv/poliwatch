@@ -43,6 +43,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- publish_dip_pulse_data.sh    # wrapper for publish_dip_pulse_data.py: versioned data release (dry run by default)
     |-- release_changes.py           # changes.json / CHANGES.md of a release
     |-- release_version.py           # calendar version YYYY.MM.DD[.N] and tag data-<version>
+    |-- stammdaten.py                # MdB-Stammdaten (C1): private cache, reader, seat cross-check
     |-- abgeordnetenwatch.py
     `-- features/
         |-- __init__.py
@@ -81,7 +82,7 @@ scripts/persist_dip_pulse_store.py
 The build has two modes:
 
 - Offline render: rebuilds HTML from cached JSON/database files and makes no external API calls.
-- Online update: fetches or refreshes DIP data, roll-call vote data, abgeordnetenwatch profiles, optional LLM summaries, and the optional MdB roster.
+- Online update: fetches or refreshes DIP data, roll-call vote data, abgeordnetenwatch profiles, optional LLM summaries, the optional MdB roster, and the optional MdB-Stammdaten file behind the seat counts.
 
 ## Important Files
 
@@ -407,7 +408,7 @@ Common options:
 
 | Option | Default | Effect |
 |---|---:|---|
-| `--enrich ID` | `votes` | Acquire `votes`, `aw-profiles`, `mp-roster`, or `all` during an online update; repeatable. `votes` is on unless vetoed |
+| `--enrich ID` | `votes` | Acquire `votes`, `aw-profiles`, `mp-roster`, `mdb-stammdaten`, or `all` during an online update; repeatable. `votes` is on unless vetoed. `mdb-stammdaten` fetches the Bundestag's MdB-Stammdaten zip into the store's private directory (see "SQLite Store") |
 | `--no-votes` | off | Skip the roll-call scan; beats `--enrich votes` and `--vote-scan-pages`. Cached votes and their state are kept |
 | `--features-file PATH` | none | Read `{"enrich":[...]}` from another JSON file; legacy selection keys are deprecated |
 | `--enable`, `--disable`, `--features` | deprecated | Accepted for one release; data selections map to enrichments but published UI is unaffected |
@@ -625,7 +626,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written; build the store with `--offline --repersist` or an online update. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (8), including one without `votes.debate_url` or the quoted Antrag-passage fields, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written; build the store with `--offline --repersist` or an online update. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (9), including one without `votes.debate_url`, the quoted Antrag-passage fields or the seat tables, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -657,6 +658,7 @@ Online commands require `DIP_API_KEY` and can call several external services:
 - DIP API for Plenarprotokolle, Vorgangspositionen, Aktivitaeten, Personen, and Drucksachen links.
 - Bundestag web pages for roll-call vote list/detail pages, plus the Namenslisten (XLSX export) list page, unless `--no-votes`.
 - abgeordnetenwatch.de API only with `--enrich aw-profiles`.
+- The Bundestag's MdB-Stammdaten zip (`https://www.bundestag.de/resource/blob/472878/MdB-Stammdaten.zip`, a conditional GET) only with `--enrich mdb-stammdaten`.
 - Anthropic or Gemini APIs only when summaries are generated/refreshed.
 
 For fast development, prefer:
@@ -696,11 +698,16 @@ An online build, like `--offline --repersist`, always stages a fresh `data/bunde
 - `vote_passages` (ranked candidate Antrag documents per vote; extraction state is stored on the document)
 - `vote_fractions`
 - `vote_members`
+- `mdb_zugehoerigkeiten` (C1, schema 9: each MdB's Fraktion or Gruppe membership per Wahlperiode, with `valid_from` and an exclusive `valid_until`, NULL while open at the Stand)
+- `party_seats` (C1, schema 9: the seats of each Zusammenschluss per Wahlperiode and interval, counted from `mdb_zugehoerigkeiten`; the source of r2's `sitzanteil_prozent`)
+- `mdb_stammdaten_stand` (C1, schema 9: one row with the Stand and sha256 of the MdB-Stammdaten file both tables came from; empty without a cached file)
 - `fact_metrics`
 - `facts`
 - `fact_sources`
 
 The database is a graph-shaped local cache for connected views: protocols link to agenda items, agenda items link to speeches/documents/votes, votes link to fractions and individual MPs. The three `fact_*` tables are the exception: they are derived by `scripts/facts.py` from the tables above rather than persisted from a DIP/Bundestag/abgeordnetenwatch source (see `LICENSE-DATA.md`).
+
+The three seat tables are recomputed on every rebuild, `--offline --repersist` included, from the cached MdB-Stammdaten zip; `scripts/stammdaten.py` reads it. Without a cached file they stay empty and the build warns. The file's redistribution terms are still open, so everything it touches lives in the store's private directory (`.OUTPUT.private/`, see `person_registry.private_dir`), never in the published tree: the zip (`mdb-stammdaten.zip`, written by `--enrich mdb-stammdaten`), a sidecar beside it (`mdb-stammdaten.json`, the ETag for the conditional GET and the fetch time, kept out of the store so a repersist stays byte-identical) and the seat cross-check report (`seat-crosscheck.json`). Every online or offline build compares the stored seat counts with the group totals of every stored roll-call after the rebuild, writes each disagreement to that report with a cause (or deletes an older report when no file is loaded) and prints a summary line to stderr. The check never fails the build. The export carries the three tables (each with its own CSV) and the manifest's `stammdaten` (Stand and sha256); the zip, the sidecar and the cross-check report are never exported. See `docs/data-methods.md` "Sitzzahlen".
 
 ## Common Troubleshooting
 
