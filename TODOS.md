@@ -669,11 +669,23 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Why:** Every page carries its own `:root` token block and the only typeface is Inter / ui-sans-serif / system-ui; every design review re-derives the tokens and flags the default font stack. The Daten page (after the dossier) was the second page to have to invent tokens a shared system would already provide. No `DESIGN.md` exists as of 2026-09-19 (`docs/design/bundestag-pulse-design.md` is the product design doc, not a design system).
 
-**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass.
+**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass. **2026-11-02:** this is step 1 of the frontend decision below. Write the design system as plain CSS (tokens, type, components) that today's Python pages and a possible generator can both use, and move the per-page inline `<style>` (41,232 bytes on a dossier, repeated on every page) into one shared stylesheet as part of it.
 
 **Effort:** M
-**Priority:** P3
+**Priority:** P2 (raised from P3 on 2026-11-02: first step of the frontend decision)
 **Depends on:** None
+
+### Decide the frontend stack: chart prototype and go/no-go
+
+**What:** The owner held the move to a static site generator on 2026-11-02 (`docs/plans/a4-site-from-release.md`, ledger R17). Before any frontend work: (1) the design pass above; (2) one chart prototype in a candidate generator, using that design system (the throwaway Diskursanalyse prototype, "Diskursanalyse: precomputed term series", is the natural vehicle); (3) a go/no-go with written criteria, set before the prototype, comparing the generator against the stdlib alternative: one shared stylesheet, the CSS design system, and charts rendered as SVG from Python with a small hover script.
+
+**Why:** The owner wants a better-looking site and interactive long-term charts. The eng review of 2026-11-02 found that the look is a design problem either stack must solve, and that its proposed pilot (the votes archive) tested neither goal. `PRODUCT.md:58` (stdlib only, no package manager, framework or build toolchain) stays in force until this decision.
+
+**Context:** If the go/no-go picks the generator, the review's ledger R10–R16 and its scope record are the ready plan (state codes instead of copy in data, payload diff as the oracle, strict npm policy, raw-HTML ban, archive behaviour contract, node:test plus the existing browser runner, 50 KB island budget). Resolve the outside-voice findings O4–O11 first: pick the generator and read its installed docs before writing R12/R14/R16 into an ADR; make the first migrated page a design-system consumer; add an end date and abort gate for the parallel build; decide how links resolve between the two outputs; check each state code's text against the old Python string; say the emitter reads the store until slice 10; give the operator preview script a Node path; aggregate chart series in Python so the 50 KB budget holds. Then write ADR 0005 and update PRODUCT.md, AGENTS.md and CONTRIBUTING.md. A4 slice 1 T1.1–T1.3 are useful either way; its T1.4 rewire waits for this decision.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** "DESIGN.md, tokens and a typeface decision via /design-consultation" (above); the Diskursanalyse prototype's term lists
 
 ## Publication
 
