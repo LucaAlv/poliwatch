@@ -78,6 +78,14 @@ A list of places where an official source file says something wrong or files con
   - **Heßenkemper:** listed as fraktionslos in votes 753–754 (above).
 
   No single pattern explains the errors. Most move an MdB to fraktionslos too early, while Pasemann's lags.
+- **Scale on the rebuilt store, 2026-11-02:** the C1 replay (`docs/plans/c1-seat-counts.md`, "Step 9 result") ran through the build's own cross-check. Repersisting the 716 cached reports gives 619 roll-calls, against the 556 in the store file measured above. **55 roll-calls** file the same six MdBs under the wrong group:
+  - Kamann: 38 roll-calls, 2017-12-12 to 2018-12-13.
+  - Bülow: 36, 2017-12-12 to 2018-11-23.
+  - Pasemann: 10, 2020-11-18 to 2020-12-11.
+  - Witt and Huber: 7 each (750–754, 756–757).
+  - Heßenkemper: 2 (753–754).
+
+  The 8 roll-calls added since the first measurement (489, 490, 510, 531–533, 556 and 705) fall in the same windows. No other MdB appears.
 
 ### E5. 2016-11-09: two CDU/CSU members missing from one roll-call list
 

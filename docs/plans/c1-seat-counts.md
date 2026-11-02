@@ -189,6 +189,7 @@ After the Stand date, the comparison also catches drift. D6 = (a), as decided, s
      - R2's new column
    - No existing figure moves, so only R2 gains a column.
    - Apply `docs/agents/review-checklist.md`.
+   - Done (2026-11-02), see "Step 9 result".
 
 ## Done when (replaces the TODO's criterion)
 
@@ -550,7 +551,7 @@ Step 9 should reproduce these through the build.
 - **Roadmap C1.** Marked done, effort M rather than small, with its follow-ups named. Track D lists the new Stammdaten licence item.
 - **C1 entry.** Moved to Completed, with a summary and the superseded criterion. The original text is kept below it, marked superseded.
 - **New entries:**
-  - **"Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten"** (Abstimmungen, **P1**, M). It covers 47 votes and six MdBs. The published group counts of those votes are wrong until it is fixed, so it is P1, not the P2 the other C follow-ups get. The owner may re-rank it.
+  - **"Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten"** (Abstimmungen, **P1**, M). It covers 55 votes on the rebuilt store (step 9) and six MdBs. The published group counts of those votes are wrong until it is fixed, so it is P1, not the P2 the other C follow-ups get. The owner may re-rank it.
   - "C1 seat counts: deferred findings" (Daten, P3). The seven "Left open" items from steps 4, 5 and 7.
   - "Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)" (Daten, P2, track D). It includes the attribution string and ADR 0003 owed since step 3.
   - "Link `mdb_zugehoerigkeiten` to the MP pages" (Abgeordnete, P3).
@@ -560,6 +561,95 @@ Step 9 should reproduce these through the build.
 **Not done here**
 - CHANGELOG and VERSION, which `/gstack-ship` writes.
 - The step 9 replay.
+
+## Step 9 result (2026-11-01/02)
+
+Replayed on tip 67782ad, through the build. The work was done in this session's scratchpad (`9bc09ce3…/scratchpad`). `~/agent-runs/a3/full` was not written.
+
+**How**
+1. `cp -cR ~/agent-runs/a3/full c1-replay`. The store is schema 6 and has 716 cached reports.
+2. **One live fetch.** `stammdaten.refresh` was called directly instead of an online build, so no DIP request went out. The request was a conditional GET with no ETag yet, giving a 200 with 952,696 bytes: Stand 29.04.2026, sha256 `29ae4ba1…8bde460`. This is the file from step 1b; the Bundestag has published no newer one.
+3. **`--offline --repersist --today 2026-10-28`**, with render and export. It took 2,196 s and the store was replaced. `/usr/bin/time` exited 1 only because the sandbox refuses its sysctl; the build itself ran to its end (716 dossiers rendered, export written, 530 Fakten as in the A3 merged gate).
+4. **A second repersist** (`validate_store_gate.py --persist-only`). The store file's sha256 is `1b36e96a…` before and after: **byte-identical**.
+5. **Baseline.** The merge-base 4705fb3 (v0.27.0.0, without C1) ran the same persist-only on a fresh clone of `full`. Then `compare_store_values.py --cohort all`, plus a per-table content digest of both stores.
+
+**Figures**
+
+| WP | `party_seats` rows | max total | sitting dates | first sitting | last sitting |
+|---|---:|---:|---:|---|---|
+| 18 | 29 | 631 | 194 | 2013-12-17: 631 (CDU/CSU 311, SPD 193, Linke 64, Grüne 63) | 2017-06-30: 630 (CDU/CSU 309, SPD 193, Linke 64, Grüne 63, fl 1) |
+| 19 | 66 | 709 | 206 | 2017-11-21: 709 (CDU/CSU 246, SPD 153, AfD 92, FDP 80, Linke 69, Grüne 67, fl 2) | 2021-08-25: 709 (CDU/CSU 245, SPD 152, AfD 87, FDP 80, Linke 69, Grüne 67, fl 9) |
+| 20 | 62 | 736 | 213 | 2021-10-26: 736 (SPD 206, CDU/CSU 197, Grüne 118, FDP 92, AfD 82, Linke 39, fl 2) | 2025-03-18: 733 (SPD 207, CDU/CSU 196, Grüne 117, FDP 90, AfD 76, Gruppe Die Linke 28, Gruppe BSW 10, fl 9) |
+| 21 | 14 | 630 | 103 | 2025-03-25: 630 (CDU/CSU 208, AfD 152, SPD 120, Grüne 85, Linke 64, fl 1) | 2026-10-16: 630 (CDU/CSU 208, AfD 150, SPD 120, Grüne 85, Linke 64, fl 3) |
+
+- **Totals:** 2,914 Zugehörigkeit rows and 171 seat rows, the same as step 2.
+- **Pins:** all four Textarchiv pins hold:
+  - 2021-06-24: AfD 88, fl 8
+  - 2021-08-25: AfD 87, fl 9
+  - 2023-12-15: no Die Linke, fl 44
+  - 2024-02-02: Gruppe Die Linke 28, Gruppe BSW 10, fl 6
+- **Seat parties:** exactly the nine Zusammenschlüsse plus fraktionslos. There is no row for `Unbekannt` or a stray name.
+- **The last WP 21 sitting** (2026-10-16) is after the Stand and shows the carried-forward Stand composition (D6 (a)).
+
+**Cross-check** (`seat-crosscheck.json`, kept as `seat-crosscheck-step9.json` in the scratchpad). 619 roll-calls compared, 551 agree, 68 disagree, **0 unexplained**, and none skipped.
+
+| Cause | Roll-calls | Ids |
+|---|---:|---|
+| shift between groups | 55 | 38 from 487 to 571, 10 from 696 to 706, 750–754, 756–757 |
+| change on the vote's day | 11 | 639, 779–784, 802, 897, 898, 912 |
+| roll-call short | 1 | 440 (E5) |
+| after the Stand | 1 | 1004 (drift warning) |
+
+The repersisted store has 619 roll-calls, against the 556 in the old `full` store file that step 5 replayed. The extra roll-calls explain the differences from step 5:
+- **8 more shifts** (489, 490, 510, 531–533, 556, 705). They are the same E4 MdBs in the same windows: Kamann and Bülow listed fraktionslos, and Pasemann still AfD on 705.
+- **Vote 780** is De Ridder's day (2022-06-03), beside 779 and 781–784.
+
+Per MdB on the rebuilt store:
+- Kamann 38 roll-calls (31 before);
+- Bülow 36 (29);
+- Pasemann 10 (9);
+- Witt and Huber 7 each;
+- Heßenkemper 2.
+
+No other MdB appears. `docs/source-errors.md` E4 and the TODOS E4 item are updated to 55.
+
+**The gate passes:** every disagreement has a cause from the closed list, and every shift is an E4 MdB.
+
+**R2** (export manifest, format 12, 40 files, `stammdaten` set). The top five rows are WP 21:
+
+| Group | Reden | anteil_prozent | sitzanteil_prozent |
+|---|---:|---:|---:|
+| CDU/CSU | 2,442 | 28.5 | 33.0 |
+| AfD | 2,092 | 22.5 | 23.9 |
+| SPD | 1,593 | 17.4 | 19.0 |
+| BÜNDNIS 90/DIE GRÜNEN | 1,282 | 13.8 | 13.5 |
+| Die Linke | 1,046 | 10.2 | 10.2 |
+
+- **Expected values:** these equal step 7's out-of-build check exactly, including the WP 21 CDU/CSU sanity value 33.0 = 208/630.
+- **Caveat:** it ends with "Sitzanteile aus den MdB-Stammdaten, Stand 29.04.2026: …". The same text is on `database.html`, in DATA.md and in the manifest.
+- **Other surfaces:** the R2 CSV has the column, and the Daten page shows the Stammdaten line with the sha256.
+
+**No existing figure moves** (baseline 4705fb3 against C1, both repersisted from the same 716 reports):
+- **Content:** all 27 shared tables are identical in content, ignoring `created_at`/`updated_at`. Only `schema_migrations` differs (8 → 9), and `mdb_zugehoerigkeiten`, `party_seats` and `mdb_stammdaten_stand` are new. `parties` stays at 11 rows, because the `fraktionslos` row already exists.
+- **`compare_store_values` agrees** on every row count, the Redeanteil, the Sprechrollen, the Beiträge and the Fakten (0 of 1,908 moved). Two lines differ, both artefacts of the baseline being persist-only, without render or export:
+  - Personenseiten 1,568 → 2,005: the baseline's `abgeordnete/` is the old `full` render.
+  - R3 rows 1,330 → 1,389: the script counts on each directory's export copy, and the baseline's is the 28 October `full` generation.
+
+  The table digests above show R3's inputs are identical.
+
+**Checks no diff review replaces**
+- **Figures:** done, above.
+- **Fresh vs incremental:** the second repersist leaves the store byte-identical. The full store gate (`validate_store_gate.py`, about 2.3 h and 13 GB) was not run. Free disk was 22 GB at the start and 8 GB at the end, after two clones and a render. The A3 post-merge gate stays owed with the `--enrich mp-roster` refresh (online DIP), which this replay did not do.
+- **Browser:** the pane cannot open `file://`. The rendered R2 table and caveat were read from `database.html`. No JS or layout changed.
+- **Python 3.13.12:** not run. `html.parser` is untouched by C1.
+- **Adversarial lenses (red team, Codex):** owed once, on the tip handed to `/gstack-ship`.
+
+**Found here**
+- `stammdaten.refresh` creates the private directory without `mode=0o700`; the direct call made `drwxr-xr-x`. In a build, the writer lock creates the directory first, so no current input reaches it. Filed as item 8 of "C1 seat counts: deferred findings".
+- **Main has moved to v0.30.0.0** (#127–#129) since the branch was cut, and `/gstack-ship` merges it.
+  - **Export format: collision.** Main already has `EXPORT_FORMAT = 12` (11 at the merge-base), so C1 must become **format 13** in the merge. That touches `EXPORT_FORMAT`, the `tests/test_daten_export.py` pins, and the format sentences in README, `docs/stable-ids.md` and CONTEXT.md.
+  - **Schema: no collision.** Main's schema is still 8, so schema 9 stays C1's.
+  - **CSV count:** main's export may carry more files, so the 32-CSV pin and README count need re-counting after the merge.
 
 ## Decisions
 

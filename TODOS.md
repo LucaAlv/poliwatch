@@ -195,7 +195,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### C1 seat counts: deferred findings
 
-**What:** Items from the C1 build (steps 3–7, 2026-11-01). Each was deferred under the fix-now-or-defer rule, because none is a wrong figure today:
+**What:** Items from the C1 build (steps 3–9, 2026-11-01). Each was deferred under the fix-now-or-defer rule, because none is a wrong figure today:
 1. **`stammdaten.refresh` makes one attempt.** There is no retry and no line in the DIP request log. A failed fetch keeps the previous file, and the next build retries.
 2. **A failed ETag sidecar write is reported wrongly.** If the sidecar write fails after the replace, the warning names the old Stand although the new file is cached. The next fetch is then a full download.
 3. **The online path's cross-check call has no test of its own.** The offline one does. The Politikfeld summary beside it is in the same position.
@@ -203,10 +203,11 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 5. **A `shift_between_groups` could be a derivation fault rather than a source error.** Step 9 compares the ids with E4 again.
 6. **`validate_manifest` does not check the shape of the manifest's `stammdaten`.** A published override manifest with a malformed `stand` makes the Daten page raise in `stammdaten_stand_day`. The export writes the key from the store, so no current input reaches this.
 7. **An earlier cross-check report can stay in place.** This happens if the store cannot be read when the cross-check runs. The build has just written the store, so no current input reaches this.
+8. **`stammdaten.refresh` can create the private directory world-readable.** It runs `path.parent.mkdir(parents=True, exist_ok=True)` without `mode=0o700`, while every other creator of the private directory passes it (`person_registry`, `politikfelder`, the export work dir). The zip itself is written 0600. In a build, the writer lock creates the directory first, so no current input reaches this. Found in step 9, when a direct `refresh` call created `drwxr-xr-x`.
 
 Done when each has a fix or a decision.
 
-**Why:** These are the "Left open" lists in `docs/plans/c1-seat-counts.md`, steps 4, 5 and 7.
+**Why:** These are the "Left open" lists in `docs/plans/c1-seat-counts.md`, steps 4, 5, 7 and 9.
 
 **Effort:** S
 **Priority:** P3
@@ -982,17 +983,17 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 ### Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten
 
-**What:** On 47 roll-calls in WP 19 and WP 20, bundestag.de files six MdBs under the wrong group: Kamann, Bülow, Pasemann, Witt, Huber and Heßenkemper (`docs/source-errors.md` E4). `vote_members.party_id` and `vote_fractions` copy the pages, so these members' Stimmen count for the wrong group. That affects the vote panel's group blocks, the Mehrheitsvotum and Abweichler (R3, Fakten). Re-file each member's Stimme under their Zugehörigkeit on the vote's date from `mdb_zugehoerigkeiten`, recompute the affected `vote_fractions` rows and Mehrheitsvoten, and report old and new values per vote.
+**What:** On 55 roll-calls in WP 19 and WP 20 (rebuilt store, 2026-11-02; 47 in the older store file), bundestag.de files six MdBs under the wrong group: Kamann, Bülow, Pasemann, Witt, Huber and Heßenkemper (`docs/source-errors.md` E4). `vote_members.party_id` and `vote_fractions` copy the pages, so these members' Stimmen count for the wrong group. That affects the vote panel's group blocks, the Mehrheitsvotum and Abweichler (R3, Fakten). Re-file each member's Stimme under their Zugehörigkeit on the vote's date from `mdb_zugehoerigkeiten`, recompute the affected `vote_fractions` rows and Mehrheitsvoten, and report old and new values per vote.
 
 Done when:
 - the C1 cross-check (`seat-crosscheck.json`) shows no `shift_between_groups` roll-call;
 - the page's totals stay available as the source's own figures;
 - the fix runs on every rebuild, not as a one-off patch.
 
-**Why:** The C1 cross-check measured it on 2026-11-01. The Textarchiv backs the Stammdaten in every case. Until this is fixed, the published group counts of those 47 votes are wrong.
+**Why:** The C1 cross-check measured it on 2026-11-01. The Textarchiv backs the Stammdaten in every case. Until this is fixed, the published group counts of those 55 votes are wrong.
 
 **Context:**
-- **Vote ids:** `docs/plans/c1-seat-counts.md` "Step 5 result" lists them: 31 from 487 to 571, 9 from 696 to 706, 750–754 and 756–757.
+- **Vote ids:** `docs/plans/c1-seat-counts.md` "Step 9 result" lists them: 38 from 487 to 571, 10 from 696 to 706, 750–754 and 756–757.
 - **Where the rule goes:** at persist time, after the C1 tables exist in the staged store. The rebuild order puts `rebuild_seat_counts` after the reports are persisted, so the rule needs a pass after it, or the seat tables must move earlier.
 - **Votes from before WP 18** have no Stammdaten rows and stay as the source has them.
 - **Decide** whether a Stimme keeps the page's group as a second column, the page being the source.
@@ -1389,7 +1390,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### Fraktion seat counts in the store
 
-**Done (2026-11-01):** built on `claude/c1-implementation-plan-970e85` in steps 2–7 of [the C1 plan](docs/plans/c1-seat-counts.md). The real-store replay (plan step 9) belongs to the owed A3 post-merge rebuild.
+**Done (2026-11-01/02):** built on `claude/c1-implementation-plan-970e85` in steps 2–9 of [the C1 plan](docs/plans/c1-seat-counts.md), including the real-store replay (step 9). The A3 post-merge gate and the `--enrich mp-roster` refresh are still owed on their own.
 - **Source:** the Bundestag's MdB-Stammdaten (D1), not the roster count the entry proposed.
   - The roster has 740 WP 21 rows against 630 seats, 151 rows without a party, one Fraktion per person and 48 government MdBs missing.
   - The roll-call totals date a change only at the next roll-call and misattribute members (`docs/source-errors.md` E4). They stay as the cross-check.
@@ -1398,7 +1399,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
   - `party_seats`: counted from them, with fraktionslos as its own row;
   - `mdb_stammdaten_stand`: the file's Stand and sha256, also in the manifest and on the Daten page.
 - **Acquisition:** `--enrich mdb-stammdaten`, cached in the store's private directory. Every rebuild derives the tables from the cache. Without a cache the tables are empty, with a warning.
-- **Cross-check:** `seat-crosscheck.json` in the private directory compares every roll-call with the seats and files each disagreement under a cause. On the reference data: 497 of 556 roll-calls agree, 47 are the E4 misattributions, 10 are changes on the vote's day, 1 is E5 and 1 falls after the Stand.
+- **Cross-check:** `seat-crosscheck.json` in the private directory compares every roll-call with the seats and files each disagreement under a cause. On the rebuilt reference store (step 9): 551 of 619 roll-calls agree, 55 are the E4 misattributions, 11 are changes on the vote's day, 1 is E5, 1 falls after the Stand, 0 are unexplained.
 - **R2:** gains `sitzanteil_prozent`, with the Stand in its caveat (D6 (a): the composition at the Stand is carried forward).
 - **Figures:** no existing figure moved.
 
@@ -1415,7 +1416,7 @@ The original entry follows; its source, effort and criterion are superseded.
 **Effort:** S
 **Priority:** P2
 **Depends on:** `parties.name` holds Python-list-repr duplicates of the same party
-**Completed:** 2026-11-01, commits 13f3341 to b50371f plus the step 8 docs commit on `claude/c1-implementation-plan-970e85`, unpushed; the real-store replay (plan step 9) is owed.
+**Completed:** 2026-11-01/02, commits 13f3341 to the step 9 commit on `claude/c1-implementation-plan-970e85`, unpushed. The real-store replay (plan step 9) passed: no existing figure moved, and the gate has 0 unexplained roll-calls. Merging main (v0.30.0.0) makes C1 export format 13, because main took 12.
 
 ### v1 coverage: every Sitzung from WP 18 to the present
 
