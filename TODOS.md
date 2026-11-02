@@ -1609,7 +1609,7 @@ The original entry follows; its source, effort and criterion are superseded.
 **Effort:** S
 **Priority:** P2
 **Depends on:** `parties.name` holds Python-list-repr duplicates of the same party
-**Completed:** 2026-11-01/02, commits 13f3341 to the step 9 commit on `claude/c1-implementation-plan-970e85`, unpushed. The real-store replay (plan step 9) passed: no existing figure moved, and the gate has 0 unexplained roll-calls. Merging main (v0.30.0.0) made C1 export format 13, because main took 12.
+**Completed:** v0.31.0.0 (2026-11-02). The real-store replay (plan step 9) passed: no existing figure moved, and the gate has 0 unexplained roll-calls. Merging main (v0.30.0.0) made C1 export format 13, because main took 12.
 
 ### "Nächste Sitzungswoche" in the puls.html header
 
