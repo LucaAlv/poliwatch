@@ -126,6 +126,17 @@ class ZugehoerigkeitTests(unittest.TestCase):
         with self.assertRaises(derive.StammdatenError):
             stretches(mdb("11000042", mandate))
 
+    # Value: protects=every Zusammenschluss the closed Stammdaten map names is spelled as derive.zusammenschluss
+    #   spells it for speeches and roll-call totals, so seat rows land on the parties row the other tables use
+    #   (R2 joins the seat share to the speech share by that name); fails_when=a map value is a variant spelling
+    #   ("DIE LINKE", "Bündnis 90/Die Grünen") that zusammenschluss rewrites, which would leave the group's
+    #   sitzanteil_prozent empty and its cross-check rows unmatched; why_new=no test ties the map values to the
+    #   spelling table, the map tests use CDU only; seam=none; no_claim=the spellings the live sources use
+    def test_every_mapped_group_is_spelled_as_the_other_tables_spell_it(self) -> None:
+        for fraktion, group in derive.STAMMDATEN_ZUSAMMENSCHLUESSE.items():
+            with self.subTest(fraktion):
+                self.assertEqual(derive.zusammenschluss(group), group)
+
     def test_a_group_name_outside_the_closed_map_fails_by_name(self) -> None:
         mandate = wahlperiode(22, "20.10.2029", "", institution("Fraktion Neue Partei", "20.10.2029"))
         with self.assertRaises(derive.StammdatenError) as raised:

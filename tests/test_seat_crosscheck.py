@@ -216,6 +216,40 @@ class ReportTests(StoreFixture):
         self.log()
         self.assertEqual(path.read_bytes(), first)
 
+    # Value: protects=roll-calls the cross-check cannot compare (no seat count on their date, no group
+    #   totals) are named in a warning each and counted as not compared in the summary, never as agreeing
+    #   or as disagreeing; fails_when=the two warning lines or the not-compared count are dropped, or an
+    #   uncomparable roll-call is counted in "agree"; why_new=TODOS C1 deferred item 18 (these two branches
+    #   have no test; the Unbekannt one does); seam=none (log_seat_crosscheck is production code); no_claim=none beyond protects
+    def test_roll_calls_without_a_seat_count_or_totals_are_warned_about_and_not_counted(self) -> None:
+        self.stammdaten(bundestag(SPD=3, AfD=1))
+        self.vote("1030", "2025-03-24", SPD=3, AfD=1)
+        self.vote("1031", "2025-06-26")
+        self.vote("1032", "2025-06-26", SPD=3, AfD=1)
+        err, path = self.log()
+        report = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual((report["compared"], report["agree"]), (1, 1))
+        self.assertEqual(report["not_compared"], {"without_seat_count": ["1030"], "without_totals": ["1031"], "with_unbekannt": []})
+        self.assertIn("cross-check of 1 roll-call against the seat counts: 1 agree, 0 disagree; 2 not compared", err)
+        self.assertIn("warning: [stammdaten] not compared, no seat count on the date, 1 roll-call: 1030", err)
+        self.assertIn("warning: [stammdaten] not compared, no group totals, 1 roll-call: 1031", err)
+
+    # Value: protects=a store the cross-check cannot read (missing file, not a database) ends in one
+    #   note on stderr and no report, never an exception, so a routine update is not stopped; fails_when=
+    #   the sqlite3.Error from opening or querying escapes log_seat_crosscheck; why_new=TODOS C1 deferred
+    #   item 18 (the unreadable-store branch has no test); seam=none (log_seat_crosscheck is production code);
+    #   no_claim=an OSError while writing the report (deferred item 12 says that one still escapes)
+    def test_a_store_that_cannot_be_read_gives_a_note_not_an_exception(self) -> None:
+        garbage = Path(self._tmp.name) / "garbage.sqlite"
+        garbage.write_bytes(b"this is not a database" * 100)
+        for label, database in {"missing": Path(self._tmp.name) / "missing.sqlite", "not a database": garbage}.items():
+            with self.subTest(label):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    build.log_seat_crosscheck(database)
+                self.assertIn("note: [stammdaten] no cross-check, the store could not be read:", err.getvalue())
+                self.assertFalse(stammdaten.crosscheck_path(database).exists())
+
     # Value: protects=without Stammdaten the build says once that there is no cross-check
     #   and removes the report of an earlier build, which would describe seat counts the
     #   store no longer holds; fails_when=a stale report survives, or every roll-call is
