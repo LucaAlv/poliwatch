@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 import _support  # noqa: F401
+import _site_store_fixture
 import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
@@ -102,7 +103,7 @@ class StaleCachedReportTests(unittest.TestCase):
     def test_the_votes_archive_gives_them_no_position(self) -> None:
         report = stale_report()
         entry = {"report": report, "page_path": Path("plenarprotokoll-20-999.html")}
-        rows = build.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         # SPD (tie) and CDU/CSU (nobody voted) have none; FDP's Ja is a plurality
         # below half of the votes, which the chip's stricter Ja-Mehrheit rejects.
         self.assertEqual(rows[0]["fraction_positions"], {"FDP": "tie"})

@@ -3,7 +3,7 @@
 Usage: python3 tests/votes_archive_browser_fixture.py <out-dir>   (writes <out-dir>/index.html)
 
 Not a ``test_*.py`` module, so unittest discovery skips it. The rows come from
-``build.collect_votes_archive``, so ``data-fraktion-positions`` and
+``_site_store_fixture.archive_rows`` (a store rebuilt from the votes), so ``data-fraktion-positions`` and
 ``data-politikfelder`` are the real ones, not hand-made attributes. Four votes in
 two months (see ``VOTES``); the browser check addresses them by their row order.
 """
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import _support  # noqa: F401
+import _site_store_fixture
 import build_dip_pulse_site as build
 import politikfelder
 from _support import FIXTURES
@@ -97,7 +98,7 @@ def build_rows() -> list[dict[str, Any]]:
     cache = {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": numbers}
     entry = {"report": report, "page_path": Path("plenarprotokoll-20-999.html"), "report_path": Path("x.json"), "slug": "x"}
     with contextlib.redirect_stderr(io.StringIO()):
-        return build.collect_votes_archive([entry], cache)
+        return _site_store_fixture.archive_rows([entry], cache)
 
 
 def write_votes_archive_fixture(output: Path) -> None:

@@ -2779,14 +2779,14 @@ class VotesArchiveTests(unittest.TestCase):
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/1"]}
         item = self._item(1, [vote])
         item["api"] = {"linked_drucksachen": [{"dokumentnummer": "21/1", "herausgeber": "BR", "url": "https://dip.bundestag.de/x"}]}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [item])])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('href="https://dip.bundestag.de/x">BR-Drs. 21/1</a>', markup)
 
     def test_collect_deduplicates_a_vote_attached_to_two_agenda_items(self) -> None:
         shared = {"id": "v1", "date": "2026-06-10", "title": "Geteilt", "total": {"yes": 1, "no": 0}}
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [shared]), self._item(2, [shared])])
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         self.assertEqual(len(rows), 1)
 
     # Value: protects=the archive fits a 375px phone: the Abweichler sentence wraps, the row column may shrink, a long compound title breaks; fails_when=the badge is nowrap again or the column is plain 1fr (measured: 492px, then 407px, then 394px wide at 375px); why_new=no test checked the badge's wrapping; seam=none; no_claim=layout itself (string-level CSS check; the browser measurement was manual)
@@ -2801,7 +2801,7 @@ class VotesArchiveTests(unittest.TestCase):
 
     def test_render_index_shows_a_live_count_line_instead_of_a_metric_tile(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('data-archive-count data-total="1" aria-live="polite"><strong>1</strong> Abstimmungen</p>', markup)
         self.assertNotIn('class="summary-grid"', markup)
@@ -2816,7 +2816,7 @@ class VotesArchiveTests(unittest.TestCase):
             {"name": "SPD", "counts": {"yes": 100, "no": 3, "abstain": 0}, "leading_vote": "yes"},
             {"name": "AfD", "counts": {"yes": 0, "no": 80, "abstain": 0}, "leading_vote": "no"},
         ]}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
         self.assertEqual(rows[0]["fraction_positions"], {"SPD": "yes", "AfD": "no"})
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertNotIn('data-fraktion-chip="fraktionslos"', markup)
@@ -2828,7 +2828,7 @@ class VotesArchiveTests(unittest.TestCase):
             {"name": "FDP", "counts": {"yes": 0, "no": 0, "abstain": 0, "absent": 9}, "leading_vote": "absent"},
             {"name": "SPD", "counts": {"yes": 100, "no": 3, "abstain": 0}},
         ]}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
         self.assertEqual(rows[0]["fraction_positions"], {"SPD": "yes"})
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertNotIn('data-fraktion-chip="FDP"', markup)
@@ -2849,7 +2849,7 @@ class VotesArchiveTests(unittest.TestCase):
         newer = self._entry(
             "2026-06-10", "21/82", [self._item(1, [{"id": "v-new", "date": "2026-06-10", "title": "Neu"}])]
         )
-        rows = build_dip_pulse_site.collect_votes_archive([older, newer])
+        rows = _site_store_fixture.archive_rows([older, newer])
         self.assertEqual([row["vote"]["id"] for row in rows], ["v-new", "v-old"])
 
     def test_procedure_type_comes_from_the_matching_linked_drucksache(self) -> None:
@@ -2860,13 +2860,13 @@ class VotesArchiveTests(unittest.TestCase):
             "xml_drucksachen": [],
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
         }
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [item])])
         self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
 
     def test_row_count_matches_the_persisted_store(self) -> None:
         report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
         entry = {"report": report, "page_path": Path("plenarprotokoll-x.html")}
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         with tempfile.TemporaryDirectory() as tmp:
             conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
             try:
@@ -2876,31 +2876,6 @@ class VotesArchiveTests(unittest.TestCase):
                 conn.close()
         self.assertEqual(len(rows), store_count)
 
-    def test_write_page_is_skipped_when_the_votes_feature_is_off(self) -> None:
-        from features import Selection
-
-        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
-        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
-        ctx = {
-            "selection": Selection(frozenset({"bills"})),
-            "entries": [entry],
-            "collect_votes_archive": build_dip_pulse_site.collect_votes_archive,
-            "write_votes_archive_page": build_dip_pulse_site.write_votes_archive_page,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            result = build_dip_pulse_site.votes_feature.COMPONENT.write_pages(output_dir, ctx)
-            self.assertEqual(result, {})
-            self.assertFalse((output_dir / "votes" / "index.html").exists())
-
-        # Sanity: the same rows produce a page when the feature is enabled.
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            output = build_dip_pulse_site.write_votes_archive_page(output_dir, rows)
-            self.assertEqual(output["count"], 1)
-            self.assertTrue((output_dir / "votes" / "index.html").exists())
-
     def test_procedure_type_falls_back_to_em_dash_when_no_drucksache_matches(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/9999"]}
         item = {
@@ -2909,7 +2884,7 @@ class VotesArchiveTests(unittest.TestCase):
             "xml_drucksachen": [],
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
         }
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [item])])
         self.assertEqual(rows[0]["procedure_type"], "–")
 
     # Value: protects=the archive column reads the sitting-wide map the committee line reads (D4); fails_when=the lookup stays per TOP; why_new=new fallback; seam=none
@@ -2921,7 +2896,7 @@ class VotesArchiveTests(unittest.TestCase):
             "xml_drucksachen": [],
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Beschlussempfehlung und Bericht"}]},
         }
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote]), other])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote]), other])])
         self.assertEqual(rows[0]["procedure_type"], "Beschlussempfehlung und Bericht")
 
     def test_procedure_type_of_a_sitting_vote_comes_from_the_sitting_map(self) -> None:
@@ -2932,7 +2907,7 @@ class VotesArchiveTests(unittest.TestCase):
             [{"index": 1, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Antrag"}]}}],
         )
         entry["report"]["sitting_votes"] = [vote]
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         self.assertEqual(rows[0]["procedure_type"], "Antrag")
 
     def test_procedure_type_of_the_own_top_wins_over_the_sitting_map(self) -> None:
@@ -2944,8 +2919,96 @@ class VotesArchiveTests(unittest.TestCase):
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
         }
         other = {"index": 2, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/1", "drucksachetyp": "Antrag"}]}}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [other, own])])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [other, own])])
         self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
+
+    # Value: protects=the store-built archive shows a vote's Drucksachen in the vote's own order, links each to the url its TOP printed, and lets the XML url and label win over DIP for that TOP only (R6); fails_when=vote_documents or agenda_item_documents lose their rank, or the link reads documents.url (one url per Drucksache across sittings) instead of the per-item url; why_new=A4 slice 1 reads links from the store; seam=none
+    def test_store_links_keep_the_vote_order_and_the_per_item_url(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/2", "21/1"]}
+        item = self._item(1, [vote])
+        item["api"] = {"linked_drucksachen": [
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/2100001.pdf", "drucksachetyp": "Antrag"},
+            {"dokumentnummer": "21/2", "url": "https://dserver.bundestag.de/btd/21/000/2100002.pdf", "drucksachetyp": "Gesetzentwurf"},
+            # A second DIP link for 21/2 under the same TOP: the first url stays, as document_source_links reads it.
+            {"dokumentnummer": "21/2", "url": "https://dserver.bundestag.de/btd/21/000/other.pdf", "drucksachetyp": "Gesetzentwurf"},
+        ]}
+        item["xml_drucksachen"] = [
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/first.pdf"},
+            # The XML lists 21/1 again: its last url wins over the first and over DIP.
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/2100001-xml.pdf"},
+        ]
+        # Another sitting prints 21/1 under a different url: documents.url can hold only one of them.
+        elsewhere = self._item(1, [])
+        elsewhere["xml_drucksachen"] = [{"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/2100001.pdf"}]
+        rows = _site_store_fixture.archive_rows([
+            self._entry("2026-06-10", "21/82", [item]), self._entry("2026-06-11", "21/83", [elsewhere]),
+        ])
+        row = next(row for row in rows if row["vote"]["id"] == "v1")
+        self.assertEqual(row["vote"]["document_numbers"], ["21/2", "21/1"])
+        self.assertEqual(row["document_links"], {
+            "21/1": ("https://dserver.bundestag.de/btd/21/000/2100001-xml.pdf", "bundestag-xml"),
+            "21/2": ("https://dserver.bundestag.de/btd/21/000/2100002.pdf", "bundestag-dip"),
+        })
+        # The type of the vote's first Drucksache in the TOP's DIP order (21/1 is listed first there).
+        self.assertEqual(row["procedure_type"], "Antrag")
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertLess(markup.index(">21/2</a>"), markup.index(">21/1</a>"))
+
+    # Value: protects=data-fraktion-positions lists the Zusammenschlüsse in the order the source gives them, from vote_fractions.rank (R8), so the archive needs no key-order exemption; fails_when=the rank is dropped and the store returns fractions by party id or name; why_new=A4 slice 1; seam=none
+    def test_store_fractions_keep_the_source_order(self) -> None:
+        fractions = [
+            {"name": "SPD", "counts": {"yes": 3, "no": 0, "abstain": 0, "absent": 0}},
+            {"name": "AfD", "counts": {"yes": 0, "no": 2, "abstain": 0, "absent": 0}},
+            {"name": "BSW (Gruppe)", "counts": {"yes": 1, "no": 0, "abstain": 0, "absent": 0}},
+            {"name": "CDU/CSU", "counts": {"yes": 4, "no": 0, "abstain": 0, "absent": 0}},
+            # A second spelling of the Gruppe: merged into its first-seen row.
+            {"name": "Gruppe BSW", "counts": {"yes": 1, "no": 0, "abstain": 0, "absent": 0}},
+        ]
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions}
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        self.assertEqual(list(rows[0]["fraction_positions"]), ["SPD", "AfD", "Gruppe BSW", "CDU/CSU"])
+        self.assertEqual(
+            list(rows[0]["fraction_positions"]), [row["name"] for row in build_dip_pulse_site.derive.merge_fractions(fractions)]
+        )
+
+    # Value: protects=a vote whose source gave no total gets no Abweichler count from the store, where persist used to write 0 and vote_groups_cover_total then passed on invented zeros; fails_when=persist writes a missing total as 0 again or the adapter hands the rule 0 for NULL; why_new=A4 slice 1 (checklist class 5); seam=none
+    def test_a_missing_total_leaves_the_abweichler_count_absent(self) -> None:
+        members = [{"name": "A", "faction": "SPD", "vote": "yes"}, {"name": "B", "faction": "SPD", "vote": "no"}]
+        fractions = [{"name": "SPD", "counts": {"yes": 1, "no": 1, "abstain": 0, "absent": 0}}]
+        with_total = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members,
+                      "total": {"yes": 1, "no": 1, "abstain": 0, "absent": 0}}
+        partial_total = {**with_total, "id": "v2", "total": {"yes": 1, "no": 1, "abstain": 0}}
+        no_total = {**with_total, "id": "v3", "total": {}}
+        rows = _site_store_fixture.archive_rows(
+            [self._entry("2026-06-10", "21/82", [self._item(1, [with_total, partial_total, no_total])])]
+        )
+        by_id = {row["vote"]["id"]: row for row in rows}
+        # A tie has no Mehrheitsvotum, so nobody deviates: 0 where the total is complete.
+        self.assertEqual([by_id[key]["abweichler"] for key in ("v1", "v2", "v3")], [0, None, None])
+        self.assertEqual(by_id["v2"]["vote"]["total"], {"yes": 1, "no": 1, "abstain": 0, "absent": None})
+
+    # Value: protects=a vote cited under two TOPs takes its links and Drucksachetyp from the lowest item_index, where derive.iter_report_votes first meets it; fails_when=the adapter picks another agenda_item_votes row (insertion or id order); why_new=A4 slice 1 (outside voice O3); seam=none
+    def test_a_vote_under_two_tops_takes_the_links_of_the_lowest_item_index(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/1"]}
+        first, second = self._item(1, [vote]), self._item(2, [vote])
+        first["api"] = {"linked_drucksachen": [{"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/2100001.pdf", "drucksachetyp": "Antrag"}]}
+        second["xml_drucksachen"] = [{"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/2100001-xml.pdf"}]
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [first, second])])
+        self.assertEqual(rows[0]["document_links"], {"21/1": ("https://dserver.bundestag.de/btd/21/000/2100001.pdf", "bundestag-dip")})
+
+    # Value: protects=a vote without Drucksachen renders without a link list and with the dash type; fails_when=a vote with no vote_documents rows drops out of the archive or crashes the adapter; why_new=4 votes on the A3 store have none (outside voice O9); seam=none
+    def test_a_vote_without_drucksachen_stays_in_the_archive(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "Ohne Drucksache"}
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        self.assertEqual((rows[0]["vote"]["document_numbers"], rows[0]["procedure_type"]), ([], "–"))
+        self.assertNotIn("Drucksachen <span", build_dip_pulse_site.render_votes_archive_index(rows))
+
+    # Value: protects=with no store file the archive is empty, as the Fakten pages are, rather than a crash; fails_when=votes_archive_rows opens a missing file (sqlite creates it, or mode=ro raises); why_new=A4 slice 1 reads the store; seam=none
+    def test_no_store_file_gives_an_empty_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "missing.sqlite"
+            self.assertEqual(build_dip_pulse_site.votes_archive_rows(path), [])
+            self.assertFalse(path.exists())
 
     # Value: protects=the archive badge never reads a partial roll call as a count; fails_when=a gap counts as zero or the badge ignores completeness; why_new=badge is new (plan Slice 1); seam=none
     def test_the_abweichler_badge_shows_only_complete_counts(self) -> None:
@@ -2968,7 +3031,7 @@ class VotesArchiveTests(unittest.TestCase):
             {"name": "D", "faction": "AfD", "vote": "yes"}, {"name": "E", "faction": "AfD", "vote": "no"}]}
         # Value: protects=a vote whose fraction rows leave Stimmen of its total unaccounted for (a Fraktion missing from rows and Einzelstimmen) gets no archive count; fails_when=the count rests on the groups present and reads 0; why_new=B4 review edge 11 (ship run 3, 2026-10-23); seam=none; no_claim=217 of 217 reference votes cover their total
         uncovered = {**unanimous, "id": "v6", "title": "Y", "total": {**total, "no": 40}}
-        rows = build_dip_pulse_site.collect_votes_archive(
+        rows = _site_store_fixture.archive_rows(
             [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted, uncovered])])]
         )
         by_id = {row["vote"]["id"]: row for row in rows}
@@ -2992,7 +3055,7 @@ class VotesArchiveTests(unittest.TestCase):
         other = next(item for item in report["agenda_items"] if item is not voted)
         other["votes"] = list(voted["votes"])
         report["sitting_votes"] = [{**voted["votes"][0], "id": 99, "title": "Ohne TOP"}]
-        rows = build_dip_pulse_site.collect_votes_archive([{"report": report, "page_path": Path("plenarprotokoll-x.html")}])
+        rows = _site_store_fixture.archive_rows([{"report": report, "page_path": Path("plenarprotokoll-x.html")}])
         page = pulse_html.render_html(report)
         self.assertEqual(len(rows), 2)
         for row in rows:
@@ -3001,14 +3064,17 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertEqual(page.count('class="vote-panel" id="vote-'), 2)
 
     def test_collect_ignores_entries_with_no_report(self) -> None:
-        rows = build_dip_pulse_site.collect_votes_archive([{"page_path": Path("x.html")}, {"report": None}])
+        rows = _site_store_fixture.archive_rows([{"page_path": Path("x.html")}, {"report": None}])
         self.assertEqual(rows, [])
 
-    def test_collect_leaves_href_none_when_page_path_is_missing(self) -> None:
-        vote = {"id": "v1", "date": "2026-06-10", "title": "T"}
-        entry = {"report": {"protocol": {"datum": "2026-06-10"}, "agenda_items": [self._item(1, [vote])]}}
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
-        self.assertIsNone(rows[0]["href"])
+    # Value: protects=an archive link lands on the dossier the build writes for the vote's sitting; fails_when=the href is built from another slug than report_paths (the dossier writer's) or from a render-time page_path; why_new=the store-built archive has no page_path, the href comes from protocols.document_number; seam=none
+    def test_href_names_the_dossier_of_the_votes_sitting_by_its_protocol_number(self) -> None:
+        vote = {"id": "v 1", "date": "2026-06-10", "title": "T"}
+        entry = {"report": {"protocol": {"datum": "2026-06-10", "dokumentnummer": "21/82"}, "agenda_items": [self._item(1, [vote])]},
+                 "page_path": Path("anything-else.html")}
+        rows = _site_store_fixture.archive_rows([entry])
+        _, page_path, _ = build_dip_pulse_site.report_paths(Path("out"), "21/82")
+        self.assertEqual(rows[0]["href"], f"../protocols/{page_path.name}#vote-v_20_1")
 
     def test_collect_sorts_same_date_ties_by_id_descending(self) -> None:
         entry = self._entry(
@@ -3019,7 +3085,7 @@ class VotesArchiveTests(unittest.TestCase):
                 self._item(2, [{"id": "9", "date": "2026-06-10", "title": "B"}]),
             ],
         )
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         self.assertEqual([row["vote"]["id"] for row in rows], ["10", "9"])
 
     def test_collect_sorts_same_date_non_numeric_ids_lexically_descending(self) -> None:
@@ -3035,7 +3101,7 @@ class VotesArchiveTests(unittest.TestCase):
                 self._item(2, [{"id": "b-legacy", "date": "2026-06-10", "title": "B"}]),
             ],
         )
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         self.assertEqual([row["vote"]["id"] for row in rows], ["b-legacy", "a-legacy"])
 
     def test_render_index_shows_empty_state_message_when_there_are_no_rows(self) -> None:
@@ -3050,7 +3116,7 @@ class VotesArchiveTests(unittest.TestCase):
         may = self._entry(
             "2026-05-01", "21/80", [self._item(1, [{"id": "v-may", "date": "2026-05-01", "title": "Mai"}])]
         )
-        rows = build_dip_pulse_site.collect_votes_archive([may, june])
+        rows = _site_store_fixture.archive_rows([may, june])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertEqual(markup.count('class="archive-month"'), 2)
         self.assertIn("Juni 2026", markup)
@@ -3067,7 +3133,7 @@ class VotesArchiveTests(unittest.TestCase):
                 self._item(2, [{"id": "v2", "date": "2026-06-05", "title": "B"}]),
             ],
         )
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertEqual(markup.count('class="archive-month"'), 1)
         self.assertEqual(markup.count('class="archive-row"'), 2)
@@ -3083,7 +3149,7 @@ class VotesArchiveTests(unittest.TestCase):
             ],
         }
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('data-fraktion-chip="SPD"', markup)
         self.assertIn('data-fraktion-chip="CDU/CSU"', markup)
@@ -3107,7 +3173,7 @@ class VotesArchiveTests(unittest.TestCase):
             ],
         }
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         chip_order = re.findall(r'data-fraktion-chip="([^"]+)"', markup)
         self.assertEqual(chip_order, ["AfD", "SPD", "fraktionslos"])
@@ -3115,7 +3181,7 @@ class VotesArchiveTests(unittest.TestCase):
     def test_render_index_omits_chip_section_when_no_fraction_positions_exist(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T"}
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertNotIn('class="archive-filters"', markup)
         # A concrete chip button has data-fraktion-chip="<name>"; the embedded
@@ -3140,7 +3206,7 @@ class VotesArchiveTests(unittest.TestCase):
             "api": {},
         }
         entry = self._entry("2026-06-10", "21/82", [item])
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([entry])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('vote-result-accepted vote-result-derived"', markup)
         self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
@@ -3167,7 +3233,7 @@ class VotesArchiveTests(unittest.TestCase):
             "fractions": [{"name": "SPD", "counts": {"yes": 10, "no": 1, "abstain": 0}}],
         }
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
-        markup = build_dip_pulse_site.render_votes_archive_index(build_dip_pulse_site.collect_votes_archive([entry]))
+        markup = build_dip_pulse_site.render_votes_archive_index(_site_store_fixture.archive_rows([entry]))
         self.assertIn('aria-pressed="false" data-fraktion-chip="SPD"', markup)
         self.assertIn('<h2 class="archive-month" data-month="Juni 2026">', markup)
         self.assertIn('<article class="archive-row" data-row data-month="Juni 2026"', markup)
@@ -3215,8 +3281,9 @@ class VotesArchiveTests(unittest.TestCase):
 
     def test_render_index_title_is_plain_text_when_href_is_missing(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "Ohne Link"}
-        entry = {"report": {"protocol": {"datum": "2026-06-10"}, "agenda_items": [self._item(1, [vote])]}}
-        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        # A vote whose protocol row is gone (votes.protocol_id is ON DELETE SET NULL) has no dossier to link.
+        rows[0]["href"] = None
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn("Ohne Link", markup)
         self.assertNotRegex(markup, r'<a href="[^"]*">Ohne Link</a>')
