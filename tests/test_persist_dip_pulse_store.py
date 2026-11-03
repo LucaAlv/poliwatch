@@ -434,8 +434,8 @@ class PartyMigrationTests(unittest.TestCase):
         for name, yes in (("CDU/CSU", 5), ("['CDU/CSU']", 3), ("['DIE LINKE']", 2)):
             conn.execute(
                 """
-                INSERT INTO vote_fractions(vote_id, party_id, yes_count, total_count)
-                VALUES ('v1', ?, ?, ?)
+                INSERT INTO vote_fractions(vote_id, party_id, yes_count, total_count, rank)
+                VALUES ('v1', ?, ?, ?, 1)
                 """,
                 (ids[name], yes, yes),
             )
@@ -534,13 +534,13 @@ class PartyMigrationTests(unittest.TestCase):
                 # Canonical row: a lone "yes" (leading_vote "yes"). Duplicate:
                 # ten "no" votes (leading_vote "no"). Merged majority is "no".
                 conn.execute(
-                    "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote) "
-                    "VALUES ('v1', ?, 1, 0, 1, 'yes')",
+                    "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote, rank) "
+                    "VALUES ('v1', ?, 1, 0, 1, 'yes', 2)",
                     (canonical_id,),
                 )
                 conn.execute(
-                    "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote) "
-                    "VALUES ('v1', ?, 0, 10, 10, 'no')",
+                    "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote, rank) "
+                    "VALUES ('v1', ?, 0, 10, 10, 'no', 1)",
                     (duplicate_id,),
                 )
                 conn.commit()
@@ -548,9 +548,10 @@ class PartyMigrationTests(unittest.TestCase):
                 pulse_store.initialize(conn)
 
                 row = conn.execute(
-                    "SELECT yes_count, no_count, total_count, leading_vote FROM vote_fractions WHERE vote_id = 'v1'"
+                    "SELECT yes_count, no_count, total_count, leading_vote, rank FROM vote_fractions WHERE vote_id = 'v1'"
                 ).fetchone()
-                self.assertEqual(dict(row), {"yes_count": 1, "no_count": 10, "total_count": 11, "leading_vote": "no"})
+                # The merged row keeps the place of the first of the two (the duplicate's rank 1).
+                self.assertEqual(dict(row), {"yes_count": 1, "no_count": 10, "total_count": 11, "leading_vote": "no", "rank": 1})
             finally:
                 conn.close()
 
@@ -708,6 +709,69 @@ class VoteResultColumnsTests(unittest.TestCase):
                 pulse_store.persist_report(conn, report)
                 row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
                 self.assertIsNone(row[0])
+            finally:
+                conn.close()
+
+
+class ArchiveColumnsTests(unittest.TestCase):
+    """Schema 10 (A4 slice 1): the order and per-item urls the votes archive reads."""
+
+    # Value: protects=persist stores a vote's Drucksache order, its Fraktion order, each TOP's own url and order per source, and a missing total as NULL; fails_when=a rank follows insertion of a duplicate, an XML reference listed twice keeps its first url (document_source_links takes the last), a DIP link its last, or a missing count becomes 0 again; why_new=A4 slice 1; seam=none
+    def test_ranks_urls_and_null_totals(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        item = report["agenda_items"][0]
+        vote = item["votes"][0]
+        vote["document_numbers"] = ["21/2", "21/1", "21/2"]
+        vote["total"] = {"yes": 3, "no": 0}
+        vote["fractions"] = [
+            {"name": "SPD", "counts": {"yes": 3}},
+            {"name": "AfD", "counts": {"no": 0}},
+            {"name": "Gruppe BSW", "counts": {}},
+            {"name": "BSW (Gruppe)", "counts": {}},
+        ]
+        item["xml_drucksachen"] = [
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/a.pdf"},
+            {"dokumentnummer": "21/3"},
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/000/b.pdf"},
+            {"dokumentnummer": "21/1"},
+        ]
+        item.setdefault("api", {})["linked_drucksachen"] = [
+            {"dokumentnummer": "21/2", "url": "https://dserver.bundestag.de/btd/21/000/c.pdf"},
+            {"dokumentnummer": "21/2", "url": "https://dserver.bundestag.de/btd/21/000/d.pdf"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                vote_id = str(vote["id"])
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT yes_count, no_count, abstain_count, absent_count FROM votes WHERE id = ?", (vote_id,)
+                    ).fetchone()[:],
+                    (3, 0, None, None),
+                )
+                self.assertEqual(
+                    [tuple(row) for row in conn.execute(
+                        "SELECT d.document_number, vd.rank FROM vote_documents vd JOIN documents d ON d.id = vd.document_id "
+                        "WHERE vd.vote_id = ? ORDER BY vd.rank", (vote_id,))],
+                    [("21/2", 1), ("21/1", 2)],
+                )
+                self.assertEqual(
+                    [tuple(row) for row in conn.execute(
+                        "SELECT pa.name, vf.rank FROM vote_fractions vf JOIN parties pa ON pa.id = vf.party_id "
+                        "WHERE vf.vote_id = ? ORDER BY vf.rank", (vote_id,))],
+                    [("SPD", 1), ("AfD", 2), ("Gruppe BSW", 3)],
+                )
+                self.assertEqual(
+                    [tuple(row) for row in conn.execute(
+                        "SELECT aid.source, d.document_number, aid.url, aid.rank FROM agenda_item_documents aid "
+                        "JOIN documents d ON d.id = aid.document_id ORDER BY aid.source, aid.rank")],
+                    [
+                        ("api", "21/2", "https://dserver.bundestag.de/btd/21/000/c.pdf", 1),
+                        ("xml", "21/1", "https://dserver.bundestag.de/btd/21/000/b.pdf", 1),
+                        ("xml", "21/3", None, 2),
+                    ],
+                )
             finally:
                 conn.close()
 

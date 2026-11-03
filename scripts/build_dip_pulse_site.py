@@ -3265,7 +3265,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 13
+EXPORT_FORMAT = 14
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3528,6 +3528,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "       ABS(v.yes_count - v.no_count) AS differenz\n"
             "FROM votes v\n"
             "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
+            "WHERE v.yes_count IS NOT NULL AND v.no_count IS NOT NULL\n"
             "ORDER BY differenz ASC, v.date DESC, v.id\n"
             "LIMIT 5;"
         ),
@@ -3544,7 +3545,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
-            "Eine Abstimmung ganz ohne Protokoll fehlt. Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
+            "Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine Ja- oder Nein-Gesamtzahl nennt "
+            "(votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
             "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
         ),
     },

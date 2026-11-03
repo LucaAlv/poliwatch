@@ -127,8 +127,8 @@ class StaleCachedReportTests(unittest.TestCase):
                 conn.execute("INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now))
                 for party_id, yes, no in ((keeper, 6, 0), (duplicate, 0, 6)):
                     conn.execute(
-                        "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote) "
-                        "VALUES ('v1', ?, ?, ?, ?, ?)",
+                        "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote, rank) "
+                        "VALUES ('v1', ?, ?, ?, ?, ?, 1)",
                         (party_id, yes, no, yes + no, "yes" if yes else "no"),
                     )
                 conn.commit()
