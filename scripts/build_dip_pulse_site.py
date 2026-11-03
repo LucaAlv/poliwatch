@@ -71,7 +71,6 @@ import contextlib
 import copy
 import csv
 import gzip
-import glob
 import hashlib
 import io
 import json
@@ -80,7 +79,6 @@ import shlex
 import re
 import shutil
 import sqlite3
-import subprocess
 import stat as stat_module
 import sys
 import tempfile
@@ -129,12 +127,10 @@ from stable_ids import (
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
     ENRICHMENT_REGISTRY,
-    REGISTRY,
     EnrichmentSelection,
     FeatureError,
     Selection,
     publication_selection,
-    resolve,
 )
 from features import loader as feature_loader
 from features import votes as votes_feature
@@ -178,9 +174,6 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
     "fact_sources": "Belege je Fakt: Reden, Tagesordnungspunkte, Abstimmungen, Sitzungen oder Drucksachen, aus denen der Wert stammt.",
 }
-
-ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
-
 
 # ---------------------------------------------------------------------------
 # Document numbers, slugs and sort keys
@@ -666,17 +659,43 @@ def backfill_scope_lines(
 COVERAGE_EXCLUSIONS_FILENAME = "coverage-exclusions.json"
 
 
+class CoverageExclusionsError(Exception):
+    """The exclusion record (D2) cannot be read. ``main`` reads it before any
+    work and prints this instead of a traceback; the record is hand-editable."""
+
+
+def coverage_exclusions_readable(output_dir: Path) -> bool:
+    """False, after printing the error line, when ``main`` must stop because the
+    exclusion record cannot be read; checked once before a path that reads it."""
+    try:
+        load_coverage_exclusions(output_dir)
+    except CoverageExclusionsError as exc:
+        print(f"error: {exc}. Fix: repair the file, then re-run.", file=sys.stderr)
+        return False
+    return True
+
+
 def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     """The reviewed sittings of ``--exclude-document-number`` kept out of the
-    store (D2), oldest first; empty when the record does not exist."""
+    store (D2), oldest first; empty when the record does not exist. Raises
+    CoverageExclusionsError for a record that is not ``{"exclusions": [...]}``
+    with a ``document_number`` on every entry."""
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
+    shape = 'it must read {"exclusions": [{"document_number": "21/7", ...}, ...]}'
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
+    # ValueError covers JSONDecodeError, UnicodeDecodeError and an integer past the digit limit.
+    except (OSError, ValueError, RecursionError) as exc:
+        raise CoverageExclusionsError(f"{path} cannot be read ({exc}); {shape}") from exc
     entries = payload.get("exclusions") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
-        raise RuntimeError(f"{path} has no exclusions list")
+        raise CoverageExclusionsError(f"{path} has no exclusions list; {shape}")
+    for position, entry in enumerate(entries, 1):
+        number = entry.get("document_number") if isinstance(entry, dict) else None
+        if not isinstance(number, str) or not number.strip():
+            raise CoverageExclusionsError(f"{path}: exclusion {position} has no document_number; {shape}")
     return entries
 
 
@@ -773,7 +792,8 @@ def update_coverage_exclusions(
     if entries == before:
         return
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
-    ordered = sorted(entries.values(), key=lambda entry: (entry["date"], entry["document_number"]))
+    # A hand-written entry may lack its date.
+    ordered = sorted(entries.values(), key=lambda entry: (str(entry.get("date") or ""), entry["document_number"]))
     dip.write_text_atomic(path, json.dumps({"exclusions": ordered}, ensure_ascii=False, indent=2) + "\n")
 
 
@@ -5326,7 +5346,9 @@ def _daten_page_styles() -> str:
     .summary-band div { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:13px 14px; }
     .summary-band strong { display:block; margin-top:4px; font-size:26px; font-variant-numeric:tabular-nums; }
     .tile-sub { font-size:12px; margin-top:2px; }
-    .scope-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    .scope-line, .stammdaten-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    /* The 64-hex sha256 stays inline in the sentence but may break anywhere at 375px. */
+    .stammdaten-line code { overflow-wrap:anywhere; }
     .table-nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
     .table-nav a {
       display:inline-flex;
@@ -5683,7 +5705,7 @@ def render_landing_page(
         <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
       </section>
     </main>
-    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert. {pulse_html.render_legal_links(depth=0)}</footer>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -6494,7 +6516,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
       <p>{pulse_html.esc(message)}</p>
     </header>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9163,6 +9185,8 @@ def abgeordnete_styles() -> str:
       cursor:pointer;
     }
     .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
+    :root[data-theme="dark"] :is(.filter-bar input[type="search"], .party-chip) { background:var(--surface-2); color:var(--ink); }
+    :root[data-theme="dark"] .party-chip.is-active { background:var(--blue-soft); color:var(--blue); }
     .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
     .redner-group { margin-top:32px; }
     .redner-group h2 { margin:0 0 6px; font-size:20px; }
@@ -9187,6 +9211,9 @@ def abgeordnete_styles() -> str:
     }
     .vote-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:10px; padding-bottom:10px; border-bottom:1px solid #eef1f5; font-size:13px; }
     .vote-row:last-child { border-bottom:0; padding-bottom:0; }
+    /* A one-word Gesetz title ("Asylverfahrensbeschleunigungsgesetz") would
+       otherwise push the vote column past the viewport. */
+    .vote-row > span:not(.badge) { overflow-wrap:anywhere; }
     .vote-row time { color:var(--muted); }
     .vote-badge { align-self:start; }
     .vote-badge.yes { border-color:#89c5ba; background:#e7f6f3; color:#0f5f59; }
@@ -10710,14 +10737,14 @@ def render_overview(
                 <div>
                   <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
-                  <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
+                  <p>{pulse_html.esc(protocol.get('datum'))}{pulse_html.distributed_phrase(protocol)}</p>
                 </div>
                 <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Öffnen</a>
               </div>
               <div class="metrics">
                 <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
                 <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-                <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+                <div><span>Drucksachen</span><strong>{pulse_html.sitting_document_count(items)}</strong></div>
                 <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
@@ -11009,7 +11036,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -11550,7 +11577,7 @@ def render_catalog_page(
     </section>
     <p class="no-results" data-no-results hidden>Keine Sitzungen entsprechen den Filterkriterien.</p>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {render_catalog_script()}
@@ -11784,10 +11811,11 @@ def _legal_page(title: str, lead: str, body: str, features: Selection | None) ->
 
 def render_impressum_page(operator: dict[str, Any] | None, features: Selection | None = None) -> str:
     sections = (
-        ("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV",
+        # A no-break space after each "§" keeps the sign on the line of its number.
+        ("Angaben gemäß §\u00a05 DDG und §\u00a018 Abs. 1 MStV",
          f"<p>{_operator_address(operator)}</p>"
          f"<p>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
-        ("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV",
+        ("Verantwortlich für den Inhalt nach §\u00a018 Abs. 2 MStV",
          f"<p>{_operator_value(operator, 'name')}, Anschrift wie oben.</p>"),
         ("Fehler melden und Kontakt",
          "<p>Fehler in den Daten und auf der Website werden öffentlich über GitHub Issues gemeldet. "
@@ -12966,56 +12994,6 @@ def _split_feature_tokens(value: Any) -> list[str]:
     raise FeatureError(f"Ungültige Baustein-Konfiguration: {value!r}")
 
 
-# Apply "+id" / "-id" / "id" tokens to the current set. An unknown id is fed
-# through resolve() purely so it raises the standard FeatureError message.
-def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]) -> None:
-    for token in tokens:
-        operation = token[:1] if token[:1] in {"+", "-"} else "+"
-        feature_id = token[1:] if token[:1] in {"+", "-"} else token
-        if feature_id not in REGISTRY:
-            resolve(base=current, enable=(feature_id,))
-        if operation == "+":
-            current.add(feature_id)
-            vetoes.discard(feature_id)
-        else:
-            current.discard(feature_id)
-            vetoes.add(feature_id)
-
-
-# Load enrichment config plus deprecated feature-selection shapes.
-def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise FeatureError(f"Baustein-Datei {path} konnte nicht gelesen werden: {exc}") from exc
-    if isinstance(payload, list):
-        replacement = _split_feature_tokens(payload)
-        current.clear()
-        vetoes.clear()
-        _apply_feature_tokens(current, replacement, vetoes)
-        return
-    if not isinstance(payload, dict):
-        raise FeatureError(f"Baustein-Datei {path} muss ein Objekt oder eine Liste enthalten.")
-    if "features" in payload:
-        replacement = _split_feature_tokens(payload["features"])
-        current.clear()
-        vetoes.clear()
-        if replacement == ["all"]:
-            current.update(REGISTRY)
-        else:
-            _apply_feature_tokens(current, replacement, vetoes)
-    _apply_feature_tokens(current, [f"+{item.lstrip('+')}" for item in _split_feature_tokens(payload.get("enable"))], vetoes)
-    _apply_feature_tokens(current, [f"-{item.lstrip('-')}" for item in _split_feature_tokens(payload.get("disable"))], vetoes)
-    for feature_id in _split_feature_tokens(payload.get("enrich")):
-        if feature_id == "all":
-            current.update(ENRICHMENT_IDS)
-        elif feature_id in ENRICHMENT_IDS:
-            current.add(feature_id)
-        else:
-            choices = ", ".join(sorted(ENRICHMENT_IDS))
-            raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
-
-
 # Enrichments an online update acquires unless an operator vetoes them. Votes
 # are here because a build that silently skips them records every sitting as
 # "not requested" and leaves the store without the newest roll calls.
@@ -14146,8 +14124,9 @@ def main() -> int:
     except OperatorFileError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-
     if getattr(args, "fetch_xml", False):
+        if not coverage_exclusions_readable(args.output_dir):
+            return 1
         output_dir = args.output_dir
         try:
             entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
@@ -14178,6 +14157,11 @@ def main() -> int:
         warn_deprecated_feature_configuration(args, root=root)
         print_effective_config(enrichments, args)
         return 0
+    # Every path below reads the hand-editable exclusion record (D2); a typo in
+    # it stops here, naming the file and its shape. The listing and
+    # --explain-config modes above do not read it, so it does not block them.
+    if not coverage_exclusions_readable(args.output_dir):
+        return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
     features = publication_selection()

@@ -421,7 +421,8 @@ class PageTests(unittest.TestCase):
             with self.subTest(label):
                 prefix = "../" * depth
                 footer = markup.split("<footer")[-1]
-                self.assertIn(f'<span class="legal-links"><a href="{prefix}impressum.html">Impressum</a>', footer)
+                self.assertIn(f'<span class="legal-links">&middot; <a href="{prefix}impressum.html">Impressum</a>', footer)
+                self.assertNotRegex(footer, r"\.\s*<span class=\"legal-links\">")
                 self.assertIn(f'<a href="{prefix}datenschutz.html">Datenschutz</a>', footer)
 
     def setUp(self) -> None:

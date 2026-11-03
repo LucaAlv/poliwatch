@@ -126,17 +126,21 @@ class ReadZipTests(unittest.TestCase):
                     path = self.zip(members)
                 with self.assertRaisesRegex(derive.StammdatenError, message):
                     stammdaten.read_zip(path)
-        with self.subTest("corrupt deflate stream"):
-            path = self.tmp / "MdB-Stammdaten.zip"
-            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr("MDB_STAMMDATEN.XML", XML)
-            data = bytearray(path.read_bytes())
-            # Overwrite the start of the compressed stream, after the 30-byte local header and the name.
-            start = 30 + len("MDB_STAMMDATEN.XML")
-            data[start:start + 16] = b"\xff" * 16
-            path.write_bytes(bytes(data))
-            with self.assertRaisesRegex(derive.StammdatenError, "not a zip file"):
-                stammdaten.read_zip(path)
+        # The LZMA stream starts after zipfile's 4-byte header and 5 property bytes.
+        for label, method, skip in (("corrupt deflate stream", zipfile.ZIP_DEFLATED, 0),
+                                    ("corrupt lzma stream", zipfile.ZIP_LZMA, 9),
+                                    ("corrupt bzip2 stream", zipfile.ZIP_BZIP2, 0)):
+            with self.subTest(label):
+                path = self.tmp / "MdB-Stammdaten.zip"
+                with zipfile.ZipFile(path, "w", method) as archive:
+                    archive.writestr("MDB_STAMMDATEN.XML", XML)
+                data = bytearray(path.read_bytes())
+                # Overwrite the start of the compressed stream, after the 30-byte local header and the name.
+                start = 30 + len("MDB_STAMMDATEN.XML") + skip
+                data[start:start + 16] = b"\xff" * 16
+                path.write_bytes(bytes(data))
+                with self.assertRaisesRegex(derive.StammdatenError, "not a zip file"):
+                    stammdaten.read_zip(path)
 
     def test_an_oversized_xml_member_is_refused_before_it_is_read(self) -> None:
         path = self.zip({"MDB_STAMMDATEN.XML": XML})

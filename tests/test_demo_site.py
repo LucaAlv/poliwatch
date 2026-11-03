@@ -73,6 +73,19 @@ class LegalPagesTests(unittest.TestCase):
         for depth_one in ("protocols/plenarprotokoll-21-84.html", "bills/index.html", "abgeordnete/index.html", "votes/index.html", "fakt/index.html"):
             self.assertIn(depth_one, self.pages)
 
+    # Value: protects=the legal links are set off from whatever precedes them in a footer, and the Impressum headings keep "§" on the line of its number; fails_when=a footer reads "Quellen und Methode Impressum · Datenschutz" again, or a heading wraps between "§" and "18"; why_new=TODOS.md Impressum/licence ship findings item 9 and review findings item 13; seam=build_demo; no_claim=layout at a given width
+    def test_the_legal_links_have_a_leading_separator_and_paragraph_signs_do_not_wrap(self) -> None:
+        for relative, markup in self.pages.items():
+            with self.subTest(page=relative):
+                (span,) = LEGAL_SPAN_RE.findall(markup)
+                self.assertTrue(span.startswith('<span class="legal-links">&middot; <a '), span)
+                # The separator follows a word or a link, never a full stop (". · Impressum").
+                self.assertNotRegex(markup, r"\.\s*<span class=\"legal-links\">")
+        impressum = self.pages["impressum.html"]
+        self.assertIn("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV", impressum)
+        self.assertIn("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV", impressum)
+        self.assertNotRegex(impressum, r"<h2>[^<]*§ ")
+
     # Value: protects=without an operator file each operator field renders one marked placeholder kind per page, and only the two legal pages carry markers; fails_when=a missing value renders blank or unmarked, a field has no marker, or a marker leaks onto another page; why_new=eng review D2 A; seam=build_demo; no_claim=the deploy gate on markers (TODOS hosting item)
     def test_without_an_operator_file_every_field_is_a_marked_placeholder(self) -> None:
         def fields(markup: str) -> set[str]:

@@ -210,7 +210,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 Items 9–20 come from the pre-landing review of 305cfee (2026-11-02: specialists, red team, adversarial pass; Codex still owed). A scan of the live file (Stand 29.04.2026, 4,614 MdB) found 0 zero-length memberships, 0 memberships outside their Mandat and 0 same-start ties, and the seat rows (2,914 / 171) were identical under four `PYTHONHASHSEED` values, so none of these moves a figure today:
 
 9. **`_mandate_stretches` accepts inverted, zero-length and seed-dependent stretches.** Two reviewers asked for this before merge. Rule 2 clips only the endpoints, so a membership wholly before `MDBWP_VON` or after `MDBWP_BIS` gives `valid_until < valid_from`; `party_seats` then emits `seats=-1` (`if count:` is true), and `check_seat_totals` cannot see it. Separately, `records` is a set sorted by start date only, so a one-day membership (`MDBINS_VON == MDBINS_BIS`) on a handover day ties with the next membership: under `PYTHONHASHSEED` 1 and 3 it gives a zero-length row that collides on the primary key with the next row; other seeds raise "two memberships on the same day". Such a file passes `seat_rows`, so `refresh` caches it, and every later rebuild fails at `CHECK (seats > 0)` or the primary key until the cache is deleted by hand. Fix: sort by `(von, record)`, raise StammdatenError for `until is not None and until <= von` after the clip, and refuse `seats <= 0` in `party_seats`; add both shapes to `tests/test_seat_counts.py`. The ship's adversarial pass (2026-11-02) adds: `seat_rows` is the gate `refresh` uses, but it checks less than `persist_seat_counts` enforces (`seats > 0`, the primary keys), so such a file is cached and every later rebuild dies with a raw `sqlite3.IntegrityError` rather than DatabaseRebuildError; make `seat_rows` assert positive seats, `valid_until > valid_from` and key uniqueness.
-10. ~~**`read_zip` can raise exceptions other than StammdatenError.** `int(VERSION)` / `datetime.fromtimestamp` raise OverflowError or ValueError for 20+ digits or out-of-range values; `str.isdigit()` accepts non-ASCII digits such as "²", which `int()` then rejects (also `WP`); a corrupt deflate stream raises `zlib.error` and an encrypted member RuntimeError, neither caught by `_xml_bytes`. Then `refresh` crashes instead of keeping the cached file, a bit-rotted cache is never self-healed, and `rebuild_seat_counts` escapes with a traceback instead of DatabaseRebuildError. Fix: make `read_zip` raise only StammdatenError (ASCII-digit checks, wrap the conversions, widen the `_xml_bytes` except).~~ **Done 2026-11-02** in the /gstack-ship run: ASCII-digit checks for VERSION and WP, the timestamp conversion wrapped, `_xml_bytes` also catches `zlib.error`, RuntimeError and NotImplementedError, and the parse also catches LookupError (an unknown declared encoding, found by the ship's adversarial pass); `test_stammdaten.py` has the rows. **Still open:** a corrupt ZIP_LZMA member raises `lzma.LZMAError`, which escapes (the second adversarial pass found it; the real file is deflate); add it to the `_xml_bytes` tuple with a test row (an encrypted member cannot be written by `zipfile`, so that branch has no test).
+10. ~~**`read_zip` can raise exceptions other than StammdatenError.** `int(VERSION)` / `datetime.fromtimestamp` raise OverflowError or ValueError for 20+ digits or out-of-range values; `str.isdigit()` accepts non-ASCII digits such as "²", which `int()` then rejects (also `WP`); a corrupt deflate stream raises `zlib.error` and an encrypted member RuntimeError, neither caught by `_xml_bytes`. Then `refresh` crashes instead of keeping the cached file, a bit-rotted cache is never self-healed, and `rebuild_seat_counts` escapes with a traceback instead of DatabaseRebuildError. Fix: make `read_zip` raise only StammdatenError (ASCII-digit checks, wrap the conversions, widen the `_xml_bytes` except).~~ **Done 2026-11-02** in the /gstack-ship run: ASCII-digit checks for VERSION and WP, the timestamp conversion wrapped, `_xml_bytes` also catches `zlib.error`, RuntimeError and NotImplementedError, and the parse also catches LookupError (an unknown declared encoding, found by the ship's adversarial pass); `test_stammdaten.py` has the rows. ~~**Still open:** a corrupt ZIP_LZMA member raises `lzma.LZMAError`, which escapes.~~ **Done 2026-11-03:** `_xml_bytes` also catches `lzma.LZMAError`; `test_stammdaten.py` has corrupt LZMA and bzip2 rows (an encrypted member cannot be written by `zipfile`, so that branch has no test).
 11. **`stammdaten.refresh` runs outside `registry.writer_lock`.** Two concurrent online builds can race: the stale-temp sweep unlinks the other build's in-flight temp file (a spurious warning, no corruption), and `read_zip` reads the file twice (parse, then `hashlib.sha256(path.read_bytes())`), so a replace landing between the reads stores a sha256 that names other bytes than the seat rows came from. Fix: hash and parse one buffer; take the writer lock around `refresh` or drop the sweep.
 12. **`log_seat_crosscheck` can fail the build.** Its docstring says it never does, but only `sqlite3.Error` is caught; an OSError from `path.unlink`, `path.parent.mkdir` or `dip.write_text_atomic` (full disk, permissions) leaves `main()` after the store swap and before the site and export. Fix: catch OSError around the report write and unlink and print a note.
 13. **WP 22 will freeze the seat data quietly.** `BUNDESTAG_SIZES` stops at WP 21. Once the file lists a WP 22 Mandat, `check_seat_totals` raises, `refresh` rejects every new file with a warning, and the seat tables stay at the last accepted Stand while the build passes. Decide whether that should fail the build, and add 22 when its size is known.
@@ -220,13 +220,13 @@ Items 9–20 come from the pre-landing review of 305cfee (2026-11-02: specialist
 17. **`ET.fromstring` parses the download without refusing a DOCTYPE.** No external entities are resolved; entity-expansion protection rests on the linked expat version. The source is a fixed https URL. Optional: refuse `<!DOCTYPE`/`<!ENTITY` in the first bytes (the real file has none).
 18. ~~**Test gaps.** `log_seat_crosscheck`'s "no seat count on the date", "no group totals" and unreadable-store branches have no test; nor does `refresh` with a corrupt cache plus a stale ETag sidecar (no If-None-Match may be sent).~~ **Done 2026-11-02** in the /gstack-ship run (coverage audit): both not-compared branches, the unreadable store and the corrupt cache with a stale or damaged sidecar have tests.
 19. **Cosmetics.** `tests/test_repersist.py` Value headers name `seam=repersist_cached_report` (the function is `repersist_cached_reports`); the two "MdB-Stammdaten nicht geladen" warnings word one condition differently and mix languages; four blank lines before `StammdatenError` in `derive.py`; `CROSSCHECK_NAME` sits ~90 lines below `CACHE_NAME`/`ETAG_NAME`; `log_seat_crosscheck` builds `by_cause` with a `not in` list scan (a dict per cause saves ~3 lines).
-20. **`_apply_features_file` and `ENRICHMENT_IDS` are dead code.** No caller reaches `_apply_features_file`, the only reader of `ENRICHMENT_IDS`, which still lists three enrichments without `mdb-stammdaten`. The live path (`ENRICHMENT_REGISTRY`) is right. Delete both.
+20. ~~**`_apply_features_file` and `ENRICHMENT_IDS` are dead code.** No caller reaches `_apply_features_file`, the only reader of `ENRICHMENT_IDS`, which still lists three enrichments without `mdb-stammdaten`. The live path (`ENRICHMENT_REGISTRY`) is right. Delete both.~~ **Done 2026-11-03:** both deleted, with `_apply_feature_tokens` (their only helper) and the imports only they used (`subprocess`, `features.resolve`, `features.REGISTRY`).
 21. **A rebuild without the cached zip empties seat tables the previous store held.** `rebuild_seat_counts` warns and returns when no cache exists, and the fresh staged store replaces the old one: r2's `sitzanteil_prozent` goes blank, the manifest's `stammdaten` becomes null, the Daten page says "Sitzzahlen: keine", and the exit code stays 0 (a lost `.OUTPUT.private`, a new machine, another `--database-path`). Documented as designed; the review's D1 (2026-11-02) kept it. Options if it bites: refuse the rebuild when the old store had a Stand row and no cache exists (naming `--enrich mdb-stammdaten`), or carry the three tables forward like `preserve_roster`, which risks stale beats fresh.
 22. **A corrupt cache gets the wrong warning.** When the cached zip exists but `read_zip` fails, `refresh` words `kept` as "no cached file: keine Sitzzahlen until a fetch succeeds". If the fetch then fails or the download fails the seat checks, the corrupt file stays and the next `rebuild_seat_counts` raises DatabaseRebuildError, so the build stops rather than running without seat counts. Fix: name the unreadable file in `kept`. (/gstack-ship state-machine review, 2026-11-02.)
 23. **A 304 can pin a cached file that newer rules reject.** On 304 `refresh` checks the cached file with `read_zip` only, not `seat_rows`; after a rule change (a new name in `STAMMDATEN_ZUSAMMENSCHLUESSE`, a `BUNDESTAG_SIZES` edit) every rebuild fails while the fetch keeps answering "unchanged" until the cache is deleted by hand. No current input reaches it. Fix: run `seat_rows` on a 304 and drop the ETag when it fails.
 24. **Untested `refresh` cells.** No cache with a failed cache write; a corrupt cache with an invalid download, a failed fetch, or a failed cache write. The state-machine review's matrix (2026-11-02) lists the expected rows.
 25. **`read_zip` parses the whole tree, up to three times per build.** `ET.fromstring` on up to `MAX_XML_BYTES` (64 MB; the real XML is 15.3 MB) costs roughly 10-20x in memory, and an `--enrich mdb-stammdaten` build parses the old cache, the download and the cache again in the rebuild. Fix: `iterparse` with element clearing, a lower cap, and a VERSION-only read of the old cache for the log line.
-26. **The Daten page's Stammdaten line may overflow at 375px.** The sha256 sits in a bare `<code>`; only `code.sha` gets `overflow-wrap:anywhere`, and `.stammdaten-line` is missing from the 14px rule beside `.coverage-line`. Derived from the CSS by the red team (2026-11-02); not rendered. Fix: use `class="sha"` and add the class to the 14px rule, then check at 375px and in dark mode.
+26. ~~**The Daten page's Stammdaten line may overflow at 375px.** The sha256 sits in a bare `<code>`; only `code.sha` gets `overflow-wrap:anywhere`, and `.stammdaten-line` is missing from the 14px rule beside `.coverage-line`. Derived from the CSS by the red team (2026-11-02); not rendered. Fix: use `class="sha"` and add the class to the 14px rule, then check at 375px and in dark mode.~~ **Done 2026-11-03:** `.stammdaten-line` joined the 14px rule and its `<code>` may break anywhere (kept inline rather than `class="sha"`, which is a block); a rendered Daten page overflowed by 148px at 375px before, 0 now.
 27. **Two stores in one `OUTPUT/data` share one cross-check report.** `crosscheck_path` is per private directory, not per store, so a second store there would overwrite (or unlink) the first store's `seat-crosscheck.json`. No current build uses two stores per OUTPUT.
 28. **`_download` follows redirects to any scheme or host.** urllib's default handler would follow a 30x from the fixed https URL to plain http or another host; the body is then checked only by the zip and seat rules. Optional: refuse a redirect off https://www.bundestag.de.
 29. **Cosmetics.** The `stammdaten.py` module docstring names only the cache and the reader, not `refresh`, `seat_rows` and `crosscheck`; the ETag sidecar writes a `fetched_at` nothing reads.
@@ -410,18 +410,6 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** A4 slice 1
 
-### A malformed coverage-exclusions.json ends a build with a traceback
-
-**What:** `load_coverage_exclusions` raises a bare `RuntimeError` ("… has no exclusions list") for a record that is not `{"exclusions": [...]}`. Its callers do not catch it: the offline cached-report load (`without_recorded_exclusions`), `repersist_cached_reports`, the online `listed` set, and the A4 slice 0 coverage check. The build ends with a traceback instead of an error line naming the file and the fix (checklist class 9).
-
-**Why:** The record is hand-editable. A typo there should stop the build with a message, not a stack trace.
-
-**Context:** Found in the A4 slice 0 checklist pass (2026-11-01). It predates slice 0, which added only one more caller. Catch it once in `main` beside the other cached-input errors, or raise `CachedReportError` with a fix.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** none
-
 ### A4 slice 0 review: deferred findings
 
 **What:** Non-blocking findings from the `/gstack-review` of A4 slice 0 (e184ccc, 2026-11-01; specialists, Claude adversarial, red team). None moves a figure or breaks a page.
@@ -444,18 +432,6 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Depends on:** A4 slice 0 merged
 
 ## Protokoll-Dossier
-
-### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
-
-**What:**
-- The card shows `validation_summary.xml_drucksache_count`. It is 0 on every WP 18/19 dossier and on 118 of 213 WP 20 dossiers, because the older XML does not tag Drucksachen. 19/29 shows 0 while its TOPs link 37 documents through DIP. Count the documents the page actually lists, or label the card as XML-only.
-- DIP has no `verteildatum` for any WP 18 sitting, and the header then ends in "verteilt am". Omit the phrase when the date is missing.
-
-**Why:** A3 Phase 4 spot checks (2026-10-29).
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
 
 ### Split or filter overview.html by Wahlperiode
 
@@ -625,16 +601,6 @@ Done when:
 **Priority:** P3
 **Depends on:** None
 
-### Rename `GRUPPE_DIE_LINKE_SINCE`
-
-**What:** `derive.GRUPPE_DIE_LINKE_SINCE` is 2023-12-06, the day the Fraktion Die Linke ended. The Gruppen were recognised on 2024-02-02, and in between the protocols label the 38 MdBs fraktionslos (C1 plan F4). The constant re-files no Rede in that interval and the Stammdaten agree, so no figure is wrong. But the name says the Gruppe existed from 2023-12-06. Rename it, e.g. `DIE_LINKE_FRAKTION_ENDED`, or date it 2024-02-02, and fix the comment. Done when the name and comment state what the date is.
-
-**Why:** Found in C1 step 1 (F4). Cosmetic.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Bundesrat members are ingested as MdBs (`_has_mdb_funktion` matches "MdBR")
 
 **What:** `_has_mdb_funktion` (`scripts/build_dip_pulse_site.py`) tests `"mdb" in value.lower()`, so DIP's `MdBR` and `Stellv. MdBR` count as MdB. Match the role exactly (`MdB`), and report roster rows, Abgeordnete list rows and pages old/new.
@@ -751,18 +717,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 **Depends on:** A3 merged
 
 ## Design
-
-### Dark mode and overflow defects found in the A3 spot checks
-
-**What:**
-- `overview.html`: the "Neueste API-Sitzung" card (`.latest`) hard-codes `background:white` (`scripts/build_dip_pulse_site.py`, three copies of the rule), so its light text is nearly invisible in dark mode.
-- Profile pages: single-word vote titles ("Asylverfahrensbeschleunigungsgesetz") push the vote column 24 px past a 1280 px viewport. Add `overflow-wrap:anywhere` or hyphenation.
-
-**Why:** A3 Phase 4 spot checks (2026-10-29). Both predate A3; WP 18 titles make the overflow common.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### DESIGN.md, tokens and a typeface decision via /design-consultation
 
@@ -936,7 +890,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 11. Smaller: `_read_codebook_inputs` normalises CRLF and `text_sha256` normalises again; the `os.chdir` in `test_relative_directories_reach_gh_as_absolute_paths_and_a_hash_is_refused` should be `contextlib.chdir`; README, `CONTEXT.md` and `docs/stable-ids.md` still name "export format 11" in sentences that stay true but cite an old number; the C1 seat-count work also plans export format 12, so whichever lands second takes 13.
 12. ~~Not run in the review: the reference-store export replay.~~ **Done 2026-11-01** in the /gstack-ship run: a clone of the reference store, repersisted with this branch, then offline builds. 290 protocols, every row count, vote, Rede character sum, Sprechrolle and Beitrag count and all 710 stored Fakten unchanged; the store's SQLite hash unchanged by the offline build; a format-12 export listing `LICENSE-DATA.md` with the default short string; a further build on identical inputs printed `export: reused data/exports (unchanged)`.
 13. Browser check (375px, dark, 2026-11-01, demo build plus both legal pages rendered from a dummy operator file): no horizontal scroll, dark tokens apply, links and the `cdn.example.net` host sentence correct, no operator marker left when the file is complete. Cosmetic only:
-    - the Impressum heading wraps between „§“ and „18“ (use `&nbsp;` after each `§`);
+    - ~~the Impressum heading wraps between „§“ and „18“ (use `&nbsp;` after each `§`);~~ done 2026-11-03 (a no-break space after each `§` in the Impressum headings);
     - the placeholder state reads „Angabe folgt., Anschrift wie oben.“ and „Angabe folgt..“ (doubled punctuation; only the deploy gate planned under "Site hosting plan" will refuse these pages: `validate_publication_directory` accepts them, since CI validates the placeholder demo build);
     - Datenschutz grammar breaks on some operator values: „erhält dessen Server“ after a feminine provider („die … GmbH“) and „etwa bei Berliner Beauftragte für …“ (needs a dative article/ending); rephrase so the inserted names stand alone („Server des Hosters“, „Aufsichtsbehörde: …“);
     - the footer Impressum/Datenschutz links are 14px tall, below the 24px touch-target minimum;
@@ -960,13 +914,13 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 6. `render_datenschutz_page`'s `except ValueError` is unreachable from the CLI (`resolve_data_base_url` refuses such bases first).
 7. `load_operator` echoes the e-mail value into its error message; once a scheduled build reads the operator file from a repository secret, a malformed address would print into public CI logs. Drop the value from the message before that workflow exists.
 8. The `--data-base-url` and `--data-issues-url` refusals run inside `run_data_pipeline`, after fetch, persist and facts; a typo wastes a whole online update. Resolve both at the top of `main()` beside `resolve_operator`.
-9. The footer of the legal pages and of the database-unavailable page reads „Quellen und Methode Impressum · Datenschutz“ with no separator before „Impressum“.
-10. Predates this branch: in dark mode the two hint boxes on `abgeordnete/index.html` („Der vollständige Abgeordnetenkader wurde nicht abgerufen“) show pale text on a pale background.
+9. ~~The footer of the legal pages and of the database-unavailable page reads „Quellen und Methode Impressum · Datenschutz“ with no separator before „Impressum“.~~ **Done 2026-11-03:** `render_legal_links` brings its own leading `&middot;`, so every footer (not only these) sets the links off.
+10. ~~Predates this branch: in dark mode the two hint boxes on `abgeordnete/index.html` („Der vollständige Abgeordnetenkader wurde nicht abgerufen“) show pale text on a pale background.~~ **Done 2026-11-03:** `.mp-notice` takes the dark warning colours.
 11. `resolve_data_base_url` still accepts bases a browser misreads or cannot use: a scheme without `//` (`javascript:x` becomes the prefix of every download href; `https:/host/`, `https:host`), a bad port (`https://h:abc/`, `https://h:99999/`), whitespace in the host, a leading space or tab before `//host` (it takes the relative-path branch, so the host and credential checks never run; browsers strip the whitespace), and a query or fragment (`https://h/?x` becomes `https://h/?x/`). Refuse any `scheme:` other than `https://`/`http://`, touch `parsed.port` inside the existing `try`, and refuse whitespace, control characters, `?` and `#`. Owner-supplied input; the datenschutz host sentence can disagree with the hrefs for some of these.
 12. The credential refusal promises not to echo the value, but the test rows only assert `ValueError`; assert the userinfo and host are absent from the message.
 13. The operator file: duplicate JSON keys pass silently (the last one wins, so a pasted-twice `email` changes the Impressum without an error; refuse them with an `object_pairs_hook`); there is no size or file-type check, so a FIFO, `/dev/zero` or a huge file hangs or exhausts memory (stat for a regular file, read at most about 64 KiB); the e-mail regex accepts a digit-only TLD and refuses IDN domains (punycode works).
 14. `previous_manifest_problem` refuses a previous `datenstand.json` that lacks any of `release_changes.SCHEMA_FIELDS`, although `release_changes.assemble` reads them with `.get()`. No release exists yet; decide before the second release whether such a manifest is refused or tolerated.
-15. Predates this branch: `publish_dip_pulse_data._read_json` catches `JSONDecodeError` but not a plain `ValueError`, so a `--previous-manifest` or `--changes` file with an integer past 4300 digits ends in a traceback (`load_operator` got the same fix on this branch).
+15. ~~Predates this branch: `publish_dip_pulse_data._read_json` catches `JSONDecodeError` but not a plain `ValueError`, so a `--previous-manifest` or `--changes` file with an integer past 4300 digits ends in a traceback (`load_operator` got the same fix on this branch).~~ **Done 2026-11-03:** `_read_json` and, for `--changes`, `release_changes.load_authored` catch `ValueError` and `RecursionError`; five refusal rows in `test_publish_dip_pulse_data.py`.
 16. `default_license_text` reads `LICENSE-DATA.md` a second time, apart from `_read_codebook_inputs`; an edit between the two reads gives `manifest["license"]` from another revision than the shipped copy. Derive the default from `CodebookInputs.license` (the consequence is item 3 of the section above).
 17. For the lawyer: the Datenschutz page states purposes but no legal basis (Art. 6 DSGVO) for the server logs, the e-mail contact or the people in the data; ADR 0003 open question 8 asks this only for localStorage.
 
@@ -1377,22 +1331,12 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 
 ### Store staging (batch 5): deferred review findings
 
-**What:** The /gstack-review of `fix/todo-batch-5-store-staging` (2026-11-01) found four things. (1) `export_distribution_data` creates `work_dir` with `work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)` (`build_dip_pulse_site.py:~4116`) instead of `person_registry.ensure_private_dir`. Three effects follow. A symlinked private directory still gets an empty `exports/` before the refusal. When an export runs before any writer lock, `.OUTPUT.private` ends at 0755, because `mode` applies only to the leaf and `ensure_private_dir` repairs only `0o022`. A dangling `exports` symlink reports a bare "File exists" instead of the symlink refusal. Fix: create it through `ensure_private_dir`, and have that function repair `0o077`. (2) `_write_csv` runs `os.fchmod(fd, 0o644)` outside the `try` that closes the fd and unlinks the temp file. (3) `import glob` in `build_dip_pulse_site.py` is unused since the sweep rewrite. From the v0.28.0.0 /ship (2026-11-01): (4) the cross-file-system refusal in `_staged_store_path` has no test (needs a `Path.stat` st_dev mock); (5) both group-keeping tests in `tests/test_private_staging.py` skip on a user without a second group (single-group CI), so the chown branch can go unexercised there: add a variant that patches `os.chown` and the store's gid; (6) a pre-existing private directory owned by another user (an earlier `sudo` run) is now a hard refusal where it was reused before; the message names the fix; (7) `politikfelder.write_atomic` falls back to staging beside the target in `data/` when `ensure_private_dir` refuses; (8) `_staged_store_path`'s sweep raises if a directory matches `_is_staged_copy`.
+**What:** The /gstack-review of `fix/todo-batch-5-store-staging` (2026-11-01) found four things. (1) `export_distribution_data` creates `work_dir` with `work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)` (`build_dip_pulse_site.py:~4116`) instead of `person_registry.ensure_private_dir`. Three effects follow. A symlinked private directory still gets an empty `exports/` before the refusal. When an export runs before any writer lock, `.OUTPUT.private` ends at 0755, because `mode` applies only to the leaf and `ensure_private_dir` repairs only `0o022`. A dangling `exports` symlink reports a bare "File exists" instead of the symlink refusal. Fix: create it through `ensure_private_dir`, and have that function repair `0o077`. (2) `_write_csv` runs `os.fchmod(fd, 0o644)` outside the `try` that closes the fd and unlinks the temp file. ~~(3) `import glob` in `build_dip_pulse_site.py` is unused since the sweep rewrite.~~ Done 2026-11-03. From the v0.28.0.0 /ship (2026-11-01): (4) the cross-file-system refusal in `_staged_store_path` has no test (needs a `Path.stat` st_dev mock); (5) both group-keeping tests in `tests/test_private_staging.py` skip on a user without a second group (single-group CI), so the chown branch can go unexercised there: add a variant that patches `os.chown` and the store's gid; (6) a pre-existing private directory owned by another user (an earlier `sudo` run) is now a hard refusal where it was reused before; the message names the fix; (7) `politikfelder.write_atomic` falls back to staging beside the target in `data/` when `ensure_private_dir` refuses; (8) `_staged_store_path`'s sweep raises if a directory matches `_is_staged_copy`.
 
 **Why:** These are latent. No figure moves. With a standalone export, only file names in the private directory are readable; the staged copies stay 0600.
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
-
-### `test_help_documents_argument_order_cohort_default_and_exit_codes` fails in a narrow terminal
-
-**What:** The test looks for `Read-only` in `compare_store_values.py --help`, but argparse wraps the help to `$COLUMNS` and can break the word at its hyphen ("Read- only"). It fails at COLUMNS=66 and passes at 200. Pin the width in the test (`COLUMNS` env or a `HelpFormatter` width) or match without the hyphen.
-
-**Why:** The test has been there since v0.19.0.0 (fe7143f). A local run in a narrow terminal shows a false failure; CI is not a tty, so it passes there.
-
-**Effort:** S
-**Priority:** P4
 **Depends on:** None
 
 ### Split the dataset from the site: the site builds from a release alone
@@ -1580,6 +1524,72 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### A malformed coverage-exclusions.json ends a build with a traceback
+
+**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** `load_coverage_exclusions` raises `CoverageExclusionsError` for a record that is not JSON, has no `exclusions` list, or has an entry without a `document_number`; `main` reads the record once before any work and prints `error: <path> … it must read {"exclusions": [{"document_number": "21/7", ...}, ...]}. Fix: repair the file, then re-run.` with exit 1. Test: `test_a_malformed_exclusion_record_stops_the_build_with_an_error_line` (six shapes, plain offline and `--repersist`). `update_coverage_exclusions` also sorts a hand-written entry without a date instead of raising `KeyError`.
+
+**What:** `load_coverage_exclusions` raises a bare `RuntimeError` ("… has no exclusions list") for a record that is not `{"exclusions": [...]}`. Its callers do not catch it: the offline cached-report load (`without_recorded_exclusions`), `repersist_cached_reports`, the online `listed` set, and the A4 slice 0 coverage check. The build ends with a traceback instead of an error line naming the file and the fix (checklist class 9).
+
+**Why:** The record is hand-editable. A typo there should stop the build with a message, not a stack trace.
+
+**Context:** Found in the A4 slice 0 checklist pass (2026-11-01). It predates slice 0, which added only one more caller. Catch it once in `main` beside the other cached-input errors, or raise `CachedReportError` with a fix.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** none
+
+### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
+
+**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** each TOP's Drucksachen section lists the papers DIP links to its positions besides the XML references (`render_dip_pulse_html.top_documents`, one pill per document, the XML link winning), and the dossier header and overview card count the distinct documents those sections list (`sitting_document_count`) instead of `xml_drucksache_count`. Old/new: the demo (21/84) stays at 2; the real store was not replayed in this session (no reference store), so the WP 18–20 figures (19/29: 0 before, 37 DIP-linked papers expected) still need a replay to be recorded. "· verteilt am" is dropped when `verteildatum` is missing (`distributed_phrase`); the demo printed it dangling too.
+
+**What:**
+- The card shows `validation_summary.xml_drucksache_count`. It is 0 on every WP 18/19 dossier and on 118 of 213 WP 20 dossiers, because the older XML does not tag Drucksachen. 19/29 shows 0 while its TOPs link 37 documents through DIP. Count the documents the page actually lists, or label the card as XML-only.
+- DIP has no `verteildatum` for any WP 18 sitting, and the header then ends in "verteilt am". Omit the phrase when the date is missing.
+
+**Why:** A3 Phase 4 spot checks (2026-10-29).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Rename `GRUPPE_DIE_LINKE_SINCE`
+
+**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** renamed `derive.DIE_LINKE_FRAKTION_ENDED`; the comment names both dates (Fraktion ended 2023-12-06, Gruppe recognised 2024-02-02) and why the choice re-files no Rede.
+
+**What:** `derive.GRUPPE_DIE_LINKE_SINCE` is 2023-12-06, the day the Fraktion Die Linke ended. The Gruppen were recognised on 2024-02-02, and in between the protocols label the 38 MdBs fraktionslos (C1 plan F4). The constant re-files no Rede in that interval and the Stammdaten agree, so no figure is wrong. But the name says the Gruppe existed from 2023-12-06. Rename it, e.g. `DIE_LINKE_FRAKTION_ENDED`, or date it 2024-02-02, and fix the comment. Done when the name and comment state what the date is.
+
+**Why:** Found in C1 step 1 (F4). Cosmetic.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Dark mode and overflow defects found in the A3 spot checks
+
+**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** the shared dark theme now covers `.latest`, `.follow-summary`, `.mp-notice`, the Abgeordnete search field and party chips, the catalog filter fields and session links, and `sources.html`'s source buttons; a Chromium scan of every demo page in dark mode at 375px finds no white box. Profile vote titles wrap (`.vote-row > span:not(.badge) { overflow-wrap:anywhere; }`): a rendered profile with "Asylverfahrensbeschleunigungsgesetz" overflowed by 59px at 375px and 127px at 1280px, now 0.
+
+**What:**
+- `overview.html`: the "Neueste API-Sitzung" card (`.latest`) hard-codes `background:white` (`scripts/build_dip_pulse_site.py`, three copies of the rule), so its light text is nearly invisible in dark mode.
+- Profile pages: single-word vote titles ("Asylverfahrensbeschleunigungsgesetz") push the vote column 24 px past a 1280 px viewport. Add `overflow-wrap:anywhere` or hyphenation.
+
+**Why:** A3 Phase 4 spot checks (2026-10-29). Both predate A3; WP 18 titles make the overflow common.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### `test_help_documents_argument_order_cohort_default_and_exit_codes` fails in a narrow terminal
+
+**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** the test pins `COLUMNS=200`; it failed at `COLUMNS=66` before and passes at 40, 66 and 200 now.
+
+**What:** The test looks for `Read-only` in `compare_store_values.py --help`, but argparse wraps the help to `$COLUMNS` and can break the word at its hyphen ("Read- only"). It fails at COLUMNS=66 and passes at 200. Pin the width in the test (`COLUMNS` env or a `HelpFormatter` width) or match without the hyphen.
+
+**Why:** The test has been there since v0.19.0.0 (fe7143f). A local run in a narrow terminal shows a false failure; CI is not a tty, so it passes there.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
 
 ### Fraktion seat counts in the store
 
