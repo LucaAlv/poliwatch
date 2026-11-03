@@ -199,11 +199,14 @@ python3 scripts/build_dip_pulse_site.py --document-number 21/87
 
 `build_demo_site.py` turns the committed Plenarprotokoll 21/84 TOP 32 a/b fixture into a complete static site without credentials or network access. It is the implementation behind `scripts/preview_dip_pulse_site.sh demo`, validates ordinary public output, and prints the exact dossier path plus the next online-update command.
 
-`extract_demo_fixture.py` reproducibly rebuilds that fixture from a local copy of the official XML transcript. It deliberately performs no download itself: an operator must explicitly supply the local XML path, and the script refuses an unexpected document set or speech count rather than silently changing the acceptance case.
+The demo renders from a store, as every build does. It persists the fixture through the production rebuild (`rebuild_database_from_entries`, the path `tests/_site_store_fixture.py` uses) into `OUTPUT/data/bundestag-pulse.sqlite`; the writer lock and staged copies go to `.OUTPUT.private` beside the output directory. The Abgeordnete pages and the dossier's speaker links are read back out of that store (`collect_abgeordnete`), and every page is rendered with it. Without a cached roster or MdB-Stammdaten the store holds the 16 people with a Rede or Beitrag in TOP 32 a/b (14 Redner, 2 with a Beitrag only) as protocol-only records, each with a profile page, and no seat counts; without a cached DIP catalog the Fakt pages list the week and month as incompletely covered. A fixture that does not carry the current speech rule (`speech_kinds.VERSION` in `validation_summary`) stops the demo with exit 1 before anything is staged, and an output directory whose store holds other sittings is refused by the rebuild and left as it was.
+
+`extract_demo_fixture.py` reproducibly rebuilds that fixture from a local copy of the official XML transcript. It deliberately performs no download itself: an operator must explicitly supply the local XML path, and the script refuses an XML of another sitting, an unexpected document set or speech count rather than silently changing the acceptance case. The agenda item comes from the current parser through `validate_dip_protocol.xml_top_fields`, and `validation_summary` from `contribution_summary` over that one item, so the fixture carries the current speech rule and the counts made under it, exactly as a real report does. The output depends only on the XML (no date stamp; `protocol.xml_sha256` names the file), so re-running it on the same XML gives the same bytes. Re-run it whenever the speech rule or the parser's fields change; the demo refuses a fixture under an older rule.
 
 ```bash
+curl -sSo /tmp/21084.xml https://dserver.bundestag.de/btp/21/21084.xml
 python3 scripts/extract_demo_fixture.py \
-  --xml /path/to/21084.xml \
+  --xml /tmp/21084.xml \
   --output tests/fixtures/demo-report-21-84.json
 ```
 

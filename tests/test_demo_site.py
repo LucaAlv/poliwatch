@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import re
 import socket
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -11,10 +14,12 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import _site_store_fixture
 import build_demo_site as demo
 import build_dip_pulse_site as site
 import publication_state as publication
 import render_dip_pulse_html as pulse_html
+import speech_kinds
 from features import EnrichmentSelection
 
 
@@ -201,6 +206,64 @@ class DemoSiteTests(unittest.TestCase):
             self.assertEqual(manifest["domains"]["votes"]["presentation_state"], "domain_empty")
             self.assertTrue(manifest["domains"]["votes"]["attempted"])
 
+    # Value: protects=the demo renders from a store built through the production rebuild: it holds the one sitting under the current speech rule with its 14 Reden and 3 Beiträge, its lock and staging stay in .site.private beside the output, and the Abgeordnete pages and the dossier's speaker links come out of it; fails_when=the demo renders store-less again, persists with bare persist_report (no person reconcile), or leaves the private files inside the published tree; why_new=A4 slice 1 needs a store-reading demo before the archive reads only the store; seam=build_demo; no_claim=which persons the reconcile merges
+    def test_demo_renders_from_a_store_built_by_the_rebuild(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "site"
+            demo.build_demo(output)
+            database = output / "data" / "bundestag-pulse.sqlite"
+            conn = sqlite3.connect(database)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT p.document_number, r.version FROM protocols p JOIN speech_rule_inputs r ON r.protocol_id = p.id").fetchall(),
+                    [("21/84", speech_kinds.VERSION)],
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM speeches").fetchone()[0], 14)
+                self.assertEqual(
+                    conn.execute("SELECT kind, COUNT(*) FROM contributions GROUP BY kind ORDER BY kind").fetchall(),
+                    [("erwiderung", 1), ("kurzintervention", 1), ("zwischenfrage", 1)],
+                )
+            finally:
+                conn.close()
+            self.assertTrue((Path(tmp) / ".site.private").is_dir())
+            self.assertEqual([path.name for path in output.rglob("*.private")], [])
+            abg_mps, mp_lookup = _site_store_fixture.store_people(database)
+            pages = sorted(path.name for path in (output / "abgeordnete").glob("person-*.html"))
+            self.assertEqual(len(pages), len(abg_mps))
+            self.assertGreater(len(pages), 0)
+            dossier = (output / "protocols" / "plenarprotokoll-21-84.html").read_text(encoding="utf-8")
+            linked = set(re.findall(r'href="\.\./abgeordnete/(person-[^"]+\.html)"', dossier))
+            self.assertTrue(linked)
+            self.assertLessEqual(linked, set(pages))
+
+    # Value: protects=the committed fixture's rule stamp and counts are what its own Reden and Beiträge give, so the version was not stamped onto counts made under an older rule; fails_when=the fixture's validation_summary says rule 6 while its xml_speakers or xml_contributions disagree with the counts, or the stamp is missing; why_new=the old fixture had no stamp and the store refused it; seam=the fixture file; no_claim=that the fixture equals a fresh parse of the XML (re-run scripts/extract_demo_fixture.py for that)
+    def test_fixture_counts_follow_its_own_reden_and_beitraege(self) -> None:
+        report = json.loads(demo.DEFAULT_FIXTURE.read_text(encoding="utf-8"))
+        summary = report["validation_summary"]
+        (item,) = report["agenda_items"]
+        self.assertEqual(summary["speech_kinds_version"], speech_kinds.VERSION)
+        self.assertEqual(summary["xml_speech_count"], len(item["xml_speakers"]))
+        self.assertEqual(item["xml_speech_count"], len(item["xml_speakers"]))
+        self.assertEqual(summary["xml_contribution_counts"], speech_kinds.kind_counts(item["xml_contributions"] + report["xml_contributions"]))
+
+    # Value: protects=a fixture without the current speech-rule stamp stops the demo with a named error before any store is staged, and the CLI exits 1 with that message instead of a traceback; fails_when=the demo stamps the rule itself, persists the old counts, or crashes; why_new=the A4 plan forbids stamping the old fixture; seam=build_demo, build_demo_site.main; no_claim=the store's own refusal
+    def test_a_fixture_under_an_old_speech_rule_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report = json.loads(demo.DEFAULT_FIXTURE.read_text(encoding="utf-8"))
+            del report["validation_summary"]["speech_kinds_version"]
+            fixture = root / "old.json"
+            fixture.write_text(json.dumps(report), encoding="utf-8")
+            output = root / "site"
+            with self.assertRaisesRegex(demo.DemoFixtureError, r"speech rule \(none\), not the current rule"):
+                demo.build_demo(output, fixture)
+            self.assertFalse((output / "data" / "bundestag-pulse.sqlite").exists())
+            stderr = io.StringIO()
+            with mock.patch("sys.argv", ["build_demo_site.py", "--output-dir", str(output), "--fixture", str(fixture)]), \
+                    contextlib.redirect_stderr(stderr):
+                self.assertEqual(demo.main(), 1)
+            self.assertIn("extract_demo_fixture.py", stderr.getvalue())
+
     # Value: protects=the demo's grouped Antrag TOP lists each Antrag's own title at equal weight on puls.html, as a real build does; fails_when=the fixture or extractor copies the joint "a) … b) …" heading into both titles, which collapses them into one bold .radar-title block; why_new=the demo was the only place the four-line block appeared; seam=none; no_claim=wording of real DIP titles beyond these two Drucksachen
     def test_demo_radar_lists_each_antrag_title_not_the_joint_heading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -287,7 +350,7 @@ class DemoSiteTests(unittest.TestCase):
         for directory in ("data", "protocols", "bills", "abgeordnete"):
             (output / directory).mkdir(parents=True, exist_ok=True)
         base = demo.demo_report(demo.DEFAULT_FIXTURE)
-        entries = []
+        reports = []
         protocols = []
         for offset in range(count):
             report = copy.deepcopy(base)
@@ -295,7 +358,7 @@ class DemoSiteTests(unittest.TestCase):
             report["protocol"]["id"] = f"scale-{offset}"
             report["protocol"]["dokumentnummer"] = document_number
             report["protocol"]["titel"] = f"Skalierungsfixture {document_number}"
-            entries.append(site.write_report_files(report, output))
+            reports.append(report)
             protocol = copy.deepcopy(report["protocol"])
             protocol["wahlperiode"] = "21"
             protocol["fundstelle"] = {
@@ -303,13 +366,16 @@ class DemoSiteTests(unittest.TestCase):
                 "xml_url": protocol.get("xml_url"),
             }
             protocols.append(protocol)
+        # The pages render from a store, built from the copies as the demo builds its own.
+        database_path, abg_mps, mp_lookup = demo.build_demo_store(output, reports)
+        entries = [site.write_report_files(report, output, mp_lookup) for report in reports]
         site.render_site(
             output_dir=output,
-            database_path=output / "data" / "bundestag-pulse.sqlite",
+            database_path=database_path,
             protocols=protocols,
             entries=entries,
-            abg_mps=[],
-            mp_lookup={},
+            abg_mps=abg_mps,
+            mp_lookup=mp_lookup,
             enrichments=EnrichmentSelection(frozenset()),
             summary_mode="off",
             acquisition_attempted=False,

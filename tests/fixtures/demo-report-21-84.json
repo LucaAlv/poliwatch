@@ -3,7 +3,7 @@
     "source": "https://dserver.bundestag.de/btp/21/21084.xml",
     "extracted_scope": "Plenarprotokoll 21/84, Tagesordnungspunkt 32 a/b",
     "note": "DIP position wrappers are fixture-derived from the two XML Drucksachen.",
-    "regenerated": "2026-10-30"
+    "regenerate": "python3 scripts/extract_demo_fixture.py --xml 21084.xml --output tests/fixtures/demo-report-21-84.json"
   },
   "protocol": {
     "id": "official-demo-21-84",
@@ -19,7 +19,8 @@
       "sitzung_start": "09:00",
       "sitzung_end": "15:36",
       "start_page": "10219"
-    }
+    },
+    "xml_sha256": "3fd2ef65cc4a6aa34e04f36c4c941d4c97b43497568d36dd19aa0feed06c7790"
   },
   "sampled_people": [],
   "agenda_items": [
@@ -852,10 +853,19 @@
       "votes": []
     }
   ],
+  "xml_contributions": [],
   "warnings": [],
   "validation_summary": {
     "xml_top_count": 1,
+    "speech_kinds_version": 6,
     "xml_speech_count": 14,
+    "xml_contribution_counts": {
+      "erwiderung": 1,
+      "kurzintervention": 1,
+      "zwischenfrage": 1
+    },
+    "fragestunde_questions_without_person": 0,
+    "fragestunde_unplaced_turns": 0,
     "xml_drucksache_count": 2,
     "unique_person_ids": 14,
     "extracted_text_char_count": 57748

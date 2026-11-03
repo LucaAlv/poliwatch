@@ -3,6 +3,14 @@
 
 This helper is intentionally network-free. Download the XML separately from
 https://dserver.bundestag.de/btp/21/21084.xml, then pass its local path here.
+
+The fixture is one agenda item of the sitting (TOP 32 a/b), parsed by the
+current parser and counted under the current speech rule
+(``speech_kinds.VERSION``), which it records in ``validation_summary`` exactly
+as a real report does. The demo build persists it into a store, and the store
+refuses a report made under another rule, so a rule change makes the demo fail
+until this script is re-run. The output depends only on the XML: the same file
+gives the same fixture byte for byte.
 """
 
 from __future__ import annotations
@@ -14,7 +22,6 @@ if __name__ == "__main__":
 
 import argparse
 import json
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +47,9 @@ TITLES = {
 
 def extract_report(xml_path: Path) -> dict[str, Any]:
     parsed = dip.parse_protocol_xml(xml_path.read_text(encoding="utf-8"))
+    header = parsed.get("xml_protocol") or {}
+    if f"{header.get('wahlperiode')}/{header.get('sitzung_nr')}" != DOCUMENT_NUMBER:
+        raise ValueError(f"{xml_path} is not the XML of Plenarprotokoll {DOCUMENT_NUMBER}")
     matches = [
         item
         for item in parsed.get("agenda_items") or []
@@ -111,7 +121,7 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             "source": XML_URL,
             "extracted_scope": "Plenarprotokoll 21/84, Tagesordnungspunkt 32 a/b",
             "note": "DIP position wrappers are fixture-derived from the two XML Drucksachen.",
-            "regenerated": date.today().isoformat(),
+            "regenerate": "python3 scripts/extract_demo_fixture.py --xml 21084.xml --output tests/fixtures/demo-report-21-84.json",
         },
         "protocol": {
             "id": DOCUMENT_ID,
@@ -121,13 +131,19 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             "pdf_url": PDF_URL,
             "xml_url": XML_URL,
             "xml_header": parsed.get("xml_protocol") or {},
+            "xml_sha256": parsed["xml_sha256"],
         },
         "sampled_people": [],
         "agenda_items": [item],
+        # Sitting-level Beiträge (zu Protokoll gegebene Reden outside any TOP)
+        # lie outside the extracted scope.
+        "xml_contributions": [],
         "warnings": [],
         "validation_summary": {
             "xml_top_count": 1,
-            "xml_speech_count": len(speeches),
+            # speech_kinds_version, the Reden count and the Beiträge per Kind,
+            # over the extracted TOP alone, from the helper a real report uses.
+            **dip.contribution_summary([source_item]),
             "xml_drucksache_count": len(documents),
             "unique_person_ids": len(
                 {
