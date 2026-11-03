@@ -622,11 +622,13 @@ def format_percent(value: float) -> str:
 
 
 # The legal pages, appended to every page's footer (not the navigation,
-# which tests/test_features.py pins); same prefix scheme as the header.
+# which tests/test_features.py pins); same prefix scheme as the header. The
+# span brings its own leading separator: every footer puts it after a link
+# or a sentence, which read "Quellen und Methode Impressum" without one.
 def render_legal_links(*, depth: int = 0) -> str:
     prefix = "../" * depth
     return (
-        f'<span class="legal-links"><a href="{prefix}impressum.html">Impressum</a>'
+        f'<span class="legal-links">&middot; <a href="{prefix}impressum.html">Impressum</a>'
         f' &middot; <a href="{prefix}datenschutz.html">Datenschutz</a></span>'
     )
 
@@ -799,7 +801,7 @@ def global_header_styles() -> str:
       .filter, .sample-table, details, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
-      .week-compare, .week-metric, .vote-panel
+      .week-compare, .week-metric, .vote-panel, .latest, .follow-summary
     ) {
       background:var(--panel) !important;
       border-color:var(--line) !important;
@@ -810,7 +812,8 @@ def global_header_styles() -> str:
     :root[data-theme="dark"] :is(
       .badge, .summary-count, .session-summary-sources a,
       .session-summary-sources span, .radar-receipts a, .radar-receipts span,
-      .empty, .filter input
+      .empty, .filter input, .filter-field input, .filter-field select,
+      .session-links a, .source-actions a, .no-results
     ) {
       background:var(--surface-2) !important;
       border-color:var(--line) !important;
@@ -839,7 +842,7 @@ def global_header_styles() -> str:
     ) {
       color:var(--muted) !important;
     }
-    :root[data-theme="dark"] :is(.notice) {
+    :root[data-theme="dark"] :is(.notice, .mp-notice) {
       background:var(--warning-bg) !important;
       border-color:var(--warning-line) !important;
       color:var(--warning-ink) !important;

@@ -5342,7 +5342,9 @@ def _daten_page_styles() -> str:
     .summary-band div { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:13px 14px; }
     .summary-band strong { display:block; margin-top:4px; font-size:26px; font-variant-numeric:tabular-nums; }
     .tile-sub { font-size:12px; margin-top:2px; }
-    .scope-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    .scope-line, .stammdaten-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    /* The 64-hex sha256 stays inline in the sentence but may break anywhere at 375px. */
+    .stammdaten-line code { overflow-wrap:anywhere; }
     .table-nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
     .table-nav a {
       display:inline-flex;
@@ -9179,6 +9181,8 @@ def abgeordnete_styles() -> str:
       cursor:pointer;
     }
     .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
+    :root[data-theme="dark"] :is(.filter-bar input[type="search"], .party-chip) { background:var(--surface-2); color:var(--ink); }
+    :root[data-theme="dark"] .party-chip.is-active { background:var(--blue-soft); color:var(--blue); }
     .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
     .redner-group { margin-top:32px; }
     .redner-group h2 { margin:0 0 6px; font-size:20px; }
@@ -9203,6 +9207,9 @@ def abgeordnete_styles() -> str:
     }
     .vote-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:10px; padding-bottom:10px; border-bottom:1px solid #eef1f5; font-size:13px; }
     .vote-row:last-child { border-bottom:0; padding-bottom:0; }
+    /* A one-word Gesetz title ("Asylverfahrensbeschleunigungsgesetz") would
+       otherwise push the vote column past the viewport. */
+    .vote-row > span:not(.badge) { overflow-wrap:anywhere; }
     .vote-row time { color:var(--muted); }
     .vote-badge { align-self:start; }
     .vote-badge.yes { border-color:#89c5ba; background:#e7f6f3; color:#0f5f59; }
@@ -11800,10 +11807,11 @@ def _legal_page(title: str, lead: str, body: str, features: Selection | None) ->
 
 def render_impressum_page(operator: dict[str, Any] | None, features: Selection | None = None) -> str:
     sections = (
-        ("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV",
+        # A no-break space after each "§" keeps the sign on the line of its number.
+        ("Angaben gemäß §\u00a05 DDG und §\u00a018 Abs. 1 MStV",
          f"<p>{_operator_address(operator)}</p>"
          f"<p>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
-        ("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV",
+        ("Verantwortlich für den Inhalt nach §\u00a018 Abs. 2 MStV",
          f"<p>{_operator_value(operator, 'name')}, Anschrift wie oben.</p>"),
         ("Fehler melden und Kontakt",
          "<p>Fehler in den Daten und auf der Website werden öffentlich über GitHub Issues gemeldet. "

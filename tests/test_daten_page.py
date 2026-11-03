@@ -458,7 +458,7 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             impressum = (output_dir / "impressum.html").read_text(encoding="utf-8")
             datenschutz = (output_dir / "datenschutz.html").read_text(encoding="utf-8")
         footer = database.split("<footer")[-1]
-        self.assertIn('<span class="legal-links"><a href="impressum.html">Impressum</a>', footer)
+        self.assertIn('<span class="legal-links">&middot; <a href="impressum.html">Impressum</a>', footer)
         self.assertIn('<a href="datenschutz.html">Datenschutz</a>', footer)
         self.assertIn("Die Datendownloads der Seite „Daten“ liegen auf cdn.example.net;", datenschutz)
         self.assertIn("Erika Muster", impressum)
