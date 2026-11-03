@@ -23,6 +23,7 @@ import derive
 import politikfelder
 import antrag_text
 from stable_ids import contribution_occurrence_id, source_index, speech_occurrence_id, speech_rede_id
+from stable_ids import document_issuer, document_number as stable_document_number
 import person_registry as registry
 import publication_state as publication
 import speech_kinds
@@ -2504,15 +2505,13 @@ def distributed_phrase(protocol: dict[str, Any]) -> str:
 
 
 def _document_key(doc: dict[str, Any]) -> tuple[str, str] | None:
-    """One Drucksache, whichever source names it: its chamber and its number in
-    the store's canonical form ("21/06561" is "21/6561"). A paper with no
-    Bundesrat evidence is a Bundestag one, as ``stable_ids.document_issuer`` has it."""
-    number = str(doc.get("dokumentnummer") or "").strip()
-    if not number:
-        return None
-    if document_chamber(doc) == "BR":
-        return "BR", number
-    return "BT", derive.canonical_document_number(number) or number
+    """One Drucksache, whichever source names it, keyed as the store keys it
+    (``persist.upsert_document``): the issuer from ``herausgeber`` or the dserver
+    path, and the canonical number ("21/06561" is "21/6561"). So the TOP list and
+    its count name the documents ``agenda_item_documents`` holds."""
+    issuer = document_issuer(doc.get("herausgeber"), doc.get("url"))
+    number = stable_document_number(doc.get("dokumentnummer"), issuer)
+    return (issuer, number) if number else None
 
 
 def top_documents(item: dict[str, Any]) -> list[tuple[tuple[str, str], str, str | None]]:
@@ -2541,19 +2540,26 @@ def top_documents(item: dict[str, Any]) -> list[tuple[tuple[str, str], str, str 
             if documents[key][1] is None and href:
                 documents[key] = (documents[key][0], href)
             continue
-        number = str(doc.get("dokumentnummer")).strip()
-        documents[key] = (f"BR-Drs. {number}" if key[0] == "BR" else number, href)
+        # The label prints the canonical number, as the store and the votes archive do.
+        documents[key] = (f"BR-Drs. {key[1]}" if document_chamber(doc) == "BR" else key[1], href)
     return [(key, label, href) for key, (label, href) in documents.items()]
 
 
+def distinct_document_count(document_lists: Any) -> int:
+    """The distinct Drucksachen across ``top_documents`` lists; a document two
+    TOPs name counts once."""
+    return len({key for documents in document_lists for key, _label, _href in documents})
+
+
 def sitting_document_count(items: list[dict[str, Any]]) -> int:
-    """The distinct Drucksachen the sitting's TOP sections list; a document two
-    TOPs name counts once. The dossier header and the overview card show it."""
-    return len({key for item in items for key, _label, _href in top_documents(item)})
+    """The distinct Drucksachen the sitting's TOP sections list. The dossier
+    header and the overview card show it."""
+    return distinct_document_count(top_documents(item) for item in items)
 
 
-def render_top_documents(item: dict[str, Any]) -> str:
-    documents = top_documents(item)
+def render_top_documents(item: dict[str, Any], documents: list[tuple[tuple[str, str], str, str | None]] | None = None) -> str:
+    if documents is None:
+        documents = top_documents(item)
     if not documents:
         return ""
     links = "".join(
@@ -3099,6 +3105,8 @@ def render_html(
         report, cache, votes_component_ctx["vote_contexts"]
     )
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
+    # Each TOP's Drucksachen once: its section lists them, the header counts them.
+    documents_by_index = {item["index"]: top_documents(item) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
     report_votes = list(derive.iter_report_votes(report))
@@ -3170,7 +3178,7 @@ def render_html(
         party_total = sum(stats["party_counts"].values())
         speech_share = percent(stats["speech_count"], total_speeches)
         text_share = percent(stats["total_chars"], total_chars)
-        top_documents = render_top_documents(item)
+        top_documents_html = render_top_documents(item, documents_by_index[item["index"]])
         party_labels = [
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
@@ -3222,7 +3230,7 @@ def render_html(
                   <span>Reden</span>
                 </div>
               </div>
-              {top_documents}
+              {top_documents_html}
               {render_top_contributions(item)}
               {render_contribution_details(item, protocol, mp_lookup)}
               <div class="top-bars">
@@ -4263,7 +4271,7 @@ def render_html(
       <div class="meta-grid">
         <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
         <div class="metric"><span>Reden</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
-        <div class="metric"><span>Drucksachen</span><strong>{esc(sitting_document_count(items))}</strong></div>
+        <div class="metric"><span>Drucksachen</span><strong>{esc(distinct_document_count(documents_by_index.values()))}</strong></div>
         <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>

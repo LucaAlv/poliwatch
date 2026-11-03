@@ -79,6 +79,8 @@ class LegalPagesTests(unittest.TestCase):
             with self.subTest(page=relative):
                 (span,) = LEGAL_SPAN_RE.findall(markup)
                 self.assertTrue(span.startswith('<span class="legal-links">&middot; <a '), span)
+                # The separator follows a word or a link, never a full stop (". · Impressum").
+                self.assertNotRegex(markup, r"\.\s*<span class=\"legal-links\">")
         impressum = self.pages["impressum.html"]
         self.assertIn("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV", impressum)
         self.assertIn("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV", impressum)

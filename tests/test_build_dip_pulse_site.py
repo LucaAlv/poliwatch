@@ -4025,6 +4025,26 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
                         self.assertIn("Fix: repair the file, then re-run.", stderr)
                         self.assertFalse((output_dir / "puls.html").exists())
 
+    # Value: protects=the listing modes, which never read the exclusion record, still run while it holds a typo, and --fetch-xml (which reads it) stops with the error line; fails_when=the record check runs before --list-capabilities returns, or --fetch-xml ends in a traceback; why_new=code review of the exclusion-record check (2026-11-03); seam=none
+    def test_a_malformed_exclusion_record_blocks_only_the_paths_that_read_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            (output_dir / "data" / "coverage-exclusions.json").write_text("{", encoding="utf-8")
+            code, stderr = self._build(output_dir, "--list-capabilities")
+            self.assertEqual(code, 0, stderr)
+            argv = ["build", "--fetch-xml", "--output-dir", str(output_dir)]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as err,
+                mock.patch.object(build_dip_pulse_site, "fetch_missing_xml") as fetch,
+            ):
+                code = build_dip_pulse_site.main()
+            stderr = err.getvalue()
+            fetch.assert_not_called()
+            self.assertEqual(code, 1, stderr)
+            self.assertNotIn("Traceback", stderr)
+            self.assertIn("Fix: repair the file, then re-run.", stderr)
+
     def test_offline_rebuild_with_an_unknown_week_writes_no_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._seed(tmp)

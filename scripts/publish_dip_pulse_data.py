@@ -71,9 +71,9 @@ def _sha256(path: Path) -> str:
 def _read_json(path: Path, what: str) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    # ValueError covers JSONDecodeError and an integer past the 4300-digit
-    # limit; RecursionError a nesting deeper than the parser's stack.
-    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+    # ValueError covers JSONDecodeError, UnicodeDecodeError and an integer past
+    # the 4300-digit limit; RecursionError a nesting deeper than the parser's stack.
+    except (OSError, ValueError, RecursionError) as exc:
         raise ReleaseError(f"cannot read {what} {path}: {exc}") from exc
 
 
