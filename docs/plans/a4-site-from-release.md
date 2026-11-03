@@ -400,6 +400,89 @@ sqlite3 .context/a4/B1/data/bundestag-pulse.sqlite "SELECT COUNT(*) FROM votes W
   - **R3:** for every archive row, follow the href to the dossier panel id and compare the result badge (`vote-result…` span), the Drucksache links (`doc-link` anchors) and the Abweichler figure. Slice 1 is not done until these agree on every vote. Kinds 1, 4 and 6 can make them disagree. If one does, fix it in persist or the JSON path.
 - **Fresh vs incremental:** a from-scratch build and an `--offline --repersist` give identical CSVs and `votes/index.html`.
 
+### Slice 1 sample oracle (2026-11-03)
+
+The owed checks, run on a real-data sample built for the purpose, not on the reference store. **The sample passes all of them.** It cannot stand in for the reference-store run, because it holds none of the source shapes that make the expected diff kinds (see "Still owed" below).
+
+**Sample.** Built online by 940ed88 (`git archive` into a src-base dir), into `.context/a4-sample/base`:
+- 42 WP 21 sittings, 21/62–21/103 (2026-03-05 to 2026-10-16). The command was `--limit 45 --detail-limit 0 --protocol-wahlperiode 21 --vote-scan-pages 90 --sleep 1`; 21/104–106 have no XML yet.
+- 8 WP 20 sittings, 20/207–20/214 (2024-12-19 to 2025-03-18), with `--document-number`. They bring in Gruppe BSW, Gruppe Die Linke and fraktionslos.
+- **Store:** 50 sittings; 55 votes in 21 of them (49 under a TOP, 6 sitting-level); 35,881 `vote_members`; 354 `vote_fractions`; 106 `vote_documents`; 3,172 `agenda_item_documents`; 9 parties.
+- **Sources:** 50 XML downloads in two runs (42 between 11:08 and 12:00 UTC, 8 between 12:02 and 12:19). DIP was asked at 1 s spacing. No timeout, no slow answer, no failed person lookup or Politikfeld lookup.
+- **Run times:**
+  - online builds: 3,132 s (42 sittings) and 1,035 s (8 sittings);
+  - `--offline --repersist` with render and export: A (940ed88) 59 s, B (8bb194a) 73 s;
+  - `votes_archive_rows`: 0.21 s for 55 rows; the page render: 0.003 s.
+
+  A and B are `cp -a` clones of the sample. Both runs used `SOURCE_DATE_EPOCH=1793491200` and the slice 0 normalisation.
+
+**T1.1 on B** (`stored_votes` and the tip's rule functions against the 50 cached reports):
+
+| Measure | Sample |
+| --- | --- |
+| Politikfelder differ, `report_politikfelder` against stored `vote_politikfelder` (both through `shown`) | 0 of 55 (all 55 `drucksache`) |
+| Vote links whose `documents.url` differs from the supplying TOP's winning link | 0 of 94; the other 12 links belong to the 6 sitting-level votes, which have no TOP link on either path |
+| Lowest `item_index` ≠ `iter_report_votes`' first TOP | 0 of 55 (no vote sits under two TOPs) |
+| `votes.id` ≠ `pulse_html.vote_key` | 0 (55 ids on each side) |
+| Votes with no `vote_documents` | 0 |
+| Short groups (member rows do not cover the fraction counts) | 0; Abweichler count None: 0 |
+| Votes with a NULL count | 0 |
+
+**T1.7 diff, A against B:**
+- `diff -rq` before normalisation: `votes/index.html`, the export generation directory, `datenstand.json` and `data/features.json`. Also `database.html`, `index.html`, `overview.html` and `sources.html`. All 50 dossiers, `puls.html`, `bills/`, `abgeordnete/` and `fakt/` are byte-identical.
+- After normalisation, **`votes/index.html` differs in 2 lines, both the T1.5 copy:**
+  - header: "aus den erzeugten Plenarprotokoll-Dossiers" → "der erfassten Sitzungen";
+  - footer: the `--detail-limit` sentence → "Die Liste umfasst die namentlichen Abstimmungen der Sitzungen in der Datenbank dieses Builds, …".
+- **All 55 rows are byte-identical**, including the `data-fraktion-positions` key order (R8) and the Drucksachetyp text. 0 (a) data diffs, 0 (o), 0 (b).
+- Of the eight kinds listed above, the sample has none of the source shapes:
+  - 0 zero-padded Drucksache numbers (kind 1);
+  - 0 titles with extra whitespace (kind 3);
+  - 0 member identities folded by the registry: 35,881 report identities against 35,881 `vote_members` (kind 4);
+  - 0 vote ids in two sittings (kind 5);
+  - 0 refused numbers (kind 6);
+  - 0 votes under two TOPs (kind 7).
+  - Kinds 2 and 8 change no row.
+- `index.html`, `overview.html` and `sources.html` are equal after normalisation: wall-clock only.
+- **Export:** `agenda_item_documents` gains `url` and `rank`, both set on all 3,172 rows. `vote_documents.rank` is set on all 106 rows, `vote_fractions.rank` on all 354. Every pre-existing column is equal in value and in row order, and `votes` is unchanged.
+- `datenstand.json`, DATA.md, `datenstand-local.csv` and `database.html` change only in these:
+  - format 13 → 14 and schema 9 → 10;
+  - the codebook rows for the new columns;
+  - the r4 `WHERE`;
+  - sizes and sha256 over timestamped files, as in slice 0.
+- `data/features.json` is equal after normalisation.
+
+**`compare_store_values.py A B`:** nothing moved.
+- 50 shared protocols;
+- 0 changed vote totals; votes with a NULL count 0 → 0, so there is no 0 → NULL on this sample;
+- 0 of 288 Fakt values moved;
+- row counts, parties, `leading_vote`, Redeanteil and r3 are equal.
+
+**R3 agreement on B:** a scratch script followed each of the 55 archive hrefs to its `vote-…` panel. The anchor exists exactly once each time. It compared:
+- the result badge (span HTML);
+- the Drucksache links (label and href, in order, from the vote head only, not the committee line);
+- the Abweichler figure: `data-abweichler` against the panel's "(N):" labels, "Niemand stimmt anders …" (0), or the gap note (none).
+
+**0 disagreements.** That covers 55 badges, 106 links (94 linked, 12 muted) and Abweichler figures of 0 on 31 votes and above 0 on 24 (145 in total). A negative control, a copy with one badge and one count altered, reported both.
+
+**Store-less repersist (part of "fresh vs incremental"):** the tip ran `--offline --repersist` into a third clone with the store and export deleted (C, 66 s). B and C agree on:
+- every CSV;
+- `votes/index.html` and every page;
+- every `compare_store_values` figure.
+
+They differ only in hashes and sizes over timestamped files. So repersisting over a schema 9 store carries nothing into B that a store-less repersist would not produce. The online from-scratch half is not run.
+
+**Defects:** none found, nothing fixed.
+
+**Still owed on the reference store** (the recipe above):
+- The counts and old/new values of kinds 1–8. The sample has no source shape for any of them; on the reference store, kinds 1, 4, 5 and 6 are the ones that can make the archive and the panel disagree.
+- The 0 → NULL vote totals (0 here) and the 4 votes with no `vote_documents` (none here).
+- The short-group count on 556 votes, and the `documents.url` against per-item winner count for the data changelog (0 of 94 here).
+- R3 on all 556 votes.
+- WP 18/19 sittings (none here).
+- The render time at 382k `vote_members` (0.21 s at 35,881 here, 2.5 s synthetic).
+- An online from-scratch build against `--offline --repersist`.
+- The browser check of the filter chips at 375 px and in dark mode, not re-run here.
+
 **Demo:** merged with the store-backed demo (see "Resolved for slice 1" under Slice 0 result): `build_demo_site.py` builds its own store and the archive reads it. The 21/84 fixture holds no votes, so the demo archive shows the empty state with the new footer copy; no figure changes.
 
 **Review checklist** (full pass):
