@@ -3,11 +3,13 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import os
 import re
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import compare_store_values as compare
@@ -469,7 +471,10 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertIn("missing", err)
 
     def test_help_documents_argument_order_cohort_default_and_exit_codes(self) -> None:
-        text = compare.build_parser().format_help()
+        # argparse wraps to $COLUMNS and can break "Read-only" at its hyphen in a
+        # narrow terminal; pin the width so the test does not depend on it.
+        with mock.patch.dict(os.environ, {"COLUMNS": "200"}):
+            text = compare.build_parser().format_help()
         for needle in ("old_dir", "new_dir", "shared (default)", "Exit codes: 0", "2 an input", "Read-only"):
             self.assertIn(needle, " ".join(text.split()))
 

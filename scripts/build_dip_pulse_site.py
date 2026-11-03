@@ -71,7 +71,6 @@ import contextlib
 import copy
 import csv
 import gzip
-import glob
 import hashlib
 import io
 import json
@@ -80,7 +79,6 @@ import shlex
 import re
 import shutil
 import sqlite3
-import subprocess
 import stat as stat_module
 import sys
 import tempfile
@@ -129,12 +127,10 @@ from stable_ids import (
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
     ENRICHMENT_REGISTRY,
-    REGISTRY,
     EnrichmentSelection,
     FeatureError,
     Selection,
     publication_selection,
-    resolve,
 )
 from features import loader as feature_loader
 from features import votes as votes_feature
@@ -178,9 +174,6 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
     "fact_sources": "Belege je Fakt: Reden, Tagesordnungspunkte, Abstimmungen, Sitzungen oder Drucksachen, aus denen der Wert stammt.",
 }
-
-ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
-
 
 # ---------------------------------------------------------------------------
 # Document numbers, slugs and sort keys
@@ -12988,56 +12981,6 @@ def _split_feature_tokens(value: Any) -> list[str]:
             tokens.extend(_split_feature_tokens(item))
         return tokens
     raise FeatureError(f"Ungültige Baustein-Konfiguration: {value!r}")
-
-
-# Apply "+id" / "-id" / "id" tokens to the current set. An unknown id is fed
-# through resolve() purely so it raises the standard FeatureError message.
-def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]) -> None:
-    for token in tokens:
-        operation = token[:1] if token[:1] in {"+", "-"} else "+"
-        feature_id = token[1:] if token[:1] in {"+", "-"} else token
-        if feature_id not in REGISTRY:
-            resolve(base=current, enable=(feature_id,))
-        if operation == "+":
-            current.add(feature_id)
-            vetoes.discard(feature_id)
-        else:
-            current.discard(feature_id)
-            vetoes.add(feature_id)
-
-
-# Load enrichment config plus deprecated feature-selection shapes.
-def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise FeatureError(f"Baustein-Datei {path} konnte nicht gelesen werden: {exc}") from exc
-    if isinstance(payload, list):
-        replacement = _split_feature_tokens(payload)
-        current.clear()
-        vetoes.clear()
-        _apply_feature_tokens(current, replacement, vetoes)
-        return
-    if not isinstance(payload, dict):
-        raise FeatureError(f"Baustein-Datei {path} muss ein Objekt oder eine Liste enthalten.")
-    if "features" in payload:
-        replacement = _split_feature_tokens(payload["features"])
-        current.clear()
-        vetoes.clear()
-        if replacement == ["all"]:
-            current.update(REGISTRY)
-        else:
-            _apply_feature_tokens(current, replacement, vetoes)
-    _apply_feature_tokens(current, [f"+{item.lstrip('+')}" for item in _split_feature_tokens(payload.get("enable"))], vetoes)
-    _apply_feature_tokens(current, [f"-{item.lstrip('-')}" for item in _split_feature_tokens(payload.get("disable"))], vetoes)
-    for feature_id in _split_feature_tokens(payload.get("enrich")):
-        if feature_id == "all":
-            current.update(ENRICHMENT_IDS)
-        elif feature_id in ENRICHMENT_IDS:
-            current.add(feature_id)
-        else:
-            choices = ", ".join(sorted(ENRICHMENT_IDS))
-            raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
 
 
 # Enrichments an online update acquires unless an operator vetoes them. Votes
