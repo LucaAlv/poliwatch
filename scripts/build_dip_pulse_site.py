@@ -14153,15 +14153,15 @@ def main() -> int:
     if getattr(args, "list_capabilities", False):
         print_capability_table(enrichments)
         return 0
-    # Every path below reads the hand-editable exclusion record (D2); a typo in
-    # it stops here, naming the file and its shape. The listing modes above do
-    # not read it, so it does not block them.
-    if not coverage_exclusions_readable(args.output_dir):
-        return 1
     if getattr(args, "explain_config", False):
         warn_deprecated_feature_configuration(args, root=root)
         print_effective_config(enrichments, args)
         return 0
+    # Every path below reads the hand-editable exclusion record (D2); a typo in
+    # it stops here, naming the file and its shape. The listing and
+    # --explain-config modes above do not read it, so it does not block them.
+    if not coverage_exclusions_readable(args.output_dir):
+        return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
     features = publication_selection()

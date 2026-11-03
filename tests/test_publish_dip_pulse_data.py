@@ -538,6 +538,13 @@ class FollowUpReleaseTests(ReleaseTestCase):
             json.dumps({"summary": "Zwei Sitzungen ergänzt.", "corrections": [{"table": "votes", "key": "v1", "column": "yes_count", "old": 1, "new": 2, "reason": "Endergebnis"}]}),
             encoding="utf-8",
         )
+        # An integer past 4300 digits or a deep nesting in the changes file is refused, not a traceback.
+        for label, text in (("huge integer", '{"summary": ' + "9" * 5000 + "}"), ("deep nesting", "[" * 100_000)):
+            with self.subTest(label):
+                broken = self.work / "broken-changes.json"
+                broken.write_text(text, encoding="utf-8")
+                code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", str(broken))
+                self.assert_refused(code, stderr, "is not valid JSON")
         code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", str(changes))
         self.assertEqual(code, 0, stderr)
         release = self.out / f"data-{VERSION}"
