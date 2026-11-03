@@ -406,9 +406,11 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 
 **Context:** Found by the outside voice of the A4 eng review (2026-11-01, O7; decision R9 in the plan). Start from the speech-rule check and add one store table or `PRAGMA user_version`-style row for the fingerprint.
 
+**Update 2026-11-03 (A4 slice 1 built):** the gap is now live for `votes/index.html`: `tests/test_politikfelder.py` `test_the_archive_shows_the_persisted_tags_and_the_front_page_the_render_time_cache` pins that an offline render without a repersist keeps the stored tags while puls.html follows the cache. Still latent in practice: no command refreshes the cache without a persist.
+
 **Effort:** S
 **Priority:** P3
-**Depends on:** A4 slice 1
+**Depends on:** none (A4 slice 1 is built)
 
 ### A4 slice 0 review: deferred findings
 
@@ -419,7 +421,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 - (d) **Refusal text:** the not-stored case names only `--offline --repersist`. When that repersist fails on the same report (pre-A1 without XML, new Sprechrolle), the text should also name moving the report out of `data/` or excluding the sitting in an online run. While an online update runs in another terminal, the offline check can see its fresh reports before the swap and give the same wrong advice. Say "if an online update is running, wait for it", or probe `registry.writer_lock`. (The lockout itself is R2's intent, plan O6.)
 - (e) The F7 comment "Refused before anything is written" overstates. `main` has already created the output directories, and the Antrag and Politikfeld cache loads can quarantine a corrupt cache. Say "before any page or store is written".
 - (f) `docs/project-documentation.md`'s scratch-preview example is an online run: it needs `DIP_API_KEY`, does a full staged rebuild and export, and `cp -c` is macOS-only. Say so, and add the README recipe's non-macOS copy command.
-- (g) Test hygiene: `tests/_site_store_fixture.py` `store_people` has no caller, and `build_site_store`'s `today`, `vorgang_cache` and `catalog` parameters are never passed. Slice 1 either uses them or drops them.
+- ~~(g) Test hygiene: `tests/_site_store_fixture.py` `store_people` has no caller, and `build_site_store`'s `today`, `vorgang_cache` and `catalog` parameters are never passed. Slice 1 either uses them or drops them.~~ **Done 2026-11-03** (A4 slice 1): `vorgang_cache` is used by `archive_rows` and the Politikfeld render test; `store_people`, `today` (now the module's `TODAY`) and `catalog` are gone.
 - (h) **The F7 refusal does not mention a backup.** `error: no store at …` names `--offline --repersist` first. For a store that was lost rather than never built, that repersist starts a fresh person registry (new keys and aliases, no roster); `docs/stable-ids.md` "Backup and recovery" says to restore the build store instead. Say "restore the store from a backup if you have one; otherwise …" in the message and the README row.
 - (i) Design records still describe `--no-persist` as live: `docs/designs/daten-page.md` (lines 214, 228, 258, 298, 351-352, 420, 441) and `docs/designs/fakt-der-woche.md:311`. Add a one-line "superseded by A4 slice 0 (v0.29.0.0): `--no-persist` removed" note to each.
 
@@ -450,7 +452,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Part 1 completed:** v0.23.4.0 (2026-10-29). Public copy says "Dossier": the Methodik's "Erzeugtes JSON" bullet ("Jedes Dossier verlinkt …", was "Sitzungsseite"), the overview heading "Erzeugte Dossiers" (was "Sitzungsdossiers"), and the internal component label "Dossiers" (was "Protokoll-Dossiers"). A test keeps the avoided names off both pages.
 
 **What is left:** wherever a published count spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". Audit on main at v0.23.1.0 (2026-10-29):
-- Already disclosed: the Daten Datenstand ("N von M Protokollen im Katalog als Dossier erfasst", `render_daten_datenstand`), the votes archive footer ("Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden"), and the catalog's "Erzeugte Dossiers" tile and its "Nur mit Dossier" filter.
+- Already disclosed: the Daten Datenstand ("N von M Protokollen im Katalog als Dossier erfasst", `render_daten_datenstand`), the votes archive footer ("… der Sitzungen in der Datenbank dieses Builds, also nur Sitzungen mit Dossier", A4 slice 1), and the catalog's "Erzeugte Dossiers" tile and its "Nur mit Dossier" filter.
 - Not disclosed: the Abgeordnete list's "Reden" column (`render_abgeordnete_index`), the puls.html header and Wochenvergleich, the Fakten pages and Methodik, and the speech counts on the Gesetzesvorhaben pages.
 
 **Why:** CONTEXT.md "Sitzung mit Dossier": every count covers only Sitzungen mit Dossier, because the store is rebuilt only from Dossier entries (`rebuild_database_from_entries`). A build with `--detail-limit` silently reports a subset as if it were the whole Wahlperiode.
@@ -1497,7 +1499,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 - the pass-through adapters `features/bills.py`, `features/facts.py` and `features/abgeordnete.py`, which call back into build functions through an untyped `ctx` dict;
 - the deprecated `--features`, `--enable`, `--disable` and `--list-features` flags with `resolve_from_args` and `warn_deprecated_feature_configuration`.
 
-`render_site` calls its page builders directly. `votes`, `summaries` and `aw_profiles` do real work and stay as plain modules without `ctx`.
+`render_site` calls its page builders directly. `votes`, `summaries` and `aw_profiles` do real work and stay as plain modules without `ctx`. (A4 slice 1, 2026-11-03, did the votes archive part: `VotesComponent.write_pages` and the `collect_votes_archive`/`write_votes_archive_page` ctx callables are gone, and `render_site` calls `write_votes_archive_page(votes_archive_rows(database_path))`.)
 
 **Why:** It is a seam with only one adapter: nothing varies across it, and every signature pays for it. CLAUDE.md's pre-release rule says to drop compatibility shims rather than carry them.
 
