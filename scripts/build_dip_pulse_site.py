@@ -10726,14 +10726,14 @@ def render_overview(
                 <div>
                   <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
-                  <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
+                  <p>{pulse_html.esc(protocol.get('datum'))}{pulse_html.distributed_phrase(protocol)}</p>
                 </div>
                 <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Öffnen</a>
               </div>
               <div class="metrics">
                 <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
                 <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-                <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+                <div><span>Drucksachen</span><strong>{pulse_html.sitting_document_count(items)}</strong></div>
                 <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>

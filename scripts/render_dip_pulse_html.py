@@ -2493,13 +2493,75 @@ def render_source_links(item: dict[str, Any]) -> str:
     return "".join(links)
 
 
+def distributed_phrase(protocol: dict[str, Any]) -> str:
+    """" · verteilt am <date>", or nothing when DIP gives no ``verteildatum``
+    (no WP 18 sitting has one)."""
+    distributed = str(protocol.get("verteildatum") or "").strip()
+    return f" · verteilt am {esc(distributed)}" if distributed else ""
+
+
+def _document_key(doc: dict[str, Any]) -> tuple[str, str] | None:
+    """One Drucksache, whichever source names it: its chamber and its number in
+    the store's canonical form ("21/06561" is "21/6561"). A paper with no
+    Bundesrat evidence is a Bundestag one, as ``stable_ids.document_issuer`` has it."""
+    number = str(doc.get("dokumentnummer") or "").strip()
+    if not number:
+        return None
+    if document_chamber(doc) == "BR":
+        return "BR", number
+    return "BT", derive.canonical_document_number(number) or number
+
+
+def top_documents(item: dict[str, Any]) -> list[tuple[tuple[str, str], str, str | None]]:
+    """The Drucksachen the TOP's "Drucksachen" section lists, one per document,
+    as (key, label, href or None): the XML references (``derive.xml_drucksachen``),
+    then the papers DIP links to the TOP's positions that no XML reference names.
+    Persist stores the same two sources per TOP (``persist_agenda_documents``).
+    The XML is authoritative, so its link wins for a number both name. WP 18/19
+    and many WP 20 protocols tag no Drucksache in the XML; their TOPs list the
+    DIP papers alone."""
+    documents: dict[tuple[str, str], tuple[str, str | None]] = {}
+    sources = [(doc, "bundestag-xml") for doc in derive.xml_drucksachen(item)]
+    sources += [(doc, "bundestag-dip") for doc in (item.get("api") or {}).get("linked_drucksachen") or []]
+    for doc, source in sources:
+        key = _document_key(doc)
+        if key is None:
+            continue
+        href = None
+        if doc.get("url"):
+            # The allowlist check every dossier link passes; a refusal must not abort the build.
+            try:
+                href = source_url(doc["url"], source)
+            except publication.PublicationStateError:
+                href = None
+        if key in documents:
+            if documents[key][1] is None and href:
+                documents[key] = (documents[key][0], href)
+            continue
+        number = str(doc.get("dokumentnummer")).strip()
+        documents[key] = (f"BR-Drs. {number}" if key[0] == "BR" else number, href)
+    return [(key, label, href) for key, (label, href) in documents.items()]
+
+
+def sitting_document_count(items: list[dict[str, Any]]) -> int:
+    """The distinct Drucksachen the sitting's TOP sections list; a document two
+    TOPs name counts once. The dossier header and the overview card show it."""
+    return len({key for item in items for key, _label, _href in top_documents(item)})
+
+
 def render_top_documents(item: dict[str, Any]) -> str:
-    if not derive.xml_drucksachen(item):
+    documents = top_documents(item)
+    if not documents:
         return ""
+    links = "".join(
+        f'<a class="doc-link" href="{esc(href)}">{esc(label)}</a>' if href
+        else f'<span class="doc-link muted">{esc(label)}</span>'
+        for _key, label, href in documents
+    )
     return (
         '<section class="top-documents">'
         "<h3>Drucksachen</h3>"
-        f'<div class="top-document-links">{render_source_links(item)}</div>'
+        f'<div class="top-document-links">{links}</div>'
         "</section>"
     )
 
@@ -4193,12 +4255,12 @@ def render_html(
       <div>
         <span class="eyebrow">Bundestag-Puls</span>
         <h1>{esc(protocol.get('titel') or protocol.get('dokumentnummer') or 'Plenarsitzung')}</h1>
-        <p class="subtitle">Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
+        <p class="subtitle">Sitzung vom {esc(protocol.get('datum'))}{distributed_phrase(protocol)}</p>
       </div>
       <div class="meta-grid">
         <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
         <div class="metric"><span>Reden</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
-        <div class="metric"><span>Drucksachen</span><strong>{esc(summary.get('xml_drucksache_count'))}</strong></div>
+        <div class="metric"><span>Drucksachen</span><strong>{esc(sitting_document_count(items))}</strong></div>
         <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>
