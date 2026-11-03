@@ -86,7 +86,7 @@ A fresh clone can build and open a representative site immediately, without cred
 scripts/preview_dip_pulse_site.sh demo
 ```
 
-The demo uses a committed extract of the official Plenarprotokoll 21/84, TOP 32 a/b, including its 16 speeches and the linked Drucksachen 21/6354 and 21/4833. It writes to `.context/dip-pulse-demo/`, validates the public output, and starts a local server. No credentials or network requests are involved, so it is the quickest way to inspect the product or verify a frontend change.
+The demo uses a committed extract of the official Plenarprotokoll 21/84, TOP 32 a/b, including its 14 Reden, 3 Beiträge (a Kurzintervention, its Erwiderung and a Zwischenfrage) and the linked Drucksachen 21/6354 and 21/4833. It persists that extract into a store under `.context/dip-pulse-demo/data/`, renders every page from the store as a real build does, validates the public output, and starts a local server. No credentials or network requests are involved, so it is the quickest way to inspect the product or verify a frontend change.
 
 To work with current Bundestag data, run an online build:
 

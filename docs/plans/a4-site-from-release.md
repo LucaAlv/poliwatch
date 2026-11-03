@@ -221,6 +221,7 @@ Built on `claude/a4-todo-plan-3119e1` on top of 40fa3bc.
 - Re-reading it from the real 21/84 XML fails ("agenda item set changed"), because the fixture holds a trimmed subset of TOPs.
 - Stamping the version onto it would publish old-rule counts as current.
 - So `build_demo_site.py` still renders store-less in PR 1, and a demo fixture rebuilt under the current rule is now a **Need** of slice 1. A store-reading archive breaks a store-less demo.
+- **Resolved for slice 1 (2026-11-03).** The fixture was regenerated from the real 21/84 XML (sha256 `3fd2ef65…6c7790`) by `scripts/extract_demo_fixture.py`, which now takes `validation_summary` from `contribution_summary` over the one extracted TOP, as a real report does. Its agenda item came out byte-identical to the committed one: the old fixture already held today's parse (14 Reden; 1 Kurzintervention, 1 Erwiderung, 1 Zwischenfrage), it only lacked the rule stamp and summary keys. The re-read path stays unusable for it (the trimmed TOP set), so the extractor, not `--fetch-xml`, is how it follows a rule change. `build_demo_site.py` now persists it through `rebuild_database_from_entries` into `OUTPUT/data/bundestag-pulse.sqlite`, reads the Abgeordnete back with `collect_abgeordnete`, and renders with that store; a fixture without the current rule stops it with exit 1.
 
 **Measurements**
 
