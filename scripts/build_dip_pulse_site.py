@@ -664,6 +664,17 @@ class CoverageExclusionsError(Exception):
     work and prints this instead of a traceback; the record is hand-editable."""
 
 
+def coverage_exclusions_readable(output_dir: Path) -> bool:
+    """False, after printing the error line, when ``main`` must stop because the
+    exclusion record cannot be read; checked once before a path that reads it."""
+    try:
+        load_coverage_exclusions(output_dir)
+    except CoverageExclusionsError as exc:
+        print(f"error: {exc}. Fix: repair the file, then re-run.", file=sys.stderr)
+        return False
+    return True
+
+
 def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     """The reviewed sittings of ``--exclude-document-number`` kept out of the
     store (D2), oldest first; empty when the record does not exist. Raises
@@ -675,8 +686,8 @@ def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
-    # ValueError covers JSONDecodeError and an integer past the digit limit.
-    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+    # ValueError covers JSONDecodeError, UnicodeDecodeError and an integer past the digit limit.
+    except (OSError, ValueError, RecursionError) as exc:
         raise CoverageExclusionsError(f"{path} cannot be read ({exc}); {shape}") from exc
     entries = payload.get("exclusions") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
@@ -5696,7 +5707,7 @@ def render_landing_page(
         <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
       </section>
     </main>
-    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert. {pulse_html.render_legal_links(depth=0)}</footer>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -6510,7 +6521,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
       <p>{pulse_html.esc(message)}</p>
     </header>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -11030,7 +11041,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -11571,7 +11582,7 @@ def render_catalog_page(
     </section>
     <p class="no-results" data-no-results hidden>Keine Sitzungen entsprechen den Filterkriterien.</p>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {render_catalog_script()}
@@ -14116,15 +14127,9 @@ def main() -> int:
     except OperatorFileError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    # Every path below reads the hand-editable exclusion record (D2): a typo in
-    # it stops here, naming the file and its shape.
-    try:
-        load_coverage_exclusions(args.output_dir)
-    except CoverageExclusionsError as exc:
-        print(f"error: {exc}. Fix: repair the file, then re-run.", file=sys.stderr)
-        return 1
-
     if getattr(args, "fetch_xml", False):
+        if not coverage_exclusions_readable(args.output_dir):
+            return 1
         output_dir = args.output_dir
         try:
             entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
@@ -14155,6 +14160,11 @@ def main() -> int:
         warn_deprecated_feature_configuration(args, root=root)
         print_effective_config(enrichments, args)
         return 0
+    # Every path below reads the hand-editable exclusion record (D2); a typo in
+    # it stops here, naming the file and its shape. The listing and
+    # --explain-config modes above do not read it, so it does not block them.
+    if not coverage_exclusions_readable(args.output_dir):
+        return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
     features = publication_selection()

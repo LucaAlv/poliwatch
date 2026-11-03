@@ -134,6 +134,9 @@ class DossierLayoutTests(unittest.TestCase):
             [(key, label) for key, label, _href in pulse_html.top_documents(second)],
             [(("BT", "20/456"), "20/456"), (("BT", "20/999"), "20/999")],
         )
+        # A DIP-only paper given zero-padded prints the canonical number, as the store and the archive do.
+        padded = {"xml_drucksachen": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/06561", "url": None}]}}
+        self.assertEqual([label for _key, label, _href in pulse_html.top_documents(padded)], ["21/6561"])
 
     # Value: protects=a sitting DIP gives no distribution date (every WP 18 sitting) prints no dangling "verteilt am"; fails_when=the subtitle or the overview card interpolate an empty verteildatum; why_new=TODOS.md "Dossier header" item, A3 spot checks; seam=none
     def test_no_verteilt_am_without_a_distribution_date(self) -> None:
