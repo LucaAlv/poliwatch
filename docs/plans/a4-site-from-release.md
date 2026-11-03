@@ -347,7 +347,7 @@ Built on `claude/peaceful-heisenberg-tr9f0f` on top of 940ed88. The reference st
     - `test_politikfelder.py:1445` becomes `test_the_archive_shows_the_persisted_tags_and_the_front_page_the_render_time_cache`: the cache takes effect at persist, and an offline render without a repersist keeps the persisted tags.
   - New: link order with the per-item xml-over-dip url (an XML reference listed twice, a DIP link listed twice, another sitting printing another url); fraction order from `rank`; a missing total leaves the Abweichler count absent; a vote under two TOPs takes the lowest `item_index`; a vote without Drucksachen; no store file. Also persist `ArchiveColumnsTests`, a schema 9 refusal and upgrade test (`test_repersist`), and the compare-script section.
   - Hand-seeded stores in 9 test files now write the `rank` columns.
-  - Item (g) of "A4 slice 0 review: deferred findings" is done: `store_people` and the unused `today`/`catalog` parameters are gone.
+  - Item (g) of "A4 slice 0 review: deferred findings" is done: `store_people` now has a caller (the demo test), and the unused `today`/`catalog` parameters are gone.
 - **TODOS.md:** (g) struck through; the Vorgang-cache staleness guard (R9) is now live for the archive; the archive part of "Delete the feature-selection axis" is noted as done; the footer quote is updated.
 
 **Substitute for the oracle, on fixtures (before the old path was deleted).** `collect_votes_archive` was wrapped so every call in the five archive suites also built a store from the same entries and rendered both rows with `render_votes_archive_index`.
@@ -400,7 +400,7 @@ sqlite3 .context/a4/B1/data/bundestag-pulse.sqlite "SELECT COUNT(*) FROM votes W
   - **R3:** for every archive row, follow the href to the dossier panel id and compare the result badge (`vote-result…` span), the Drucksache links (`doc-link` anchors) and the Abweichler figure. Slice 1 is not done until these agree on every vote. Kinds 1, 4 and 6 can make them disagree. If one does, fix it in persist or the JSON path.
 - **Fresh vs incremental:** a from-scratch build and an `--offline --repersist` give identical CSVs and `votes/index.html`.
 
-**Demo:** `build_demo_site.py` still renders store-less, so its archive shows the empty state. Its 21/84 fixture holds no votes, so no figure changes. The store-backed demo is a separate change.
+**Demo:** merged with the store-backed demo (see "Resolved for slice 1" under Slice 0 result): `build_demo_site.py` builds its own store and the archive reads it. The 21/84 fixture holds no votes, so the demo archive shows the empty state with the new footer copy; no figure changes.
 
 **Review checklist** (full pass):
 

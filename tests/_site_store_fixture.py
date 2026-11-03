@@ -16,6 +16,7 @@ from typing import Any
 
 import _support  # noqa: F401
 import build_dip_pulse_site as site
+import facts
 import speech_kinds
 
 #: The build date the fixture's rebuild computes facts for.
@@ -49,6 +50,15 @@ def build_site_store(
             path, entries, preserve_roster=True, today=TODAY, vorgang_cache=vorgang_cache
         )
     return path
+
+
+def store_people(database_path: Path) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """``(abg_mps, mp_lookup)`` read out of the store, as a build reads them."""
+    conn = facts.open_readonly(database_path)
+    try:
+        return site.collect_abgeordnete(conn)
+    finally:
+        conn.close()
 
 
 def persistable(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
