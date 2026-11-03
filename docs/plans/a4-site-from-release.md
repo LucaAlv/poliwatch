@@ -504,6 +504,8 @@ They differ only in hashes and sizes over timestamped files. So repersisting ove
 
 **CHANGELOG line for /gstack-ship:** "`votes/index.html` now renders from the SQLite store, not the cached report JSON: the archive runs the same vote rules as the dossier panel on stored rows. Schema 10 / export format 14 store what that needs: the order of a vote's Drucksachen and Fraktionen (`vote_documents.rank`, `vote_fractions.rank`) and each agenda item's own Drucksache url and order (`agenda_item_documents.url`, `.rank`). A vote total the source did not give is now NULL, not 0, so an Abweichler count can no longer rest on an invented zero, and recipe r4 leaves such votes out instead of ranking them as the closest vote. Old stores need `--offline --repersist`. The archive's Politikfelder now come from the store, so a refreshed Vorgang cache reaches them only with a repersist."
 
+**Scripts for the full run** (committed in `docs/plans/a4-slice1-oracle/`): `t11_measure.py <tip scripts dir> <output dir>` (T1.1), `r3_agreement.py <output dir>` (R3, archive vs dossier panel), `normalise.py <source> <destination>` (volatile tokens; rename the `g-…` export directories to one name before the `diff`).
+
 ## Verification (each slice)
 
 - Run the full suite on local Python, and also `uv run --python 3.13.12 python -m unittest discover -s tests` (review checklist).
