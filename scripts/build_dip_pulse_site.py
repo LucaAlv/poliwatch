@@ -666,17 +666,32 @@ def backfill_scope_lines(
 COVERAGE_EXCLUSIONS_FILENAME = "coverage-exclusions.json"
 
 
+class CoverageExclusionsError(Exception):
+    """The exclusion record (D2) cannot be read. ``main`` reads it before any
+    work and prints this instead of a traceback; the record is hand-editable."""
+
+
 def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     """The reviewed sittings of ``--exclude-document-number`` kept out of the
-    store (D2), oldest first; empty when the record does not exist."""
+    store (D2), oldest first; empty when the record does not exist. Raises
+    CoverageExclusionsError for a record that is not ``{"exclusions": [...]}``
+    with a ``document_number`` on every entry."""
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
+    shape = 'it must read {"exclusions": [{"document_number": "21/7", ...}, ...]}'
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
+    # ValueError covers JSONDecodeError and an integer past the digit limit.
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise CoverageExclusionsError(f"{path} cannot be read ({exc}); {shape}") from exc
     entries = payload.get("exclusions") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
-        raise RuntimeError(f"{path} has no exclusions list")
+        raise CoverageExclusionsError(f"{path} has no exclusions list; {shape}")
+    for position, entry in enumerate(entries, 1):
+        number = entry.get("document_number") if isinstance(entry, dict) else None
+        if not isinstance(number, str) or not number.strip():
+            raise CoverageExclusionsError(f"{path}: exclusion {position} has no document_number; {shape}")
     return entries
 
 
@@ -773,7 +788,8 @@ def update_coverage_exclusions(
     if entries == before:
         return
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
-    ordered = sorted(entries.values(), key=lambda entry: (entry["date"], entry["document_number"]))
+    # A hand-written entry may lack its date.
+    ordered = sorted(entries.values(), key=lambda entry: (str(entry.get("date") or ""), entry["document_number"]))
     dip.write_text_atomic(path, json.dumps({"exclusions": ordered}, ensure_ascii=False, indent=2) + "\n")
 
 
@@ -14145,6 +14161,13 @@ def main() -> int:
         operator = resolve_operator(args)
     except OperatorFileError as exc:
         print(f"error: {exc}", file=sys.stderr)
+        return 1
+    # Every path below reads the hand-editable exclusion record (D2): a typo in
+    # it stops here, naming the file and its shape.
+    try:
+        load_coverage_exclusions(args.output_dir)
+    except CoverageExclusionsError as exc:
+        print(f"error: {exc}. Fix: repair the file, then re-run.", file=sys.stderr)
         return 1
 
     if getattr(args, "fetch_xml", False):
