@@ -45,6 +45,16 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P1
 **Depends on:** None
 
+### `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF
+
+**What:** On the reference store, the `documents` row for Bundestag Drucksache 19/19 (linked from vote 493) holds `https://dserver.bundestag.de/brd/2019/0019-19.pdf`, which is BR-Drs. 19/19. The per-item link in `agenda_item_documents.url` is the right one, `btd/19/000/1900019.pdf`. Find which source supplied the Bundesrat url for a BT key (`persist.upsert_document`, `_document_url_rank`) and refuse a `/brd/` url on a BT row.
+
+**Why:** Found by the A4 slice 1 reference-store oracle (2026-11-04, T1.1 M2: 1 of 1,551 vote links). Since R6, the archive and the dossier panel print the per-item url, so no page shows the wrong link. The export's `documents.csv` still carries it.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** none
+
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
 **What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.

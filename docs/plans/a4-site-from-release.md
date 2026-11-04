@@ -499,12 +499,40 @@ They differ only in hashes and sizes over timestamped files. So repersisting ove
 | 9 Input shape | A blank or non-numeric count in a report: `_total_count` returns NULL for `None`/`""`. A non-numeric string raises in `int()` as before (persist already did `int(… or 0)`). |
 | 10 Interrupted run | No new writes outside the staged rebuild. The archive page is written as before. |
 | 11 Claims | The footer cites `store_coverage_gap`. The data dictionary says NULL means "keine Gesamtzahl" (`_total_count`), the XML-last and DIP-first url rule (`persist_agenda_documents`), and the ranks. The r4 method follows its new WHERE. README, stable-ids, CONTEXT and project-documentation name schema 10 / format 14. |
-| 12 Loop cost | Seven set-based queries; synthetic full size 2.5 s. Real-store time owed. |
+| 12 Loop cost | Seven set-based queries; synthetic full size 2.5 s; reference store 3.14 s for 619 votes (2026-11-04). |
 | 13 Last commit | Owed at commit time. |
 
 **CHANGELOG line for /gstack-ship:** "`votes/index.html` now renders from the SQLite store, not the cached report JSON: the archive runs the same vote rules as the dossier panel on stored rows. Schema 10 / export format 14 store what that needs: the order of a vote's Drucksachen and Fraktionen (`vote_documents.rank`, `vote_fractions.rank`) and each agenda item's own Drucksache url and order (`agenda_item_documents.url`, `.rank`). A vote total the source did not give is now NULL, not 0, so an Abweichler count can no longer rest on an invented zero, and recipe r4 leaves such votes out instead of ranking them as the closest vote. Old stores need `--offline --repersist`. The archive's Politikfelder now come from the store, so a refreshed Vorgang cache reaches them only with a repersist."
 
 **Scripts for the full run** (committed in `docs/plans/a4-slice1-oracle/`): `t11_measure.py <tip scripts dir> <output dir>` (T1.1), `r3_agreement.py <output dir>` (R3, archive vs dossier panel), `normalise.py <source> <destination>` (volatile tokens; rename the `g-…` export directories to one name before the `diff`).
+
+### Slice 1 reference-store oracle (2026-11-04)
+
+Run by the owner on the A3 reference store (`~/agent-runs/a3/full`, 716 sittings), on two clones. A was repersisted and rendered by `origin/main` c04dcc4 (v0.31.0.0 plus #132). B was repersisted and rendered by this branch at 2108295. The recipe is the one above, with `SOURCE_DATE_EPOCH=1793491200`.
+
+**T1.1 on B** (`t11_measure.py`):
+
+| Measure | Value |
+| --- | --- |
+| Store | 619 votes, 425,322 `vote_members`, 716 protocols; report votes 619, all ids distinct |
+| `votes.id` vs `vote_key` | 0 store-only, 0 report-only |
+| Politikfelder, report path vs stored | 0 differ. Stored sources: 563 drucksache, 30 not_fetched, 18 untagged, 8 top |
+| Vote links | 1,551. `documents.url` equals the per-item winner on 1,338, differs on 1, and 212 have no per-item link (sitting-level votes) |
+| Lowest `item_index` vs first TOP | 0 mismatches. 13 votes sit under 2+ TOPs of one sitting; 63 are sitting-level |
+| Votes with no `vote_documents` | 19, and their reports name no document either, so none is a (b) gap |
+| Short groups, missing Abweichler, groups not covering the total | 0, 0, 0 |
+| Votes with a NULL count | 0: no vote total moves from 0 to NULL on the reference store |
+| `votes_archive_rows` | 3.14 s for 619 rows; render 0.03 s |
+
+The one differing link is vote 493, Drucksache 19/19. `documents.url` holds the Bundesrat PDF `brd/2019/0019-19.pdf`; the per-item winner is the Bundestag PDF `btd/19/000/1900019.pdf`. Under R6 the archive and the panel both print the per-item url, so no page shows the wrong link. The stored `documents.url` predates slice 1 and is recorded in TODOS.md.
+
+**T1.7.** `diff -ru` of the normalised `votes/` shows only the two T1.5 copy lines (the header lead and the footer). All 619 rows are identical. That gives 0 (a) data diffs and 0 (b) diffs; none of the eight expected kinds occurred. `compare_store_values.py A B`: every table has the same row count, 0 vote totals changed, 0 NULL counts, and 0 of 1,908 Fakt values moved.
+
+**R3** (`r3_agreement.py`): on all 619 votes, the archive and the dossier panel agree on the result badge, the Drucksache links and the Abweichler figure (287 at 0, 332 above 0). 0 disagreements.
+
+**Both clones (not slice 1).** A and B print the same 45 "facts: changed winner" lines against the clone's earlier facts tables. These come from code merged since `~/agent-runs/a3/full` was last built, not from this branch. The stores agree with each other afterwards ("changed winners: none").
+
+**Still owed:** the browser check of the filter chips at 375px and in dark mode; the full-site `diff -rq`; the old and new values of the dossier "Drucksachen" card from #132 (the first attempt read `plenarprotokoll-catalog.json` as a report and stopped).
 
 ## Verification (each slice)
 
