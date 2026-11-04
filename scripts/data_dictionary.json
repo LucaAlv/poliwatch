@@ -45,6 +45,18 @@
           "unit": "DIP-Vorgangspositionskennung als Text.",
           "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
           "license": "dip"
+        },
+        "url": {
+          "meaning": "URL, die diese Quelle (Protokoll-XML oder DIP) für die Drucksache unter diesem Tagesordnungspunkt nennt; documents.url ist dagegen eine URL je Drucksache über alle Sitzungen. Nennt die XML eine Drucksache unter einem Punkt mehrfach, gilt die letzte genannte URL, bei DIP die erste.",
+          "unit": "URL als Text oder NULL, wenn die Quelle keine nennt.",
+          "source": "Protokoll-XML bzw. DIP-API: die URL, die diese Quelle für die Drucksache unter diesem Tagesordnungspunkt nennt, unverändert übernommen.",
+          "license": "dip"
+        },
+        "rank": {
+          "meaning": "Position der ersten Nennung der Drucksache in der Liste ihrer Quelle für diesen Tagesordnungspunkt, getrennt nach xml und api.",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend in Quellreihenfolge.",
+          "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
+          "license": "eigene-metadaten-zuordnung"
         }
       }
     },
@@ -1417,6 +1429,12 @@
           "unit": "Projektkennung des Dokuments als Text.",
           "source": "Bundestags-Abstimmung mit DIP-Dokumenten über die zur Abstimmung gehörenden Drucksachennummern verknüpft.",
           "license": "bundestag-abstimmungen"
+        },
+        "rank": {
+          "meaning": "Position der ersten Nennung der Drucksachennummer in der Nummernliste der Abstimmung; das Abstimmungsarchiv zeigt die Drucksachen in dieser Reihenfolge.",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
+          "source": "Bundestags-Abstimmung mit DIP-Dokumenten über die zur Abstimmung gehörenden Drucksachennummern verknüpft.",
+          "license": "bundestag-abstimmungen"
         }
       }
     },
@@ -1470,6 +1488,12 @@
           "unit": "Textcode yes, no, abstain oder NULL; Abwesenheiten bleiben bei der Mehrheitswahl außer Betracht.",
           "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen berechnet; Gleichstand/keine Stimmen ergibt NULL.",
           "license": "eigene-auswertung"
+        },
+        "rank": {
+          "meaning": "Reihenfolge, in der die Abstimmungsquelle die Zusammenschlüsse nennt (erste Nennung nach Zusammenführung gleichnamiger Schreibweisen).",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "license": "bundestag-abstimmungen"
         }
       }
     },
@@ -1601,25 +1625,25 @@
         },
         "yes_count": {
           "meaning": "Anzahl der Ja-Stimmen.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "no_count": {
           "meaning": "Anzahl der Nein-Stimmen.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "abstain_count": {
           "meaning": "Anzahl der Enthaltungen.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "absent_count": {
           "meaning": "Anzahl der nicht abgegebenen Stimmen bzw. Abwesenden laut Abstimmungsergebnis.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },

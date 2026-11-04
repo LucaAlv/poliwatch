@@ -191,6 +191,10 @@ def store_counts(database_path: Path) -> dict[str, Any]:
                           "person_bindings", "person_aliases", "documents", "votes", "vote_members", "facts")
         }
         counts["persons"] = conn.execute("SELECT COUNT(DISTINCT person_id) FROM person_records").fetchone()[0]
+        # Schema 10 stores a total the source did not give as NULL, not 0.
+        counts["votes_without_total"] = conn.execute(
+            "SELECT COUNT(*) FROM votes WHERE yes_count IS NULL OR no_count IS NULL OR abstain_count IS NULL OR absent_count IS NULL"
+        ).fetchone()[0]
         counts["contribution_kinds"] = dict(conn.execute("SELECT kind, COUNT(*) FROM contributions GROUP BY kind ORDER BY kind"))
         counts["protocols_per_wahlperiode"] = dict(conn.execute(
             "SELECT substr(document_number, 1, instr(document_number, '/') - 1), COUNT(*) FROM protocols GROUP BY 1 ORDER BY 1"

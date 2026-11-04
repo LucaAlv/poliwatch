@@ -1434,7 +1434,7 @@ class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
 
         def dangle(conn):
             conn.execute("PRAGMA foreign_keys = OFF")
-            conn.execute("INSERT INTO vote_documents VALUES ('no-vote', 'no-document')")
+            conn.execute("INSERT INTO vote_documents VALUES ('no-vote', 'no-document', 1)")
             conn.commit()
             conn.execute("PRAGMA foreign_keys = ON")
 

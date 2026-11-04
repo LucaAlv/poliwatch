@@ -1599,7 +1599,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
 def vote_key(vote: dict[str, Any]) -> str:
     """Identity of a roll-call vote (``derive.vote_identity``).
 
-    Shared with the votes archive (build_dip_pulse_site.collect_votes_archive):
+    Shared with the votes archive (features.votes.stored_votes keys on votes.id, the same identity):
     a vote can attach to two agenda items, so both dedupe on this key rather
     than on attachment.
     """

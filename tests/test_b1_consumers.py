@@ -5,6 +5,7 @@ from unittest.mock import Mock
 from pathlib import Path
 
 import _support  # noqa: F401
+import _site_store_fixture
 import person_registry
 import build_dip_pulse_site as build
 import derive
@@ -70,10 +71,11 @@ class SittingVoteConsumerTests(unittest.TestCase):
             ],
         }
         report = {
+            "protocol": {"dokumentnummer": "21/1", "datum": "2026-04-24"},
             "agenda_items": [{"index": 1, "votes": [{**vote}]}],
             "sitting_votes": [vote],
         }
-        rows = build.collect_votes_archive([
+        rows = _site_store_fixture.archive_rows([
             {"report": report, "page_path": "protocols/plenarprotokoll-21-1.html"}
         ])
         self.assertEqual(len(rows), 1)
@@ -91,8 +93,8 @@ class SittingVoteConsumerTests(unittest.TestCase):
 
     def test_unmatched_vote_archives_with_its_panel_anchor(self):
         vote = {"id": 9013, "date": "2026-04-24", "title": "Unzugeordnete Abstimmung"}
-        rows = build.collect_votes_archive([
-            {"report": {"agenda_items": [], "sitting_votes": [vote]},
+        rows = _site_store_fixture.archive_rows([
+            {"report": {"protocol": {"dokumentnummer": "21/1", "datum": "2026-04-24"}, "agenda_items": [], "sitting_votes": [vote]},
              "page_path": "protocols/plenarprotokoll-21-1.html"}
         ])
         self.assertEqual(len(rows), 1)

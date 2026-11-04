@@ -4,7 +4,7 @@
 
 This is roadmap item A4: TODOS.md "Split the dataset from the site: the site builds from a release alone" (effort L, P2). A1–A3 are done (v0.27.0.0, 4705fb3). The TODO's done criterion is: an offline build from a downloaded release SQLite, with no report JSON present, produces the same site as today's build. The dev-view API dumps are exempt.
 
-**Status (2026-11-01):** passed /plan-eng-review (see the review part at the end of this file). Ledger entries R1–R9 are settled; do not reopen them without new evidence. Owner decisions D8–D10 stay open until their slices. Slices 0 and 1 are planned down to individual tasks and land as two PRs; later slices are headlines only, because slice 1 will change what they need.
+**Status (2026-11-03):** slices 0 and 1 built (slice 1's reference-store oracle owed, see "Slice 1 result"). **Status (2026-11-01):** passed /plan-eng-review (see the review part at the end of this file). Ledger entries R1–R9 are settled; do not reopen them without new evidence. Owner decisions D8–D10 stay open until their slices. Slices 0 and 1 are planned down to individual tasks and land as two PRs; later slices are headlines only, because slice 1 will change what they need.
 
 ### What the code does today (census, 2026-11-01, at 4705fb3)
 
@@ -221,6 +221,7 @@ Built on `claude/a4-todo-plan-3119e1` on top of 40fa3bc.
 - Re-reading it from the real 21/84 XML fails ("agenda item set changed"), because the fixture holds a trimmed subset of TOPs.
 - Stamping the version onto it would publish old-rule counts as current.
 - So `build_demo_site.py` still renders store-less in PR 1, and a demo fixture rebuilt under the current rule is now a **Need** of slice 1. A store-reading archive breaks a store-less demo.
+- **Resolved for slice 1 (2026-11-03).** The fixture was regenerated from the real 21/84 XML (sha256 `3fd2ef65…6c7790`) by `scripts/extract_demo_fixture.py`, which now takes `validation_summary` from `contribution_summary` over the one extracted TOP, as a real report does. Its agenda item came out byte-identical to the committed one: the old fixture already held today's parse (14 Reden; 1 Kurzintervention, 1 Erwiderung, 1 Zwischenfrage), it only lacked the rule stamp and summary keys. The re-read path stays unusable for it (the trimmed TOP set), so the extractor, not `--fetch-xml`, is how it follows a rule change. `build_demo_site.py` now persists it through `rebuild_database_from_entries` into `OUTPUT/data/bundestag-pulse.sqlite`, reads the Abgeordnete back with `collect_abgeordnete`, and renders with that store; a fixture without the current rule stops it with exit 1.
 
 **Measurements**
 
@@ -316,6 +317,228 @@ Needs PR 1 and a demo fixture under the current speech rule (Slice 0 result). Th
 **T1.7 Oracle run (R4, R8, R3)**
 - With the two D3 clones, `diff -ru A/votes B/votes` must show only (a) diffs, each recorded with old and new values; loop on (b).
 - Cross-page agreement (R3): for every vote, the archive row and the dossier panel show the same result badge, Drucksache links and Abweichler figure. A disagreement is fixed in persist or the JSON path, or slice 1 waits.
+
+## Slice 1 result (2026-11-03)
+
+Built on `claude/peaceful-heisenberg-tr9f0f` on top of 940ed88. The reference store (`~/agent-runs/a3/full`) was not on the build machine, so T1.1's measurements and the T1.7 oracle are **owed** (recipe below). Everything else landed.
+
+**What landed**
+- **Schema 10 / export format 14** (not 9/12 as planned: C1 took schema 9 and format 13 first). `require_current_schema` refuses a schema 9 store (no `vote_fractions.rank`) with the upgrade command.
+  - `vote_fractions.rank`: first-seen order of `derive.merge_fractions` (R8); `_repoint_party` keeps the smaller rank when it merges two rows.
+  - `vote_documents.rank`: place of the number's first occurrence in `vote.document_numbers`.
+  - `agenda_item_documents.url` (R6) and **`agenda_item_documents.rank`**. The rank is an addition to the plan: `_vote_procedure_type` reads the TOP's DIP links in their order, and a table without an order column has none (checklist class 3). The url follows `document_source_links`: an XML reference listed twice under one TOP ends on its last url, a DIP link on its first.
+  - `votes.yes_count` / `no_count` / `abstain_count` / `absent_count`: nullable; persist writes NULL for a count the report does not give (`_total_count`), never 0.
+  - **Politikfeld state needed no column.** `vote_politikfelder.source` already stores `not_fetched` apart from `untagged`, and the adapter hands `politikfelder.shown` the stored `(tags, source)`.
+  - Data dictionary, README, CONTEXT.md, `docs/stable-ids.md`, `docs/project-documentation.md` updated. `scripts/compare_store_values.py` gains a "vote totals" section (votes with a NULL count; every shared vote whose total moved, old and new). `scripts/validate_store_gate.py` records `votes_without_total` in the receipt.
+  - **Recipe r4** now leaves out a vote with a NULL Ja or Nein total. Before, such a vote was stored as 0:0, so it ranked first with Differenz 0; with NULL it would still sort first (SQLite puts NULL first in `ASC`). The method text says so.
+- **T1.3 adapter:** `features.votes.stored_votes(conn)` reads seven queries (fractions, members, document numbers, Politikfelder, supplying TOPs, TOP links, votes), groups them by vote id, and returns `StoredVote`s in the report shapes. `build_dip_pulse_site.votes_archive_rows(database_path)` then runs the unchanged rules (`merge_fractions`, `_fraction_position`, `vote_abweichler_count`, `_vote_procedure_type`, `politikfelder.shown`, `document_source_links`/`_chambers`, `vote_anchor_id`).
+  - The supplying TOP is the lowest `item_index` among the vote's TOPs in its own sitting.
+  - A member's identity is its `mps` id (one `vote_members` row per vote and MP).
+  - href: `report_paths(…, protocols.document_number)`, the dossier writer's slug.
+  - No store file: an empty archive, as the Fakten pages behave; `main` refuses that case first (F7).
+- **T1.4:** `render_site` calls `write_votes_archive_page(output_dir, votes_archive_rows(database_path), features)`. Gone: `collect_votes_archive`, `VotesComponent.write_pages`, and the two ctx callables.
+- **T1.5 copy:** header "Jede namentliche Abstimmung der erfassten Sitzungen, neueste zuerst."; footer "Die Liste umfasst die namentlichen Abstimmungen der Sitzungen in der Datenbank dieses Builds, also nur Sitzungen mit Dossier; sie enthält nicht jede Sitzung des Katalogs." True because the store holds exactly the cached reports minus the recorded exclusions (`store_coverage_gap`, checked by every render from `main`), and every cached report is written as a dossier.
+- **T1.6 tests:**
+  - `tests/_site_store_fixture.py` gains `persistable` (it fills in a protocol id and the current speech-rule version, nothing else) and `archive_rows(entries, vorgang_cache)`, a rebuilt store read by `votes_archive_rows`. Every ported archive assertion now runs through the production rebuild path.
+  - Ported: `test_build_dip_pulse_site.VotesArchiveTests`, `test_b1_consumers`, `test_mehrheitsvotum`, `test_politikfelder`, `test_vote_interpretation`, and `tests/votes_archive_browser_fixture.py`.
+  - Dropped: `test_write_page_is_skipped_when_the_votes_feature_is_off`, because the switch is gone.
+  - Rewritten:
+    - `test_collect_leaves_href_none_when_page_path_is_missing` becomes `test_href_names_the_dossier_of_the_votes_sitting_by_its_protocol_number`.
+    - `test_politikfelder.py:1445` becomes `test_the_archive_shows_the_persisted_tags_and_the_front_page_the_render_time_cache`: the cache takes effect at persist, and an offline render without a repersist keeps the persisted tags.
+  - New: link order with the per-item xml-over-dip url (an XML reference listed twice, a DIP link listed twice, another sitting printing another url); fraction order from `rank`; a missing total leaves the Abweichler count absent; a vote under two TOPs takes the lowest `item_index`; a vote without Drucksachen; no store file. Also persist `ArchiveColumnsTests`, a schema 9 refusal and upgrade test (`test_repersist`), and the compare-script section.
+  - Hand-seeded stores in 9 test files now write the `rank` columns.
+  - Item (g) of "A4 slice 0 review: deferred findings" is done: `store_people` now has a caller (the demo test), and the unused `today`/`catalog` parameters are gone.
+- **TODOS.md:** (g) struck through; the Vorgang-cache staleness guard (R9) is now live for the archive; the archive part of "Delete the feature-selection axis" is noted as done; the footer quote is updated.
+
+**Substitute for the oracle, on fixtures (before the old path was deleted).** `collect_votes_archive` was wrapped so every call in the five archive suites also built a store from the same entries and rendered both rows with `render_votes_archive_index`.
+
+| Result | Calls |
+| --- | --- |
+| HTML identical | 28 |
+| Differs only in the href slug | 2 |
+| Could not persist | 4 |
+| **Total** | **34** |
+
+- The 2 href diffs: the test's `page_path` was `plenarprotokoll-x.html` while the protocol number was 20/999. A real build writes the page under the number's slug, so these are not page diffs.
+- The 4 that could not persist: their reports had no protocol number. The ported tests now give one.
+
+The browser check (`tests/votes_archive_browser_check.js` over the store-built fixture page) passes, and the fixture page has 0 px horizontal overflow at 375 px in light and dark.
+
+**Differences the oracle must classify.** Each is a kind of (a) diff the store path can produce and the fixtures do not exercise. Each needs a count on the reference store, plus old and new values where a page changes:
+1. Drucksache numbers print canonical ("21/06561" → "21/6561"), and links match on the canonical number on both sides.
+2. The Drucksachetyp column reads `documents.document_type`, one value per Drucksache, instead of the type on that TOP's DIP link.
+3. Titles and topics have their whitespace collapsed (`clean`).
+4. The Abweichler count dedupes members on the reconciled `mps` id, not on `derive.vote_member_identity`. If the registry folds two Einzelstimmen of one vote into one MP, that vote can turn partial.
+5. A vote id stored for two sittings links to the sitting persist wrote last (`votes.protocol_id`). The JSON path took the newest entry.
+6. A vote number that `upsert_document` refuses is dropped, where the JSON path showed a muted span.
+7. The supplying TOP is the lowest `item_index` (T1.1 confirms it equals first-seen).
+8. Politikfelder come from the cache at persist time (intended, R4).
+
+**Measurements:** a synthetic store at the reference size (556 votes, 382,528 `vote_members`, 140 sittings × 20 TOPs × 16 links) builds the rows in 2.5 s and renders the page in 0.02 s. The time on the real store is owed (checklist class 12).
+
+**Owed on the reference store (T1.1, T1.7, R3).** Use the slice 0 recipe, with A = 940ed88 and B = the slice 1 tip; both need `--offline --repersist`, because the tip refuses a schema 9 store.
+
+```bash
+cp -cR ~/agent-runs/a3/full .context/a4/A1 && cp -cR ~/agent-runs/a3/full .context/a4/B1
+git archive 940ed88 | tar -x -C .context/a4/src-base1 ; git archive <tip> | tar -x -C .context/a4/src-tip1
+SOURCE_DATE_EPOCH=1793491200 python3 .context/a4/src-base1/scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/a4/A1
+SOURCE_DATE_EPOCH=1793491200 python3 .context/a4/src-tip1/scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/a4/B1
+diff -u .context/a4/A1/votes/index.html .context/a4/B1/votes/index.html   # after the slice 0 normalisation
+python3 scripts/compare_store_values.py .context/a4/A1 .context/a4/B1     # expect only "vote totals" to move
+sqlite3 .context/a4/B1/data/bundestag-pulse.sqlite "SELECT COUNT(*) FROM votes WHERE yes_count IS NULL OR no_count IS NULL"
+```
+
+- **T1.1** on B1:
+  - Votes with a NULL count, and the 0 → NULL list from `compare_store_values`.
+  - Votes whose stored `documents.url` differs from their supplying TOP's winning link. Count it in Python with `stored_votes` and `document_source_links`, and record it in the data changelog.
+  - The lowest `item_index` against `iter_report_votes`' first TOP over the cached reports, and `votes.id` against `pulse_html.vote_key`.
+  - The 4 votes with no `vote_documents`.
+  - The short-group count, expected 0.
+  - The render time of `votes_archive_rows`.
+- **T1.7:**
+  - The `votes/` diff must show only the kinds listed above, each counted with old and new values. Loop on anything else.
+  - **R3:** for every archive row, follow the href to the dossier panel id and compare the result badge (`vote-result…` span), the Drucksache links (`doc-link` anchors) and the Abweichler figure. Slice 1 is not done until these agree on every vote. Kinds 1, 4 and 6 can make them disagree. If one does, fix it in persist or the JSON path.
+- **Fresh vs incremental:** a from-scratch build and an `--offline --repersist` give identical CSVs and `votes/index.html`.
+
+### Slice 1 sample oracle (2026-11-03)
+
+The owed checks, run on a real-data sample built for the purpose, not on the reference store. **The sample passes all of them.** It cannot stand in for the reference-store run, because it holds none of the source shapes that make the expected diff kinds (see "Still owed" below).
+
+**Sample.** Built online by 940ed88 (`git archive` into a src-base dir), into `.context/a4-sample/base`:
+- 42 WP 21 sittings, 21/62–21/103 (2026-03-05 to 2026-10-16). The command was `--limit 45 --detail-limit 0 --protocol-wahlperiode 21 --vote-scan-pages 90 --sleep 1`; 21/104–106 have no XML yet.
+- 8 WP 20 sittings, 20/207–20/214 (2024-12-19 to 2025-03-18), with `--document-number`. They bring in Gruppe BSW, Gruppe Die Linke and fraktionslos.
+- **Store:** 50 sittings; 55 votes in 21 of them (49 under a TOP, 6 sitting-level); 35,881 `vote_members`; 354 `vote_fractions`; 106 `vote_documents`; 3,172 `agenda_item_documents`; 9 parties.
+- **Sources:** 50 XML downloads in two runs (42 between 11:08 and 12:00 UTC, 8 between 12:02 and 12:19). DIP was asked at 1 s spacing. No timeout, no slow answer, no failed person lookup or Politikfeld lookup.
+- **Run times:**
+  - online builds: 3,132 s (42 sittings) and 1,035 s (8 sittings);
+  - `--offline --repersist` with render and export: A (940ed88) 59 s, B (8bb194a) 73 s;
+  - `votes_archive_rows`: 0.21 s for 55 rows; the page render: 0.003 s.
+
+  A and B are `cp -a` clones of the sample. Both runs used `SOURCE_DATE_EPOCH=1793491200` and the slice 0 normalisation.
+
+**T1.1 on B** (`stored_votes` and the tip's rule functions against the 50 cached reports):
+
+| Measure | Sample |
+| --- | --- |
+| Politikfelder differ, `report_politikfelder` against stored `vote_politikfelder` (both through `shown`) | 0 of 55 (all 55 `drucksache`) |
+| Vote links whose `documents.url` differs from the supplying TOP's winning link | 0 of 94; the other 12 links belong to the 6 sitting-level votes, which have no TOP link on either path |
+| Lowest `item_index` ≠ `iter_report_votes`' first TOP | 0 of 55 (no vote sits under two TOPs) |
+| `votes.id` ≠ `pulse_html.vote_key` | 0 (55 ids on each side) |
+| Votes with no `vote_documents` | 0 |
+| Short groups (member rows do not cover the fraction counts) | 0; Abweichler count None: 0 |
+| Votes with a NULL count | 0 |
+
+**T1.7 diff, A against B:**
+- `diff -rq` before normalisation: `votes/index.html`, the export generation directory, `datenstand.json` and `data/features.json`. Also `database.html`, `index.html`, `overview.html` and `sources.html`. All 50 dossiers, `puls.html`, `bills/`, `abgeordnete/` and `fakt/` are byte-identical.
+- After normalisation, **`votes/index.html` differs in 2 lines, both the T1.5 copy:**
+  - header: "aus den erzeugten Plenarprotokoll-Dossiers" → "der erfassten Sitzungen";
+  - footer: the `--detail-limit` sentence → "Die Liste umfasst die namentlichen Abstimmungen der Sitzungen in der Datenbank dieses Builds, …".
+- **All 55 rows are byte-identical**, including the `data-fraktion-positions` key order (R8) and the Drucksachetyp text. 0 (a) data diffs, 0 (o), 0 (b).
+- Of the eight kinds listed above, the sample has none of the source shapes:
+  - 0 zero-padded Drucksache numbers (kind 1);
+  - 0 titles with extra whitespace (kind 3);
+  - 0 member identities folded by the registry: 35,881 report identities against 35,881 `vote_members` (kind 4);
+  - 0 vote ids in two sittings (kind 5);
+  - 0 refused numbers (kind 6);
+  - 0 votes under two TOPs (kind 7).
+  - Kinds 2 and 8 change no row.
+- `index.html`, `overview.html` and `sources.html` are equal after normalisation: wall-clock only.
+- **Export:** `agenda_item_documents` gains `url` and `rank`, both set on all 3,172 rows. `vote_documents.rank` is set on all 106 rows, `vote_fractions.rank` on all 354. Every pre-existing column is equal in value and in row order, and `votes` is unchanged.
+- `datenstand.json`, DATA.md, `datenstand-local.csv` and `database.html` change only in these:
+  - format 13 → 14 and schema 9 → 10;
+  - the codebook rows for the new columns;
+  - the r4 `WHERE`;
+  - sizes and sha256 over timestamped files, as in slice 0.
+- `data/features.json` is equal after normalisation.
+
+**`compare_store_values.py A B`:** nothing moved.
+- 50 shared protocols;
+- 0 changed vote totals; votes with a NULL count 0 → 0, so there is no 0 → NULL on this sample;
+- 0 of 288 Fakt values moved;
+- row counts, parties, `leading_vote`, Redeanteil and r3 are equal.
+
+**R3 agreement on B:** a scratch script followed each of the 55 archive hrefs to its `vote-…` panel. The anchor exists exactly once each time. It compared:
+- the result badge (span HTML);
+- the Drucksache links (label and href, in order, from the vote head only, not the committee line);
+- the Abweichler figure: `data-abweichler` against the panel's "(N):" labels, "Niemand stimmt anders …" (0), or the gap note (none).
+
+**0 disagreements.** That covers 55 badges, 106 links (94 linked, 12 muted) and Abweichler figures of 0 on 31 votes and above 0 on 24 (145 in total). A negative control, a copy with one badge and one count altered, reported both.
+
+**Store-less repersist (part of "fresh vs incremental"):** the tip ran `--offline --repersist` into a third clone with the store and export deleted (C, 66 s). B and C agree on:
+- every CSV;
+- `votes/index.html` and every page;
+- every `compare_store_values` figure.
+
+They differ only in hashes and sizes over timestamped files. So repersisting over a schema 9 store carries nothing into B that a store-less repersist would not produce. The online from-scratch half is not run.
+
+**Defects:** none found, nothing fixed.
+
+**Still owed on the reference store** (the recipe above):
+- The counts and old/new values of kinds 1–8. The sample has no source shape for any of them; on the reference store, kinds 1, 4, 5 and 6 are the ones that can make the archive and the panel disagree.
+- The 0 → NULL vote totals (0 here) and the 4 votes with no `vote_documents` (none here).
+- The short-group count on 556 votes, and the `documents.url` against per-item winner count for the data changelog (0 of 94 here).
+- R3 on all 556 votes.
+- WP 18/19 sittings (none here).
+- The render time at 382k `vote_members` (0.21 s at 35,881 here, 2.5 s synthetic).
+- An online from-scratch build against `--offline --repersist`.
+- The browser check of the filter chips at 375 px and in dark mode, not re-run here.
+
+**Demo:** merged with the store-backed demo (see "Resolved for slice 1" under Slice 0 result): `build_demo_site.py` builds its own store and the archive reads it. The 21/84 fixture holds no votes, so the demo archive shows the empty state with the new footer copy; no figure changes.
+
+**Review checklist** (full pass):
+
+| Class | Answer |
+| --- | --- |
+| 1 Sibling path | Every page build reaches the archive through `render_site` → `votes_archive_rows(database_path)`: online after the staged rebuild (`main` runs `require_current_schema` and `store_coverage_gap` first), `--offline` and `--offline --repersist` after the F7 and R2 checks. Direct `render_site` calls and the demo without a store get an empty archive. The export, facts and the release script do not read the archive. The schema 9 refusal is in `require_current_schema`, which the rebuild, the export and every render path call. |
+| 2 Stale beats fresh | The archive's tags no longer follow a cache refreshed after persist (R9 TODO, now live). Nothing is carried forward: all four new columns are written fresh on every persist. |
+| 3 Order | Fraction, link and TOP-link order all come from stored ranks. Ties in `ORDER BY` fall back to the party name, but none can occur, because ranks are unique per vote or per (TOP, source). The supplying TOP is the lowest `item_index`, independent of row order. |
+| 4 One key | Vote identity is `votes.id`, written via `derive.vote_identity`. The href comes from `report_paths` on `protocols.document_number`. Document numbers are canonical on both sides of the link lookup. |
+| 5 Absent vs zero | Missing totals are NULL, and `vote_groups_cover_total` rejects them (test). Recipe r4 excludes NULL. The facts query `yes+no > 0` already excludes NULL. `_fact_vote_citation` only resolves votes the facts query chose. A vote without fractions, members, documents or Politikfeld rows gets empty lists or `_NO_TAGGING` (tests). |
+| 6 Derived columns | `_repoint_party` merges ranks with `MIN`. `leading_vote` is unchanged. |
+| 7, 8 | Not touched. |
+| 9 Input shape | A blank or non-numeric count in a report: `_total_count` returns NULL for `None`/`""`. A non-numeric string raises in `int()` as before (persist already did `int(… or 0)`). |
+| 10 Interrupted run | No new writes outside the staged rebuild. The archive page is written as before. |
+| 11 Claims | The footer cites `store_coverage_gap`. The data dictionary says NULL means "keine Gesamtzahl" (`_total_count`), the XML-last and DIP-first url rule (`persist_agenda_documents`), and the ranks. The r4 method follows its new WHERE. README, stable-ids, CONTEXT and project-documentation name schema 10 / format 14. |
+| 12 Loop cost | Seven set-based queries; synthetic full size 2.5 s; reference store 3.14 s for 619 votes (2026-11-04). |
+| 13 Last commit | Owed at commit time. |
+
+**CHANGELOG line for /gstack-ship:** "`votes/index.html` now renders from the SQLite store, not the cached report JSON: the archive runs the same vote rules as the dossier panel on stored rows. Schema 10 / export format 14 store what that needs: the order of a vote's Drucksachen and Fraktionen (`vote_documents.rank`, `vote_fractions.rank`) and each agenda item's own Drucksache url and order (`agenda_item_documents.url`, `.rank`). A vote total the source did not give is now NULL, not 0, so an Abweichler count can no longer rest on an invented zero, and recipe r4 leaves such votes out instead of ranking them as the closest vote. Old stores need `--offline --repersist`. The archive's Politikfelder now come from the store, so a refreshed Vorgang cache reaches them only with a repersist."
+
+**Scripts for the full run** (committed in `docs/plans/a4-slice1-oracle/`): `t11_measure.py <tip scripts dir> <output dir>` (T1.1), `r3_agreement.py <output dir>` (R3, archive vs dossier panel), `normalise.py <source> <destination>` (volatile tokens; rename the `g-…` export directories to one name before the `diff`).
+
+### Slice 1 reference-store oracle (2026-11-04)
+
+Run by the owner on the A3 reference store (`~/agent-runs/a3/full`, 716 sittings), on two clones. A was repersisted and rendered by `origin/main` c04dcc4 (v0.31.0.0 plus #132). B was repersisted and rendered by this branch at 2108295. The recipe is the one above, with `SOURCE_DATE_EPOCH=1793491200`.
+
+**T1.1 on B** (`t11_measure.py`):
+
+| Measure | Value |
+| --- | --- |
+| Store | 619 votes, 425,322 `vote_members`, 716 protocols; report votes 619, all ids distinct |
+| `votes.id` vs `vote_key` | 0 store-only, 0 report-only |
+| Politikfelder, report path vs stored | 0 differ. Stored sources: 563 drucksache, 30 not_fetched, 18 untagged, 8 top |
+| Vote links | 1,551. `documents.url` equals the per-item winner on 1,338, differs on 1, and 212 have no per-item link (sitting-level votes) |
+| Lowest `item_index` vs first TOP | 0 mismatches. 13 votes sit under 2+ TOPs of one sitting; 63 are sitting-level |
+| Votes with no `vote_documents` | 19, and their reports name no document either, so none is a (b) gap |
+| Short groups, missing Abweichler, groups not covering the total | 0, 0, 0 |
+| Votes with a NULL count | 0: no vote total moves from 0 to NULL on the reference store |
+| `votes_archive_rows` | 3.14 s for 619 rows; render 0.03 s |
+
+The one differing link is vote 493, Drucksache 19/19. `documents.url` holds the Bundesrat PDF `brd/2019/0019-19.pdf`; the per-item winner is the Bundestag PDF `btd/19/000/1900019.pdf`. Under R6 the archive and the panel both print the per-item url, so no page shows the wrong link. The stored `documents.url` predates slice 1 and is recorded in TODOS.md.
+
+**T1.7.** `diff -ru` of the normalised `votes/` shows only the two T1.5 copy lines (the header lead and the footer). All 619 rows are identical. That gives 0 (a) data diffs and 0 (b) diffs; none of the eight expected kinds occurred. `compare_store_values.py A B`: every table has the same row count, 0 vote totals changed, 0 NULL counts, and 0 of 1,908 Fakt values moved.
+
+**R3** (`r3_agreement.py`): on all 619 votes, the archive and the dossier panel agree on the result badge, the Drucksache links and the Abweichler figure (287 at 0, 332 above 0). 0 disagreements.
+
+**Both clones (not slice 1).** A and B print the same 45 "facts: changed winner" lines against the clone's earlier facts tables. These come from code merged since `~/agent-runs/a3/full` was last built, not from this branch. The stores agree with each other afterwards ("changed winners: none").
+
+**Full site** (`diff -rq` of the normalised clones, export generation directories and stores aside): only `database.html` and `votes/index.html` differ. `database.html` differs by export format 13 → 14, schema 9 → 10, the new codebook rows, the r4 `WHERE`, and the hashes and sizes of the export files.
+
+**Drucksachen card from #132** (measured on B's reports): it moves on 572 of 716 dossiers, from a total of 5,198 to 29,353 (e.g. 18/100 0 → 72, 18/130 0 → 86). Recorded in the TODOS.md Completed note.
+
+**Browser check (2026-11-04, ship):** `tests/run_bills_browser_check.mjs` passes the votes archive filter and `?politikfeld` preload at desktop and mobile; at 375 px in dark mode the fixture page has 0 px overflow and the Verkehr chip filters 4 rows to 2.
+
+**Ship review fix (2026-11-04):** the review found that NULL totals could not arise from fresh parser output: `vote_counts_from_csv` padded a listing without `data-chart-values` with four zeros. The listing parser now keeps a missing count as `None` (no chart values: no total), and persist stores a four-zero total as NULL (`_stored_total`), which also covers cached reports. **Owed on the reference store:** the 0 → NULL list from `compare_store_values.py A B` and r4's old and new first rows; facts cannot move (`yes + no > 0`). `derive.vote_groups_cover_total` also reads four zeros as no total, so the archive and the dossier panel keep agreeing: beside four-zero Fraktion rows the panel would otherwise say "Niemand stimmt anders" (0) where the store path gives no figure. Such a vote's Abweichler figure moves from 0 to absent on both pages; its count on the reference store is owed with the replay.
 
 ## Verification (each slice)
 

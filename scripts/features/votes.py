@@ -608,6 +608,154 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
     return "".join(panels)
 
 
+# ---------------------------------------------------------------------------
+# Store-to-vote adapter for the votes archive (A4 slice 1, plan R5)
+#
+# The archive renders from the store. It does not re-express the vote rules in
+# SQL: the rows are loaded back into the report shapes the rules read (a vote
+# with its fractions, members and Drucksache numbers; the agenda item whose
+# links it shows; the sitting's DIP Drucksachen), and the archive then runs the
+# same derive, politikfelder and votes functions the dossier panel runs. A
+# difference between the two pages can then only come from what persist stored.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StoredVote:
+    """One stored vote, in the shapes the report path hands the vote rules.
+
+    ``vote``: the vote dict (``id``, ``date``, ``title``, ``topic``, ``total``
+    with ``None`` for a count the source did not give, the result fields,
+    ``inverted``, ``document_numbers`` in stored order, ``fractions`` in stored
+    order, ``members``). ``item``: the agenda item that supplies the vote's
+    links, the one with the lowest ``item_index`` in the vote's sitting, with
+    its ``api.linked_drucksachen`` and ``xml_drucksachen`` as stored; ``None``
+    for a vote under no TOP. ``sitting_documents``: ``derive.report_drucksachen``
+    of the sitting's stored DIP links. ``tagging``: the stored Politikfeld tags
+    and their source. ``document_number``: the sitting's protocol number."""
+
+    vote: dict[str, Any]
+    item: dict[str, Any] | None
+    sitting_documents: Mapping[str, Mapping[str, Any]]
+    tagging: politikfelder.Tagging
+    document_number: str | None
+
+
+#: A vote with no vote_politikfelder row: persist writes one for every vote, so
+#: only a store persisted outside that path lacks it; shown as no tag at all.
+_NO_TAGGING: politikfelder.Tagging = ([politikfelder.UNTAGGED], "not_fetched")
+_TOTAL_COLUMNS = (("yes", "yes_count"), ("no", "no_count"), ("abstain", "abstain_count"), ("absent", "absent_count"))
+
+
+def stored_votes(conn: Any) -> list[StoredVote]:
+    """Every vote in the store as a ``StoredVote``, in no particular order.
+
+    One query per table, grouped by vote id in Python, never a query per vote:
+    the reference store holds 556 votes and 382,441 vote_members rows."""
+    fractions: dict[str, list[dict[str, Any]]] = {}
+    for row in conn.execute(
+        "SELECT vf.vote_id, pa.name, vf.yes_count, vf.no_count, vf.abstain_count, vf.absent_count, vf.total_count "
+        "FROM vote_fractions vf JOIN parties pa ON pa.id = vf.party_id ORDER BY vf.vote_id, vf.rank, pa.name"
+    ):
+        fractions.setdefault(row[0], []).append({
+            "name": row[1],
+            "counts": {"yes": row[2], "no": row[3], "abstain": row[4], "absent": row[5]},
+            "total": row[6],
+        })
+
+    # A member's name is its mps id: vote_members holds one row per vote and MP,
+    # so the identity derive.vote_abweichler dedupes on is the store's own.
+    members: dict[str, list[dict[str, Any]]] = {}
+    for vote_id, mp_id, party, choice in conn.execute(
+        "SELECT vm.vote_id, vm.mp_id, pa.name, vm.vote FROM vote_members vm LEFT JOIN parties pa ON pa.id = vm.party_id"
+    ):
+        members.setdefault(vote_id, []).append({"name": mp_id, "faction": party, "vote": choice})
+
+    numbers: dict[str, list[str]] = {}
+    for vote_id, number in conn.execute(
+        "SELECT vd.vote_id, d.document_number FROM vote_documents vd JOIN documents d ON d.id = vd.document_id "
+        "ORDER BY vd.vote_id, vd.rank"
+    ):
+        numbers.setdefault(vote_id, []).append(number)
+
+    taggings: dict[str, tuple[list[str], str]] = {}
+    for vote_id, field_name, source in conn.execute(
+        "SELECT vote_id, politikfeld, source FROM vote_politikfelder ORDER BY vote_id, rank"
+    ):
+        tags, _ = taggings.setdefault(vote_id, ([], source))
+        tags.append(field_name)
+
+    # The supplying item: the lowest item_index among the vote's TOPs in its own
+    # sitting, where derive.iter_report_votes first meets the vote.
+    supplying: dict[str, tuple[int, str]] = {}
+    for vote_id, item_id, item_index in conn.execute(
+        "SELECT aiv.vote_id, ai.id, ai.item_index FROM agenda_item_votes aiv "
+        "JOIN agenda_items ai ON ai.id = aiv.agenda_item_id "
+        "JOIN votes v ON v.id = aiv.vote_id AND v.protocol_id = ai.protocol_id"
+    ):
+        if vote_id not in supplying or item_index < supplying[vote_id][0]:
+            supplying[vote_id] = (item_index, item_id)
+
+    # Every Drucksache link of every TOP in a sitting with a vote, in item order
+    # and in each source's own order, as the report listed them.
+    items: dict[str, dict[str, Any]] = {}
+    items_by_protocol: dict[str, list[dict[str, Any]]] = {}
+    for protocol_id, item_id, source, url, number, document_type, issuer in conn.execute(
+        "SELECT ai.protocol_id, ai.id, aid.source, aid.url, d.document_number, d.document_type, d.herausgeber "
+        "FROM agenda_item_documents aid JOIN agenda_items ai ON ai.id = aid.agenda_item_id "
+        "JOIN documents d ON d.id = aid.document_id "
+        "WHERE ai.protocol_id IN (SELECT protocol_id FROM votes) "
+        "ORDER BY ai.protocol_id, ai.item_index, aid.source, aid.rank"
+    ):
+        item = items.get(item_id)
+        if item is None:
+            item = items[item_id] = {"api": {"linked_drucksachen": []}, "xml_drucksachen": []}
+            items_by_protocol.setdefault(protocol_id, []).append(item)
+        if source == "api":
+            item["api"]["linked_drucksachen"].append(
+                {"dokumentnummer": number, "url": url, "drucksachetyp": document_type, "herausgeber": issuer}
+            )
+        elif source == "xml":
+            item["xml_drucksachen"].append({"dokumentnummer": number, "url": url})
+    sitting_documents = {
+        protocol_id: derive.report_drucksachen({"agenda_items": protocol_items})
+        for protocol_id, protocol_items in items_by_protocol.items()
+    }
+
+    result = []
+    for row in conn.execute(
+        "SELECT v.id, v.protocol_id, p.document_number, v.date, v.topic, v.title, v.yes_count, v.no_count, "
+        "v.abstain_count, v.absent_count, v.result_raw, v.result_source, v.result_scope, v.procedure_type, v.inverted "
+        "FROM votes v LEFT JOIN protocols p ON p.id = v.protocol_id"
+    ):
+        vote_id = row["id"]
+        vote = {
+            "id": vote_id,
+            "date": row["date"],
+            "topic": row["topic"],
+            "title": row["title"],
+            "total": {key: row[column] for key, column in _TOTAL_COLUMNS},
+            "result_raw": row["result_raw"],
+            "result_source": row["result_source"],
+            "result_scope": row["result_scope"],
+            "procedure_type": row["procedure_type"],
+            "inverted": None if row["inverted"] is None else bool(row["inverted"]),
+            "document_numbers": numbers.get(vote_id, []),
+            "fractions": fractions.get(vote_id, []),
+            "members": members.get(vote_id, []),
+        }
+        item_id = supplying.get(vote_id, (None, None))[1]
+        result.append(StoredVote(
+            vote=vote,
+            # A supplying TOP without a Drucksache link has no row above.
+            item=(items.get(item_id) or {"api": {"linked_drucksachen": []}, "xml_drucksachen": []}) if item_id else None,
+            sitting_documents=sitting_documents.get(row["protocol_id"], {}),
+            tagging=taggings.get(vote_id, _NO_TAGGING),
+            document_number=row["document_number"],
+        ))
+    return result
+
+
 class VotesComponent(BaseComponent):
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
@@ -622,12 +770,6 @@ class VotesComponent(BaseComponent):
         )
         return [render_vote_summary(ctx["item"], acquisition, panel)]
 
-    def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
-        selection = ctx.get("selection")
-        if selection is not None and not selection.enabled("votes"):
-            return {}
-        rows = ctx["collect_votes_archive"](ctx["entries"], ctx.get("vorgang_cache"))
-        return ctx["write_votes_archive_page"](output_dir, rows, selection)
 
 
 COMPONENT = VotesComponent(REGISTRY["votes"])

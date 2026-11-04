@@ -206,6 +206,11 @@ class VoteGroupsCoverTotalTests(unittest.TestCase):
         self.assertFalse(derive.vote_groups_cover_total({"fractions": rows}))
         self.assertFalse(derive.vote_groups_cover_total({"fractions": rows, "total": {}}))
         self.assertFalse(derive.vote_groups_cover_total({"fractions": [], "total": {"yes": 0, "no": 0, "abstain": 0, "absent": 0}}))
+        # Four zeros are a padded missing total (pre-0.32 listing), even beside four-zero rows:
+        # persist stores them NULL, so the dossier panel must not claim "Niemand stimmt anders".
+        self.assertFalse(derive.vote_groups_cover_total(
+            {"fractions": [fraction("SPD")], "total": {"yes": 0, "no": 0, "abstain": 0, "absent": 0}}
+        ))
 
     # Value: protects=a total count that is not a number ("nicht überliefert" in the lead) makes no vote-wide claim instead of raising; fails_when=the count goes through int() and a stray string takes the page build down or a missing count passes as 0; why_new=code review 2026-10-31; seam=none
     def test_a_count_the_total_does_not_hold_as_a_number_covers_nothing(self) -> None:

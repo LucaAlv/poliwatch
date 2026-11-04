@@ -1106,7 +1106,38 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(self.count("mdb_zugehoerigkeiten"), 0)
         conn = sqlite3.connect(self.database)
         try:
-            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 9)
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], pulse_store.SCHEMA_VERSION)
+        finally:
+            conn.close()
+
+    # Value: protects=a schema 9 store (no vote_fractions.rank, vote_documents.rank, agenda_item_documents url and rank) is refused byte for byte by a non-upgrade rebuild and the export, and upgraded by --repersist with every rank filled; fails_when=the rank guard in require_current_schema is dropped (initialize() cannot add a NOT NULL column without a default, so the online rebuild would fail on a raw SQLite error, or a hand-added column would leave the archive without an order); why_new=A4 slice 1 bumps the schema to 10; seam=none; no_claim=a store written by released code (the old shape is staged by dropping what schema 10 added)
+    def test_a_schema_9_store_is_refused_by_an_online_rebuild_and_upgraded_by_repersist(self) -> None:
+        entries, _ = self.repersist()
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("ALTER TABLE vote_fractions DROP COLUMN rank")
+            conn.execute("ALTER TABLE vote_documents DROP COLUMN rank")
+            conn.execute("ALTER TABLE agenda_item_documents DROP COLUMN rank")
+            conn.execute("ALTER TABLE agenda_item_documents DROP COLUMN url")
+            conn.execute("DELETE FROM schema_migrations WHERE version >= 10")
+            conn.commit()
+        finally:
+            conn.close()
+        old = sha(self.database)
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "Old build-store schema.*--offline --repersist"):
+            build.rebuild_database_from_entries(self.database, entries, vorgang_cache={"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+        self.assertEqual(old, sha(self.database))
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema.*--offline --repersist"):
+            build.export_distribution_data(database_path=self.database, exports_dir=self.output_dir / "exports")
+        self.assertEqual(old, sha(self.database))
+
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 10)
+            self.assertGreater(conn.execute("SELECT COUNT(*) FROM vote_fractions").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_fractions WHERE rank < 1").fetchone()[0], 0)
         finally:
             conn.close()
 

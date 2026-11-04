@@ -45,6 +45,16 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P1
 **Depends on:** None
 
+### `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF
+
+**What:** On the reference store, the `documents` row for Bundestag Drucksache 19/19 (linked from vote 493) holds `https://dserver.bundestag.de/brd/2019/0019-19.pdf`, which is BR-Drs. 19/19. The per-item link in `agenda_item_documents.url` is the right one, `btd/19/000/1900019.pdf`. Find which source supplied the Bundesrat url for a BT key (`persist.upsert_document`, `_document_url_rank`) and refuse a `/brd/` url on a BT row.
+
+**Why:** Found by the A4 slice 1 reference-store oracle (2026-11-04, T1.1 M2: 1 of 1,551 vote links). Since R6, the archive and the dossier panel print the per-item url, so no page shows the wrong link. The export's `documents.csv` still carries it.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** none
+
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
 **What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.
@@ -368,7 +378,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 - **DIP request budget:** (a) `XmlPacer.fetch` raises `SourceSlowError` from `finally`, which discards a complete XML that took over 10 s and replaces an in-flight `DipError` (including `source_rejected`); nothing catches it, so the run ends in a traceback without the `[summary]`. Deliver the body and stop on the next call, and catch it in `main()`. (b) The pacer counts one request per `fetch()`, while `_fetch_page` retries up to twice more. (c) The per-sitting `/person` loop counts a 404 toward `PERSON_FAILURE_LIMIT`, while the breaker treats a 404 as DIP answering; with `DIP_FAILURE_LIMIT = 2` the person limit of 3 is rarely reachable anyway. (d) `DipBreaker` resets on 401/403, so a revoked key or a WAF 403 never stops the run. (e) After a breaker trip, `--enrich mp-roster` fails the rebuild (`DatabaseRebuildError`) before the `[summary]` prints; `ingest_mdb_roster` does not use the person cache `prefetch_dip_bulk --persons` fills. (f) `DipCache.save` rewrites both cache files after every sitting even when nothing changed. (g) The 2.0 s pace is defined three times (`BACKFILL_SLEEP_SECONDS`, `prefetch_dip_bulk.SLEEP_SECONDS`, `XmlPacer.spacing`).
 - **Caches and catalog:** (a) `fetch_catalog` accepts the cached merge when the distinct-id count equals DIP's total, so a swap (one sitting gone, one added) in a closed Wahlperiode serves stale rows for up to 7 days. (b) A Vorgang cached from a closed-WP sitting (`linked_drucksachen_for_vorgang` labels it with the sitting's WP) never expires even if it is still extended in the current WP; a build between the WP 18 and WP 19 bulk prefetch embeds partial Drucksache lists in its reports. (c) `prefetch_dip_bulk._merge_vorgaenge` swallows an unreadable other-WP `vorgaenge.json` (`except (OSError, ValueError): pass`), which silently skips the cross-WP drop.
 - **Identity and attribution:** (a) `_mp_external_ids` gives a record's one bundestag.de member number to every Wahlperiode it voted in, so a WP 19+20 record carrying its WP 20 number "conflicts" in WP 19 with a WP-19-only record of the same person (false split, not false merge); check against the gate store. (b) `person_registry._vote_evidence` takes a vote's Wahlperiode from `votes.protocol_id`, the recipes from `_VOTE_PROTOCOL_SQL` (agenda item first); share one rule. (c) A Rede split out by 6c cites the start page of its enclosing printed Rede (`rid_pages` from the table of contents), not the page it starts on.
-- **Facts and pages:** (a) `write_facts_pages` rewrites `facts/methodik.html` on a render with no store file (since A4 slice 0 only a direct `render_site` call, such as `build_demo_site.py` into a site directory) with `coverage=None`, overwriting the published "seit …" caveat with the neutral one; guard it like the archive page. (b) `coverage_label` names the earliest stored sitting, which can claim "seit Beginn der 18. Wahlperiode" mid-backfill while later Wahlperioden have gaps.
+- **Facts and pages:** (a) `write_facts_pages` rewrites `facts/methodik.html` on a render with no store file (since A4 slice 0 only a direct `render_site` call; the demo builds a store since slice 1) with `coverage=None`, overwriting the published "seit …" caveat with the neutral one; guard it like the archive page. (b) `coverage_label` names the earliest stored sitting, which can claim "seit Beginn der 18. Wahlperiode" mid-backfill while later Wahlperioden have gaps.
 - **Performance:** `agenda_item_votes` has no index led by `vote_id`; `_VOTE_PROTOCOL_SQL` (r3, r4, r6) is a correlated scan per row (22 s on a synthetic 154k-row shape). Add `idx_agenda_item_votes_vote`.
 - **Stderr and tests:** `ingest_mdb_roster` stats (`fetched`, `skipped_no_id`) count a person once per Wahlperiode; `audit_offline_turns.py` skips `mark_presidium_fraktionsreden`; untested: the `CatalogCountMismatch` fallback, `_profiles_conflict`'s mixed number/link branches, the 6c page carry-over, `prefetch_dip_bulk` exit 2 and `--persons`; `if __name__ == "__main__"` sits mid-file in `tests/test_a3_round2.py` and `tests/test_validate_dip_protocol.py`; unused imports in `tests/test_dip_request_log.py` (`re`) and `tests/test_validate_store_gate.py` (`hashlib`); `test_xml_pacing.test_backfill_dip_api_spacing_is_two_seconds` duplicates the backfill test.
 
@@ -406,9 +416,26 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 
 **Context:** Found by the outside voice of the A4 eng review (2026-11-01, O7; decision R9 in the plan). Start from the speech-rule check and add one store table or `PRAGMA user_version`-style row for the fingerprint.
 
+**Update 2026-11-03 (A4 slice 1 built):** the gap is now live for `votes/index.html`: `tests/test_politikfelder.py` `test_the_archive_shows_the_persisted_tags_and_the_front_page_the_render_time_cache` pins that an offline render without a repersist keeps the stored tags while puls.html follows the cache. Still latent in practice: no command refreshes the cache without a persist.
+
 **Effort:** S
 **Priority:** P3
-**Depends on:** A4 slice 1
+**Depends on:** none (A4 slice 1 is built)
+
+### A4 slice 1 /ship review: deferred findings (2026-11-04)
+
+**What:** Non-correctness findings from the manual ship of A4 slice 1 (v0.32.0.0; checklist pass and red team). None moves a figure today.
+- (a) **Archive vs dossier after a failed online rebuild.** Online step 2 writes the refreshed reports and dossier pages before `rebuild_database_from_entries`; when that raises `DatabaseRebuildError` the old store stays. A later plain `--offline` passes `store_coverage_gap` (it compares protocol ids only) and renders the dossiers from the new reports but `votes/index.html` from the old store, so a late-published roll-call vote shows in the dossier and not in the archive (R3). Needs the same fix as "Refuse a render when the Vorgang cache is newer than the store": persist a per-report fingerprint and refuse a render whose cached report differs, or leave a "repersist pending" marker after a failed rebuild.
+- (b) `_total_count` coerces any value with `int()` (`"3"`, `3.0`, `True` → 3, 3, 1; `12.7` → 12), while `derive.vote_groups_cover_total` on the report path accepts only real ints, so archive and panel could disagree on the Abweichler count. Latent: the parser emits ints or `None`. Store NULL for anything but an int.
+- (c) A cached report from before 0.32 still prints "0 Ja, 0 Nein, 0 Enthaltungen" in its dossier lead for a listing that had no chart values, until the sitting is fetched again; the store already holds NULL. Read four zeros as missing on the report path too, or reparse.
+- (d) `require_current_schema` checks only `vote_fractions.rank`; a hand-altered store missing `vote_documents.rank` or `agenda_item_documents.rank` fails with a raw SQLite error. No code path makes such a store.
+- (e) Wording: the `stored_votes` docstring still says 556 votes / 382,441 `vote_members` (reference store now 619 / 425,322); the `rank` dictionary text says "Position der ersten Nennung" while the value is a dense rank over accepted references; `vote_documents.rank` follows the parser's `sorted(set(...))`, not page order; a double blank line in `features/votes.py` where `write_pages` was.
+- (f) Persist runs one `SELECT` per TOP Drucksache reference for its `seen` check; a Python set would do. Not measured.
+- (g) Test hygiene: `test_politikfelder.CacheFileTests.test_save_falls_back_to_data_on_another_file_system_or_a_read_only_parent` fails when the suite runs as root (chmod 0o555 does not stop root), as in the cloud container; skip it when `os.geteuid() == 0`. `tests/run_bills_browser_check.mjs` can exit 1 after every check passed, when Chrome still writes into its temp profile during cleanup (`ENOTEMPTY`); retry the `rmSync` or pass `maxRetries`.
+
+**Effort:** S each
+**Priority:** P3 ((a) P2)
+**Depends on:** none
 
 ### A4 slice 0 review: deferred findings
 
@@ -419,7 +446,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 - (d) **Refusal text:** the not-stored case names only `--offline --repersist`. When that repersist fails on the same report (pre-A1 without XML, new Sprechrolle), the text should also name moving the report out of `data/` or excluding the sitting in an online run. While an online update runs in another terminal, the offline check can see its fresh reports before the swap and give the same wrong advice. Say "if an online update is running, wait for it", or probe `registry.writer_lock`. (The lockout itself is R2's intent, plan O6.)
 - (e) The F7 comment "Refused before anything is written" overstates. `main` has already created the output directories, and the Antrag and Politikfeld cache loads can quarantine a corrupt cache. Say "before any page or store is written".
 - (f) `docs/project-documentation.md`'s scratch-preview example is an online run: it needs `DIP_API_KEY`, does a full staged rebuild and export, and `cp -c` is macOS-only. Say so, and add the README recipe's non-macOS copy command.
-- (g) Test hygiene: `tests/_site_store_fixture.py` `store_people` has no caller, and `build_site_store`'s `today`, `vorgang_cache` and `catalog` parameters are never passed. Slice 1 either uses them or drops them.
+- ~~(g) Test hygiene: `tests/_site_store_fixture.py` `store_people` has no caller, and `build_site_store`'s `today`, `vorgang_cache` and `catalog` parameters are never passed. Slice 1 either uses them or drops them.~~ **Done 2026-11-03** (A4 slice 1): `vorgang_cache` is used by `archive_rows` and the Politikfeld render test; `store_people` is used by the demo test; `today` (now the module's `TODAY`) and `catalog` are gone.
 - (h) **The F7 refusal does not mention a backup.** `error: no store at …` names `--offline --repersist` first. For a store that was lost rather than never built, that repersist starts a fresh person registry (new keys and aliases, no roster); `docs/stable-ids.md` "Backup and recovery" says to restore the build store instead. Say "restore the store from a backup if you have one; otherwise …" in the message and the README row.
 - (i) Design records still describe `--no-persist` as live: `docs/designs/daten-page.md` (lines 214, 228, 258, 298, 351-352, 420, 441) and `docs/designs/fakt-der-woche.md:311`. Add a one-line "superseded by A4 slice 0 (v0.29.0.0): `--no-persist` removed" note to each.
 
@@ -450,7 +477,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Part 1 completed:** v0.23.4.0 (2026-10-29). Public copy says "Dossier": the Methodik's "Erzeugtes JSON" bullet ("Jedes Dossier verlinkt …", was "Sitzungsseite"), the overview heading "Erzeugte Dossiers" (was "Sitzungsdossiers"), and the internal component label "Dossiers" (was "Protokoll-Dossiers"). A test keeps the avoided names off both pages.
 
 **What is left:** wherever a published count spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". Audit on main at v0.23.1.0 (2026-10-29):
-- Already disclosed: the Daten Datenstand ("N von M Protokollen im Katalog als Dossier erfasst", `render_daten_datenstand`), the votes archive footer ("Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden"), and the catalog's "Erzeugte Dossiers" tile and its "Nur mit Dossier" filter.
+- Already disclosed: the Daten Datenstand ("N von M Protokollen im Katalog als Dossier erfasst", `render_daten_datenstand`), the votes archive footer ("… der Sitzungen in der Datenbank dieses Builds, also nur Sitzungen mit Dossier", A4 slice 1), and the catalog's "Erzeugte Dossiers" tile and its "Nur mit Dossier" filter.
 - Not disclosed: the Abgeordnete list's "Reden" column (`render_abgeordnete_index`), the puls.html header and Wochenvergleich, the Fakten pages and Methodik, and the speech counts on the Gesetzesvorhaben pages.
 
 **Why:** CONTEXT.md "Sitzung mit Dossier": every count covers only Sitzungen mit Dossier, because the store is rebuilt only from Dossier entries (`rebuild_database_from_entries`). A build with `--detail-limit` silently reports a subset as if it were the whole Wahlperiode.
@@ -1497,7 +1524,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 - the pass-through adapters `features/bills.py`, `features/facts.py` and `features/abgeordnete.py`, which call back into build functions through an untyped `ctx` dict;
 - the deprecated `--features`, `--enable`, `--disable` and `--list-features` flags with `resolve_from_args` and `warn_deprecated_feature_configuration`.
 
-`render_site` calls its page builders directly. `votes`, `summaries` and `aw_profiles` do real work and stay as plain modules without `ctx`.
+`render_site` calls its page builders directly. `votes`, `summaries` and `aw_profiles` do real work and stay as plain modules without `ctx`. (A4 slice 1, 2026-11-03, did the votes archive part: `VotesComponent.write_pages` and the `collect_votes_archive`/`write_votes_archive_page` ctx callables are gone, and `render_site` calls `write_votes_archive_page(votes_archive_rows(database_path))`.)
 
 **Why:** It is a seam with only one adapter: nothing varies across it, and every signature pays for it. CLAUDE.md's pre-release rule says to drop compatibility shims rather than carry them.
 
@@ -1541,7 +1568,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
 
-**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** each TOP's Drucksachen section lists the papers DIP links to its positions besides the XML references (`render_dip_pulse_html.top_documents`, one pill per document, the XML link winning), and the dossier header and overview card count the distinct documents those sections list (`sitting_document_count`) instead of `xml_drucksache_count`. Old/new: the demo (21/84) stays at 2; the real store was not replayed in this session (no reference store), so the WP 18–20 figures (19/29: 0 before, 37 DIP-linked papers expected) still need a replay to be recorded. "· verteilt am" is dropped when `verteildatum` is missing (`distributed_phrase`); the demo printed it dangling too.
+**Done (2026-11-03, branch `claude/peaceful-heisenberg-tr9f0f`):** each TOP's Drucksachen section lists the papers DIP links to its positions besides the XML references (`render_dip_pulse_html.top_documents`, one pill per document, the XML link winning), and the dossier header and overview card count the distinct documents those sections list (`sitting_document_count`) instead of `xml_drucksache_count`. Old/new: the demo (21/84) stays at 2; on the reference store (2026-11-04, 716 dossiers) the card moves on 572 of them, from 5,198 Drucksachen in total to 29,353; e.g. 18/100 0 → 72, 18/130 0 → 86. The new figure counts the papers the page's TOP sections actually list, where the old one counted only XML-tagged references, which WP 18/19 never has. "· verteilt am" is dropped when `verteildatum` is missing (`distributed_phrase`); the demo printed it dangling too.
 
 **What:**
 - The card shows `validation_summary.xml_drucksache_count`. It is 0 on every WP 18/19 dossier and on 118 of 213 WP 20 dossiers, because the older XML does not tag Drucksachen. 19/29 shows 0 while its TOPs link 37 documents through DIP. Count the documents the page actually lists, or label the card as XML-only.

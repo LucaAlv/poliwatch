@@ -3276,7 +3276,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 13
+EXPORT_FORMAT = 14
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3539,6 +3539,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "       ABS(v.yes_count - v.no_count) AS differenz\n"
             "FROM votes v\n"
             "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
+            "WHERE v.yes_count IS NOT NULL AND v.no_count IS NOT NULL\n"
             "ORDER BY differenz ASC, v.date DESC, v.id\n"
             "LIMIT 5;"
         ),
@@ -3555,7 +3556,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
-            "Eine Abstimmung ganz ohne Protokoll fehlt. Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
+            "Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine Ja- oder Nein-Gesamtzahl nennt "
+            "(votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
             "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
         ),
     },
@@ -5833,46 +5835,49 @@ def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
     return (int(text), "") if text.isdigit() else (-1, text)
 
 
-def collect_votes_archive(
-    entries: list[dict[str, Any]], vorgang_cache: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
-    """Every roll-call vote across every dossier, one row per unique vote id.
+def votes_archive_rows(database_path: Path) -> list[dict[str, Any]]:
+    """Every roll-call vote in the store, one row per vote id (A4 slice 1).
 
-    A vote can attach to two agenda items (pulse_html.vote_key handles the
-    dedupe, same rule week_stats uses for the Wochenvergleich vote count). Each
-    row carries the vote's Politikfelder, derived from ``vorgang_cache`` the way
-    persist derives the stored ones.
-    """
-    cache = vorgang_cache or politikfelder.empty_cache()
-    rows: dict[str, dict[str, Any]] = {}
-    for entry in entries:
-        report = entry.get("report") or {}
-        page_path = entry.get("page_path")
-        _, vote_politikfelder = politikfelder.report_politikfelder(report, cache)
-        sitting_documents = derive.report_drucksachen(report)
-        page_href = f"../protocols/{pulse_html.esc(Path(page_path).name)}" if page_path else None
-        for item, vote in derive.iter_report_votes(report):
-            key = pulse_html.vote_key(vote)
-            if key in rows:
-                continue
-            fraction_positions = {
-                fraction["name"]: position
-                for fraction in derive.merge_fractions(vote.get("fractions"))
-                if (position := _fraction_position(fraction, vote.get("inverted") is True)) is not None
-            }
-            rows[key] = {
-                "vote": vote,
-                "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
-                "document_links": votes_feature.document_source_links(item) if item else {},
-                "document_chambers": votes_feature.document_source_chambers(item) if item else {},
-                "fraction_positions": fraction_positions,
-                "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
-                "abweichler": derive.vote_abweichler_count(vote),
-                # The vote's own panel (D9).
-                "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
-            }
+    The store is read once (``votes_feature.stored_votes``) and each vote runs
+    through the rules the dossier panel runs (plan R5): ``derive.merge_fractions``
+    and ``_fraction_position``, ``derive.vote_abweichler_count``,
+    ``_vote_procedure_type``, ``politikfelder.shown`` on the stored tags, and the
+    item's links through ``votes_feature.document_source_links``. With no store
+    file the archive is empty, as the Fakten pages are; ``main`` refuses an
+    offline render without a store before any page is written."""
+    if not database_path.exists():
+        return []
+    conn = facts.open_readonly(database_path)
+    try:
+        stored = votes_feature.stored_votes(conn)
+    finally:
+        conn.close()
+    rows = []
+    for entry in stored:
+        vote, item = entry.vote, entry.item
+        fraction_positions = {
+            fraction["name"]: position
+            for fraction in derive.merge_fractions(vote.get("fractions"))
+            if (position := _fraction_position(fraction, vote.get("inverted") is True)) is not None
+        }
+        page_href = None
+        if entry.document_number:
+            _, page_path, _ = report_paths(Path(), entry.document_number)
+            page_href = f"../protocols/{pulse_html.esc(page_path.name)}"
+        rows.append({
+            "vote": vote,
+            "politikfelder": politikfelder.shown(entry.tagging),
+            "document_links": votes_feature.document_source_links(item) if item else {},
+            "document_chambers": votes_feature.document_source_chambers(item) if item else {},
+            "fraction_positions": fraction_positions,
+            "procedure_type": _vote_procedure_type(vote, item, entry.sitting_documents),
+            "abweichler": derive.vote_abweichler_count(vote),
+            # The vote's own panel (D9), on the dossier the build writes for the
+            # sitting under the same slug (report_paths).
+            "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
+        })
     return sorted(
-        rows.values(),
+        rows,
         key=lambda row: (row["vote"].get("date") or "", _vote_id_sort_key(row["vote"].get("id"))),
         reverse=True,
     )
@@ -5960,17 +5965,17 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
     <header class="page-header">
       <div>
         <h1>Abstimmungen</h1>
-        <p>Jede namentliche Abstimmung aus den erzeugten Plenarprotokoll-Dossiers, neueste zuerst.</p>
+        <p>Jede namentliche Abstimmung der erfassten Sitzungen, neueste zuerst.</p>
       </div>
     </header>
     <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
     {'<section class="archive-filters" aria-label="Nach Politikfeld filtern"><span class="eyebrow">Nach Politikfeld</span><p>Das Politikfeld folgt dem DIP-Sachgebiet des Vorgangs, zu dem die Abstimmung gehört.</p><div class="chip-row">' + feld_chips + '</div></section>' if feld_chips else ''}
     {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><p>Zeigt Abstimmungen mit einer Ja-Mehrheit der gewählten Fraktion. Bei Ablehnungsempfehlungen zählt stattdessen die Nein-Mehrheit als Unterstützung des Antrags.</p><div class="chip-row">' + chips + '</div></section>' if chips else ''}
     <section class="archive-list" data-archive>
-      {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
+      {''.join(items) if items else '<p>In den erfassten Sitzungen wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
       <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Auswahl.</p>
     </section>
-    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
+    <footer>Die Liste umfasst die namentlichen Abstimmungen der Sitzungen in der Datenbank dieses Builds, also nur Sitzungen mit Dossier; sie enthält nicht jede Sitzung des Katalogs. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_votes_archive_script()}
   {pulse_html.page_scripts(features)}
@@ -12833,8 +12838,6 @@ def render_site(
         "mp_lookup": mp_lookup,
         "collect_bill_pages": collect_bill_pages,
         "write_bill_pages": write_bill_pages,
-        "collect_votes_archive": collect_votes_archive,
-        "write_votes_archive_page": write_votes_archive_page,
         "write_abgeordnete_pages": write_abgeordnete_pages,
         "write_facts_pages": write_facts_pages,
         "database_path": database_path,
@@ -12869,9 +12872,9 @@ def render_site(
         f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Perioden (Wochen und Monate)",
         file=sys.stderr,
     )
-    votes_output = components["votes"].write_pages(output_dir, component_context)
-    if votes_output:
-        print(f"abstimmungen: {votes_output['count']} im Archiv", file=sys.stderr)
+    # The archive reads the store, not the reports (A4 slice 1).
+    votes_output = write_votes_archive_page(output_dir, votes_archive_rows(database_path), features)
+    print(f"abstimmungen: {votes_output['count']} im Archiv", file=sys.stderr)
     # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"

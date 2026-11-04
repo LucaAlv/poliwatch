@@ -125,6 +125,9 @@ class Measured:
     votes: list[tuple[str | None, str | None, str]] | None = None
     #: (document_number or None, leading_vote or None) per vote_fractions row.
     leading: list[tuple[str | None, str | None]] | None = None
+    #: vote id -> (protocols, (yes, no, abstain, absent)); a count is None where
+    #: the store holds NULL (schema 10: the source gave no total).
+    vote_totals: dict[str, tuple[list[str | None], tuple[Any, Any, Any, Any]]] | None = None
     #: name -> {"mps": rows of mps, "mdb": of them MdB, "reden": Reden naming it}
     parties: dict[str, dict[str, int]] | None = None
     has_roster: bool = False
@@ -258,6 +261,13 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
         for vote_id, date in conn.execute("SELECT id, date FROM votes"):
             for number in by_vote.get(str(vote_id)) or [None]:
                 measured.votes.append((number, date, str(vote_id)))
+        if store.has("votes", "yes_count", "no_count", "abstain_count", "absent_count"):
+            measured.vote_totals = {
+                str(vote_id): (by_vote.get(str(vote_id)) or [None], (yes, no, abstain, absent))
+                for vote_id, yes, no, abstain, absent in conn.execute(
+                    "SELECT id, yes_count, no_count, abstain_count, absent_count FROM votes"
+                )
+            }
         if store.has("vote_fractions", "vote_id", "leading_vote"):
             measured.leading = []
             for vote_id, leading in conn.execute("SELECT vote_id, leading_vote FROM vote_fractions"):
@@ -540,6 +550,9 @@ def compare(
     report.heading(f"votes [{cohort}]")
     _vote_rows(report, old, new, scope)
 
+    report.heading(f"vote totals (Ja, Nein, Enthaltung, nicht abgegeben) [{cohort}]")
+    _vote_total_rows(report, old, new, scope)
+
     report.heading(f"speeches.char_count sum [{cohort}]")
     old_chars = _filter_by_protocol(old.chars_by_protocol, scope)
     new_chars = _filter_by_protocol(new.chars_by_protocol, scope)
@@ -657,6 +670,36 @@ def _vote_rows(report: Report, old: Measured, new: Measured, scope: set[str] | N
     new_count, new_max = summarise(new)
     report.row("votes", old_count, new_count)
     report.row("newest vote date", old_max, new_max)
+
+
+def _totals_text(totals: tuple[Any, ...]) -> str:
+    return "/".join("NULL" if value is None else str(value) for value in totals)
+
+
+def _vote_total_rows(report: Report, old: Measured, new: Measured, scope: set[str] | None) -> None:
+    """Votes with a count the store holds as NULL, and every vote both stores
+    hold whose total moved, with old and new values (a 0 that became NULL
+    included)."""
+    def in_scope(measured: Measured) -> dict[str, tuple[Any, ...]] | None:
+        if measured.vote_totals is None:
+            return None
+        return {
+            vote_id: totals for vote_id, (numbers, totals) in measured.vote_totals.items()
+            if any(_in(scope, number) for number in numbers)
+        }
+
+    was, now = in_scope(old), in_scope(new)
+    report.row(
+        "votes with a NULL count",
+        None if was is None else sum(None in totals for totals in was.values()),
+        None if now is None else sum(None in totals for totals in now.values()),
+    )
+    if was is None or now is None:
+        return
+    moved = sorted(vote_id for vote_id in set(was) & set(now) if was[vote_id] != now[vote_id])
+    report.line(f"{len(moved)} votes in both stores changed their total")
+    for vote_id in moved[:LIST_LIMIT]:
+        report.row(vote_id, _totals_text(was[vote_id]), _totals_text(now[vote_id]))
 
 
 def _number(value: Any) -> str:
