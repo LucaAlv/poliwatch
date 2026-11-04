@@ -3,10 +3,16 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import derive
+import stammdaten
 
 CDU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
 AFD = "Fraktion Alternative für Deutschland"
@@ -198,6 +204,55 @@ class ZugehoerigkeitTests(unittest.TestCase):
             [row("CDU/CSU", "2013-10-22", "2017-10-25", wp=18, display="Dirk Freiherr von Fischer (Hamburg)")],
         )
 
+    # Value: protects=a membership that covers no day of its Mandat is refused by name, so the file never
+    #   reaches party_seats as valid_until < valid_from (seats=-1, which check_seat_totals cannot see);
+    #   fails_when=Rule 2 clips only the endpoints again and an inverted stretch passes; why_new=TODOS C1
+    #   deferred item 9; seam=derive.mdb_zugehoerigkeiten; no_claim=the live file (it has no such membership)
+    def test_a_membership_wholly_outside_its_mandate_is_refused_by_name(self) -> None:
+        for label, mandate in {
+            "before the Mandat": wahlperiode(19, "15.03.2019", "26.10.2021", institution(AFD, "24.10.2017", "01.03.2019")),
+            "after the Mandat": wahlperiode(19, "24.10.2017", "01.03.2019", institution(AFD, "15.03.2019", "26.10.2021")),
+            "open-ended, after the Mandat": wahlperiode(19, "24.10.2017", "01.03.2019", institution(AFD, "15.03.2019")),
+        }.items():
+            with self.subTest(label), self.assertRaises(derive.StammdatenError) as raised:
+                stretches(mdb("11000042", mandate))
+            for part in ("11000042", "WP 19", AFD):
+                self.assertIn(part, str(raised.exception))
+
+    # Value: protects=a one-day membership on a handover day (MDBINS_VON == MDBINS_BIS, the next membership
+    #   starting that day) gives one outcome whatever the hash seed: a refusal naming the zero-length
+    #   membership, where the unsorted ties gave a zero-length row under some seeds and "two memberships on
+    #   the same day" under others; fails_when=the stretches are built in set order again, or a zero-length
+    #   stretch is dropped or emitted; why_new=TODOS C1 deferred item 9; seam=derive.mdb_zugehoerigkeiten in
+    #   a subprocess per PYTHONHASHSEED; no_claim=the live file (it has no such membership)
+    def test_a_one_day_membership_on_a_handover_day_is_refused_the_same_under_every_hash_seed(self) -> None:
+        script = (
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "import derive\n"
+            "def inst(name, von, bis):\n"
+            "    return {'INSART_LANG': 'Fraktion/Gruppe', 'INS_LANG': name, 'MDBINS_VON': von, 'MDBINS_BIS': bis}\n"
+            "mdb = {'ID': '11000042', 'NAMEN': [], 'WAHLPERIODEN': [{'WP': '19', 'MDBWP_VON': '24.10.2017', "
+            "'MDBWP_BIS': '26.10.2021', 'INSTITUTIONEN': [\n"
+            f"    inst({CDU!r}, '24.10.2017', '07.03.2021'), inst({AFD!r}, '07.03.2021', '07.03.2021'), "
+            "inst('Fraktionslos', '07.03.2021', '26.10.2021')]}]}\n"
+            "try:\n"
+            "    print(derive.mdb_zugehoerigkeiten([mdb], since_wahlperiode=18))\n"
+            "except derive.StammdatenError as exc:\n"
+            "    print('refused:', exc)\n"
+        )
+        outcomes = set()
+        for seed in range(6):
+            result = subprocess.run(
+                [sys.executable, "-c", script, str(Path(derive.__file__).parent)],
+                env={**os.environ, "PYTHONHASHSEED": str(seed)}, capture_output=True, text=True, check=True,
+            )
+            outcomes.add(result.stdout)
+        self.assertEqual(len(outcomes), 1, outcomes)
+        [outcome] = outcomes
+        self.assertTrue(outcome.startswith("refused: "), outcome)
+        for part in ("11000042", "WP 19", AFD, "07.03.2021"):
+            self.assertIn(part, outcome)
+
 
 
 def seat(party: str, valid_from: str, valid_until: str | None, seats: int, wp: int = 21) -> dict[str, object]:
@@ -325,6 +380,70 @@ class PartySeatsTests(unittest.TestCase):
             [seat("CDU/CSU", "2013-10-22", "2017-10-25", 1, wp=18), seat("CDU/CSU", "2017-10-24", "2021-10-27", 1, wp=19)],
         )
 
+
+
+class SeatRowsGateTests(unittest.TestCase):
+    """``stammdaten.seat_rows`` is the gate ``refresh`` caches a file through,
+    so it refuses what ``persist_seat_counts`` would fail on later."""
+
+    def gate(self, *mdbs: dict[str, object]) -> None:
+        stammdaten.seat_rows(list(mdbs), since_wahlperiode=18)
+
+    # Value: protects=party_seats refuses a negative count by name instead of emitting seats=-1 (the table's
+    #   CHECK (seats > 0) would fail every later rebuild); fails_when=`if count:` is true for -1 again;
+    #   why_new=TODOS C1 deferred item 9; seam=derive.party_seats
+    def test_an_inverted_row_is_refused_not_counted_as_minus_one_seat(self) -> None:
+        with self.assertRaises(derive.StammdatenError) as raised:
+            derive.party_seats([row("AfD", "2025-06-02", "2025-06-01")])
+        for part in ("WP 21", "AfD", "-1", "2025-06-01"):
+            self.assertIn(part, str(raised.exception))
+
+    # Value: protects=a file whose rows the store cannot hold (an empty or inverted Zugehörigkeit, a seat count
+    #   of zero or less, a repeated primary key) is refused at the gate, so refresh never caches it and no
+    #   later rebuild dies with a raw sqlite3.IntegrityError; fails_when=seat_rows checks only the size rule
+    #   again; why_new=TODOS C1 deferred item 9 (the ship's adversarial pass); seam=stammdaten.seat_rows
+    #   with the derivation patched for the shapes it no longer produces, a real duplicate MdB for the key
+    def test_rows_the_store_cannot_hold_are_refused_at_the_gate(self) -> None:
+        good = [row("CDU/CSU", "2025-03-25", None)]
+        for label, patched, message in (
+            ("empty Zugehörigkeit", (good + [row("AfD", "2025-06-01", "2025-06-01")], []), "ends on"),
+            ("inverted Zugehörigkeit", (good + [row("AfD", "2025-06-02", "2025-06-01")], []), "ends on"),
+            ("zero seats", (good, [seat("CDU/CSU", "2025-03-25", None, 0)]), "seats"),
+            ("negative seats", (good, [seat("CDU/CSU", "2025-03-25", None, -1)]), "seats"),
+            ("repeated Zugehörigkeit key", (good + good, []), "twice"),
+            ("repeated seat key", (good, [seat("CDU/CSU", "2025-03-25", None, 1), seat("CDU/CSU", "2025-03-25", "2025-04-01", 2)]), "twice"),
+        ):
+            with self.subTest(label), \
+                    mock.patch.object(derive, "mdb_zugehoerigkeiten", return_value=patched[0]), \
+                    mock.patch.object(derive, "party_seats", return_value=patched[1]), \
+                    mock.patch.object(derive, "check_seat_totals"), \
+                    self.assertRaisesRegex(derive.StammdatenError, message):
+                stammdaten.seat_rows([], since_wahlperiode=18)
+
+    def test_a_mdb_listed_twice_is_refused_by_the_repeated_key(self) -> None:
+        record = mdb("11000001", wahlperiode(21, "25.03.2025", "", institution(CDU, "25.03.2025")))
+        with self.assertRaisesRegex(derive.StammdatenError, "11000001.*twice"):
+            self.gate(record, record)
+
+    # Value: protects=a Wahlperiode whose every Mandat reads fraktionslos is refused, so a renamed
+    #   INSART_LANG label (which no Fraktion/Gruppe row then matches) cannot cache a file that publishes
+    #   fraktionslos at 100 %, the 630 seats passing the size check; fails_when=the check is dropped, or
+    #   it fires for a Wahlperiode with a single real Fraktion; why_new=TODOS C1 deferred item 30;
+    #   seam=stammdaten.seat_rows; no_claim=the live file (its label is intact)
+    def test_a_wahlperiode_with_mandates_but_no_fraktion_is_refused(self) -> None:
+        def bundestag(art: str) -> list[dict[str, object]]:
+            return [mdb(f"110{index:05d}", wahlperiode(21, "25.03.2025", "", institution(CDU, "25.03.2025", art=art)))
+                    for index in range(630)]
+
+        self.assertTrue(stammdaten.seat_rows(bundestag("Fraktion/Gruppe"), since_wahlperiode=18)[1])
+        with self.assertRaises(derive.StammdatenError) as raised:
+            stammdaten.seat_rows(bundestag("Fraktion"), since_wahlperiode=18)
+        for part in ("WP 21", "fraktionslos", derive.STAMMDATEN_FRAKTION_ART):
+            self.assertIn(part, str(raised.exception))
+        # One real Fraktion among fraktionslos Mandate is enough: no share threshold.
+        one = bundestag("Fraktion")
+        one[0] = mdb("11000000", wahlperiode(21, "25.03.2025", "", institution(CDU, "25.03.2025")))
+        self.assertTrue(stammdaten.seat_rows(one, since_wahlperiode=18)[1])
 
 
 class SeatTotalsTests(unittest.TestCase):
