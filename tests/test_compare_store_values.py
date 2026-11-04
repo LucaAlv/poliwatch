@@ -3,11 +3,13 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import os
 import re
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import compare_store_values as compare
@@ -103,7 +105,7 @@ def make_output(
                     "INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)", (items[number], vote_id)
                 )
             conn.execute(
-                "INSERT INTO vote_fractions(vote_id, party_id, leading_vote) VALUES (?, ?, ?)",
+                "INSERT INTO vote_fractions(vote_id, party_id, leading_vote, rank) VALUES (?, ?, ?, 1)",
                 (vote_id, party(party_name), leading),
             )
         if fact is not None:
@@ -168,6 +170,27 @@ class CompareStoreValuesTests(unittest.TestCase):
         return old, new
 
     # Value: protects=the comparison diagnostic keeps same-roll-call namesakes split; fails_when=vote_members stop populating vote_ids on rows passed to match_rows; why_new=identity integration tests cover production reconciliation but not this separate comparison path; seam=none
+    # Value: protects=the replay report names every vote whose total moved, with old and new values, and counts the NULL totals schema 10 stores where the source gave none; fails_when=the section is dropped or a 0 that became NULL reads as unchanged; why_new=A4 slice 1 moves missing totals from 0 to NULL; seam=none
+    def test_vote_totals_list_each_moved_vote_and_count_null_totals(self) -> None:
+        old, new = self.stores()
+        for root, totals in ((old, {"v1": (0, 0, 0, 0), "v2": (5, 3, 1, 0)}), (new, {"v1": (None, None, None, None), "v2": (5, 3, 1, 0)})):
+            conn = sqlite3.connect(root / "data" / "bundestag-pulse.sqlite")
+            try:
+                for vote_id, (yes, no, abstain, absent) in totals.items():
+                    conn.execute(
+                        "UPDATE votes SET yes_count = ?, no_count = ?, abstain_count = ?, absent_count = ? WHERE id = ?",
+                        (yes, no, abstain, absent, vote_id),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote totals"
+        self.assertEqual(line_of(out, "votes with a NULL count", section), "votes with a NULL count 0 -> 1 +1")
+        self.assertIn("1 votes in both stores changed their total", out)
+        self.assertEqual(line_of(out, "v1", section), "v1 0/0/0/0 -> NULL/NULL/NULL/NULL")
+
     def test_reconciliation_diagnostic_keeps_same_vote_namesakes_split(self) -> None:
         root = make_output(
             self.tmp / "diagnostic",
@@ -469,7 +492,10 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertIn("missing", err)
 
     def test_help_documents_argument_order_cohort_default_and_exit_codes(self) -> None:
-        text = compare.build_parser().format_help()
+        # argparse wraps to $COLUMNS and can break "Read-only" at its hyphen in a
+        # narrow terminal; pin the width so the test does not depend on it.
+        with mock.patch.dict(os.environ, {"COLUMNS": "200"}):
+            text = compare.build_parser().format_help()
         for needle in ("old_dir", "new_dir", "shared (default)", "Exit codes: 0", "2 an input", "Read-only"):
             self.assertIn(needle, " ".join(text.split()))
 

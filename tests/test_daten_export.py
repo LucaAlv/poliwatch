@@ -13,6 +13,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 from unittest import mock
 
@@ -850,6 +851,111 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(spd_row["reden"], 3)
         self.assertEqual(cdu_row["reden"], 3)
 
+    def _add_speech(self, conn, protocol_id: str, rede_id: str, *, fraktion: str | None = None, sprechrolle: str | None = None) -> None:
+        now = pulse_store.utc_now()
+        agenda_item_id = conn.execute("SELECT id FROM agenda_items WHERE protocol_id = ?", (protocol_id,)).fetchone()[0]
+        conn.execute(
+            "INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, text, fraktion,"
+            " sprechrolle, created_at, updated_at) VALUES (?, ?, ?, ?, 90, ?, 50, 'Zusatz', ?, ?, ?, ?)",
+            (stable_key("speech", protocol_id, rede_id), protocol_id, agenda_item_id, rede_id, self.ids["other_mp"],
+             fraktion, sprechrolle, now, now),
+        )
+
+    def _r2_seat_shares(self) -> dict:
+        manifest = self.export()
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        return {(row["wahlperiode"], row["fraktion"]): row["sitzanteil_prozent"] for row in r2["rows"]}
+
+    # Value: protects=R2's sitzanteil_prozent is the group's seats summed over the WP's sitting dates over
+    #   the summed Bundestag size, with every seated group in the denominator, including fraktionslos
+    #   without a Rede; fails_when=the denominator is only R2's own groups (57.1/42.9), the seats are read
+    #   on one date, or a later Fraktion change rewrites the earlier sittings; why_new=C1 step 7 (D2);
+    #   seam=export_distribution_data
+    def test_r2_sitzanteil_is_the_mean_seat_share_over_the_sitting_dates(self) -> None:
+        # Fixture: 2024-05-15 SPD 2 / CDU/CSU 2; 2024-05-22 SPD 2 / CDU/CSU 1 / fraktionslos 1.
+        self.assertEqual(self._r2_seat_shares(), {(20, "SPD"): 50.0, (20, "CDU/CSU"): 37.5})
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                self._add_speech(conn, "5802", "R-fl", fraktion="fraktionslos")
+        finally:
+            conn.close()
+        shares = self._r2_seat_shares()
+        self.assertEqual(shares, {(20, "SPD"): 50.0, (20, "CDU/CSU"): 37.5, (20, "fraktionslos"): 12.5})
+        self.assertAlmostEqual(sum(shares.values()), 100.0, places=6)
+
+    # Value: protects=a sitting after the Stammdaten's Stand counts with the composition at the Stand
+    #   (D6 (a), the open rows), and a sitting date with no seat count at all leaves the WP's column
+    #   empty instead of averaging over the dates that have one; fails_when=open rows stop covering later
+    #   dates, or an uncovered sitting date is skipped; why_new=C1 step 7; seam=export_distribution_data
+    def test_r2_sitzanteil_carries_the_stand_forward_and_needs_every_sitting_date(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                now = pulse_store.utc_now()
+                # After the fixture's Stand (2024-06-30): SPD 1 / CDU/CSU 2 / fraktionslos 1 since 2024-06-01.
+                conn.execute("INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)"
+                             " VALUES ('5803', '20/102', '2024-07-03', 'Dritte Sitzung', '{}', ?, ?)", (now, now))
+                conn.execute("INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)"
+                             " VALUES ('ai-5803', '5803', 1, 'T1', 'TOP 1', ?, ?)", (now, now))
+                self._add_speech(conn, "5803", "R-late", fraktion="fraktionslos")
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION,))
+        finally:
+            conn.close()
+        # (2+2+1)/12, (2+1+2)/12, (0+1+1)/12.
+        self.assertEqual(self._r2_seat_shares(), {(20, "SPD"): 41.7, (20, "CDU/CSU"): 41.7, (20, "fraktionslos"): 16.7})
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                # A sitting before the first Mandat in the fixture's Stammdaten has no seat count.
+                now = pulse_store.utc_now()
+                conn.execute("INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)"
+                             " VALUES ('5701', '20/1', '2021-10-25', 'Vor dem Mandat', '{}', ?, ?)", (now, now))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION,))
+        finally:
+            conn.close()
+        self.assertEqual(set(self._r2_seat_shares().values()), {None})
+
+    # Value: protects=the Sprechrollen get no seat share while the groups beside them keep theirs;
+    #   fails_when=a Sprechrolle label matches a seated group or the role rows take a share; why_new=C1
+    #   step 7; seam=export_distribution_data
+    def test_r2_sitzanteil_is_empty_for_a_sprechrolle(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                self._add_speech(conn, "5801", "R-reg", sprechrolle="bundesregierung")
+        finally:
+            conn.close()
+        self.assertEqual(self._r2_seat_shares(), {(20, "SPD"): 50.0, (20, "CDU/CSU"): 37.5, (20, "Bundesregierung"): None})
+
+    # Value: protects=R2's caveat names the Stammdaten's Stand and the carry-forward after it (D6), or says
+    #   the column is empty without a file, the same on the Daten page as in the manifest/DATA.md;
+    #   fails_when=one surface keeps the static text or the two dates differ; why_new=C1 step 7;
+    #   seam=export_distribution_data + render_daten_recipes
+    def test_r2_caveat_names_the_stammdaten_stand_on_both_surfaces(self) -> None:
+        for loaded in (True, False):
+            with self.subTest(loaded=loaded):
+                if not loaded:
+                    conn = pulse_store.connect(self.db_path)
+                    try:
+                        with conn:
+                            for table in ("mdb_zugehoerigkeiten", "party_seats", "mdb_stammdaten_stand"):
+                                conn.execute(f"DELETE FROM {table}")
+                    finally:
+                        conn.close()
+                manifest = self.export()
+                caveat = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")["caveat"]
+                if loaded:
+                    self.assertIn("MdB-Stammdaten, Stand 30.06.2024", caveat)
+                    self.assertIn("gilt für spätere Sitzungstage die Zusammensetzung am Stand", caveat)
+                else:
+                    self.assertIn("sitzanteil_prozent ist leer: keine MdB-Stammdaten geladen", caveat)
+                page = b.render_daten_recipes(manifest, mp_lookup=self.lookup, document_numbers=set(), bill_slugs=set())
+                self.assertIn(b.pulse_html.esc(caveat), page)
+                self.assertIn(caveat, "\n".join(b._codebook_recipes(manifest)))
+
     # Value (Fraktion stopgap, plan 2.7): protects=no Daten recipe blends Wahlperioden while
     # parties stay keyed by name; fails_when=a recipe row lacks its Wahlperiode, or r2 pools
     # an SPD of WP 18 with the SPD of WP 20 in one share; seam=export_distribution_data.
@@ -880,6 +986,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         spd = {row["wahlperiode"]: row for row in r2["rows"] if row["fraktion"] == "SPD"}
         self.assertEqual((spd[18]["reden"], spd[18]["anteil_prozent"]), (1, 100.0))
         self.assertEqual(spd[20]["reden"], 3)
+        # The fixture's Stammdaten cover WP 20 only: the WP 18 share is empty, WP 20's is its own.
+        self.assertEqual((spd[18]["sitzanteil_prozent"], spd[20]["sitzanteil_prozent"]), (None, 50.0))
 
     # Value (rule 5, 6c): protects=a Rede the parser split out of the <rede> it was printed
     # in is counted in the manifest like a synthetic id; fails_when=the split id goes uncounted
@@ -1035,17 +1143,18 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_twenty_nine_csvs_named_and_headered(self) -> None:
+    def test_all_thirty_two_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 29)
+        self.assertEqual(len(csv_files), 32)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
             "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
+            "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz", "mdb_stammdaten_stand-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -1084,7 +1193,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 12)
+        self.assertEqual(manifest["export_format"], 14)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1559,6 +1668,61 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(self.export()["generation"], first["generation"])
 
     # Value: protects=the manifest names each table's stable key exactly: its declared primary-key columns in key order; fails_when=stable_keys lists other columns or drops one of a composite key (no composite key of this schema declares its columns out of table order, so key order is not distinguishable here); why_new=registry follow-ups (3): the manifest test checked only that the list is not empty; seam=none
+    # Value: protects=the export says which MdB-Stammdaten file the seat counts came from (Stand and
+    #   sha256 in the manifest and on the Daten page), and says plainly when there are none; fails_when=the
+    #   manifest drops the provenance, or a build without the file shows no notice; why_new=C1 step 4;
+    #   seam=export_distribution_data + render_daten_datenstand
+    def test_the_stammdaten_stand_reaches_the_manifest_and_the_daten_page(self) -> None:
+        manifest = self.export()
+        self.assertEqual(manifest["stammdaten"], self.ids["stammdaten"])
+        line = b.render_daten_datenstand(manifest)
+        self.assertIn("Sitzzahlen: MdB-Stammdaten des Bundestages, Stand 30.06.2024", line)
+        self.assertIn(self.ids["stammdaten"]["sha256"], line)
+        # A build without a cached file writes none of the three tables.
+        conn = pulse_store.connect(self.db_path)
+        try:
+            for table in ("mdb_zugehoerigkeiten", "party_seats", "mdb_stammdaten_stand"):
+                conn.execute(f"DELETE FROM {table}")
+            conn.commit()
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertIsNone(manifest["stammdaten"])
+        self.assertIn("Sitzzahlen: keine (MdB-Stammdaten nicht geladen)", b.render_daten_datenstand(manifest))
+
+    # Value: protects=the exported party_seats recount exactly from the exported mdb_zugehoerigkeiten
+    #   under the lookup rule (the plan's traceability claim), with an open stretch exported as an empty
+    #   valid_until and fraktionslos as its parties row; fails_when=the CSVs drop or reorder rows, write
+    #   NULL as something other than empty, or the seat rows stop matching the stretches; why_new=C1 step 6,
+    #   the fixture had no seat rows; seam=export_distribution_data
+    def test_exported_seat_counts_recount_from_the_exported_zugehoerigkeiten(self) -> None:
+        manifest = self.export()
+        gen_dir = self.exports_dir / manifest["generation"]
+
+        def read(table):
+            with gzip.open(gen_dir / f"{table}-local.csv.gz", "rt", encoding="utf-8", newline="") as handle:
+                return list(csv.DictReader(handle))
+
+        stretches, seats = read("mdb_zugehoerigkeiten"), read("party_seats")
+        party_names = {row["id"]: row["name"] for row in read("parties")}
+
+        def covers(row, day):
+            return row["valid_from"] <= day and (row["valid_until"] == "" or day < row["valid_until"])
+
+        compositions = {}
+        for day in ("2024-05-15", "2024-05-22", "2024-06-01"):
+            counted = {party_names[s["party_id"]]: int(s["seats"]) for s in seats if s["wahlperiode"] == "20" and covers(s, day)}
+            recounted = Counter(party_names[z["party_id"]] for z in stretches if z["wahlperiode"] == "20" and covers(z, day))
+            self.assertEqual(counted, dict(recounted), day)
+            compositions[day] = counted
+        self.assertEqual(compositions, {
+            "2024-05-15": {"SPD": 2, "CDU/CSU": 2},
+            "2024-05-22": {"SPD": 2, "CDU/CSU": 1, "fraktionslos": 1},
+            "2024-06-01": {"SPD": 1, "CDU/CSU": 2, "fraktionslos": 1},
+        })
+        self.assertEqual(sum(row["valid_until"] == "" for row in seats), 3)
+        self.assertEqual(read("mdb_stammdaten_stand"), [self.ids["stammdaten"]])
+
     def test_manifest_stable_keys_are_the_declared_primary_keys(self) -> None:
         manifest = self.export()
         keys = {table["name"]: table["stable_keys"] for table in manifest["tables"]}
@@ -1567,7 +1731,9 @@ class ExportDistributionDataTests(unittest.TestCase):
             "agenda_item_politikfelder": ["agenda_item_id", "politikfeld"],
             "agenda_item_votes": ["agenda_item_id", "vote_id"],
             "agenda_items": ["id"], "contributions": ["id"], "datenstand": ["tag"], "documents": ["id"],
-            "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"], "person_aliases": ["id"],
+            "mdb_stammdaten_stand": ["sha256"], "mdb_zugehoerigkeiten": ["mdb_id", "wahlperiode", "valid_from"],
+            "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"],
+            "party_seats": ["party_id", "wahlperiode", "valid_from"], "person_aliases": ["id"],
             "person_bindings": ["id"], "person_records": ["id"], "persons": ["id"],
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],

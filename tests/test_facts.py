@@ -387,8 +387,8 @@ class KnappsteAbstimmungTests(StoreCase):
             "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
             "VALUES (1, 'BT', '21/1000', 'https://www.bundestag.de/drucksache/1000', 't', 't')"
         )
-        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
-        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id, rank) VALUES (?, 2, 2)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id, rank) VALUES (?, 1, 1)", (vote_id,))
         conn.commit()
         row = self.one(KNAPPSTE)
         self.assertEqual(
@@ -2488,9 +2488,9 @@ class PageTests(StoreCase):
             "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
             "VALUES (3, 'BR', '21/500', 'https://dip.bundestag.de/drucksache/other', 't', 't')"
         )
-        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 3)", (vote_id,))
-        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
-        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id, rank) VALUES (?, 3, 3)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id, rank) VALUES (?, 1, 1)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id, rank) VALUES (?, 2, 2)", (vote_id,))
         conn.commit()
         facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
         conn.close()
@@ -2544,7 +2544,7 @@ class PageTests(StoreCase):
     def test_a_week_page_links_the_legal_pages_one_directory_up(self) -> None:
         output_dir, _ = self.write_pages(week_specs(9))
         footer = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8").split("<footer")[-1]
-        self.assertIn('<span class="legal-links"><a href="../impressum.html">Impressum</a>', footer)
+        self.assertIn('<span class="legal-links">&middot; <a href="../impressum.html">Impressum</a>', footer)
         self.assertIn('<a href="../datenschutz.html">Datenschutz</a>', footer)
 
     def test_the_archive_links_a_posted_cell_to_its_week_page_anchor(self) -> None:

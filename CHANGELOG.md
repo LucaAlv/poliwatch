@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0.0] - 2026-11-04
+
+### Changed
+
+- **`votes/index.html` renders from the SQLite store, not the cached report JSON.** The archive runs the same vote rules as the dossier panel (`merge_fractions`, the Fraktion positions, the Abweichler count, the procedure type, the Politikfeld state, the Drucksache links) on stored rows. On the reference store (619 votes) every archive row is identical to the old one, and the archive agrees with the dossier panel on every vote's result badge, Drucksache links and Abweichler figure. The header and footer now say the list covers the namentliche Abstimmungen of the sittings in this build's database, which are only sittings with a Dossier.
+- **The archive's Politikfelder come from the store.** A refreshed Vorgang cache reaches them only with a repersist; puls.html still reads the cache at render time.
+- **Store schema 10 and export format 14.** The store now keeps what the archive needs: the order of a vote's Drucksachen and Fraktionen (`vote_documents.rank`, `vote_fractions.rank`) and each agenda item's own Drucksache url and order (`agenda_item_documents.url`, `agenda_item_documents.rank`). An existing store is refused until `--offline --repersist` rebuilds it, and the first export after this release re-exports once.
+- **A vote total the source did not give is stored as NULL, not 0** (`votes.yes_count`, `no_count`, `abstain_count`, `absent_count`). The roll-call listing parser no longer pads a missing count with 0, and persist reads a total of four zeros (what older cached reports carry for a listing without chart values) as missing too: a real roll-call's counts add up to the seats. An Abweichler count can no longer rest on an invented zero, on the archive or the dossier panel, and recipe r4 leaves such votes out instead of ranking them first as the closest vote; the Fakten already skipped them (`yes + no > 0`). The reference-store replay, run before the four-zeros rule, found no NULL total; the count of four-zero totals there is still to be replayed. `scripts/compare_store_values.py` lists every vote whose total moved from 0 to NULL.
+
+### Removed
+
+- `collect_votes_archive`, `VotesComponent.write_pages` and the votes archive's feature-selection callables. `render_site` calls the archive writer directly.
+
+## [0.31.0.0] - 2026-11-02
+
+### Added
+
+- **Seat counts per Fraktion and Gruppe.** `--enrich mdb-stammdaten` downloads the Bundestag's MdB-Stammdaten (only when the file changed; a failed fetch, or a file that fails the seat checks, keeps the previous one with a warning) into the store's private directory, never into the published site. Every rebuild derives three tables from it: `mdb_zugehoerigkeiten` (each MdB's Fraktion, Gruppe or fraktionslos per Wahlperiode and stretch), `party_seats` (seats per Zusammenschluss and fraktionslos per stretch, WP 18–21) and `mdb_stammdaten_stand` (the file's Stand and sha256). Fixed rules cut the stretches (handover day, Mandat limits, Nachrücker), and each day's total must stay within the legal size (631, 709, 736, 630) and reach it. Without the file the tables stay empty and the build says so.
+- **Recipe r2 shows the seat share beside the speech share.** The new column `sitzanteil_prozent` is a group's mean seat share over the Wahlperiode's sitting days. On the reference store, WP 21: CDU/CSU 33.0 % of the seats and 28.3 % of the speech characters, AfD 23.9 % and 22.5 %. The caveat names the file's Stand: later changes are not in the file, so sittings after it carry the composition at the Stand forward.
+- **A seat cross-check on every build.** Each roll-call's group totals are compared with the seat counts on its date, every disagreement is filed under a cause (a change on the vote's day, members filed under another group, members missing from the list, after the Stand, unexplained) in a private `seat-crosscheck.json`, and the build warns about drift and unexplained cases without failing. On the rebuilt reference store, 619 roll-calls compare with 0 unexplained; 55 are the Bundestag's own misattributions listed in `docs/source-errors.md` (E4).
+- **The Daten page and the manifest name the seat source.** A "Sitzzahlen" line gives the MdB-Stammdaten Stand and sha256 (or says none are loaded), and `datenstand.json` carries them as `stammdaten`.
+
+### Changed
+
+- **Store schema 9 and export format 13.** An existing store is refused until `--offline --repersist` rebuilds it, and the first export after this release re-exports once, now with 32 table CSVs. No existing figure moves: a replay of the reference store matched the baseline in all 27 shared tables.
+- **`--enrich all` includes `mdb-stammdaten`.**
+
 ## [0.30.0.0] - 2026-11-01
 
 ### Added

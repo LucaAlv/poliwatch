@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import _site_store_fixture
 import build_dip_pulse_site as build
 import derive
 import speech_kinds
@@ -635,7 +636,7 @@ class RepairedReportsTests(unittest.TestCase):
         self.assertIn("Kubicki", page)
         self.assertIn("Strack-Zimmermann", page)
         # ...and so do the archive rows, where a computed result stays marked.
-        archive = build.render_votes_archive_index(build.collect_votes_archive(entries))
+        archive = build.render_votes_archive_index(_site_store_fixture.archive_rows(entries))
 
         def badge(vote_id: str) -> str:
             row = re.search(rf'#vote-{vote_id}">.*?</h3>', archive, re.S).group(0)

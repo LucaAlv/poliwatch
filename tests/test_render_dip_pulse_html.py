@@ -82,6 +82,7 @@ class DossierLayoutTests(unittest.TestCase):
     def test_documents_metadata_is_omitted_when_top_has_no_documents(self) -> None:
         report = copy.deepcopy(self.report)
         report["agenda_items"][0]["xml_drucksachen"] = []
+        report["agenda_items"][0]["api"]["linked_drucksachen"] = []
 
         card = self._top_card(pulse_html.render_html(report))
 
@@ -95,11 +96,58 @@ class DossierLayoutTests(unittest.TestCase):
             {"dokumentnummer": "20/123", "url": "https://www.bundestag.de/20-123.pdf"},
             {"dokumentnummer": "20/456", "url": None},
         ]
+        report["agenda_items"][0]["api"]["linked_drucksachen"] = []
 
         card = self._top_card(pulse_html.render_html(report))
 
         self.assertIn('class="doc-link" href="https://www.bundestag.de/20-123.pdf"', card)
         self.assertIn('<span class="doc-link muted">20/456</span>', card)
+
+    # Value: protects=a TOP whose XML tags no Drucksache (every WP 18/19 protocol) lists the papers DIP links to it, one pill per document, and the header card counts exactly the distinct documents the TOP sections list; fails_when=the section or the card read the XML references alone (19/29 showed 0 while its TOPs link 37 papers), a number both sources name is listed twice, or a document two TOPs name counts twice; why_new=TODOS.md "Dossier header: the Drucksachen card counts only XML-tagged Drucksachen"; seam=none
+    def test_top_documents_add_dip_papers_and_the_header_counts_what_the_page_lists(self) -> None:
+        report = copy.deepcopy(self.report)
+        first = report["agenda_items"][0]
+        first["xml_drucksachen"] = []
+        first["api"]["linked_drucksachen"] = [
+            {"dokumentnummer": "20/456", "url": "https://dserver.bundestag.de/btd/20/004/2000456.pdf"},
+            {"dokumentnummer": "20/0456", "url": "https://dserver.bundestag.de/btd/20/004/2000456.pdf"},
+            {"dokumentnummer": "20/789", "url": None},
+            {"dokumentnummer": "123/23", "herausgeber": "BR", "url": "https://dserver.bundestag.de/brd/2023/0123-23.pdf"},
+        ]
+        second = copy.deepcopy(first)
+        second["index"] = "2"
+        second["xml_drucksachen"] = [{"dokumentnummer": "20/456", "url": "https://www.bundestag.de/20-456.pdf"}]
+        second["api"]["linked_drucksachen"] = [{"dokumentnummer": "20/999", "url": None}]
+        report["agenda_items"] = [first, second]
+        markup = pulse_html.render_html(report)
+        card = self._top_card(markup)
+        self.assertIn('class="top-documents"', card)
+        self.assertEqual(card.count(">20/456<"), 1)
+        self.assertIn('<a class="doc-link" href="https://dserver.bundestag.de/btd/20/004/2000456.pdf">20/456</a>', card)
+        self.assertIn('<span class="doc-link muted">20/789</span>', card)
+        self.assertIn(">BR-Drs. 123/23</a>", card)
+        # 20/456 (both TOPs), 20/789, BR 123/23, 20/999: four documents, whatever the XML count says.
+        report["validation_summary"] = {**(report.get("validation_summary") or {}), "xml_drucksache_count": 0}
+        markup = pulse_html.render_html(report)
+        self.assertIn('<div class="metric"><span>Drucksachen</span><strong>4</strong></div>', markup)
+        self.assertEqual(
+            [(key, label) for key, label, _href in pulse_html.top_documents(second)],
+            [(("BT", "20/456"), "20/456"), (("BT", "20/999"), "20/999")],
+        )
+        # A DIP-only paper given zero-padded prints the canonical number, as the store and the archive do.
+        padded = {"xml_drucksachen": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/06561", "url": None}]}}
+        self.assertEqual([label for _key, label, _href in pulse_html.top_documents(padded)], ["21/6561"])
+
+    # Value: protects=a sitting DIP gives no distribution date (every WP 18 sitting) prints no dangling "verteilt am"; fails_when=the subtitle or the overview card interpolate an empty verteildatum; why_new=TODOS.md "Dossier header" item, A3 spot checks; seam=none
+    def test_no_verteilt_am_without_a_distribution_date(self) -> None:
+        for value, expected in ((None, False), ("", False), (" ", False), ("2026-06-15", True)):
+            with self.subTest(value=value):
+                report = copy.deepcopy(self.report)
+                report["protocol"] = {**report["protocol"], "verteildatum": value}
+                markup = pulse_html.render_html(report)
+                self.assertEqual("verteilt am" in markup, expected)
+                self.assertEqual(pulse_html.distributed_phrase(report["protocol"]),
+                                 " · verteilt am 2026-06-15" if expected else "")
 
     def test_layout_css_wraps_document_links_and_speaker_names(self) -> None:
         markup = pulse_html.render_html(self.report)

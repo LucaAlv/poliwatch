@@ -285,10 +285,10 @@ def seed_weeks(
                         "INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
                         (agenda_item_ids[vote["item"]], vote_id),
                     )
-                    for fraction, leading in (vote["leading"] or {}).items():
+                    for rank, (fraction, leading) in enumerate((vote["leading"] or {}).items(), start=1):
                         conn.execute(
-                            "INSERT INTO vote_fractions(vote_id, party_id, leading_vote) VALUES (?, ?, ?)",
-                            (vote_id, party_id(fraction), leading),
+                            "INSERT INTO vote_fractions(vote_id, party_id, leading_vote, rank) VALUES (?, ?, ?, ?)",
+                            (vote_id, party_id(fraction), leading, rank),
                         )
                     for name, member_party, cast in vote["members"]:
                         conn.execute(

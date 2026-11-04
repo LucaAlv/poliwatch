@@ -23,6 +23,7 @@ import derive
 import politikfelder
 import antrag_text
 from stable_ids import contribution_occurrence_id, source_index, speech_occurrence_id, speech_rede_id
+from stable_ids import document_issuer, document_number as stable_document_number
 import person_registry as registry
 import publication_state as publication
 import speech_kinds
@@ -622,11 +623,13 @@ def format_percent(value: float) -> str:
 
 
 # The legal pages, appended to every page's footer (not the navigation,
-# which tests/test_features.py pins); same prefix scheme as the header.
+# which tests/test_features.py pins); same prefix scheme as the header. The
+# span brings its own leading separator: every footer puts it after a link
+# or a sentence, which read "Quellen und Methode Impressum" without one.
 def render_legal_links(*, depth: int = 0) -> str:
     prefix = "../" * depth
     return (
-        f'<span class="legal-links"><a href="{prefix}impressum.html">Impressum</a>'
+        f'<span class="legal-links">&middot; <a href="{prefix}impressum.html">Impressum</a>'
         f' &middot; <a href="{prefix}datenschutz.html">Datenschutz</a></span>'
     )
 
@@ -799,7 +802,7 @@ def global_header_styles() -> str:
       .filter, .sample-table, details, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
-      .week-compare, .week-metric, .vote-panel
+      .week-compare, .week-metric, .vote-panel, .latest, .follow-summary
     ) {
       background:var(--panel) !important;
       border-color:var(--line) !important;
@@ -810,7 +813,8 @@ def global_header_styles() -> str:
     :root[data-theme="dark"] :is(
       .badge, .summary-count, .session-summary-sources a,
       .session-summary-sources span, .radar-receipts a, .radar-receipts span,
-      .empty, .filter input
+      .empty, .filter input, .filter-field input, .filter-field select,
+      .session-links a, .source-actions a, .no-results
     ) {
       background:var(--surface-2) !important;
       border-color:var(--line) !important;
@@ -839,7 +843,7 @@ def global_header_styles() -> str:
     ) {
       color:var(--muted) !important;
     }
-    :root[data-theme="dark"] :is(.notice) {
+    :root[data-theme="dark"] :is(.notice, .mp-notice) {
       background:var(--warning-bg) !important;
       border-color:var(--warning-line) !important;
       color:var(--warning-ink) !important;
@@ -1595,7 +1599,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
 def vote_key(vote: dict[str, Any]) -> str:
     """Identity of a roll-call vote (``derive.vote_identity``).
 
-    Shared with the votes archive (build_dip_pulse_site.collect_votes_archive):
+    Shared with the votes archive (features.votes.stored_votes keys on votes.id, the same identity):
     a vote can attach to two agenda items, so both dedupe on this key rather
     than on attachment.
     """
@@ -2493,13 +2497,80 @@ def render_source_links(item: dict[str, Any]) -> str:
     return "".join(links)
 
 
-def render_top_documents(item: dict[str, Any]) -> str:
-    if not derive.xml_drucksachen(item):
+def distributed_phrase(protocol: dict[str, Any]) -> str:
+    """" · verteilt am <date>", or nothing when DIP gives no ``verteildatum``
+    (no WP 18 sitting has one)."""
+    distributed = str(protocol.get("verteildatum") or "").strip()
+    return f" · verteilt am {esc(distributed)}" if distributed else ""
+
+
+def _document_key(doc: dict[str, Any]) -> tuple[str, str] | None:
+    """One Drucksache, whichever source names it, keyed as the store keys it
+    (``persist.upsert_document``): the issuer from ``herausgeber`` or the dserver
+    path, and the canonical number ("21/06561" is "21/6561"). So the TOP list and
+    its count name the documents ``agenda_item_documents`` holds."""
+    issuer = document_issuer(doc.get("herausgeber"), doc.get("url"))
+    number = stable_document_number(doc.get("dokumentnummer"), issuer)
+    return (issuer, number) if number else None
+
+
+def top_documents(item: dict[str, Any]) -> list[tuple[tuple[str, str], str, str | None]]:
+    """The Drucksachen the TOP's "Drucksachen" section lists, one per document,
+    as (key, label, href or None): the XML references (``derive.xml_drucksachen``),
+    then the papers DIP links to the TOP's positions that no XML reference names.
+    Persist stores the same two sources per TOP (``persist_agenda_documents``).
+    The XML is authoritative, so its link wins for a number both name. WP 18/19
+    and many WP 20 protocols tag no Drucksache in the XML; their TOPs list the
+    DIP papers alone."""
+    documents: dict[tuple[str, str], tuple[str, str | None]] = {}
+    sources = [(doc, "bundestag-xml") for doc in derive.xml_drucksachen(item)]
+    sources += [(doc, "bundestag-dip") for doc in (item.get("api") or {}).get("linked_drucksachen") or []]
+    for doc, source in sources:
+        key = _document_key(doc)
+        if key is None:
+            continue
+        href = None
+        if doc.get("url"):
+            # The allowlist check every dossier link passes; a refusal must not abort the build.
+            try:
+                href = source_url(doc["url"], source)
+            except publication.PublicationStateError:
+                href = None
+        if key in documents:
+            if documents[key][1] is None and href:
+                documents[key] = (documents[key][0], href)
+            continue
+        # The label prints the canonical number, as the store and the votes archive do.
+        documents[key] = (f"BR-Drs. {key[1]}" if document_chamber(doc) == "BR" else key[1], href)
+    return [(key, label, href) for key, (label, href) in documents.items()]
+
+
+def distinct_document_count(document_lists: Any) -> int:
+    """The distinct Drucksachen across ``top_documents`` lists; a document two
+    TOPs name counts once."""
+    return len({key for documents in document_lists for key, _label, _href in documents})
+
+
+def sitting_document_count(items: list[dict[str, Any]]) -> int:
+    """The distinct Drucksachen the sitting's TOP sections list. The dossier
+    header and the overview card show it."""
+    return distinct_document_count(top_documents(item) for item in items)
+
+
+def render_top_documents(item: dict[str, Any], documents: list[tuple[tuple[str, str], str, str | None]] | None = None) -> str:
+    if documents is None:
+        documents = top_documents(item)
+    if not documents:
         return ""
+    links = "".join(
+        f'<a class="doc-link" href="{esc(href)}">{esc(label)}</a>' if href
+        else f'<span class="doc-link muted">{esc(label)}</span>'
+        for _key, label, href in documents
+    )
     return (
         '<section class="top-documents">'
         "<h3>Drucksachen</h3>"
-        f'<div class="top-document-links">{render_source_links(item)}</div>'
+        f'<div class="top-document-links">{links}</div>'
         "</section>"
     )
 
@@ -3034,6 +3105,8 @@ def render_html(
         report, cache, votes_component_ctx["vote_contexts"]
     )
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
+    # Each TOP's Drucksachen once: its section lists them, the header counts them.
+    documents_by_index = {item["index"]: top_documents(item) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
     report_votes = list(derive.iter_report_votes(report))
@@ -3105,7 +3178,7 @@ def render_html(
         party_total = sum(stats["party_counts"].values())
         speech_share = percent(stats["speech_count"], total_speeches)
         text_share = percent(stats["total_chars"], total_chars)
-        top_documents = render_top_documents(item)
+        top_documents_html = render_top_documents(item, documents_by_index[item["index"]])
         party_labels = [
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
@@ -3157,7 +3230,7 @@ def render_html(
                   <span>Reden</span>
                 </div>
               </div>
-              {top_documents}
+              {top_documents_html}
               {render_top_contributions(item)}
               {render_contribution_details(item, protocol, mp_lookup)}
               <div class="top-bars">
@@ -4193,12 +4266,12 @@ def render_html(
       <div>
         <span class="eyebrow">Bundestag-Puls</span>
         <h1>{esc(protocol.get('titel') or protocol.get('dokumentnummer') or 'Plenarsitzung')}</h1>
-        <p class="subtitle">Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
+        <p class="subtitle">Sitzung vom {esc(protocol.get('datum'))}{distributed_phrase(protocol)}</p>
       </div>
       <div class="meta-grid">
         <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
         <div class="metric"><span>Reden</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
-        <div class="metric"><span>Drucksachen</span><strong>{esc(summary.get('xml_drucksache_count'))}</strong></div>
+        <div class="metric"><span>Drucksachen</span><strong>{esc(distinct_document_count(documents_by_index.values()))}</strong></div>
         <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>

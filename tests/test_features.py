@@ -30,8 +30,8 @@ class FixedPresentationTests(unittest.TestCase):
         self.assertNotIn("settings", markup.lower())
         self.assertNotIn("data-feature", markup)
 
-    def test_only_three_operator_enrichments_exist(self) -> None:
-        self.assertEqual(set(ENRICHMENT_REGISTRY), {"votes", "aw-profiles", "mp-roster"})
+    def test_only_four_operator_enrichments_exist(self) -> None:
+        self.assertEqual(set(ENRICHMENT_REGISTRY), {"votes", "aw-profiles", "mp-roster", "mdb-stammdaten"})
         selection = EnrichmentSelection(frozenset({"votes", "mp-roster"}))
         self.assertEqual(selection.ids, frozenset({"votes", "mp-roster"}))
         with self.assertRaisesRegex(FeatureError, "Unbekannte Anreicherung"):

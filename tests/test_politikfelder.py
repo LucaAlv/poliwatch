@@ -17,6 +17,7 @@ from typing import Any
 from unittest import mock
 
 import _support  # noqa: F401
+import _site_store_fixture
 import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
@@ -1413,7 +1414,7 @@ class RenderTests(unittest.TestCase):
 
     def archive_rows(self, cache: dict[str, Any] | None):
         entry = {"report": self.report(), "page_path": Path("plenarprotokoll-20-999.html")}
-        return build.collect_votes_archive([entry], cache)
+        return _site_store_fixture.archive_rows([entry], cache)
 
     def test_the_archive_rows_carry_the_votes_politikfelder_and_page_has_chips_and_filter(self) -> None:
         rows = self.archive_rows(cache_of({"v1": vorgang("Gesundheit", "Recht")}))
@@ -1441,39 +1442,48 @@ class RenderTests(unittest.TestCase):
         # With no tag anywhere there is nothing to filter by, so no filter row.
         self.assertNotIn('data-politikfeld-chip="', build.render_votes_archive_index([untagged]))
 
-    # Value: protects=the cache main loads reaches the pages render_site writes itself: the front page radar and, through the votes component, votes/index.html; fails_when=render_site stops handing vorgang_cache to render_front_page or to the component context (or the context key is renamed), so the live site ships without Politikfeld chips and filters while every direct-call render test stays green; why_new=the other render tests call render_html, write_report_files, collect_votes_archive and week_topic_rows directly; seam=none
-    def test_render_site_threads_the_cache_into_the_front_page_and_the_votes_archive(self) -> None:
+    # Value: protects=the front page radar takes its chips from the cache render_site is handed, and votes/index.html from the tags persisted with the store (A4 slice 1, plan R4); fails_when=render_site stops handing vorgang_cache to render_front_page, or the archive reads the render-time cache again instead of vote_politikfelder (then a refreshed cache without a repersist would move the archive and not the store); why_new=the other render tests call render_html, write_report_files, the archive rows and week_topic_rows directly; seam=none
+    def test_the_archive_shows_the_persisted_tags_and_the_front_page_the_render_time_cache(self) -> None:
         report = self.report()
         report["agenda_items"][0]["xml_speakers"] = [
             {"speaker": {"name": "A", "faction": "SPD"}, "text": "x", "text_length": 1, "rede_id": "r1"}
         ]
-        pages: dict[bool, tuple[str, str]] = {}
-        for cached in (True, False):
+        cache = cache_of({"v1": vorgang("Verkehr")})
+        pages: dict[tuple[bool, bool], tuple[str, str]] = {}
+        for persisted, rendered in ((True, True), (True, False), (False, True)):
             with tempfile.TemporaryDirectory() as tmp:
                 output_dir = Path(tmp) / "site"
                 for name in ("data", "protocols", "bills", "abgeordnete"):
                     (output_dir / name).mkdir(parents=True)
                 report_path, page_path, slug = build.report_paths(output_dir, report["protocol"]["dokumentnummer"])
                 entry = {"report": copy.deepcopy(report), "report_path": report_path, "page_path": page_path, "slug": slug}
+                store = _site_store_fixture.build_site_store(
+                    output_dir, _site_store_fixture.persistable([entry]), vorgang_cache=cache if persisted else None
+                )
                 with contextlib.redirect_stderr(io.StringIO()):
                     build.render_site(
-                        output_dir=output_dir, database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                        output_dir=output_dir, database_path=store,
                         protocols=[report["protocol"]], entries=[entry], abg_mps=[], mp_lookup={}, today=date(2026, 9, 15),
-                        vorgang_cache=cache_of({"v1": vorgang("Verkehr")}) if cached else None,
+                        vorgang_cache=cache if rendered else None,
                     )
-                pages[cached] = (
+                pages[persisted, rendered] = (
                     (output_dir / "puls.html").read_text(encoding="utf-8"),
                     (output_dir / "votes" / "index.html").read_text(encoding="utf-8"),
                 )
-        front, archive = pages[True]
+        front, archive = pages[True, True]
         self.assertIn('data-radar-chip="Verkehr"', front)
         self.assertIn('data-politikfeld-chip="Verkehr"', archive)
         self.assertIn('<li class="pf-tag">Verkehr</li>', archive)
         self.assertRegex(front, r"@media \(pointer:coarse\)\s*\{[^}]+\}[^}]*\.radar-filter \.chip\s*\{ min-height:44px; \}")
         self.assertRegex(archive, r"@media \(pointer:coarse\)\s*\{\s*\.chip\s*\{ min-height:44px; \}")
-        front_without, archive_without = pages[False]
-        self.assertNotIn('data-radar-chip="', front_without)
-        self.assertNotIn('data-politikfeld-chip="', archive_without)
+        # An offline render without the cache keeps the persisted tags on the archive.
+        front, archive = pages[True, False]
+        self.assertNotIn('data-radar-chip="', front)
+        self.assertIn('data-politikfeld-chip="Verkehr"', archive)
+        # A cache that arrives after the persist reaches the archive only with a repersist.
+        front, archive = pages[False, True]
+        self.assertIn('data-radar-chip="Verkehr"', front)
+        self.assertNotIn('data-politikfeld-chip="', archive)
 
     def test_the_radar_has_no_filter_when_nothing_is_tagged(self) -> None:
         self.assertEqual(build.render_radar_filter([{"politikfelder": []}, {"politikfelder": [pf.UNTAGGED]}]), "")

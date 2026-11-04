@@ -369,6 +369,18 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         self.assertEqual(vote["document_numbers"], ["20/123", "20/456"])
         self.assertEqual(vote["total"], {"yes": 10, "no": 5, "abstain": 2, "absent": 1})
 
+    # Value: protects=a listing without chart values gives no total and a partial one keeps its missing counts as None, so persist stores NULL and r4 leaves the vote out; fails_when=the listing pads with 0 again (a 0:0 vote ranks first in r4 and DATA.md's "NULL, wenn die Quelle keine Gesamtzahl nennt" is false); why_new=0.32 ship review; seam=none
+    def test_a_listing_without_chart_values_gives_no_total(self) -> None:
+        html = (FIXTURES / "roll_call_list.html").read_text(encoding="utf-8")
+        start = html.index('data-chart-values="')
+        end = html.index('"', start + len('data-chart-values="'))
+        self.assertEqual(dip.parse_roll_call_list_page(html[:start] + html[end + 1:])[0]["total"], {})
+        partial = html[:start] + 'data-chart-values="10,5"' + html[end + 1:]
+        self.assertEqual(
+            dip.parse_roll_call_list_page(partial)[0]["total"], {"yes": 10, "no": 5, "abstain": None, "absent": None}
+        )
+        self.assertEqual(dip.vote_counts_from_csv("3,1")["abstain"], 0)  # the Fraktion rows keep their 0 padding
+
     def test_fetch_html_wraps_a_malformed_response_body_as_dip_error(self) -> None:
         # A response that is not valid utf-8 used to crash the build with a raw
         # UnicodeDecodeError; fetch_html's except clause now widened to also

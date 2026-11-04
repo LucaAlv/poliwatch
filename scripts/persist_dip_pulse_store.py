@@ -15,7 +15,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
 import speech_kinds
@@ -32,7 +32,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -53,6 +53,15 @@ def require_current_schema(conn):
     if votes and "passage_state" not in votes:
         # Schema 7: initialize() would add vote_passages empty and leave every
         # votes.passage_state NULL.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if columns and not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='party_seats'").fetchone():
+        # Schema 8: initialize() would add the seat tables empty and stamp version 9.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    fractions = {row[1] for row in conn.execute("PRAGMA table_info(vote_fractions)")}
+    if fractions and "rank" not in fractions:
+        # Schema 9: no link and fraction order, no per-item Drucksache url, and a
+        # missing vote total stored as 0. None of it can be derived from the
+        # store, so the cached reports are persisted again.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -277,6 +286,11 @@ def initialize(conn: sqlite3.Connection) -> None:
           source TEXT NOT NULL,
           proceeding_id TEXT REFERENCES proceedings(id) ON DELETE SET NULL,
           proceeding_position_id TEXT,
+          -- The url this source printed for the Drucksache under this item
+          -- (documents.url is one url per Drucksache across all sittings), and
+          -- the reference's position in that source's list for the item.
+          url TEXT,
+          rank INTEGER NOT NULL,
           PRIMARY KEY (agenda_item_id, document_id, source)
         );
 
@@ -341,10 +355,11 @@ def initialize(conn: sqlite3.Connection) -> None:
           title TEXT,
           description TEXT,
           detail_url TEXT,
-          yes_count INTEGER NOT NULL DEFAULT 0,
-          no_count INTEGER NOT NULL DEFAULT 0,
-          abstain_count INTEGER NOT NULL DEFAULT 0,
-          absent_count INTEGER NOT NULL DEFAULT 0,
+          -- NULL when the source gave no total for that count, never 0.
+          yes_count INTEGER,
+          no_count INTEGER,
+          abstain_count INTEGER,
+          absent_count INTEGER,
           result_raw TEXT,
           result_source TEXT,
           result_scope TEXT,
@@ -400,6 +415,8 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS vote_documents (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
           document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          -- Position in the vote's list of Drucksache numbers.
+          rank INTEGER NOT NULL,
           PRIMARY KEY (vote_id, document_id)
         );
 
@@ -412,6 +429,8 @@ def initialize(conn: sqlite3.Connection) -> None:
           absent_count INTEGER NOT NULL DEFAULT 0,
           total_count INTEGER NOT NULL DEFAULT 0,
           leading_vote TEXT,
+          -- First-seen order of derive.merge_fractions, the order the source lists them.
+          rank INTEGER NOT NULL,
           PRIMARY KEY (vote_id, party_id)
         );
 
@@ -421,6 +440,37 @@ def initialize(conn: sqlite3.Connection) -> None:
           party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
           vote TEXT NOT NULL,
           PRIMARY KEY (vote_id, mp_id)
+        );
+
+        -- C1: Zugehörigkeit and seat counts from the MdB-Stammdaten
+        -- (derive.mdb_zugehoerigkeiten / derive.party_seats), recomputed on
+        -- every rebuild. fraktionslos is the parties row of that name, as in
+        -- vote_fractions and speeches. valid_until is exclusive; NULL while
+        -- open at the Stammdaten's Stand.
+        CREATE TABLE IF NOT EXISTS mdb_zugehoerigkeiten (
+          mdb_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          wahlperiode INTEGER NOT NULL,
+          party_id TEXT NOT NULL REFERENCES parties(id),
+          valid_from TEXT NOT NULL,
+          valid_until TEXT,
+          PRIMARY KEY (mdb_id, wahlperiode, valid_from)
+        );
+
+        CREATE TABLE IF NOT EXISTS party_seats (
+          party_id TEXT NOT NULL REFERENCES parties(id),
+          wahlperiode INTEGER NOT NULL,
+          valid_from TEXT NOT NULL,
+          valid_until TEXT,
+          seats INTEGER NOT NULL CHECK (seats > 0),
+          PRIMARY KEY (party_id, wahlperiode, valid_from)
+        );
+
+        -- The MdB-Stammdaten file both tables were derived from: its Stand
+        -- (the VERSION stamp) and sha256. One row, none without a cached file.
+        CREATE TABLE IF NOT EXISTS mdb_stammdaten_stand (
+          sha256 TEXT PRIMARY KEY NOT NULL,
+          stand TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_agenda_items_protocol ON agenda_items(protocol_id);
@@ -578,10 +628,11 @@ def _repoint_party(conn: sqlite3.Connection, old_id: str, new_id: str) -> None:
                 "abstain": merged_by_name["abstain_count"],
             }
         )
-        assignments = ", ".join(f"{name} = ?" for name in counts) + ", leading_vote = ?"
+        # The merged row keeps the place the first of the two had.
+        assignments = ", ".join(f"{name} = ?" for name in counts) + ", leading_vote = ?, rank = MIN(rank, ?)"
         conn.execute(
             f"UPDATE vote_fractions SET {assignments} WHERE vote_id = ? AND party_id = ?",
-            (*merged, new_leading, duplicate["vote_id"], new_id),
+            (*merged, new_leading, duplicate["rank"], duplicate["vote_id"], new_id),
         )
         conn.execute(
             "DELETE FROM vote_fractions WHERE vote_id = ? AND party_id = ?",
@@ -972,6 +1023,18 @@ def persist_agenda_documents(
     # derive.xml_drucksachen drops numbers read off a news-site URL in an old
     # cached report: keyed by number alone, such a fragment would join the real
     # Drucksache of that number.
+    #
+    # Each row keeps the url its source printed for this item and the place of
+    # the reference's first occurrence in that source's list, so the votes
+    # archive can rebuild the item's links as votes_feature.document_source_links
+    # reads them: an XML reference listed twice ends on its last url, a DIP
+    # link on its first.
+    ranks = {"xml": 0, "api": 0}
+
+    def next_rank(source: str) -> int:
+        ranks[source] += 1
+        return ranks[source]
+
     for doc in derive.xml_drucksachen(item):
         document_id = upsert_document(
             conn,
@@ -980,12 +1043,18 @@ def persist_agenda_documents(
             url=doc.get("url"),
         )
         if document_id:
+            seen = conn.execute(
+                "SELECT 1 FROM agenda_item_documents WHERE agenda_item_id = ? AND document_id = ? AND source = 'xml'",
+                (agenda_item_id, document_id),
+            ).fetchone()
             conn.execute(
                 """
-                INSERT OR IGNORE INTO agenda_item_documents(agenda_item_id, document_id, source)
-                VALUES (?, ?, 'xml')
+                INSERT INTO agenda_item_documents(agenda_item_id, document_id, source, url, rank)
+                VALUES (?, ?, 'xml', ?, ?)
+                ON CONFLICT(agenda_item_id, document_id, source) DO UPDATE SET
+                  url = COALESCE(excluded.url, agenda_item_documents.url)
                 """,
-                (agenda_item_id, document_id),
+                (agenda_item_id, document_id, clean(doc.get("url")), 0 if seen else next_rank("xml")),
             )
 
     for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
@@ -1014,18 +1083,26 @@ def persist_agenda_documents(
                     """,
                     (proceeding_id, now, now),
                 )
+            seen = conn.execute(
+                "SELECT 1 FROM agenda_item_documents WHERE agenda_item_id = ? AND document_id = ? AND source = 'api'",
+                (agenda_item_id, document_id),
+            ).fetchone()
             conn.execute(
                 """
-                INSERT OR IGNORE INTO agenda_item_documents(
-                  agenda_item_id, document_id, source, proceeding_id, proceeding_position_id
+                INSERT INTO agenda_item_documents(
+                  agenda_item_id, document_id, source, proceeding_id, proceeding_position_id, url, rank
                 )
-                VALUES (?, ?, 'api', ?, ?)
+                VALUES (?, ?, 'api', ?, ?, ?, ?)
+                ON CONFLICT(agenda_item_id, document_id, source) DO UPDATE SET
+                  url = COALESCE(agenda_item_documents.url, excluded.url)
                 """,
                 (
                     agenda_item_id,
                     document_id,
                     proceeding_id,
                     clean(doc.get("vorgangsposition_id")),
+                    clean(doc.get("url")),
+                    0 if seen else next_rank("api"),
                 ),
             )
 
@@ -1273,6 +1350,62 @@ def _vote_id(vote: dict[str, Any]) -> str:
         raise ValueError(f"roll-call vote without an id: {vote.get('title')!r} ({vote.get('date')})") from None
 
 
+def persist_seat_counts(
+    conn: sqlite3.Connection,
+    zugehoerigkeiten: Iterable[Mapping[str, Any]],
+    seats: Iterable[Mapping[str, Any]],
+    *,
+    stand: str,
+    sha256: str,
+    now: str,
+) -> None:
+    """Replace ``mdb_zugehoerigkeiten`` and ``party_seats`` with the rows of
+    ``derive.mdb_zugehoerigkeiten`` and ``derive.party_seats`` (C1), and
+    ``mdb_stammdaten_stand`` with the Stand and sha256 of the file they came
+    from. Each ``party`` name, ``"fraktionslos"`` included, becomes its parties
+    row."""
+    party_ids: dict[str, str] = {}
+
+    def party_id(name: str) -> str:
+        if name not in party_ids:
+            party_ids[name] = upsert_party(conn, name, now)
+        return party_ids[name]
+
+    conn.execute("DELETE FROM mdb_zugehoerigkeiten")
+    conn.execute("DELETE FROM party_seats")
+    conn.execute("DELETE FROM mdb_stammdaten_stand")
+    conn.execute("INSERT INTO mdb_stammdaten_stand(sha256, stand) VALUES (?, ?)", (sha256, stand))
+    conn.executemany(
+        "INSERT INTO mdb_zugehoerigkeiten(mdb_id, name, wahlperiode, party_id, valid_from, valid_until) VALUES (?, ?, ?, ?, ?, ?)",
+        [(row["mdb_id"], row["name"], row["wahlperiode"], party_id(row["party"]), row["valid_from"], row["valid_until"])
+         for row in zugehoerigkeiten],
+    )
+    conn.executemany(
+        "INSERT INTO party_seats(party_id, wahlperiode, valid_from, valid_until, seats) VALUES (?, ?, ?, ?, ?)",
+        [(party_id(row["party"]), row["wahlperiode"], row["valid_from"], row["valid_until"], row["seats"]) for row in seats],
+    )
+
+
+def _total_count(value: Any) -> int | None:
+    """One count of a vote's total as stored: NULL when the report gives none,
+    so ``derive.vote_groups_cover_total`` on the store can't pass on an
+    invented 0 (review checklist class 5)."""
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def _stored_total(total: Mapping[str, Any]) -> tuple[int | None, int | None, int | None, int | None]:
+    """A vote's Ja, Nein, Enthaltung and nicht abgegeben as stored. Four zeros
+    are a missing total, not a tally: a roll-call's counts add up to the
+    seats, and reports parsed before 0.32 padded a listing without chart
+    values with 0 (``vote_counts_from_csv``)."""
+    counts = tuple(_total_count(total.get(key)) for key in ("yes", "no", "abstain", "absent"))
+    if all(count == 0 for count in counts):
+        return (None, None, None, None)
+    return counts
+
+
 def persist_vote(
     conn: sqlite3.Connection,
     vote: dict[str, Any],
@@ -1339,10 +1472,7 @@ def persist_vote(
             clean(vote.get("title")),
             clean(vote.get("description")),
             clean(vote.get("detail_url")),
-            int(total.get("yes") or 0),
-            int(total.get("no") or 0),
-            int(total.get("abstain") or 0),
-            int(total.get("absent") or 0),
+            *_stored_total(total),
             clean(result_raw),
             clean(result_source),
             clean(vote.get("result_scope")),
@@ -1370,16 +1500,20 @@ def persist_vote(
     conn.execute("DELETE FROM vote_members WHERE vote_id = ?", (vote_id,))
     conn.execute("DELETE FROM vote_documents WHERE vote_id = ?", (vote_id,))
 
+    # rank is the place of the number's first occurrence in the vote's list:
+    # the archive shows the links and picks the Drucksachetyp in that order.
+    document_rank = 0
     for number in vote.get("document_numbers") or []:
         document_id = upsert_document(conn, now=now, document_number=number)
         if document_id:
-            conn.execute(
+            inserted = conn.execute(
                 """
-                INSERT OR IGNORE INTO vote_documents(vote_id, document_id)
-                VALUES (?, ?)
+                INSERT OR IGNORE INTO vote_documents(vote_id, document_id, rank)
+                VALUES (?, ?, ?)
                 """,
-                (vote_id, document_id),
-            )
+                (vote_id, document_id, document_rank + 1),
+            ).rowcount
+            document_rank += inserted
 
     # A vote lists a few hundred members of a handful of Zusammenschlüsse; each
     # party is upserted once per vote (a repeat upsert with the same ``now``
@@ -1393,7 +1527,7 @@ def persist_vote(
 
     # Rows of one vote that name the same Zusammenschluss under two
     # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
-    for merged in derive.merge_fractions(vote.get("fractions")):
+    for rank, merged in enumerate(derive.merge_fractions(vote.get("fractions")), start=1):
         party_name = merged["name"]
         party_id = party(party_name)
         if party_id is None:
@@ -1402,9 +1536,9 @@ def persist_vote(
             """
             INSERT INTO vote_fractions(
               vote_id, party_id, yes_count, no_count, abstain_count, absent_count,
-              total_count, leading_vote
+              total_count, leading_vote, rank
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 vote_id,
@@ -1418,6 +1552,7 @@ def persist_vote(
                 # leading_vote is ignored, so a rule change applies on
                 # re-persist (plan F1/E2).
                 derive.majority_vote(merged["counts"]),
+                rank,
             ),
         )
 

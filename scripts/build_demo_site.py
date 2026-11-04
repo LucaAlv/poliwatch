@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Build a deterministic, zero-network Bundestag-Puls demo from test fixtures."""
+"""Build a deterministic, zero-network Bundestag-Puls demo from test fixtures.
+
+The site renders from a store, so the demo builds one as an offline build does:
+the fixture report is persisted through the production rebuild
+(``rebuild_database_from_entries``) into ``OUTPUT/data/bundestag-pulse.sqlite``,
+with its writer lock and staged copies in ``.OUTPUT.private`` beside OUTPUT
+(``person_registry.private_dir``). The Abgeordnete come out of that store, and
+the dossier and every other page are rendered with it.
+"""
 
 from __future__ import annotations
 
@@ -11,12 +19,16 @@ if __name__ == "__main__":
 import argparse
 import copy
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import derive
 import build_dip_pulse_site as site
+import facts
+import persist_dip_pulse_store as pulse_store
 import publication_state as publication
+import speech_kinds
 import validate_dip_protocol as dip
 from features import EnrichmentSelection
 
@@ -73,6 +85,45 @@ def demo_report(fixture: Path) -> dict[str, Any]:
     return report
 
 
+class DemoFixtureError(ValueError):
+    """A fixture the demo cannot persist."""
+
+
+def build_demo_store(
+    output_dir: Path, reports: list[dict[str, Any]]
+) -> tuple[Path, list[dict[str, Any]], dict[str, str]]:
+    """Rebuild OUTPUT_DIR's store from ``reports`` through the production path
+    and return ``(store path, abg_mps, mp_lookup)`` read back out of it, as an
+    offline build reads them.
+
+    A report made under another speech rule raises DemoFixtureError before
+    anything is staged: the store would refuse it, and stamping the rule on
+    would publish counts made under the old one. A store already in OUTPUT that
+    holds other sittings raises ``site.DatabaseRebuildError`` (missing cached
+    evidence) and is left as it was."""
+    entries = [{"report": copy.deepcopy(report)} for report in reports]
+    stale = site.unparsed_reports(entries)
+    if stale:
+        found = (stale[0]["report"].get("validation_summary") or {}).get("speech_kinds_version")
+        raise DemoFixtureError(
+            f"the fixture was made under speech rule {'(none)' if found is None else found}, "
+            f"not the current rule {speech_kinds.VERSION}. Fix: regenerate it from the official XML "
+            "with scripts/extract_demo_fixture.py"
+        )
+    database_path = output_dir / "data" / "bundestag-pulse.sqlite"
+    site.rebuild_database_from_entries(database_path, entries, preserve_roster=True)
+    store = facts.open_readonly(database_path)
+    try:
+        pulse_store.require_current_schema(store)
+        gap = site.store_coverage_gap(store, entries)
+        if gap:
+            raise site.DatabaseRebuildError(gap)
+        abg_mps, mp_lookup = site.collect_abgeordnete(store)
+    finally:
+        store.close()
+    return database_path, abg_mps, mp_lookup
+
+
 def build_demo(
     output_dir: Path,
     fixture: Path = DEFAULT_FIXTURE,
@@ -87,9 +138,11 @@ def build_demo(
     (output_dir / "abgeordnete").mkdir(parents=True, exist_ok=True)
 
     report = demo_report(fixture)
+    database_path, abg_mps, mp_lookup = build_demo_store(output_dir, [report])
     entry = site.write_report_files(
         copy.deepcopy(report),
         output_dir,
+        mp_lookup,
         include_dev_view=include_dev_view,
     )
     protocol = copy.deepcopy(report["protocol"])
@@ -101,11 +154,11 @@ def build_demo(
     }
     index_path = site.render_site(
         output_dir=output_dir,
-        database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+        database_path=database_path,
         protocols=[protocol],
         entries=[entry],
-        abg_mps=[],
-        mp_lookup={},
+        abg_mps=abg_mps,
+        mp_lookup=mp_lookup,
         enrichments=EnrichmentSelection(frozenset()),
         summary_mode="off",
         acquisition_attempted=False,
@@ -131,11 +184,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    index_path = build_demo(
-        args.output_dir,
-        args.fixture,
-        include_dev_view=args.include_dev_view,
-    )
+    try:
+        index_path = build_demo(
+            args.output_dir,
+            args.fixture,
+            include_dev_view=args.include_dev_view,
+        )
+    except DemoFixtureError as exc:
+        print(f"error: {args.fixture}: {exc}", file=sys.stderr)
+        return 1
+    except site.DatabaseRebuildError as exc:
+        print(
+            f"error: the demo store could not be built: {str(exc).rstrip('.')}. "
+            "Fix: pass an --output-dir that holds no other build.",
+            file=sys.stderr,
+        )
+        return 1
     report = json.loads(args.fixture.read_text(encoding="utf-8"))
     document_number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
     dossier_path = index_path.parent / "protocols" / f"plenarprotokoll-{site.slugify_document_number(document_number)}.html"

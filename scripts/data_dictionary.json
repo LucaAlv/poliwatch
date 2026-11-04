@@ -9,7 +9,8 @@
     "eigene-auswertung": "Eigene Auswertung CC BY 4.0 (Bundestag-Puls, Luca Veh); verwendete Quelldaten behalten ihre jeweiligen Bedingungen.",
     "eigene-auswertung-uebernommene-quelldaten": "Eigene Auswertung CC BY 4.0 (Bundestag-Puls, Luca Veh); zugrunde liegende Quellenbedingungen gelten für übernommene Quelldaten weiter.",
     "eigene-metadaten": "Eigene Projektmetadaten und Schlüssel: CC BY 4.0 (Bundestag-Puls, Luca Veh); verwendete Eingangsquellen behalten ihre jeweiligen Bedingungen.",
-    "eigene-metadaten-zuordnung": "Eigene Projektmetadaten und Schlüssel: CC BY 4.0 (Bundestag-Puls, Luca Veh); etwaige Quellwerte, auf denen die Zuordnung beruht, behalten ihre Quellenbedingungen."
+    "eigene-metadaten-zuordnung": "Eigene Projektmetadaten und Schlüssel: CC BY 4.0 (Bundestag-Puls, Luca Veh); etwaige Quellwerte, auf denen die Zuordnung beruht, behalten ihre Quellenbedingungen.",
+    "bundestag-stammdaten": "Quelle Deutscher Bundestag; MdB-Stammdaten (bundestag.de/services/opendata). Eine neue Quelle unter ADR 0003; die Bedingungen der Weiterverbreitung sind noch offen und werden vor einer Veröffentlichung geklärt (Roadmap Track D)."
   },
   "tables": {
     "agenda_item_documents": {
@@ -44,6 +45,18 @@
           "unit": "DIP-Vorgangspositionskennung als Text.",
           "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
           "license": "dip"
+        },
+        "url": {
+          "meaning": "URL, die diese Quelle (Protokoll-XML oder DIP) für die Drucksache unter diesem Tagesordnungspunkt nennt; documents.url ist dagegen eine URL je Drucksache über alle Sitzungen. Nennt die XML eine Drucksache unter einem Punkt mehrfach, gilt die letzte genannte URL, bei DIP die erste.",
+          "unit": "URL als Text oder NULL, wenn die Quelle keine nennt.",
+          "source": "Protokoll-XML bzw. DIP-API: die URL, die diese Quelle für die Drucksache unter diesem Tagesordnungspunkt nennt, unverändert übernommen.",
+          "license": "dip"
+        },
+        "rank": {
+          "meaning": "Position der ersten Nennung der Drucksache in der Liste ihrer Quelle für diesen Tagesordnungspunkt, getrennt nach xml und api.",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend in Quellreihenfolge.",
+          "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
+          "license": "eigene-metadaten-zuordnung"
         }
       }
     },
@@ -662,6 +675,64 @@
         }
       }
     },
+    "mdb_stammdaten_stand": {
+      "meaning": "Die MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats in diesem Build gebildet sind: eine Zeile mit ihrem Stand und ihrer Prüfsumme, keine Zeile, wenn keine Datei geladen war (dann sind beide Tabellen leer).",
+      "columns": {
+        "sha256": {
+          "meaning": "SHA-256-Prüfsumme der zwischengespeicherten Zip-Datei, wie sie von bundestag.de geladen wurde.",
+          "unit": "64 Hexadezimalzeichen als Text.",
+          "source": "Vom Projekt über die Bytes der geladenen Datei MdB-Stammdaten.zip berechnet.",
+          "license": "eigene-metadaten"
+        },
+        "stand": {
+          "meaning": "Stand der Datei laut ihrem eigenen Zeitstempel; spätere Änderungen fehlen bis zur nächsten Veröffentlichung durch den Bundestag (Plan D6).",
+          "unit": "Zeitpunkt als ISO-Text in UTC.",
+          "source": "MdB-Stammdaten des Deutschen Bundestages (bundestag.de/services/opendata, MDB_STAMMDATEN.XML), Element VERSION (Unix-Zeitstempel).",
+          "license": "bundestag-stammdaten"
+        }
+      }
+    },
+    "mdb_zugehoerigkeiten": {
+      "meaning": "Zugehörigkeit je MdB, Wahlperiode und ununterbrochenem Zeitraum: zu welchem Zusammenschluss (oder fraktionslos) ein Mitglied an diesen Tagen seines Mandats gehörte. Grundlage der Sitzzahlen in party_seats.",
+      "columns": {
+        "mdb_id": {
+          "meaning": "Personenkennung des Mitglieds in den MdB-Stammdaten (dieselbe Nummer wie die Redner-ID der Protokoll-XML).",
+          "unit": "Achtstellige Quellkennung als Text.",
+          "source": "MdB-Stammdaten des Deutschen Bundestages (bundestag.de/services/opendata, MDB_STAMMDATEN.XML), Element ID.",
+          "license": "bundestag-stammdaten"
+        },
+        "name": {
+          "meaning": "Anzeigename des Mitglieds am ersten Tag des Zeitraums, nur zum Lesen; die Kennung ist mdb_id.",
+          "unit": "Name als Text aus Vorname, Adelstitel, Präfix, Nachname und Ortszusatz.",
+          "source": "MdB-Stammdaten des Deutschen Bundestages (bundestag.de/services/opendata, MDB_STAMMDATEN.XML), Element NAME mit dem am ersten Tag gültigen HISTORIE_VON.",
+          "license": "bundestag-stammdaten"
+        },
+        "wahlperiode": {
+          "meaning": "Wahlperiode des Mandats, zu dem der Zeitraum gehört.",
+          "unit": "Nummer der Wahlperiode als Ganzzahl (ab 18).",
+          "source": "MdB-Stammdaten des Deutschen Bundestages (bundestag.de/services/opendata, MDB_STAMMDATEN.XML), Element WP.",
+          "license": "bundestag-stammdaten"
+        },
+        "party_id": {
+          "meaning": "Kennung des Zusammenschlusses an diesen Tagen; die Zeile „fraktionslos“ in parties steht für Tage ohne Zugehörigkeit und ist kein Zusammenschluss.",
+          "unit": "Projektkennung des Zusammenschlusses als Text (Verweis auf parties.id).",
+          "source": "Projektseitig über eine geschlossene Namensliste (derive.STAMMDATEN_ZUSAMMENSCHLUESSE) aus INS_LANG der Fraktions- und Gruppenmitgliedschaften zugeordnet; eine neu heruntergeladene Datei mit einem Namen außerhalb der Liste wird nicht übernommen (die zuvor geladene bleibt), eine bereits geladene bricht den Build ab.",
+          "license": "eigene-metadaten"
+        },
+        "valid_from": {
+          "meaning": "Erster Tag des Zeitraums (einschließlich).",
+          "unit": "Datum als ISO-Text JJJJ-MM-TT.",
+          "source": "Nach festen Regeln aus MDBWP_VON/MDBWP_BIS (Mandat) und MDBINS_VON/MDBINS_BIS (Mitgliedschaft) der MdB-Stammdaten gebildet: eine Mitgliedschaft zählt nur innerhalb des Mandats, ein Wechseltag gehört zum neuen Zusammenschluss (docs/plans/c1-seat-counts.md, Interval rules).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "valid_until": {
+          "meaning": "Erster Tag, den der Zeitraum nicht mehr umfasst (ausschließlich); leer, solange das Mandat zum Stand der MdB-Stammdaten offen ist.",
+          "unit": "Datum als ISO-Text JJJJ-MM-TT oder leer.",
+          "source": "Nach festen Regeln aus MDBWP_BIS (letzter Mandatstag) und MDBINS_BIS der MdB-Stammdaten gebildet: Ende plus ein Tag, außer an einem Wechseltag oder wenn ein Nachrücker desselben Zusammenschlusses am letzten Tag beginnt (docs/plans/c1-seat-counts.md, S5).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        }
+      }
+    },
     "mp_canonical": {
       "meaning": "Zuordnung jeder Personenaufzeichnung zur konsolidierten Personenkennung samt Seitenstatus.",
       "columns": {
@@ -848,6 +919,41 @@
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: parties.updated_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
+        }
+      }
+    },
+    "party_seats": {
+      "meaning": "Sitzzahl je Zusammenschluss (oder fraktionslos), Wahlperiode und ununterbrochenem Zeitraum gleicher Größe, gezählt aus mdb_zugehoerigkeiten. Die Sitze einer Gruppe an einem Tag sind die Zeile mit valid_from <= Tag < valid_until (oder offenem Ende) in der Wahlperiode des Tages; keine Zeile heißt keine Sitzzahl.",
+      "columns": {
+        "party_id": {
+          "meaning": "Kennung des Zusammenschlusses, dessen Sitze gezählt sind; die Zeile „fraktionslos“ zählt die Mitglieder ohne Zugehörigkeit.",
+          "unit": "Projektkennung des Zusammenschlusses als Text (Verweis auf parties.id).",
+          "source": "Aus mdb_zugehoerigkeiten.party_id übernommen.",
+          "license": "eigene-metadaten-zuordnung"
+        },
+        "wahlperiode": {
+          "meaning": "Wahlperiode, in der die Sitzzahl gilt.",
+          "unit": "Nummer der Wahlperiode als Ganzzahl (ab 18).",
+          "source": "Aus mdb_zugehoerigkeiten.wahlperiode übernommen.",
+          "license": "eigene-auswertung"
+        },
+        "valid_from": {
+          "meaning": "Erster Tag mit dieser Sitzzahl (einschließlich).",
+          "unit": "Datum als ISO-Text JJJJ-MM-TT.",
+          "source": "Tag, an dem sich die Zahl der Zeilen in mdb_zugehoerigkeiten für Zusammenschluss und Wahlperiode ändert.",
+          "license": "eigene-auswertung"
+        },
+        "valid_until": {
+          "meaning": "Erster Tag mit einer anderen oder keiner Sitzzahl (ausschließlich); leer, wenn die Zahl zum Stand der MdB-Stammdaten noch gilt.",
+          "unit": "Datum als ISO-Text JJJJ-MM-TT oder leer.",
+          "source": "Nächster Änderungstag der Zeilen in mdb_zugehoerigkeiten für Zusammenschluss und Wahlperiode.",
+          "license": "eigene-auswertung"
+        },
+        "seats": {
+          "meaning": "Zahl der Mitglieder des Zusammenschlusses an jedem Tag des Zeitraums. Je Tag ist die Summe über alle Zeilen der Wahlperiode höchstens die gesetzliche Größe des Bundestages (631, 709, 736, 630 für die 18. bis 21. Wahlperiode) und erreicht sie an einem Tag.",
+          "unit": "Sitzzahl als Ganzzahl größer null.",
+          "source": "Gezählt aus den mdb_zugehoerigkeiten-Zeilen, die den Tag umfassen; Größenprüfung derive.check_seat_totals.",
+          "license": "eigene-auswertung"
         }
       }
     },
@@ -1323,6 +1429,12 @@
           "unit": "Projektkennung des Dokuments als Text.",
           "source": "Bundestags-Abstimmung mit DIP-Dokumenten über die zur Abstimmung gehörenden Drucksachennummern verknüpft.",
           "license": "bundestag-abstimmungen"
+        },
+        "rank": {
+          "meaning": "Position der ersten Nennung der Drucksachennummer in der Nummernliste der Abstimmung; das Abstimmungsarchiv zeigt die Drucksachen in dieser Reihenfolge.",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
+          "source": "Bundestags-Abstimmung mit DIP-Dokumenten über die zur Abstimmung gehörenden Drucksachennummern verknüpft.",
+          "license": "bundestag-abstimmungen"
         }
       }
     },
@@ -1376,6 +1488,12 @@
           "unit": "Textcode yes, no, abstain oder NULL; Abwesenheiten bleiben bei der Mehrheitswahl außer Betracht.",
           "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen berechnet; Gleichstand/keine Stimmen ergibt NULL.",
           "license": "eigene-auswertung"
+        },
+        "rank": {
+          "meaning": "Reihenfolge, in der die Abstimmungsquelle die Zusammenschlüsse nennt (erste Nennung nach Zusammenführung gleichnamiger Schreibweisen).",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "license": "bundestag-abstimmungen"
         }
       }
     },
@@ -1507,25 +1625,25 @@
         },
         "yes_count": {
           "meaning": "Anzahl der Ja-Stimmen.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "no_count": {
           "meaning": "Anzahl der Nein-Stimmen.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "abstain_count": {
           "meaning": "Anzahl der Enthaltungen.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "absent_count": {
           "meaning": "Anzahl der nicht abgegebenen Stimmen bzw. Abwesenden laut Abstimmungsergebnis.",
-          "unit": "Stimmenzahl als Ganzzahl.",
+          "unit": "Stimmenzahl als Ganzzahl; NULL, wenn die Quelle für die Abstimmung keine Gesamtzahl nennt (nicht 0).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },

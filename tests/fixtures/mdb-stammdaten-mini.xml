@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE DOCUMENT SYSTEM "MDB_STAMMDATEN.DTD">
+<!--Synthetic MdB-Stammdaten in the shape of the Bundestag's MDB_STAMMDATEN.XML (C1 plan S1); the people are made up.-->
+<DOCUMENT>
+  <VERSION>1777449783</VERSION>
+  <MDB>
+    <ID>11009901</ID>
+    <NAMEN>
+      <NAME>
+        <NACHNAME>Beispiel</NACHNAME>
+        <VORNAME>Anna</VORNAME>
+        <ORTSZUSATZ />
+        <ADEL />
+        <PRAEFIX />
+        <ANREDE_TITEL />
+        <AKAD_TITEL>Dr.</AKAD_TITEL>
+        <HISTORIE_VON>22.10.2013</HISTORIE_VON>
+        <HISTORIE_BIS>30.06.2022</HISTORIE_BIS>
+      </NAME>
+      <NAME>
+        <NACHNAME>Muster</NACHNAME>
+        <VORNAME>Anna</VORNAME>
+        <ORTSZUSATZ />
+        <ADEL />
+        <PRAEFIX />
+        <ANREDE_TITEL />
+        <AKAD_TITEL>Dr.</AKAD_TITEL>
+        <HISTORIE_VON>01.07.2022</HISTORIE_VON>
+        <HISTORIE_BIS />
+      </NAME>
+    </NAMEN>
+    <BIOGRAFISCHE_ANGABEN>
+      <GEBURTSDATUM>01.01.1970</GEBURTSDATUM>
+      <GEBURTSORT>Musterstadt</GEBURTSORT>
+      <BERUF>Beispielberuf</BERUF>
+      <VITA_KURZ>Eine erfundene Vita, die der Leser nicht übernehmen darf.</VITA_KURZ>
+    </BIOGRAFISCHE_ANGABEN>
+    <WAHLPERIODEN>
+      <WAHLPERIODE>
+        <WP>17</WP>
+        <MDBWP_VON>27.10.2009</MDBWP_VON>
+        <MDBWP_BIS>22.10.2013</MDBWP_BIS>
+        <WKR_NUMMER />
+        <LISTE>NW</LISTE>
+        <MANDATSART>Landesliste</MANDATSART>
+        <INSTITUTIONEN>
+          <INSTITUTION>
+            <INSART_LANG>Fraktion/Gruppe</INSART_LANG>
+            <INS_LANG>Fraktion der Sozialdemokratischen Partei Deutschlands</INS_LANG>
+            <MDBINS_VON>27.10.2009</MDBINS_VON>
+            <MDBINS_BIS />
+            <FKT_LANG />
+            <FKTINS_VON />
+            <FKTINS_BIS />
+          </INSTITUTION>
+        </INSTITUTIONEN>
+      </WAHLPERIODE>
+      <WAHLPERIODE>
+        <WP>20</WP>
+        <MDBWP_VON>26.10.2021</MDBWP_VON>
+        <MDBWP_BIS>25.03.2025</MDBWP_BIS>
+        <WKR_NUMMER />
+        <LISTE>NW</LISTE>
+        <MANDATSART>Landesliste</MANDATSART>
+        <INSTITUTIONEN>
+          <INSTITUTION>
+            <INSART_LANG>Fraktion/Gruppe</INSART_LANG>
+            <INS_LANG>Fraktion der Sozialdemokratischen Partei Deutschlands</INS_LANG>
+            <MDBINS_VON>26.10.2021</MDBINS_VON>
+            <MDBINS_BIS />
+            <FKT_LANG>Stellvertretende Vorsitzende</FKT_LANG>
+            <FKTINS_VON>01.12.2021</FKTINS_VON>
+            <FKTINS_BIS />
+          </INSTITUTION>
+          <INSTITUTION>
+            <INSART_LANG>Fraktion/Gruppe</INSART_LANG>
+            <INS_LANG>Fraktion der Sozialdemokratischen Partei Deutschlands</INS_LANG>
+            <MDBINS_VON>26.10.2021</MDBINS_VON>
+            <MDBINS_BIS />
+            <FKT_LANG />
+            <FKTINS_VON />
+            <FKTINS_BIS />
+          </INSTITUTION>
+        </INSTITUTIONEN>
+      </WAHLPERIODE>
+    </WAHLPERIODEN>
+  </MDB>
+  <MDB>
+    <ID>11009902</ID>
+    <NAMEN>
+      <NAME>
+        <NACHNAME>Wechsel</NACHNAME>
+        <VORNAME>Bernd</VORNAME>
+        <ORTSZUSATZ>(Musterhausen)</ORTSZUSATZ>
+        <ADEL>Freiherr</ADEL>
+        <PRAEFIX>von</PRAEFIX>
+        <ANREDE_TITEL />
+        <AKAD_TITEL />
+        <HISTORIE_VON>25.03.2025</HISTORIE_VON>
+        <HISTORIE_BIS />
+      </NAME>
+    </NAMEN>
+    <BIOGRAFISCHE_ANGABEN>
+      <GEBURTSDATUM>02.02.1980</GEBURTSDATUM>
+    </BIOGRAFISCHE_ANGABEN>
+    <WAHLPERIODEN>
+      <WAHLPERIODE>
+        <WP>21</WP>
+        <MDBWP_VON>25.03.2025</MDBWP_VON>
+        <MDBWP_BIS />
+        <WKR_NUMMER>999</WKR_NUMMER>
+        <LISTE />
+        <MANDATSART>Direktwahl</MANDATSART>
+        <INSTITUTIONEN>
+          <INSTITUTION>
+            <INSART_LANG>Fraktion/Gruppe</INSART_LANG>
+            <INS_LANG>Fraktion Alternative für Deutschland</INS_LANG>
+            <MDBINS_VON>25.03.2025</MDBINS_VON>
+            <MDBINS_BIS>10.11.2025</MDBINS_BIS>
+            <FKT_LANG />
+            <FKTINS_VON />
+            <FKTINS_BIS />
+          </INSTITUTION>
+          <INSTITUTION>
+            <INSART_LANG>Fraktion/Gruppe</INSART_LANG>
+            <INS_LANG>Fraktionslos</INS_LANG>
+            <MDBINS_VON>10.11.2025</MDBINS_VON>
+            <MDBINS_BIS />
+            <FKT_LANG />
+            <FKTINS_VON />
+            <FKTINS_BIS />
+          </INSTITUTION>
+          <INSTITUTION>
+            <INSART_LANG>Ausschuss</INSART_LANG>
+            <INS_LANG>Ausschuss für Beispiele</INS_LANG>
+            <MDBINS_VON>01.06.2025</MDBINS_VON>
+            <MDBINS_BIS />
+            <FKT_LANG>Ordentliches Mitglied</FKT_LANG>
+            <FKTINS_VON>01.06.2025</FKTINS_VON>
+            <FKTINS_BIS />
+          </INSTITUTION>
+        </INSTITUTIONEN>
+      </WAHLPERIODE>
+    </WAHLPERIODEN>
+  </MDB>
+  <MDB>
+    <ID>11009903</ID>
+    <NAMEN>
+      <NAME>
+        <NACHNAME>Ohneamt</NACHNAME>
+        <VORNAME>Clara</VORNAME>
+        <ORTSZUSATZ />
+        <ADEL />
+        <PRAEFIX />
+        <ANREDE_TITEL />
+        <AKAD_TITEL />
+        <HISTORIE_VON>25.03.2025</HISTORIE_VON>
+        <HISTORIE_BIS />
+      </NAME>
+    </NAMEN>
+    <WAHLPERIODEN>
+      <WAHLPERIODE>
+        <WP>21</WP>
+        <MDBWP_VON>25.03.2025</MDBWP_VON>
+        <MDBWP_BIS />
+        <WKR_NUMMER />
+        <LISTE>BE</LISTE>
+        <MANDATSART>Landesliste</MANDATSART>
+        <INSTITUTIONEN />
+      </WAHLPERIODE>
+    </WAHLPERIODEN>
+  </MDB>
+</DOCUMENT>
