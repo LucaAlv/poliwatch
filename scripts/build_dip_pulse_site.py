@@ -722,13 +722,13 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
 # store already holds. Matched on the protocol id, the key persist and the
 # rebuild's missing-evidence check use.
 # What the offline render adds to a coverage refusal (A4 slice 0 review, d): an
-# online update into the same directory writes its reports and its exclusion
-# record before its staged rebuild swaps the store, so a render in between sees
-# a gap the update is about to close. The writer lock covers only the rebuild,
+# online update into the same directory writes its reports before its staged
+# rebuild swaps the store, and its exclusion record right after, so a render in
+# between sees a gap the update is about to close. The writer lock covers only the rebuild,
 # not the fetch before it, so a lock probe would miss most of that window.
 CONCURRENT_UPDATE_NOTE = (
     "If an online update into this directory is still running, wait for it to finish, then re-run: "
-    "it writes its reports and exclusions before it replaces the store."
+    "it writes its reports before it replaces the store and its exclusions right after."
 )
 
 
@@ -738,8 +738,9 @@ def store_coverage_gap(
     """None when ``entries`` (the cached reports minus the ``excluded`` document
     numbers, the recorded exclusions) and the store's ``protocols`` name the same
     sittings; otherwise the refusal, naming up to ``limit`` sittings per case and
-    the repair. A stored sitting that is excluded is its own case: its exclusion
-    was recorded by a run whose rebuild then failed, and a repersist drops it."""
+    the repair. A stored sitting that is excluded is its own case: the record was
+    edited by hand (an online run writes it only after its rebuild), and a
+    repersist drops the sitting."""
     reported: dict[str, str] = {}
     for entry in entries:
         protocol = entry["report"].get("protocol") or {}
@@ -13268,35 +13269,47 @@ def print_effective_config(selection: EnrichmentSelection, args: argparse.Namesp
 # ---------------------------------------------------------------------------
 
 
-_ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
+# A leading "scheme:" as a browser reads it: a letter, then letters, digits, "+",
+# "-" or "." up to the first colon. A "/" before the colon makes it a path.
+_LEADING_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 
 
 # --data-base-url only decides where download links point. Absolute only for
-# https://, http:// or a leading /; any other scheme:// is a build-time error
-# (F3.1) rather than a silently broken or unsafe href.
+# https://, http:// or a leading /; any other scheme: is a build-time error
+# (F3.1) rather than a silently broken or unsafe href, and so is anything a
+# browser would read as a different URL than the one named here: a backslash,
+# whitespace or control characters (browsers strip or drop them), a query or a
+# fragment (the links append a path to the base) and a port that is no number.
 def resolve_data_base_url(value: str) -> str:
+    # A value with an "@" may hold credentials, which no message may print.
+    shown = repr(value) if "@" not in value else "(shown without the value: it contains an @)"
     # Browsers read a backslash as "/", so "/\host/" leaves the site while
     # urlsplit sees no host and datenschutz.html would name none.
     if "\\" in value:
-        raise ValueError(f"--data-base-url {value!r} contains a backslash")
-    if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
+        raise ValueError(f"--data-base-url {shown} contains a backslash")
+    if any(char.isspace() or unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
+        raise ValueError(f"--data-base-url {shown} contains whitespace or a control character")
+    if "?" in value or "#" in value:
+        raise ValueError(f"--data-base-url {shown} contains a query or fragment; the download links append a path to the base")
+    scheme = _LEADING_SCHEME_RE.match(value)
+    if scheme and not (scheme.group(1).lower() in ("https", "http") and value[scheme.end():].startswith("//")):
+        raise ValueError(
+            f"--data-base-url {shown} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
+        )
+    if scheme or value.startswith("/"):
         # A host part (also a protocol-relative "//host/") must parse and be
         # non-empty: datenschutz.html names it as the download host.
         try:
             parsed = urllib.parse.urlsplit(value)
             host = parsed.hostname
+            parsed.port  # a port that is no number or past 65535 raises here
         except ValueError as exc:
-            raise ValueError(f"--data-base-url {value!r} is not a valid URL: {exc}") from exc
+            raise ValueError(f"--data-base-url {shown} is not a valid URL: {exc}") from exc
         if host is None and (value.startswith("//") or not value.startswith("/")):
-            raise ValueError(f"--data-base-url {value!r} names no host")
+            raise ValueError(f"--data-base-url {shown} names no host")
         # Every download href would carry them; the value is not echoed.
         if parsed.username is not None or parsed.password is not None:
             raise ValueError("--data-base-url contains credentials (user:password@); remove them")
-        return value if value.endswith("/") else value + "/"
-    if _ABSOLUTE_SCHEME_RE.match(value):
-        raise ValueError(
-            f"--data-base-url {value!r} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
-        )
     return value if value.endswith("/") else value + "/"
 
 
@@ -13631,7 +13644,8 @@ def parse_args() -> argparse.Namespace:
             "reported or stored. Add a number only after a review of its source: the sitting is recorded in "
             "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (ausgeschlossen). "
             "Every later run, online or offline, keeps a recorded sitting out without the flag. "
-            "Any source refusal of an unlisted sitting still stops the build before the store is replaced."
+            "Any source refusal of an unlisted sitting still stops the build before the store is replaced. "
+            "Needs an online run; a number DIP does not list is refused."
         ),
     )
     parser.add_argument(
@@ -13775,7 +13789,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Base URL the Daten page's download links are built from. Defaults to "
             "data/exports/ (or $BUNDESTAG_PULSE_DATA_BASE_URL); absolute only for "
-            "https://, http:// or a leading /."
+            "https://, http:// or a leading /. No credentials, query, fragment or whitespace."
         ),
     )
     parser.add_argument(
@@ -13812,7 +13826,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Local JSON file with the operator's name, address, e-mail, hosting and supervisory authority for "
             "impressum.html and datenschutz.html (or $BUNDESTAG_PULSE_OPERATOR_FILE). Keep it outside git; "
-            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders."
+            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders; "
+            "an empty value is an error, not 'without it'."
         ),
     )
     parser.add_argument(
@@ -13844,6 +13859,11 @@ def parse_args() -> argparse.Namespace:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.include_document_number and (args.offline or args.fetch_xml):
         parser.error("--include-document-number takes a sitting back into an online build; it cannot be combined with --offline or --fetch-xml")
+    if args.exclude_document_number and (args.offline or args.fetch_xml):
+        parser.error(
+            "--exclude-document-number records a sitting in the exclusion list from an online build; "
+            "it cannot be combined with --offline or --fetch-xml, which read the list but never write it"
+        )
     both = {normalized_document_number(n) for n in args.include_document_number} & {
         normalized_document_number(n) for n in args.exclude_document_number
     }
@@ -13884,6 +13904,9 @@ OPERATOR_OBJECTS = {
 }
 OPERATOR_URL_FIELDS = ("hosting.privacy_url", "supervisory_authority.url")
 OPERATOR_MAX_LENGTH = 300
+# A real operator file is under 1 KiB; the cap keeps a wrong path (a log, a
+# database, /dev/zero) from filling memory.
+OPERATOR_FILE_MAX_BYTES = 64 * 1024
 _OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
 
 
@@ -13902,9 +13925,29 @@ def _operator_url(value: str) -> bool:
 
 def load_operator(path: Path) -> dict[str, str]:
     """The operator's values, flattened (``hosting.provider``); absent fields
-    are left out and render as placeholders. Raises OperatorFileError."""
+    are left out and render as placeholders. Raises OperatorFileError. No
+    message echoes a value from the file."""
+
+    def no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        # The last of two equal keys would silently win (a pasted-twice email).
+        seen: set[str] = set()
+        for key, _value in pairs:
+            if key in seen:
+                raise OperatorFileError(f"--operator-file {path}: the field {key!r} appears twice")
+            seen.add(key)
+        return dict(pairs)
+
     try:
-        raw = json.loads(path.read_bytes().decode("utf-8"))
+        # stat first: opening a FIFO would block, and /dev/zero never ends.
+        if not stat_module.S_ISREG(path.stat().st_mode):
+            raise OperatorFileError(f"--operator-file {path} is not a regular file")
+        with path.open("rb") as handle:
+            data = handle.read(OPERATOR_FILE_MAX_BYTES + 1)
+        if len(data) > OPERATOR_FILE_MAX_BYTES:
+            raise OperatorFileError(f"--operator-file {path} is larger than {OPERATOR_FILE_MAX_BYTES // 1024} KiB")
+        raw = json.loads(data.decode("utf-8"), object_pairs_hook=no_duplicates)
+    except OperatorFileError:
+        raise
     except OSError as exc:
         raise OperatorFileError(f"--operator-file {path} cannot be read: {exc.strerror or exc}") from exc
     except UnicodeDecodeError as exc:
@@ -13944,7 +13987,7 @@ def load_operator(path: Path) -> dict[str, str]:
         if any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
             raise OperatorFileError(f"--operator-file {path}: {field} contains a control character")
         if field == "email" and not _OPERATOR_EMAIL_RE.fullmatch(value):
-            raise OperatorFileError(f"--operator-file {path}: email {value!r} is not an e-mail address")
+            raise OperatorFileError(f"--operator-file {path}: email is not an e-mail address")
         if field in OPERATOR_URL_FIELDS and not _operator_url(value):
             raise OperatorFileError(f"--operator-file {path}: {field} must be an https:// URL without credentials")
         operator[field] = value
@@ -13953,11 +13996,22 @@ def load_operator(path: Path) -> dict[str, str]:
 
 # CLI > env; neither set means no operator data (placeholders). A path that
 # is set but cannot be read stops the build (D3 A): a typo must not publish an
-# Impressum without its address.
+# Impressum without its address. Set to an empty value stops it too: an unset CI
+# secret expands to "", and "not set" would build placeholder legal pages with
+# exit 0, so only None counts as not set.
 def resolve_operator(args: argparse.Namespace) -> dict[str, str] | None:
-    raw = getattr(args, "operator_file", None) or os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
-    if not raw:
+    raw = getattr(args, "operator_file", None)
+    source = "--operator-file"
+    if raw is None:
+        raw = os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
+        source = "$BUNDESTAG_PULSE_OPERATOR_FILE"
+    if raw is None:
         return None
+    if not str(raw).strip():
+        raise OperatorFileError(
+            f"{source} is set but empty (an unset CI secret expands to nothing). "
+            "Fix: name the operator file, or unset it for placeholder pages"
+        )
     return load_operator(Path(raw))
 
 
@@ -13992,6 +14046,24 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     if issues_url and safe_issues_url(issues_url) is None:
         raise ValueError(f"--data-issues-url {issues_url!r} must start with https://, http://, mailto: or /")
     return base_url_raw, manifest_raw, license_text, issues_url
+
+
+# A release tag means "export this release": a manifest override skips the export,
+# so nothing would carry the tag. (--data-manifest with a tag is refused by
+# parse_args; the variable is only read here.)
+def refuse_release_beside_manifest_override(tag: str, manifest_raw: str | None) -> None:
+    if tag != "local" and manifest_raw:
+        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
+
+
+# What run_data_pipeline would refuse about the data options, asked at the head of
+# main() so a typo in --data-base-url, --data-issues-url or the tag ends the run
+# before a whole online update is spent. getattr() throughout, as in
+# resolve_data_export_options.
+def validate_data_export_options(args: argparse.Namespace) -> None:
+    base_url_raw, manifest_raw, _license_text, _issues_url = resolve_data_export_options(args)
+    resolve_data_base_url(base_url_raw)
+    refuse_release_beside_manifest_override(getattr(args, "data_tag", None) or "local", manifest_raw)
 
 
 # The cited build revision of this checkout (scripts/build_revision.py): a
@@ -14079,6 +14151,9 @@ def run_data_pipeline(
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
+    tag = getattr(args, "data_tag", None) or "local"
+    # Before the facts engine writes its tables: a refusal here wastes nothing.
+    refuse_release_beside_manifest_override(tag, manifest_raw)
     bills = collect_bill_pages(entries, mp_lookup)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
@@ -14106,9 +14181,6 @@ def run_data_pipeline(
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
     force_export = bool(getattr(args, "force_export", False))
-    tag = getattr(args, "data_tag", None) or "local"
-    if tag != "local" and manifest_raw:
-        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
     # A --data-manifest override replaces whatever this build would export, so
     # the export only runs when its result is used or explicitly forced.
     if manifest_raw and not force_export:
@@ -14170,12 +14242,6 @@ def main() -> int:
         print(f"validated: {args.validate_publication}")
         return 0
 
-    # Before any work: a mistyped operator path stops here, naming the path.
-    try:
-        operator = resolve_operator(args)
-    except OperatorFileError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
     if getattr(args, "fetch_xml", False):
         if not coverage_exclusions_readable(args.output_dir):
             return 1
@@ -14213,6 +14279,20 @@ def main() -> int:
     # it stops here, naming the file and its shape. The listing and
     # --explain-config modes above do not read it, so it does not block them.
     if not coverage_exclusions_readable(args.output_dir):
+        return 1
+    # Everything below renders pages: --validate-publication, the listing modes
+    # and --fetch-xml have returned, so a stale $BUNDESTAG_PULSE_OPERATOR_FILE
+    # does not block them. A mistyped operator path stops here, naming the path,
+    # and so does a bad data option, not after the fetch and the persist.
+    try:
+        operator = resolve_operator(args)
+    except OperatorFileError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    try:
+        validate_data_export_options(args)
+    except (ValueError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
@@ -14557,6 +14637,20 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
+        # The catalog is complete by now (--dossier-document-number may have added
+        # a sitting to it): a number no sitting carries is a typo, and recording
+        # nothing for it would let the run pass as if the sitting were excluded.
+        listed_in_catalog = {normalized_document_number(p.get("dokumentnummer")) for p in protocols}
+        unknown_flags = sorted(
+            {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])} - listed_in_catalog
+        )
+        if unknown_flags:
+            print(
+                f"error: --exclude-document-number names no sitting DIP lists: {', '.join(repr(n) for n in unknown_flags)}. "
+                "Fix: use the document number as the catalog prints it (for example 21/7); no dossier or store was written.",
+                file=sys.stderr,
+            )
+            return 2
         excluded_protocols = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) in listed]
         for protocol in excluded_protocols:
             protocol["dossier_failure_reasons"] = ["excluded"]
@@ -14622,9 +14716,6 @@ def main() -> int:
                     dip_breaker=dip_breaker,
                 ),
             )
-            update_coverage_exclusions(
-                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
-            )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
             # then read it back for the MP pages. The dossier pages are written
             # a second time afterwards because mp_lookup only exists now, and it
@@ -14688,6 +14779,13 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            # Only now, with the store swapped: a run that stops before this leaves
+            # the record naming what the store still holds, so no render sees an
+            # excluded sitting beside counts that include it. The Daten export,
+            # its only later reader, runs after the swap.
+            update_coverage_exclusions(
+                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
+            )
             # Read only: the published store is written by a staged rebuild alone.
             store = facts.open_readonly(database_path)
             try:

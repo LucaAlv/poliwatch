@@ -195,18 +195,45 @@ class ExportHelpersTests(unittest.TestCase):
         self.assertEqual(b.resolve_data_base_url("http://example.org/x/"), "http://example.org/x/")
         self.assertEqual(b.resolve_data_base_url("/data/"), "/data/")
         self.assertEqual(b.resolve_data_base_url("//cdn.example.org/x"), "//cdn.example.org/x/")
+        # What a browser reads correctly stays accepted: relative steps, a scheme in
+        # capitals, a real or empty port, an IPv6 host, a colon after a path segment.
+        for good in ("./data", "../exports/", "https://example.org", "HTTPS://Example.org/x", "https://example.org:8443/x",
+                     "https://example.org:/x", "https://[::1]:8443/x", "//cdn.example.org:80/x", "data/exports:v2"):
+            with self.subTest(good=good):
+                self.assertEqual(b.resolve_data_base_url(good), good if good.endswith("/") else good + "/")
 
     # A host the Datenschutz page cannot parse ended the build in a traceback
     # after every other page was written; it is refused up front instead.
     def test_resolve_data_base_url_rejects_other_schemes_and_malformed_hosts(self) -> None:
         # /ship review 2026-11-01: a backslash-led base left the site with no
-        # host named on datenschutz.html, and credentials reached every href
-        # (the credential URL is split so the pre-push scanner skips the fake).
+        # host named on datenschutz.html.
         for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/",
-                    "/\\evil.example/x/", "data\\exports/", "https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/"):
+                    "/\\evil.example/x/", "data\\exports/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     b.resolve_data_base_url(bad)
+
+    # Value: protects=a base a browser reads as another URL than the one named (a scheme without "//", a port that is no number, whitespace a browser strips, a query or fragment the download paths would land inside) stops the build at the flag; fails_when=any of these is returned as the prefix of every download href, or the checks run only on the "https://" branch so a leading space skips the host checks; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 11; seam=none; no_claim=the host exists
+    def test_resolve_data_base_url_rejects_what_a_browser_reads_differently(self) -> None:
+        for bad in ("javascript:x", "data:text/plain,x", "mailto:x@example.org", "https:/example.org/", "https:example.org",
+                    "http:/example.org/", "JavaScript:x", "https://h:abc/", "https://h:99999/", "https://h:-1/",
+                    "https://h x/", " //host/x", "\t//host/x", "//host/x\n", "https://h/\x00", "https://h/\u2028x", "https://h/\u00a0x",
+                    "https://h/?x", "https://h/#f", "data/exports?x", "/data/#f", "//host/x?y"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    b.resolve_data_base_url(bad)
+
+    # Value: protects=the credential refusal's promise not to echo the value, in every branch that can see one; fails_when=a message prints the userinfo or host of a refused URL (also when the URL is refused for another reason, such as a query), which would reach CI logs; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 12; seam=none; no_claim=other rows, which echo the value on purpose
+    def test_resolve_data_base_url_never_echoes_credentials(self) -> None:
+        # The credential URLs are split so the pre-push scanner skips the fakes.
+        for bad in ("https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/", "https://u:p" + "@dl.example.org/x/?y",
+                    "https://u:p" + "@dl.example.org:abc/x/", "javascript://u:p" + "@dl.example.org/x/"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError) as caught:
+                    b.resolve_data_base_url(bad)
+                message = str(caught.exception)
+                for secret in ("u:p", "dl.example.org"):
+                    self.assertNotIn(secret, message)
 
     def test_is_url(self) -> None:
         self.assertTrue(b.is_url("https://example.org/datenstand.json"))
