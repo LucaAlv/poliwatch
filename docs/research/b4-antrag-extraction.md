@@ -170,7 +170,7 @@ The optional Claude challenge failed authentication inside the sandbox. Per AGEN
 
 ### Reproduction and next session
 
-The run root retains the baseline/control/working sites and all logs. Preparation, acquisition, audit and equality scripts are retained as `.context/b4_prepare.py`, `b4_reference_audit.py`, `b4_fetch_pdfs.py`, `b4_compare_sql.py`, `b4_export_parity.py`, `b4_browser_fixtures.py`, `b4_make_browser_actions.py`, and `b4_mcp.py`. The preparation script records cohorts before and after calling the existing refresh; PDF downloads are separate and never feed implementation extraction. Replay commands used:
+The run root retains the working site and all logs, including the comparison results. The baseline and control sites were deleted on 2026-11-04 to free disk space, so replaying the control build below needs a new clone of the reference store at that path first. Preparation, acquisition, audit and equality scripts are retained as `.context/b4_prepare.py`, `b4_reference_audit.py`, `b4_fetch_pdfs.py`, `b4_compare_sql.py`, `b4_export_parity.py`, `b4_browser_fixtures.py`, `b4_make_browser_actions.py`, and `b4_mcp.py`. The preparation script records cohorts before and after calling the existing refresh; PDF downloads are separate and never feed implementation extraction. Replay commands used:
 
 ```sh
 /opt/miniconda3/bin/python3.13 .context/b4_prepare.py --fetch
