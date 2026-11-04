@@ -286,6 +286,47 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"old"')
         self.assertEqual(self.leftovers(), [])
 
+    # Value: protects=with a cached zip that read_zip rejects, a failed fetch, an invalid download or a failed
+    #   cache write says that the cached file is unreadable, names it with the cause, and says the next rebuild
+    #   stops until a fetch succeeds or the file is removed, where it used to say "no cached file" and promise
+    #   a build without seat counts; with no cached file at all the old wording stays and a failed cache write
+    #   leaves no cache; fails_when=kept words a corrupt cache like an absent one; why_new=TODOS C1 deferred
+    #   items 22 and 24 (the corrupt-cache and no-cache rows of the matrix); seam=stammdaten.refresh
+    def test_a_corrupt_cache_is_named_unreadable_when_the_fetch_or_the_cache_write_fails(self) -> None:
+        mini = io.BytesIO()
+        with zipfile.ZipFile(mini, "w") as archive:
+            archive.writestr("MDB_STAMMDATEN.XML", XML)
+        corrupt = b"<html>half a zip</html>"
+        cases = {
+            "network": ((urllib.error.URLError("timed out"), None), "timed out"),
+            "server": ((urllib.error.HTTPError(stammdaten.URL, 503, "Service Unavailable", {}, None), None), "503"),
+            "not a zip": (((b"<html>Wartungsarbeiten</html>", '"x"'), None), "not a zip"),
+            "seat rule": (((mini.getvalue(), '"y"'), None), "WP 20: at most 1 seats on any day"),
+            "cache write": (((self.newer, '"n"'), OSError(28, "No space left on device")), "No space left on device"),
+        }
+        for label, (answer_and_failure, cause) in cases.items():
+            answer, failure = answer_and_failure
+            for cached in (corrupt, None):
+                with self.subTest(label, cached=bool(cached)):
+                    self.cache.unlink(missing_ok=True)
+                    if cached:
+                        self.seed(cached)
+                    with mock.patch.object(stammdaten.os, "replace", side_effect=failure) if failure else contextlib.nullcontext():
+                        err = self.refresh(answer)
+                    self.assertIn("warning: [stammdaten]", err)
+                    self.assertIn(cause, err)
+                    if cached:
+                        self.assertIn(f"the cached file {self.cache.name} is unreadable (", err)
+                        self.assertIn("not a zip file the Stammdaten can be read from", err)
+                        self.assertIn("the next rebuild stops until a fetch succeeds or the file is removed", err)
+                        self.assertNotIn("no cached file", err)
+                        self.assertEqual(self.cache.read_bytes(), cached)
+                    else:
+                        self.assertIn("no cached file: keine Sitzzahlen", err)
+                        self.assertNotIn("unreadable", err)
+                        self.assertFalse(self.cache.exists())
+                    self.assertEqual(self.leftovers(), [])
+
     # Value: protects=refresh checks the private directory before it reads the cache, sweeps, fetches or
     #   writes: a symlink planted at its place (here with the ETag sidecar pointing at a file elsewhere,
     #   and a stale temp file inside) is refused with a warning, so no file behind it is truncated or

@@ -358,18 +358,24 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
         print(f"warning: [stammdaten] not fetching, the private directory cannot be used ({exc}); "
               "the cached file, if any, stays as it is", file=sys.stderr)
         return
-    previous = None
+    previous = unreadable = None
     if path.is_file():
         try:
             previous = read_zip(path)
-        except StammdatenError:
-            previous = None  # an unreadable cache is replaced, never offered for a 304
+        except StammdatenError as exc:
+            unreadable = exc  # replaced by a good download, never offered for a 304
     try:
         etag = json.loads(sidecar.read_text(encoding="utf-8")).get("etag") if previous else None
     except (OSError, ValueError, AttributeError):
         etag = None
-    kept = (f"keeping the cached file (Stand {_stand_day(previous.stand)})" if previous
-            else "no cached file: keine Sitzzahlen until a fetch succeeds")
+    if previous:
+        kept = f"keeping the cached file (Stand {_stand_day(previous.stand)})"
+    elif unreadable:
+        # rebuild_seat_counts raises on this file, so the build stops, not runs without seat counts.
+        kept = (f"the cached file {path.name} is unreadable ({unreadable}); "
+                "the next rebuild stops until a fetch succeeds or the file is removed")
+    else:
+        kept = "no cached file: keine Sitzzahlen until a fetch succeeds"
     try:
         answer = _download(etag if isinstance(etag, str) else None)
     except (StammdatenError, urllib.error.URLError, OSError, http.client.HTTPException) as exc:
