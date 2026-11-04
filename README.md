@@ -379,7 +379,7 @@ The ordinary offline preview needs no feature arguments:
 scripts/preview_dip_pulse_site.sh
 ```
 
-An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, `mdb-stammdaten`, or `all`:
+An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, `mdb-stammdaten`, or `all`. `all` expands to every enrichment in the table, `mdb-stammdaten` included, so it also downloads the Stammdaten zip and may replace the cached file (only after it passes the seat checks):
 
 ```bash
 scripts/preview_dip_pulse_site.sh update --enrich aw-profiles
