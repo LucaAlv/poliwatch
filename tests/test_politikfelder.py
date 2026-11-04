@@ -519,8 +519,8 @@ class CacheFileTests(unittest.TestCase):
             path.write_text(json.dumps(cache_of({}, {"21/06561": ["v"], "21/7": []})), encoding="utf-8")
             self.assertEqual(pf.load_cache(site)["dokumentnummern"], {"21/6561": ["v"], "21/7": []})
 
-    # Value: protects=a private directory on another file system or one that cannot be made (a read-only parent of OUTPUT) still lets the cache save, staged next to the cache; fails_when=the st_dev check or the OSError fallback goes, so the rename fails across devices or every build loses its fetch; why_new=only same-file-system staging was tested; seam=none; no_claim=a real second device (st_dev is patched)
-    def test_save_falls_back_to_data_on_another_file_system_or_a_read_only_parent(self) -> None:
+    # Value: protects=a private directory on another file system still lets the cache save, staged next to the cache; fails_when=the st_dev check goes, so the rename fails across devices; why_new=only same-file-system staging was tested; seam=none; no_claim=a real second device (st_dev is patched)
+    def test_save_falls_back_to_data_on_another_file_system(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             site = Path(tmp) / "site"
             real_stat = Path.stat
@@ -536,6 +536,9 @@ class CacheFileTests(unittest.TestCase):
                     pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
             self.assertEqual(len(list((site / "data").glob(".dip-vorgang-cache.json.*.tmp"))), 1)  # staged beside the cache
 
+    # Value: protects=a read-only parent of OUTPUT (the private directory cannot be made) still lets the cache save; fails_when=the OSError fallback goes, so every build loses its fetch; why_new=split from the st_dev test, whose second half proved nothing as root; seam=none; no_claim=root, which chmod does not stop (skipped)
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "chmod 0o555 does not stop root, so the parent stays writable and the fallback is not reached")
+    def test_save_falls_back_to_data_when_the_parent_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             parent = Path(tmp) / "ro"
             site = parent / "site"
