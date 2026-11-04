@@ -532,7 +532,11 @@ The one differing link is vote 493, Drucksache 19/19. `documents.url` holds the 
 
 **Both clones (not slice 1).** A and B print the same 45 "facts: changed winner" lines against the clone's earlier facts tables. These come from code merged since `~/agent-runs/a3/full` was last built, not from this branch. The stores agree with each other afterwards ("changed winners: none").
 
-**Still owed:** the browser check of the filter chips at 375px and in dark mode; the full-site `diff -rq`; the old and new values of the dossier "Drucksachen" card from #132 (the first attempt read `plenarprotokoll-catalog.json` as a report and stopped).
+**Full site** (`diff -rq` of the normalised clones, export generation directories and stores aside): only `database.html` and `votes/index.html` differ. `database.html` differs by export format 13 → 14, schema 9 → 10, the new codebook rows, the r4 `WHERE`, and the hashes and sizes of the export files.
+
+**Drucksachen card from #132** (measured on B's reports): it moves on 572 of 716 dossiers, from a total of 5,198 to 29,353 (e.g. 18/100 0 → 72, 18/130 0 → 86). Recorded in the TODOS.md Completed note.
+
+**Still owed:** the browser check of `votes/index.html` filter chips at 375px and in dark mode.
 
 ## Verification (each slice)
 
