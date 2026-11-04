@@ -1,7 +1,7 @@
 # Fix vote interpretation
 
 Planning only, 2026-10-23, based on `429556b` on branch `plan/fix-vote-interpretation`.
-Source todo: [Vote reading misses half the inverted votes and never stores it](../../TODOS.md#vote-reading-misses-half-the-inverted-votes-and-never-stores-it), P1.
+Source todo: [Vote reading misses half the inverted votes and never stores it](https://github.com/LucaAlv/poliwatch/blob/c932255/TODOS.md#vote-reading-misses-half-the-inverted-votes-and-never-stores-it), P1.
 
 ## Findings verified while planning
 
