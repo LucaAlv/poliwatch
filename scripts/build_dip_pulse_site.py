@@ -722,13 +722,13 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
 # store already holds. Matched on the protocol id, the key persist and the
 # rebuild's missing-evidence check use.
 # What the offline render adds to a coverage refusal (A4 slice 0 review, d): an
-# online update into the same directory writes its reports and its exclusion
-# record before its staged rebuild swaps the store, so a render in between sees
-# a gap the update is about to close. The writer lock covers only the rebuild,
+# online update into the same directory writes its reports before its staged
+# rebuild swaps the store, and its exclusion record right after, so a render in
+# between sees a gap the update is about to close. The writer lock covers only the rebuild,
 # not the fetch before it, so a lock probe would miss most of that window.
 CONCURRENT_UPDATE_NOTE = (
     "If an online update into this directory is still running, wait for it to finish, then re-run: "
-    "it writes its reports and exclusions before it replaces the store."
+    "it writes its reports before it replaces the store and its exclusions right after."
 )
 
 
@@ -738,8 +738,9 @@ def store_coverage_gap(
     """None when ``entries`` (the cached reports minus the ``excluded`` document
     numbers, the recorded exclusions) and the store's ``protocols`` name the same
     sittings; otherwise the refusal, naming up to ``limit`` sittings per case and
-    the repair. A stored sitting that is excluded is its own case: its exclusion
-    was recorded by a run whose rebuild then failed, and a repersist drops it."""
+    the repair. A stored sitting that is excluded is its own case: the record was
+    edited by hand (an online run writes it only after its rebuild), and a
+    repersist drops the sitting."""
     reported: dict[str, str] = {}
     for entry in entries:
         protocol = entry["report"].get("protocol") or {}
@@ -13613,7 +13614,8 @@ def parse_args() -> argparse.Namespace:
             "reported or stored. Add a number only after a review of its source: the sitting is recorded in "
             "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (ausgeschlossen). "
             "Every later run, online or offline, keeps a recorded sitting out without the flag. "
-            "Any source refusal of an unlisted sitting still stops the build before the store is replaced."
+            "Any source refusal of an unlisted sitting still stops the build before the store is replaced. "
+            "Needs an online run; a number DIP does not list is refused."
         ),
     )
     parser.add_argument(
@@ -13826,6 +13828,11 @@ def parse_args() -> argparse.Namespace:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.include_document_number and (args.offline or args.fetch_xml):
         parser.error("--include-document-number takes a sitting back into an online build; it cannot be combined with --offline or --fetch-xml")
+    if args.exclude_document_number and (args.offline or args.fetch_xml):
+        parser.error(
+            "--exclude-document-number records a sitting in the exclusion list from an online build; "
+            "it cannot be combined with --offline or --fetch-xml, which read the list but never write it"
+        )
     both = {normalized_document_number(n) for n in args.include_document_number} & {
         normalized_document_number(n) for n in args.exclude_document_number
     }
@@ -14539,6 +14546,20 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
+        # The catalog is complete by now (--dossier-document-number may have added
+        # a sitting to it): a number no sitting carries is a typo, and recording
+        # nothing for it would let the run pass as if the sitting were excluded.
+        listed_in_catalog = {normalized_document_number(p.get("dokumentnummer")) for p in protocols}
+        unknown_flags = sorted(
+            {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])} - listed_in_catalog
+        )
+        if unknown_flags:
+            print(
+                f"error: --exclude-document-number names no sitting DIP lists: {', '.join(repr(n) for n in unknown_flags)}. "
+                "Fix: use the document number as the catalog prints it (for example 21/7); no dossier or store was written.",
+                file=sys.stderr,
+            )
+            return 2
         excluded_protocols = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) in listed]
         for protocol in excluded_protocols:
             protocol["dossier_failure_reasons"] = ["excluded"]
@@ -14604,9 +14625,6 @@ def main() -> int:
                     dip_breaker=dip_breaker,
                 ),
             )
-            update_coverage_exclusions(
-                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
-            )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
             # then read it back for the MP pages. The dossier pages are written
             # a second time afterwards because mp_lookup only exists now, and it
@@ -14670,6 +14688,13 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            # Only now, with the store swapped: a run that stops before this leaves
+            # the record naming what the store still holds, so no render sees an
+            # excluded sitting beside counts that include it. The Daten export,
+            # its only later reader, runs after the swap.
+            update_coverage_exclusions(
+                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
+            )
             # Read only: the published store is written by a staged rebuild alone.
             store = facts.open_readonly(database_path)
             try:
