@@ -159,11 +159,33 @@ def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple
     """The ``mdb_zugehoerigkeiten`` and ``party_seats`` rows of ``records``,
     after the size check: what the rebuild stores and what a fetched file must
     pass before it replaces the cache. Raises StammdatenError on a broken rule,
-    and on records with no Mandat from ``since_wahlperiode`` on, which the size
-    check, checking only the Wahlperioden present, would let through empty."""
+    on records with no Mandat from ``since_wahlperiode`` on, which the size
+    check, checking only the Wahlperioden present, would let through empty,
+    and on rows the store's tables would refuse (``persist_seat_counts``: a
+    Zugehörigkeit or seat row that ends no later than it starts, seats of zero
+    or less, a repeated primary key), which would otherwise be cached and then
+    fail every later rebuild."""
     zugehoerigkeiten = derive.mdb_zugehoerigkeiten(records, since_wahlperiode=since_wahlperiode)
+    keys: set[tuple[str, int, str]] = set()
+    for row in zugehoerigkeiten:
+        key = (row["mdb_id"], row["wahlperiode"], row["valid_from"])
+        if row["valid_until"] is not None and row["valid_until"] <= row["valid_from"]:
+            raise StammdatenError(f"MdB {key[0]}, WP {key[1]}: a Zugehörigkeit from {key[2]} ends on {row['valid_until']}")
+        if key in keys:
+            raise StammdatenError(f"MdB {key[0]}, WP {key[1]}: the Zugehörigkeit from {key[2]} is listed twice")
+        keys.add(key)
     seats = derive.party_seats(zugehoerigkeiten)
     derive.check_seat_totals(seats)
+    keys = set()
+    for row in seats:
+        key = (row["party"], row["wahlperiode"], row["valid_from"])
+        if row["seats"] <= 0:
+            raise StammdatenError(f"WP {key[1]} {key[0]}: {row['seats']} seats from {key[2]}")
+        if row["valid_until"] is not None and row["valid_until"] <= row["valid_from"]:
+            raise StammdatenError(f"WP {key[1]} {key[0]}: a seat count from {key[2]} ends on {row['valid_until']}")
+        if key in keys:
+            raise StammdatenError(f"WP {key[1]} {key[0]}: the seat count from {key[2]} is listed twice")
+        keys.add(key)
     if not seats:
         raise StammdatenError(f"no Mandat from Wahlperiode {since_wahlperiode} on")
     return zugehoerigkeiten, seats
