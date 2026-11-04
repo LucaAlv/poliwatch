@@ -118,6 +118,20 @@ class LegalPagesTests(unittest.TestCase):
         self.assertIn('id="lizenz"', pages["sources.html"])
         self.assertIn("BT-PlPr.", pages["sources.html"])
 
+    # Value: protects=a half-filled supervisory authority renders the given value and the marked placeholder for the missing half, and a complete one renders one link; fails_when=a missing name or url renders blank, unmarked or as a dead link; why_new=the half-filled branch of _operator_authority had no row; seam=_operator_authority and render_datenschutz_page; no_claim=page wording around it
+    def test_a_half_filled_supervisory_authority_marks_the_missing_half(self) -> None:
+        name, url = "supervisory_authority.name", "supervisory_authority.url"
+        marker = '<span data-operator-missing="%s">Angabe folgt.</span>'
+        rows = (
+            ("only the name", {name: "Landesbeauftragte"}, f"Landesbeauftragte ({marker % url})"),
+            ("only the url", {url: "https://datenschutz.example.org/"}, f'{marker % name} (<a href="https://datenschutz.example.org/">https://datenschutz.example.org/</a>)'),
+            ("both", {name: "Landesbeauftragte", url: "https://datenschutz.example.org/"}, '<a href="https://datenschutz.example.org/">Landesbeauftragte</a>'),
+        )
+        for label, operator, expected in rows:
+            with self.subTest(label):
+                self.assertEqual(site._operator_authority(operator), expected)
+                self.assertIn(f"{expected}.", site.render_datenschutz_page(operator, data_base_url=None))
+
     # Value: protects=the Datenschutz page names the download host for an absolute and a protocol-relative --data-base-url, and none for a site path; fails_when=a "//host/" base, whose downloads leave the site, is treated as same-server; why_new=red-team review of this branch; seam=render_datenschutz_page; no_claim=the Daten page links
     def test_datenschutz_names_the_download_host_of_a_remote_base(self) -> None:
         for base, host in (("https://cdn.example.net/x/", "cdn.example.net"), ("//cdn.example.net/x/", "cdn.example.net"), ("data/exports/", None)):
