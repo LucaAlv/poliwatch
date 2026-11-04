@@ -34,7 +34,7 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 2. The rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". The AI sentence is deferred.
 3. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
-**Frontend:** "Decide the frontend stack" (owner decision 2026-11-02: hold, prototype first). DESIGN.md is written (2026-11-04). Next a chart prototype, then a written go/no-go; "Apply DESIGN.md to the site" can run alongside.
+**Frontend:** decided 2026-11-04: the site stays Python-generated HTML ([go/no-go](docs/plans/frontend-go-no-go.md)). DESIGN.md is written; next is "Apply DESIGN.md to the site".
 
 **C. Analysen (long-term view)**
 
@@ -725,30 +725,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 **Priority:** P2
 **Depends on:** None
 
-### Decide the frontend stack
-
-**What:** Decide whether the site stays Python-generated HTML (PRODUCT.md:58) or moves to a static site generator with islands (Astro-class), under the rule "the frontend computes no figure". A single-page app and a hybrid were rejected. The owner chose "Hold, prototype first" (R17). The order:
-1. Design pass: done, see `DESIGN.md` (2026-11-04). Applying it is the item above.
-2. A chart prototype in a candidate generator, most likely the Diskursanalyse throwaway.
-3. A written go/no-go against the stdlib option (SVG charts drawn from Python). Write the criteria down before the prototype.
-
-If the answer is go:
-- Resolve outside-voice findings O4–O11 first.
-- Write ADR 0005 before building.
-
-**Why:**
-- The look is a design problem, and either stack has to solve it.
-- The case for a generator rests on interactive long-term charts, and only a chart prototype can show whether that case holds.
-- The pilot the eng review planned (the votes archive) tested neither goal: it had no chart and left design out of scope.
-
-**Context:**
-- The eng review of 2026-11-02 settled ledger entries R10–R16 and a scope record for the frontend plan: pilot votes archive, parallel build, state codes, payload-diff oracle, strict npm policy, raw-HTML ban, 50 KB island budget. They are in `docs/plans/a4-site-from-release.md`, part "A4 re-scope for a new frontend". Slice 1 has since shipped in Python, so the pilot needs rethinking if the answer is go.
-- PRODUCT.md:58 stays in force until the decision.
-
-**Effort:** M (design pass and prototype); L if the answer is go
-**Priority:** P2
-**Depends on:** The Diskursanalyse prototype's term lists
-
 ## Publication
 
 ### Site hosting plan for the 2.5 GB generated site
@@ -1152,6 +1128,8 @@ The long-term angle of the site (PRODUCT.md, 2026-09-30). None of it exists yet.
 Done when the chart and the recipe give the same numbers on the same release, and a test pins the matching rule on a handful of compounds.
 
 **Why:** Decided 2026-09-30: precomputed series instead of free search on a static site, with free search delegated to the SQLite download. Term lists instead of a topic model are confirmed only provisionally. The user wants to see a preview before deciding, so the first step is a throwaway prototype: three topics, run over the reference store, drawn as a static chart, shown to the user. Build the page only after that decision. Open Discourse's Diskursanalyse, the named reference, uses 73 LDA topics with yearly granularity from 1949 to 2020. Published term lists are weaker at catching synonyms, but anyone can check and recount them, which fits a neutral, research-grade dataset.
+
+**How to draw it (2026-11-04):** as SVG from a small Python module with a small tooltip script, per the frontend go/no-go. A working version of this page, on the full store with provisional terms, is in `~/.gstack/projects/LucaAlv-poliwatch/designs/chart-prototype-20261104/arm-a/build.py`. It covers topic and period links, touch tooltips, point-to-Reden pages and a table. It is not the term-list decision, which is still open.
 
 **Context:** Start with a small set of topics (Klimaschutz, Migration, and a few more) and a neutrality review of the term lists before publishing. A term list that uses one side's vocabulary ("Klimakrise" vs. "Klimawandel") frames the result. Also consider filters that Open Discourse offers and the store can support: gender and age group from the abgeordnetenwatch columns.
 
@@ -1584,6 +1562,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Decide the frontend stack: no-go, the site stays Python-generated HTML; owner, 2026-11-04 ([criteria and measurements](docs/plans/frontend-go-no-go.md); revisit when a real chart cannot reasonably be hand-drawn)
 - Stale cached-report error lines: polish: #134, 2026-11-04
 - A malformed coverage-exclusions.json ends a build with a traceback: #132, 2026-11-03
 - Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am": #132, 2026-11-03

@@ -4,7 +4,7 @@
 
 This is roadmap item A4: TODOS.md "Split the dataset from the site: the site builds from a release alone" (effort L, P2). A1–A3 are done (v0.27.0.0, 4705fb3). The TODO's done criterion is: an offline build from a downloaded release SQLite, with no report JSON present, produces the same site as today's build. The dev-view API dumps are exempt.
 
-**Status (2026-11-04):** a re-scope to a static site generator was reviewed and **held by the owner** (ledger R17, part "A4 re-scope for a new frontend" near the end of this file): design pass, chart prototype and a go/no-go come first (TODOS.md "Decide the frontend stack"). Slice 1 has since shipped in Python (#133, v0.32.0.0), so R17's "T1.4 waits" no longer applies; the rest of R17 stands.
+**Status (2026-11-04):** a re-scope to a static site generator was reviewed and **held by the owner** (ledger R17, part "A4 re-scope for a new frontend" near the end of this file): design pass, chart prototype and a go/no-go come first (TODOS.md "Decide the frontend stack"). Slice 1 has since shipped in Python (#133, v0.32.0.0). **The go/no-go ended in no-go on 2026-11-04 (`docs/plans/frontend-go-no-go.md`), so R10 to R16 are not applied and A4 continues in Python.**
 
 **Status (2026-11-03):** slices 0 and 1 built (slice 1's reference-store oracle owed, see "Slice 1 result"). **Status (2026-11-01):** passed /plan-eng-review (see the review part at the end of this file). Ledger entries R1–R9 are settled; do not reopen them without new evidence. Owner decisions D8–D10 stay open until their slices. Slices 0 and 1 are planned down to individual tasks and land as two PRs; later slices are headlines only, because slice 1 will change what they need.
 

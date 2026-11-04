@@ -230,4 +230,4 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 | 2026-11-04 | Fraktion colours kept, against the reviewer's and Claude's recommendation | Owner: the association between colours and parties is strong for most people, and leaving it out is the bigger drawback than the clash with Ja and Nein. The clash is handled by shape: a card is a vote, a tick or line is a Fraktion |
 | 2026-11-04 | Fraktion colours re-tuned; non-Fraktion roles lose their hues | Today's `PARTY_COLORS` fail on the grey ground (Grüne 2.16:1, FDP 1.86:1) and BSW is too close to Linke. Bundesregierung and Bundesrat are not Fraktionen and exceeded the palette |
 | 2026-11-04 | Display stops at 6rem | A full-width verdict pushed the vote cards off the first screen |
-| 2026-11-04 | Plain CSS tokens, independent of the frontend decision | PRODUCT.md's stdlib stack stays in force until the go/no-go in TODOS.md "Decide the frontend stack" |
+| 2026-11-04 | Plain CSS tokens, used from Python-rendered pages | The frontend go/no-go ended in no-go, so PRODUCT.md's stdlib stack stays (`docs/plans/frontend-go-no-go.md`) |
