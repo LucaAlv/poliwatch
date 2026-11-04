@@ -313,6 +313,11 @@ cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -
 
 # 2. Apply the change to a second copy, by the route it needs (4c)
 cp -cR .context/baseline .context/after
+#    and the cached MdB-Stammdaten from the private directory beside the store, without which the rebuild
+#    of `after` leaves the seat tables empty and the compare reports them as moved (`baseline` keeps the
+#    copied rows; skip this on a machine without the cache, or pass --enrich mdb-stammdaten to fetch it)
+mkdir -p .context/.after.private
+cp .context/.dip-pulse-site.private/mdb-stammdaten.* .context/.after.private/
 #    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...), or from the cached
 #    Plenarprotokoll XML (what counts as a Rede, Redner parsing; run `--fetch-xml` first if data/xml/ is empty):
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after
@@ -374,7 +379,7 @@ The ordinary offline preview needs no feature arguments:
 scripts/preview_dip_pulse_site.sh
 ```
 
-An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, `mdb-stammdaten`, or `all`:
+An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, `mdb-stammdaten`, or `all`. `all` expands to every enrichment in the table, `mdb-stammdaten` included, so it also downloads the Stammdaten zip and may replace the cached file (only after it passes the seat checks):
 
 ```bash
 scripts/preview_dip_pulse_site.sh update --enrich aw-profiles

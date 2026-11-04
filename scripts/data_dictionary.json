@@ -1431,7 +1431,7 @@
           "license": "bundestag-abstimmungen"
         },
         "rank": {
-          "meaning": "Position der ersten Nennung der Drucksachennummer in der Nummernliste der Abstimmung; das Abstimmungsarchiv zeigt die Drucksachen in dieser Reihenfolge.",
+          "meaning": "Rang der Drucksache unter den Drucksachen der Abstimmung, lückenlos ab 1, in der Reihenfolge der Nummernliste der Abstimmung, die der Parser der Abstimmungsliste als Text aufsteigend sortiert (20/10000 vor 20/9999); eine doppelt genannte oder nicht auflösbare Nummer erhält keinen Rang. Das Abstimmungsarchiv zeigt die Drucksachen in dieser Reihenfolge.",
           "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
           "source": "Bundestags-Abstimmung mit DIP-Dokumenten über die zur Abstimmung gehörenden Drucksachennummern verknüpft.",
           "license": "bundestag-abstimmungen"

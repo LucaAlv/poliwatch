@@ -4995,6 +4995,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
             f" &middot; {pulse_html.format_int(len(excluded))} nicht erfasst (ausgeschlossen): "
             + pulse_html.esc(", ".join(excluded))
         )
+    scope_exceptions = ", bis auf die ausgeschlossenen Sitzungen (unten)" if excluded else ""
     bausteine_line = " &middot; ".join(
         f"{pulse_html.esc(BAUSTEINE_LABELS[key])}: {pulse_html.esc(value)}" for key, value in coverage["bausteine"].items()
     )
@@ -5017,7 +5018,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
       <div><span class="eyebrow">Zeilen</span><strong>{pulse_html.format_int(manifest['total_rows'])}</strong><p class="tile-sub">{pulse_html.format_int(len(manifest['tables']))} Tabellen &middot; {pulse_html.format_int(manifest['relationships'])} Beziehungen</p></div>
       <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
     </section>
-    <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
+    <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt{scope_exceptions}. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
     <p class="stammdaten-line">{stammdaten_line}</p>
     <p class="coverage-line">{coverage_line}</p>
     <p class="bausteine-line">{bausteine_line}</p>
