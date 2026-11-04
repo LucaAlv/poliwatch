@@ -13995,6 +13995,24 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     return base_url_raw, manifest_raw, license_text, issues_url
 
 
+# A release tag means "export this release": a manifest override skips the export,
+# so nothing would carry the tag. (--data-manifest with a tag is refused by
+# parse_args; the variable is only read here.)
+def refuse_release_beside_manifest_override(tag: str, manifest_raw: str | None) -> None:
+    if tag != "local" and manifest_raw:
+        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
+
+
+# What run_data_pipeline would refuse about the data options, asked at the head of
+# main() so a typo in --data-base-url, --data-issues-url or the tag ends the run
+# before a whole online update is spent. getattr() throughout, as in
+# resolve_data_export_options.
+def validate_data_export_options(args: argparse.Namespace) -> None:
+    base_url_raw, manifest_raw, _license_text, _issues_url = resolve_data_export_options(args)
+    resolve_data_base_url(base_url_raw)
+    refuse_release_beside_manifest_override(getattr(args, "data_tag", None) or "local", manifest_raw)
+
+
 # The cited build revision of this checkout (scripts/build_revision.py): a
 # 12-digit commit id, <commit>-dirty-<hash> when tracked files differ from it,
 # <commit>-unverified[-<hash>] when git could not say. Untracked files are not
@@ -14080,6 +14098,9 @@ def run_data_pipeline(
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
+    tag = getattr(args, "data_tag", None) or "local"
+    # Before the facts engine writes its tables: a refusal here wastes nothing.
+    refuse_release_beside_manifest_override(tag, manifest_raw)
     bills = collect_bill_pages(entries, mp_lookup)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
@@ -14107,9 +14128,6 @@ def run_data_pipeline(
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
     force_export = bool(getattr(args, "force_export", False))
-    tag = getattr(args, "data_tag", None) or "local"
-    if tag != "local" and manifest_raw:
-        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
     # A --data-manifest override replaces whatever this build would export, so
     # the export only runs when its result is used or explicitly forced.
     if manifest_raw and not force_export:
@@ -14214,6 +14232,13 @@ def main() -> int:
     # it stops here, naming the file and its shape. The listing and
     # --explain-config modes above do not read it, so it does not block them.
     if not coverage_exclusions_readable(args.output_dir):
+        return 1
+    # The export runs from here on (--fetch-xml has returned), and so do its
+    # refusals: stop on a bad URL or tag now, not after the fetch and the persist.
+    try:
+        validate_data_export_options(args)
+    except (ValueError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)

@@ -116,22 +116,22 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
     # Value: protects=with no --data-license the export records the short string, read from the blockquote under "## Short string" in LICENSE-DATA.md, and a file without that section stops with a clear error; fails_when=the default stays empty (the Daten page shows only the placeholder), the string is written a second time in code, or a missing section yields "" or a traceback; why_new=step 4 of the Impressum/licence plan; seam=default_license_text; no_claim=the string's legal content
     def test_the_default_licence_string_is_the_short_string_of_license_data(self) -> None:
         text = b.default_license_text()
-        self.assertTrue(text.startswith("Quelldaten: Deutscher Bundestag/Bundesrat – DIP"), text)
+        # The mention render_daten_downloads links; the wording around it is the owner's to change.
         self.assertTrue(text.endswith("Details in LICENSE-DATA.md."), text)
         self.assertIn(f"> {text}", (b.REPO_ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8"))
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(__import__("shutil").rmtree, root, ignore_errors=True)
-        for label, content in (
-            ("no section", "# Datenlizenz\n\n## Terms per layer\n\n> not the short string\n"),
-            ("section without a quote", "# Datenlizenz\n\n## Short string\n\nNur Fließtext.\n\n## Terms per layer\n"),
-        ):
-            with self.subTest(label):
-                (root / "LICENSE-DATA.md").write_text(content, encoding="utf-8")
-                with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string"):
-                    b.default_license_text()
-        (root / "LICENSE-DATA.md").unlink()
-        with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "cannot read"):
-            b.default_license_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for label, content in (
+                ("no section", "# Datenlizenz\n\n## Terms per layer\n\n> not the short string\n"),
+                ("section without a quote", "# Datenlizenz\n\n## Short string\n\nNur Fließtext.\n\n## Terms per layer\n"),
+            ):
+                with self.subTest(label):
+                    (root / "LICENSE-DATA.md").write_text(content, encoding="utf-8")
+                    with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string"):
+                        b.default_license_text()
+            (root / "LICENSE-DATA.md").unlink()
+            with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "cannot read"):
+                b.default_license_text()
 
 
 class OperatorFileTests(unittest.TestCase):
@@ -214,6 +214,86 @@ class OperatorFileTests(unittest.TestCase):
         self.assertIn(str(missing), err.getvalue())
         self.assertIn("cannot be read", err.getvalue())
         self.assertFalse((self.tmp / "site").exists())
+
+
+class MainDataOptionRefusalTests(unittest.TestCase):
+    """The data options are refused at the head of main(), after the modes that
+    render nothing and before any network or store work."""
+
+    ENV_KEYS = (
+        "BUNDESTAG_PULSE_DATA_BASE_URL", "BUNDESTAG_PULSE_DATA_MANIFEST", "BUNDESTAG_PULSE_DATA_LICENSE",
+        "BUNDESTAG_PULSE_DATA_ISSUES_URL", "BUNDESTAG_PULSE_OPERATOR_FILE",
+    )
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.output_dir = Path(self._tmp.name) / "site"
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for key in self.ENV_KEYS:
+            os.environ.pop(key, None)
+
+    def run_main(self, *extra: str, env: dict[str, str] | None = None):
+        os.environ.update(env or {})
+        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(self.output_dir), *extra]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(b.dip, "load_local_env"),
+            mock.patch.object(b, "fetch_protocols", side_effect=AssertionError("DIP was asked")) as fetch,
+            mock.patch.object(b, "render_site", return_value=self.output_dir / "index.html"),
+            mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+        ):
+            code = b.main()
+        return code, stderr.getvalue(), fetch
+
+    # Value: protects=a typo in --data-base-url, --data-issues-url, their environment variables, or a release tag beside $BUNDESTAG_PULSE_DATA_MANIFEST ends an online run before the catalog is fetched and before anything is written, in the offline run too; fails_when=the refusal waits for run_data_pipeline (after fetch, persist and the facts engine) or for the export; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 8 and "/gstack-review findings" item 9; seam=main (argv), DIP stubbed to fail
+    def test_a_bad_data_option_stops_main_before_any_work(self) -> None:
+        cases = (
+            (("--data-base-url", "javascript:x"), {}, "unsupported scheme"),
+            ((), {"BUNDESTAG_PULSE_DATA_BASE_URL": "https://h:abc/"}, "not a valid URL"),
+            (("--data-issues-url", "ftp://example.org/x"), {}, "--data-issues-url"),
+            (("--data-tag", "2026.11.01"), {"BUNDESTAG_PULSE_DATA_MANIFEST": "elsewhere/datenstand.json"},
+             "$BUNDESTAG_PULSE_DATA_MANIFEST skips the export"),
+        )
+        for extra, env, fragment in cases:
+            for mode in ((), ("--offline",)):
+                with self.subTest(extra=extra, env=env, mode=mode):
+                    code, stderr, fetch = self.run_main(*extra, *mode, env=env)
+                    self.assertEqual(code, 1, stderr)
+                    self.assertIn(fragment, stderr)
+                    self.assertNotIn("Traceback", stderr)
+                    fetch.assert_not_called()
+                    self.assertFalse(self.output_dir.exists(), "a refused run writes nothing")
+                    for key in env:
+                        os.environ.pop(key, None)
+
+    # Value: protects=the modes that render nothing keep working while a data option is wrong, and --fetch-xml, which never exports, is not stopped by it; fails_when=the check runs before --validate-publication, --list-capabilities or --explain-config returns, or before the --fetch-xml branch; why_new=moving the refusal to the head of main must not start failing these; seam=main (argv)
+    def test_the_modes_that_export_nothing_ignore_a_bad_data_option(self) -> None:
+        bad = ("--data-base-url", "javascript:x")
+        for mode in (("--list-capabilities",), ("--explain-config",)):
+            with self.subTest(mode=mode):
+                code, stderr, _ = self.run_main(*mode, *bad)
+                self.assertEqual(code, 0, stderr)
+        (self.output_dir / "data").mkdir(parents=True)
+        with (
+            mock.patch.object(b.publication, "validate_publication_directory") as validate,
+            mock.patch.object(sys, "argv", ["build", "--validate-publication", str(self.output_dir), *bad]),
+            mock.patch.object(b.dip, "load_local_env"),
+            mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+        ):
+            self.assertEqual(b.main(), 0)
+        validate.assert_called_once()
+        with (
+            mock.patch.object(b, "load_cached_protocols", return_value=[]),
+            mock.patch.object(b, "load_existing_detail_entries", return_value=[]),
+            mock.patch.object(b, "fetch_missing_xml", return_value=(0, 0)) as fetch_xml,
+        ):
+            code, stderr, _ = self.run_main("--fetch-xml", *bad)
+        self.assertEqual(code, 0, stderr)
+        fetch_xml.assert_called_once()
 
 
 class ResolveCommitTests(unittest.TestCase):
@@ -450,14 +530,17 @@ class RunDataPipelineTests(unittest.TestCase):
     # Value: protects=a release --data-tag that exports nothing (store missing, old SQLite, a $BUNDESTAG_PULSE_DATA_MANIFEST override) stops the build instead of exiting 0 beside an older release-tagged export; fails_when=any of the three is reported as a warning and the build succeeds; why_new=release item 10c (P1), reachable once --publish opens; seam=run_data_pipeline; no_claim=the local tag (unchanged: a warning)
     def test_a_release_tag_that_exports_nothing_stops_the_build(self) -> None:
         missing_db = self.output_dir / "data" / "does-not-exist.sqlite"
-        with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: there is no store"):
-            b.run_data_pipeline(
-                args=_pipeline_args(data_tag="2026.11.01"), output_dir=self.output_dir, database_path=missing_db,
-                entries=[], protocols=[], abg_mps=self.mps, mp_lookup=self.lookup, catalog=None,
-            )
-        with mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("SQLite too old")):
-            with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: SQLite too old"):
-                self._run(data_tag="2026.11.01")
+        # A $BUNDESTAG_PULSE_DATA_MANIFEST left in the developer's shell would turn these into the third case.
+        with mock.patch.dict(os.environ):
+            os.environ.pop("BUNDESTAG_PULSE_DATA_MANIFEST", None)
+            with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: there is no store"):
+                b.run_data_pipeline(
+                    args=_pipeline_args(data_tag="2026.11.01"), output_dir=self.output_dir, database_path=missing_db,
+                    entries=[], protocols=[], abg_mps=self.mps, mp_lookup=self.lookup, catalog=None,
+                )
+            with mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("SQLite too old")):
+                with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: SQLite too old"):
+                    self._run(data_tag="2026.11.01")
         override_path = self._override_manifest()
         with mock.patch.dict(os.environ, {"BUNDESTAG_PULSE_DATA_MANIFEST": str(override_path)}), mock.patch.object(b, "export_distribution_data") as export_mock:
             with self.assertRaisesRegex(RuntimeError, "BUNDESTAG_PULSE_DATA_MANIFEST"):
