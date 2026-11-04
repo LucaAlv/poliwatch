@@ -313,6 +313,11 @@ cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -
 
 # 2. Apply the change to a second copy, by the route it needs (4c)
 cp -cR .context/baseline .context/after
+#    and the cached MdB-Stammdaten from the private directory beside the store, without which the rebuild
+#    of `after` leaves the seat tables empty and the compare reports them as moved (`baseline` keeps the
+#    copied rows; skip this on a machine without the cache, or pass --enrich mdb-stammdaten to fetch it)
+mkdir -p .context/.after.private
+cp .context/.dip-pulse-site.private/mdb-stammdaten.* .context/.after.private/
 #    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...), or from the cached
 #    Plenarprotokoll XML (what counts as a Rede, Redner parsing; run `--fetch-xml` first if data/xml/ is empty):
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after
