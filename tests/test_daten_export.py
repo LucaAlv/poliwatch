@@ -1027,6 +1027,17 @@ class ExportDistributionDataTests(unittest.TestCase):
         html = b.render_daten_datenstand(self.export(force=True))
         self.assertIn(f"ab der {b.V1_FIRST_WAHLPERIODE}. Wahlperiode", html)
         self.assertIn('class="scope-line"', html)
+        self.assertNotIn("bis auf die ausgeschlossenen", html)
+
+    # Value (A3): protects=the scope line stays true when sittings are excluded,
+    # by pointing at the exclusion list that renders below it; fails_when=the line
+    # claims every sitting or the pointer shows with nothing excluded;
+    # seam=render_daten_datenstand.
+    def test_datenstand_scope_line_names_the_exclusions(self) -> None:
+        html = b.render_daten_datenstand(self.export(excluded_sittings=["18/84"]))
+        scope = html.index('class="scope-line"')
+        self.assertIn("XML-Protokoll f&uuml;hrt, bis auf die ausgeschlossenen Sitzungen (unten).", html[scope:])
+        self.assertGreater(html.index("nicht erfasst (ausgeschlossen)"), scope)
 
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
