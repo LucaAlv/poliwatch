@@ -16,6 +16,7 @@ import contextlib
 import io
 import json
 import os
+import signal
 import sqlite3
 import sys
 import tempfile
@@ -184,7 +185,7 @@ class OperatorFileTests(unittest.TestCase):
             ("unknown nested field", {"hosting": {"ip": "1.2.3.4"}}, "unknown field(s) hosting.ip"),
             # /gstack-review 2026-11-01: these three ended in a traceback.
             ("lone surrogate", b'{"name": "Erika\\ud800"}', "name contains a control character"),
-            ("nested too deeply", b"[" * 100_000, "nested too deeply"),
+            ("nested too deeply", b"[" * 50_000, "nested too deeply"),
             ("unparseable URL host", {"hosting": {"privacy_url": "https://[::1"}}, "hosting.privacy_url must be an https:// URL"),
         ]
         for label, content, fragment in cases:
@@ -194,6 +195,99 @@ class OperatorFileTests(unittest.TestCase):
                     b.load_operator(path)
                 self.assertIn(str(path), str(caught.exception))
                 self.assertIn(fragment, str(caught.exception))
+
+    # Value: protects=the operator file's e-mail never reaches an error message (a scheduled build prints it into public CI logs once the file comes from a repository secret), and a field written twice is refused naming the field instead of letting the last one win; fails_when=the e-mail value is echoed again, or a duplicate key at the top level or inside hosting/supervisory_authority passes; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" items 7 and 13; seam=load_operator; no_claim=the e-mail regex (a digit-only TLD is accepted and an IDN refused, left as it is)
+    def test_the_email_is_not_echoed_and_duplicate_fields_are_refused(self) -> None:
+        path = self.write({"email": "geheim-lokal" + "@example.org?x=1"})
+        with self.assertRaises(b.OperatorFileError) as caught:
+            b.load_operator(path)
+        self.assertIn("email is not an e-mail address", str(caught.exception))
+        self.assertNotIn("geheim", str(caught.exception))
+        self.assertNotIn("example.org", str(caught.exception))
+        for label, content, field in (
+            ("top level", b'{"email": "a@example.org", "name": "N", "email": "b@example.org"}', "'email'"),
+            ("nested", b'{"hosting": {"provider": "A", "provider": "B"}}', "'provider'"),
+            ("unknown key twice", b'{"phone": "1", "phone": "2"}', "'phone'"),
+        ):
+            with self.subTest(label):
+                path = self.write(content)
+                with self.assertRaises(b.OperatorFileError) as caught:
+                    b.load_operator(path)
+                self.assertIn(str(path), str(caught.exception))
+                self.assertIn(f"the field {field} appears twice", str(caught.exception))
+
+    # Value: protects=a wrong path (a directory, a device, a FIFO, a huge file) ends in a named refusal instead of a hang or an out-of-memory kill, and a file at the size cap still loads; fails_when=load_operator opens before it stats (a FIFO blocks the build) or reads without a bound; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 13; seam=load_operator
+    def test_only_a_regular_file_within_the_size_cap_is_read(self) -> None:
+        def stuck(*_args):
+            raise AssertionError("load_operator blocked on a file that is not a regular file")
+
+        fifo = self.tmp / "operator.fifo"
+        os.mkfifo(fifo)
+        previous = signal.signal(signal.SIGALRM, stuck)
+        self.addCleanup(signal.signal, signal.SIGALRM, previous)
+        for label, path in (("directory", self.tmp), ("device", Path("/dev/null")), ("fifo", fifo)):
+            with self.subTest(label):
+                signal.alarm(10)
+                try:
+                    with self.assertRaises(b.OperatorFileError) as caught:
+                        b.load_operator(path)
+                finally:
+                    signal.alarm(0)
+                self.assertIn("is not a regular file", str(caught.exception))
+        body = b'{"name": "Erika"}'
+        at_cap = self.write(body + b" " * (b.OPERATOR_FILE_MAX_BYTES - len(body)), "at-cap.json")
+        self.assertEqual(b.load_operator(at_cap), {"name": "Erika"})
+        over = self.write(body + b" " * (b.OPERATOR_FILE_MAX_BYTES - len(body) + 1), "over.json")
+        with self.assertRaisesRegex(b.OperatorFileError, "is larger than 64 KiB"):
+            b.load_operator(over)
+
+    # Value: protects=--operator-file "" or an empty $BUNDESTAG_PULSE_OPERATOR_FILE (an unset CI secret expands to nothing) is an error naming its source, not "not set", while None stays "not set"; fails_when=an empty value builds placeholder legal pages with exit 0, or the flag's empty value falls through to the variable; why_new=TODOS "Impressum/licence branch: deferred /gstack-review findings" item 4 (owner decision); seam=resolve_operator
+    def test_an_empty_operator_path_is_an_error_not_unset(self) -> None:
+        good = self.write({"name": "Aus der Datei"})
+        with mock.patch.dict(os.environ):
+            os.environ.pop("BUNDESTAG_PULSE_OPERATOR_FILE", None)
+            for empty in ("", "  "):
+                with self.subTest(flag=empty), self.assertRaisesRegex(b.OperatorFileError, r"--operator-file is set but empty"):
+                    b.resolve_operator(_pipeline_args(operator_file=empty))
+            os.environ["BUNDESTAG_PULSE_OPERATOR_FILE"] = str(good)
+            with self.assertRaisesRegex(b.OperatorFileError, r"--operator-file is set but empty"):
+                b.resolve_operator(_pipeline_args(operator_file=""))  # an empty flag is not "unset": the variable does not rescue it
+            self.assertEqual(b.resolve_operator(_pipeline_args(operator_file=None)), {"name": "Aus der Datei"})
+            for empty in ("", "  "):
+                os.environ["BUNDESTAG_PULSE_OPERATOR_FILE"] = empty
+                with self.subTest(env=empty), self.assertRaisesRegex(b.OperatorFileError, r"\$BUNDESTAG_PULSE_OPERATOR_FILE is set but empty"):
+                    b.resolve_operator(SimpleNamespace())
+            os.environ.pop("BUNDESTAG_PULSE_OPERATOR_FILE")
+            self.assertIsNone(b.resolve_operator(SimpleNamespace()))
+
+    # Value: protects=the operator file is read only by a run that renders pages, so a stale or empty $BUNDESTAG_PULSE_OPERATOR_FILE does not block --validate-publication, the listing modes or --fetch-xml, and stops every other run before DIP is asked; fails_when=resolve_operator runs before those modes return again, or an empty variable builds a placeholder site; why_new=TODOS "Impressum/licence branch: deferred /gstack-review findings" item 4; seam=main (argv)
+    def test_the_operator_file_blocks_only_the_runs_that_render_pages(self) -> None:
+        for value in ("", str(self.tmp / "tippfehler.json")):
+            with self.subTest(value=value), mock.patch.dict(os.environ, {"BUNDESTAG_PULSE_OPERATOR_FILE": value}):
+                site = self.tmp / "site"
+                base = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(site)]
+                for mode in ("--list-capabilities", "--explain-config"):
+                    with mock.patch.object(sys, "argv", [*base, mode]), mock.patch.object(b.dip, "load_local_env"), \
+                            mock.patch.object(sys, "stdout", new_callable=io.StringIO), contextlib.redirect_stderr(io.StringIO()):
+                        self.assertEqual(b.main(), 0, mode)
+                (site / "data").mkdir(parents=True, exist_ok=True)
+                with (
+                    mock.patch.object(sys, "argv", [*base, "--fetch-xml"]), mock.patch.object(b.dip, "load_local_env"),
+                    mock.patch.object(b, "load_cached_protocols", return_value=[]),
+                    mock.patch.object(b, "load_existing_detail_entries", return_value=[]),
+                    mock.patch.object(b, "fetch_missing_xml", return_value=(0, 0)),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(b.main(), 0)
+                for mode in ((), ("--offline",)):
+                    with (
+                        mock.patch.object(sys, "argv", [*base, *mode]), mock.patch.object(b.dip, "load_local_env"),
+                        mock.patch.object(b, "fetch_protocols", side_effect=AssertionError("DIP was asked")),
+                        mock.patch.object(b, "render_site") as render, contextlib.redirect_stderr(io.StringIO()) as err,
+                    ):
+                        self.assertEqual(b.main(), 1)
+                    render.assert_not_called()
+                    self.assertIn("BUNDESTAG_PULSE_OPERATOR_FILE is set but empty" if not value else "tippfehler.json", err.getvalue())
 
     # Value: protects=with neither --operator-file nor $BUNDESTAG_PULSE_OPERATOR_FILE there is no operator data (placeholders), the flag beats the env, and a set path that does not exist stops main() with exit 1 naming the path before any page is written; fails_when=a mistyped path renders an Impressum of placeholders with exit 0, or the env var is ignored; why_new=eng review D3 A; seam=resolve_operator, main; no_claim=what the pages say
     def test_operator_resolution_and_a_missing_path_stops_the_build(self) -> None:

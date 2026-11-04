@@ -13808,7 +13808,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Local JSON file with the operator's name, address, e-mail, hosting and supervisory authority for "
             "impressum.html and datenschutz.html (or $BUNDESTAG_PULSE_OPERATOR_FILE). Keep it outside git; "
-            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders."
+            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders; "
+            "an empty value is an error, not 'without it'."
         ),
     )
     parser.add_argument(
@@ -13885,6 +13886,9 @@ OPERATOR_OBJECTS = {
 }
 OPERATOR_URL_FIELDS = ("hosting.privacy_url", "supervisory_authority.url")
 OPERATOR_MAX_LENGTH = 300
+# A real operator file is under 1 KiB; the cap keeps a wrong path (a log, a
+# database, /dev/zero) from filling memory.
+OPERATOR_FILE_MAX_BYTES = 64 * 1024
 _OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
 
 
@@ -13903,9 +13907,29 @@ def _operator_url(value: str) -> bool:
 
 def load_operator(path: Path) -> dict[str, str]:
     """The operator's values, flattened (``hosting.provider``); absent fields
-    are left out and render as placeholders. Raises OperatorFileError."""
+    are left out and render as placeholders. Raises OperatorFileError. No
+    message echoes a value from the file."""
+
+    def no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        # The last of two equal keys would silently win (a pasted-twice email).
+        seen: set[str] = set()
+        for key, _value in pairs:
+            if key in seen:
+                raise OperatorFileError(f"--operator-file {path}: the field {key!r} appears twice")
+            seen.add(key)
+        return dict(pairs)
+
     try:
-        raw = json.loads(path.read_bytes().decode("utf-8"))
+        # stat first: opening a FIFO would block, and /dev/zero never ends.
+        if not stat_module.S_ISREG(path.stat().st_mode):
+            raise OperatorFileError(f"--operator-file {path} is not a regular file")
+        with path.open("rb") as handle:
+            data = handle.read(OPERATOR_FILE_MAX_BYTES + 1)
+        if len(data) > OPERATOR_FILE_MAX_BYTES:
+            raise OperatorFileError(f"--operator-file {path} is larger than {OPERATOR_FILE_MAX_BYTES // 1024} KiB")
+        raw = json.loads(data.decode("utf-8"), object_pairs_hook=no_duplicates)
+    except OperatorFileError:
+        raise
     except OSError as exc:
         raise OperatorFileError(f"--operator-file {path} cannot be read: {exc.strerror or exc}") from exc
     except UnicodeDecodeError as exc:
@@ -13945,7 +13969,7 @@ def load_operator(path: Path) -> dict[str, str]:
         if any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
             raise OperatorFileError(f"--operator-file {path}: {field} contains a control character")
         if field == "email" and not _OPERATOR_EMAIL_RE.fullmatch(value):
-            raise OperatorFileError(f"--operator-file {path}: email {value!r} is not an e-mail address")
+            raise OperatorFileError(f"--operator-file {path}: email is not an e-mail address")
         if field in OPERATOR_URL_FIELDS and not _operator_url(value):
             raise OperatorFileError(f"--operator-file {path}: {field} must be an https:// URL without credentials")
         operator[field] = value
@@ -13954,11 +13978,22 @@ def load_operator(path: Path) -> dict[str, str]:
 
 # CLI > env; neither set means no operator data (placeholders). A path that
 # is set but cannot be read stops the build (D3 A): a typo must not publish an
-# Impressum without its address.
+# Impressum without its address. Set to an empty value stops it too: an unset CI
+# secret expands to "", and "not set" would build placeholder legal pages with
+# exit 0, so only None counts as not set.
 def resolve_operator(args: argparse.Namespace) -> dict[str, str] | None:
-    raw = getattr(args, "operator_file", None) or os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
-    if not raw:
+    raw = getattr(args, "operator_file", None)
+    source = "--operator-file"
+    if raw is None:
+        raw = os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
+        source = "$BUNDESTAG_PULSE_OPERATOR_FILE"
+    if raw is None:
         return None
+    if not str(raw).strip():
+        raise OperatorFileError(
+            f"{source} is set but empty (an unset CI secret expands to nothing). "
+            "Fix: name the operator file, or unset it for placeholder pages"
+        )
     return load_operator(Path(raw))
 
 
@@ -14189,12 +14224,6 @@ def main() -> int:
         print(f"validated: {args.validate_publication}")
         return 0
 
-    # Before any work: a mistyped operator path stops here, naming the path.
-    try:
-        operator = resolve_operator(args)
-    except OperatorFileError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
     if getattr(args, "fetch_xml", False):
         if not coverage_exclusions_readable(args.output_dir):
             return 1
@@ -14233,8 +14262,15 @@ def main() -> int:
     # --explain-config modes above do not read it, so it does not block them.
     if not coverage_exclusions_readable(args.output_dir):
         return 1
-    # The export runs from here on (--fetch-xml has returned), and so do its
-    # refusals: stop on a bad URL or tag now, not after the fetch and the persist.
+    # Everything below renders pages: --validate-publication, the listing modes
+    # and --fetch-xml have returned, so a stale $BUNDESTAG_PULSE_OPERATOR_FILE
+    # does not block them. A mistyped operator path stops here, naming the path,
+    # and so does a bad data option, not after the fetch and the persist.
+    try:
+        operator = resolve_operator(args)
+    except OperatorFileError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     try:
         validate_data_export_options(args)
     except (ValueError, RuntimeError) as exc:
