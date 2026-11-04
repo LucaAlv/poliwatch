@@ -69,7 +69,7 @@ Die Zeiträume werden nach festen Regeln gebildet:
 
 Die Sitze eines Zusammenschlusses an einem Tag sind die `party_seats`-Zeile seiner Wahlperiode mit `valid_from` ≤ Tag und leerem oder späterem `valid_until`; jede Zahl lässt sich aus den `mdb_zugehoerigkeiten`-Zeilen, die diesen Tag abdecken, nachzählen. Die Abfrage muss die Wahlperiode mit angeben: Der letzte Mandatstag einer Wahlperiode ist der Tag der konstituierenden Sitzung der nächsten und liegt daher in beiden. Gibt es keine Zeile, gibt es für diesen Tag keine Sitzzahl; sie ist nicht null.
 
-Das Rezept `r2-redeanteil-fraktion` stellt daraus je Wahlperiode den mittleren Sitzanteil (`sitzanteil_prozent`) neben den Redeanteil; seine Definition steht im Abschnitt „Veröffentlichte SQL-Rezepte“.
+Das Rezept `r2-textanteil-fraktion` stellt daraus je Wahlperiode den mittleren Sitzanteil (`sitzanteil_prozent`) neben den Textanteil (`anteil_prozent`, Anteil an den Zeichen der Reden); seine Definition steht im Abschnitt „Veröffentlichte SQL-Rezepte“.
 
 **Stand.** Die Datei hat einen Stand, der in `mdb_stammdaten_stand` (mit dem sha256 der geladenen Datei), im Manifest unter `stammdaten` und auf der Daten-Seite steht. Spätere Wechsel, Austritte und Nachrücker fehlen, bis der Bundestag die Datei neu veröffentlicht. Zeiträume, die zum Stand offen sind, gelten über den Stand hinaus fort: Für spätere Tage liefert die Abfrage die Zusammensetzung am Stand. Ohne geladene Datei sind alle drei Tabellen leer, `stammdaten` im Manifest ist `null`, und die Daten-Seite sagt „Sitzzahlen: keine (MdB-Stammdaten nicht geladen)“.
 
