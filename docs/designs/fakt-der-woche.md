@@ -5,6 +5,7 @@ Branch: main
 Repo: LucaAlv/poliwatch
 Status: APPROVED
 Mode: Builder
+Superseded in part: A4 slice 0 (v0.29.0.0) removed `--no-persist`; the passages that mention it describe the design as approved.
 
 ## Problem Statement
 

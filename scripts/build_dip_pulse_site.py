@@ -721,6 +721,17 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
 # report with no store row; require_current_speech_rules only sees sittings the
 # store already holds. Matched on the protocol id, the key persist and the
 # rebuild's missing-evidence check use.
+# What the offline render adds to a coverage refusal (A4 slice 0 review, d): an
+# online update into the same directory writes its reports and its exclusion
+# record before its staged rebuild swaps the store, so a render in between sees
+# a gap the update is about to close. The writer lock covers only the rebuild,
+# not the fetch before it, so a lock probe would miss most of that window.
+CONCURRENT_UPDATE_NOTE = (
+    "If an online update into this directory is still running, wait for it to finish, then re-run: "
+    "it writes its reports and exclusions before it replaces the store."
+)
+
+
 def store_coverage_gap(
     store: sqlite3.Connection, entries: list[dict[str, Any]], *, excluded: Collection[str] = (), limit: int = 5
 ) -> str | None:
@@ -751,7 +762,9 @@ def store_coverage_gap(
     if not_stored:
         parts.append(
             f"{len(not_stored)} cached report(s) are not in the store ({named(not_stored)}). "
-            "Fix: run --offline --repersist to rebuild the store from the cached reports."
+            "Fix: run --offline --repersist to rebuild the store from the cached reports. If that refuses a report, "
+            "follow the Fix it prints. A cached report the store does not hold can instead be moved out of data/, "
+            "and any sitting can be kept out with --exclude-document-number in an online run."
         )
     if not_reported:
         parts.append(
@@ -1242,6 +1255,24 @@ def cached_report_fix(exc: CachedReportError) -> str:
     if len(exc.numbers) == 1:
         return f"Fix: move that report out of data/, then re-fetch its sitting with an online update and {flags}"
     return f"Fix: move those reports out of data/, then re-fetch their sittings with an online update and {flags}"
+
+
+# A --backfill-incomplete run stopped by a cached report: parse_args refuses
+# --document-number beside --backfill-incomplete, so a fix that names it says it
+# is a run of its own. A re-run of the backfill acquires a sitting whose report
+# was moved out only where incomplete_sitting_protocols selects it.
+BACKFILL_DOCUMENT_NUMBER_NOTE = (
+    "run --document-number as its own online update: it cannot be combined with --backfill-incomplete. "
+    "A re-run of --backfill-incomplete acquires the sitting again only if it is from Wahlperiode 18 on, "
+    "inside --protocol-wahlperiode, not excluded, and DIP lists its XML"
+)
+
+
+def backfill_report_fix(exc: CachedReportError) -> str:
+    """``cached_report_fix`` for a --backfill-incomplete run: the same fix, plus
+    BACKFILL_DOCUMENT_NUMBER_NOTE where it names --document-number."""
+    fix = cached_report_fix(exc)
+    return f"{fix} ({BACKFILL_DOCUMENT_NUMBER_NOTE})" if "--document-number" in fix else fix
 
 
 # Collect cached dossiers from data/ for the given protocols (every online build
@@ -14300,11 +14331,18 @@ def main() -> int:
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
         # F7 (A4): the pages read the store, so an offline render needs one;
-        # --repersist has just built it. Refused before anything is written.
+        # --repersist has just built it. Refused before any page or store is
+        # written; the output directories already exist, and the cache loads
+        # above may have moved a corrupt cache aside. A lost store is restored,
+        # not rebuilt: a rebuild allocates person keys anew and, with no store to
+        # carry it over, keeps no MdB roster (_read_roster_rows).
         if not database_path.exists():
             print(
                 f"error: no store at {database_path}; the offline render reads it. "
-                "Fix: run --offline --repersist to build it from the cached reports, or an online update.",
+                "Fix: if a store was there before, restore it from a backup (docs/stable-ids.md, \"Backup and recovery\"): "
+                "a rebuilt store issues its person keys anew, so person keys and page URLs can change. "
+                "Otherwise build one: --offline --repersist builds it from the cached reports without the MdB roster; "
+                "an online update with --enrich mp-roster fetches the roster too.",
                 file=sys.stderr,
             )
             return 1
@@ -14319,7 +14357,7 @@ def main() -> int:
             pulse_store.require_current_schema(store)
             coverage_gap = store_coverage_gap(store, cached_entries, excluded=recorded_exclusions(output_dir))
             if coverage_gap:
-                print(f"error: {coverage_gap}", file=sys.stderr)
+                print(f"error: {coverage_gap} {CONCURRENT_UPDATE_NOTE}", file=sys.stderr)
                 return 1
             if "mp-pages" in features:
                 component_context = {
@@ -14454,7 +14492,7 @@ def main() -> int:
             try:
                 stored_entries = load_existing_detail_entries(output_dir, protocols)
             except CachedReportError as exc:
-                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
                 stored_entries,
@@ -14514,7 +14552,8 @@ def main() -> int:
                 if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in listed
             ]
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
+            fix = backfill_report_fix(exc) if getattr(args, "backfill_incomplete", False) else cached_report_fix(exc)
+            print(f"ERROR [cached input]: {exc}. {fix}", file=sys.stderr)
             return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
@@ -14581,7 +14620,9 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [persist]: {exc}. The previous store is untouched "
-                    f"(Dossiers wurden bereits geschrieben, puls.html nicht). {cached_report_fix(exc)}.",
+                    "(Dossiers wurden bereits geschrieben, puls.html nicht). "
+                    + (backfill_report_fix(exc) if getattr(args, "backfill_incomplete", False) else cached_report_fix(exc))
+                    + ".",
                     file=sys.stderr,
                 )
                 return 1

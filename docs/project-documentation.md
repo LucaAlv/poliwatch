@@ -527,9 +527,17 @@ python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
   --refresh-summaries \
   --summary-provider gemini
 
-# Preview one sitting without touching the site you serve: build into a clone
-# copy of the output directory (README "Try a fetch or a backfill in a scratch directory").
+# Preview one sitting without touching the site you serve: build into a copy of
+# the output directory (README "Try a fetch or a backfill in a scratch directory").
+# This is an online run: it needs DIP_API_KEY, rebuilds the copy's whole store from
+# every cached report, recomputes the facts and runs the Daten export step, so on a
+# full-size copy it takes many minutes, not one sitting's worth.
+# cp -c is a macOS/APFS clone copy; elsewhere use: cp -R --reflink=auto ...
 cp -cR .context/dip-pulse-site .context/scratch
+# The cached MdB-Stammdaten live in the private directory beside the output
+# directory; without them the copy's seat tables stay empty.
+mkdir -p .context/.scratch.private
+cp .context/.dip-pulse-site.private/mdb-stammdaten.* .context/.scratch.private/
 python3 scripts/build_dip_pulse_site.py --output-dir .context/scratch --document-number 21/87
 ```
 
@@ -629,7 +637,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written; build the store with `--offline --repersist` or an online update. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (9), including one without `votes.debate_url`, the quoted Antrag-passage fields or the seat tables, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written. If a store was there before, restore it from a backup ([Backup and recovery](stable-ids.md#backup-and-recovery)): a rebuilt store issues its person keys anew. Otherwise build one with `--offline --repersist` (no MdB roster) or an online update with `--enrich mp-roster`. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (9), including one without `votes.debate_url`, the quoted Antrag-passage fields or the seat tables, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
