@@ -2693,8 +2693,13 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 self.assertIn("ERROR [cached input]: ", stderr.getvalue())
                 self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
                 self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
-                if not backfill:
-                    self.assertIn("--document-number 21/82", stderr.getvalue())
+                # Both runs name the sitting's own number; the backfill run says
+                # it is a separate update, because parse_args refuses the pair.
+                self.assertIn("--document-number 21/82", stderr.getvalue())
+                self.assertNotIn("<its number>", stderr.getvalue())
+                self.assertEqual(
+                    "cannot be combined with --backfill-incomplete" in stderr.getvalue(), backfill
+                )
 
     # Value: protects=the printed fix names every refused sitting's number and falls back to a placeholder only when none is known; fails_when=cached_report_fix drops a number or prints "--document-number" for an unnumbered report; why_new=TODOS "Stale cached-report error lines: polish"; seam=none
     def test_the_cached_report_fix_names_each_known_number(self) -> None:
@@ -2708,6 +2713,22 @@ class LegacyVoteShapeTests(unittest.TestCase):
             "--document-number 21/82 --document-number 21/83",
             fix(error("x", ["21/82", "21/83"])),
         )
+
+    # Value: protects=a --backfill-incomplete run's fix keeps the error's own fix and numbers and, wherever it names --document-number, says that flag is a separate run (parse_args refuses it beside --backfill-incomplete) and when a backfill re-run acquires the sitting again; fails_when=backfill_report_fix drops exc.fix or a number, or appends the note to a fix without --document-number; why_new=TODOS "Stale cached-report error lines: polish" point 1; seam=none
+    def test_the_backfill_fix_says_document_number_is_a_separate_run(self) -> None:
+        fix = build_dip_pulse_site.backfill_report_fix
+        error = build_dip_pulse_site.CachedReportError
+        note = build_dip_pulse_site.BACKFILL_DOCUMENT_NUMBER_NOTE
+        one = fix(error("x", ["21/82"]))
+        self.assertTrue(one.startswith(build_dip_pulse_site.cached_report_fix(error("x", ["21/82"]))))
+        self.assertTrue(one.endswith(f"({note})"))
+        self.assertIn("--document-number 21/82 --document-number 21/83", fix(error("x", ["21/82", "21/83"])))
+        own = "Fix: run --fetch-xml, then --offline --repersist; 1 of them have no xml_url: move them out of data/, then re-fetch their sittings with an online update and --document-number 21/82"
+        self.assertEqual(fix(error("x", fix=own)), f"{own} ({note})")
+        self.assertEqual(fix(error("x", fix="Fix: delete the XML")), "Fix: delete the XML")
+        # The note names each condition incomplete_sitting_protocols and main apply.
+        for condition in ("Wahlperiode 18", "--protocol-wahlperiode", "not excluded", "XML"):
+            self.assertIn(condition, note)
 
 
     # Value: protects=a refusal of stale-rule reports tells the operator to fetch the missing XML, and names for a re-fetch only the reports that have no xml_url; fails_when=the fix tells the operator to move every stale report out of data/ (a whole pre-A1 cache) when --fetch-xml would do; why_new=code review of the cached-report polish (2026-10-30); seam=none
@@ -3988,6 +4009,8 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             self.assertEqual(stderr.count("predate the current speech-counting rule"), 1)
             self.assertIn("1 of 2 cached reports predate", stderr)
             self.assertIn("1 cached report(s) are not in the store (20/998)", stderr)
+            self.assertIn("If that refuses a report, follow the Fix it prints", stderr)
+            self.assertIn(build_dip_pulse_site.CONCURRENT_UPDATE_NOTE, stderr)
             self.assertFalse((output_dir / "puls.html").exists())
             old["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
             path.write_text(json.dumps(old), encoding="utf-8")
@@ -4014,7 +4037,10 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             code, stderr = self._build(output_dir)
             self.assertEqual(code, 1, stderr)
             self.assertIn(f"no store at {_site_store_fixture.store_path(output_dir)}", stderr)
-            self.assertIn("Fix: run --offline --repersist", stderr)
+            # A lost store is restored first; a rebuild is the fallback.
+            self.assertIn("restore it from a backup", stderr)
+            self.assertLess(stderr.index("restore it from a backup"), stderr.index("--offline --repersist"))
+            self.assertIn("--enrich mp-roster", stderr)
             self.assertNotIn("Traceback", stderr)
             self.assertNotIn("unable to open database file", stderr)
             self.assertFalse((output_dir / "puls.html").exists())
@@ -4173,6 +4199,11 @@ class StoreCoverageGapTests(unittest.TestCase):
         store = self._store([(f"s-{n}", f"21/{n}") for n in range(1, 8)])
         gap = build_dip_pulse_site.store_coverage_gap(store, self._entries(("r-1", "20/1")), limit=5)
         self.assertIn("1 cached report(s) are not in the store (20/1). Fix: run --offline --repersist", gap)
+        self.assertIn("A cached report the store does not hold can instead be moved out of data/", gap)
+        self.assertIn("--exclude-document-number in an online run", gap)
+        # Only the offline render adds the concurrent-update note: the online run
+        # and the demo build are the writers themselves.
+        self.assertNotIn(build_dip_pulse_site.CONCURRENT_UPDATE_NOTE, gap)
         self.assertIn("7 stored sitting(s) have no cached report (21/1, 21/2, 21/3, 21/4, 21/5 and 2 more)", gap)
 
     def test_a_stored_sitting_recorded_as_excluded_is_its_own_case(self) -> None:

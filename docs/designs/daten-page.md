@@ -5,6 +5,7 @@ Branch: fix-datenbank
 Repo: LucaAlv/poliwatch
 Status: APPROVED
 Mode: Builder
+Superseded in part: A4 slice 0 (v0.29.0.0) removed `--no-persist`; the passages that mention it describe the design as approved.
 Builds on: docs/design/bundestag-pulse-design.md (2026-06-15, "a civic radar, not a database")
 Plan (reviewed): ~/.gstack/projects/LucaAlv-poliwatch/fix-datenbank-plan.md (APPROVED 2026-09-18 at the /autoplan gate; four addenda refine the Steps; aggregated tasks in aggregated-tasks-fix-datenbank.md)
 Wireframe: ~/.gstack/projects/LucaAlv-poliwatch/designs/daten-page-20260915/sketch.png (real numbers from the 2026-09-14 build; current-state screenshots next to it)

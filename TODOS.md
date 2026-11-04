@@ -443,20 +443,40 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 - (a) **The coverage check matches sitting ids only.** `store_coverage_gap` (`build_dip_pulse_site.py:691`) compares the protocol ids, not the content. An online run that refreshes an already-stored sitting (backfill, narrowed `--document-number`, vote enrichment) and then fails its staged rebuild leaves new report JSON beside the old store row, and the offline render passes. Dossiers and `puls.html` then come from the new JSON, while MP pages, facts and the export come from the old store. This predates slice 0, and each later slice that moves a page onto the store shrinks it. The fix is a per-protocol report digest recorded at persist (like `speech_rule_inputs`) and compared in the check.
 - (b) **The online call site of `store_coverage_gap`** (after `rebuild_database_from_entries`, `main`) has no refusal test, because `test_backfill.py` mocks the function. It can only fail after the store swap and the first dossier pass. Either move it before the swap or drop it as tautological (the rebuild already refuses missing evidence), and test whichever stays.
 - (c) **One key, one function:** the rebuild's missing-evidence check keys on the raw `str(protocol["id"])` (`_rebuild_database_from_entries`), while `persist_report` and `store_coverage_gap` use `pulse_store.clean`. A report with a blank id, or two reports with different ids but one `dokumentnummer`, ends in a refusal `--offline --repersist` cannot cure. Strict repersist and the lenient render load (`load_existing_detail_entries`) also disagree on unreadable or numberless reports. All latent: DIP ids are numeric strings.
-- (d) **Refusal text:** the not-stored case names only `--offline --repersist`. When that repersist fails on the same report (pre-A1 without XML, new Sprechrolle), the text should also name moving the report out of `data/` or excluding the sitting in an online run. While an online update runs in another terminal, the offline check can see its fresh reports before the swap and give the same wrong advice. Say "if an online update is running, wait for it", or probe `registry.writer_lock`. (The lockout itself is R2's intent, plan O6.)
-- (e) The F7 comment "Refused before anything is written" overstates. `main` has already created the output directories, and the Antrag and Politikfeld cache loads can quarantine a corrupt cache. Say "before any page or store is written".
-- (f) `docs/project-documentation.md`'s scratch-preview example is an online run: it needs `DIP_API_KEY`, does a full staged rebuild and export, and `cp -c` is macOS-only. Say so, and add the README recipe's non-macOS copy command.
+- ~~(d) **Refusal text:** the not-stored case names only `--offline --repersist`. When that repersist fails on the same report (pre-A1 without XML, new Sprechrolle), the text should also name moving the report out of `data/` or excluding the sitting in an online run. While an online update runs in another terminal, the offline check can see its fresh reports before the swap and give the same wrong advice. Say "if an online update is running, wait for it", or probe `registry.writer_lock`. (The lockout itself is R2's intent, plan O6.)~~ **Done 2026-11-04:** the not-stored case also says to follow the repersist's own Fix, to move a not-stored report out of `data/` or to exclude the sitting; the offline render adds `CONCURRENT_UPDATE_NOTE` (wait for a running online update). Wording, not a lock probe: the writer lock covers only the rebuild, not the fetch before it.
+- ~~(e) The F7 comment "Refused before anything is written" overstates. `main` has already created the output directories, and the Antrag and Politikfeld cache loads can quarantine a corrupt cache. Say "before any page or store is written".~~ **Done 2026-11-04:** the comment says "before any page or store is written" and names the directories and the cache quarantine.
+- ~~(f) `docs/project-documentation.md`'s scratch-preview example is an online run: it needs `DIP_API_KEY`, does a full staged rebuild and export, and `cp -c` is macOS-only. Say so, and add the README recipe's non-macOS copy command.~~ **Done 2026-11-04:** the example says it is an online run (`DIP_API_KEY`, whole-store rebuild, facts, export step), gives the non-macOS copy and copies the MdB-Stammdaten cache into `.context/.scratch.private/`; the README recipe does the same.
 - ~~(g) Test hygiene: `tests/_site_store_fixture.py` `store_people` has no caller, and `build_site_store`'s `today`, `vorgang_cache` and `catalog` parameters are never passed. Slice 1 either uses them or drops them.~~ **Done 2026-11-03** (A4 slice 1): `vorgang_cache` is used by `archive_rows` and the Politikfeld render test; `store_people` is used by the demo test; `today` (now the module's `TODAY`) and `catalog` are gone.
-- (h) **The F7 refusal does not mention a backup.** `error: no store at …` names `--offline --repersist` first. For a store that was lost rather than never built, that repersist starts a fresh person registry (new keys and aliases, no roster); `docs/stable-ids.md` "Backup and recovery" says to restore the build store instead. Say "restore the store from a backup if you have one; otherwise …" in the message and the README row.
-- (i) Design records still describe `--no-persist` as live: `docs/designs/daten-page.md` (lines 214, 228, 258, 298, 351-352, 420, 441) and `docs/designs/fakt-der-woche.md:311`. Add a one-line "superseded by A4 slice 0 (v0.29.0.0): `--no-persist` removed" note to each.
+- ~~(h) **The F7 refusal does not mention a backup.** `error: no store at …` names `--offline --repersist` first. For a store that was lost rather than never built, that repersist starts a fresh person registry (new keys and aliases, no roster); `docs/stable-ids.md` "Backup and recovery" says to restore the build store instead. Say "restore the store from a backup if you have one; otherwise …" in the message and the README row.~~ **Done 2026-11-04:** the refusal, its README row and `docs/project-documentation.md` say to restore a backup first, that a rebuilt store issues person keys anew, and that a repersist without a store has no MdB roster (`--enrich mp-roster`).
+- ~~(i) Design records still describe `--no-persist` as live: `docs/designs/daten-page.md` (lines 214, 228, 258, 298, 351-352, 420, 441) and `docs/designs/fakt-der-woche.md:311`. Add a one-line "superseded by A4 slice 0 (v0.29.0.0): `--no-persist` removed" note to each.~~ **Done 2026-11-04:** both records carry a "Superseded in part" line under their header.
 
 **Why:** Each is a robustness or wording gap with no current input that moves a figure. (a) is the largest: it can leave pages that disagree with each other after a failed online refresh.
 
 **Context:** The review's real-store smoke run (A3 full clone, `--offline --repersist` then `--offline`) is recorded in the review log. Codex reviewed the same tip (`codex review --base main`, read-only sandbox) and found no actionable regressions; it ran 11 targeted tests, and the sandbox blocked its full-suite run (the review's own run passed 1914).
 
-**Effort:** S each; (a) M
-**Priority:** P2 for (a); P3 for the rest
+**Effort:** (a) M; (b), (c) S
+**Priority:** P2 for (a); P3 for (b) and (c)
 **Depends on:** A4 slice 0 merged
+
+### A stale cached report of an excluded sitting stops every build
+
+**What:** `load_existing_detail_entries` runs `derive.require_vote_shape` on every cached report of the catalog before any caller drops the reviewed exclusions (D2): the `--backfill-incomplete` scan and the existing-entries merge in `main` (`build_dip_pulse_site.py`, both filter `listed` afterwards) and the offline load (`without_recorded_exclusions(load_existing_detail_entries(...))`). An excluded sitting keeps its cached report (`update_coverage_exclusions` deletes none), so a report of it with a stale vote shape stops online, backfill and offline runs with `ERROR [cached input]`, and the printed fix (re-fetch with `--document-number`, or a backfill re-run) acquires nothing for a listed sitting. Pass the exclusions into the load, or skip listed sittings before `require_vote_shape`.
+
+**Why:** Found by the plan review of the refusal-message batch (2026-11-04). Latent: it needs a stale vote shape in the report of a listed sitting, and moving that report out of `data/` is a working manual fix.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### "Validate a data correction" copies no private directory, so `after` loses the seat tables
+
+**What:** The README recipe "Validate a data correction" copies `.context/dip-pulse-site` to `.context/baseline` and `.context/after` with `cp -cR`, which leaves out `.context/.dip-pulse-site.private/` and the MdB-Stammdaten cache in it (`stammdaten.cache_path`). A rebuild of `after` (`--offline --repersist` or an online run) then finds no cache and leaves `mdb_zugehoerigkeiten` and `party_seats` empty (`build_dip_pulse_site.py`, the `[stammdaten] keine Sitzzahlen` warning), while `baseline` keeps the copied rows, so `compare_store_values.py` reports the seat tables as moved. Copy `mdb-stammdaten.*` into `.context/.baseline.private/` and `.context/.after.private/` as the scratch recipe now does, or have the compare say that the cache was missing.
+
+**Why:** Found by the same plan review (2026-11-04); the scratch-directory recipe was fixed in that change, this sibling predates it.
+
+**Effort:** S
+**Priority:** P2 (it makes a replay report a figure move that is not one)
+**Depends on:** None
 
 ## Protokoll-Dossier
 
@@ -1274,16 +1294,6 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Priority:** P2
 **Depends on:** None
 
-### Stale cached-report error lines: polish
-
-**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290). Points 2–4 are done (v0.23.6.0, 2026-10-29): a refusal whose remedy is a re-fetch prints the report's own number (`cached_report_fix`, `--document-number 21/82`), the stale-rule refusal says `--fetch-xml` and names for a re-fetch only the reports without an `xml_url`, an unknown contribution kind keeps its own remedy (`--offline --repersist`), the `[repersist]` remedy comes from the same helper and is asserted in full, `require_vote_shape` names the holder ("TOP 3: …", "sitting_votes: …") with a test for the `sitting_votes` branch, and README.md and the stale-rule refusal no longer promise that a plain update re-fetches a deleted report. Left:
-1. The `--backfill-incomplete` stop still prints `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`. Give that call site "move it out of data/ and re-run `--backfill-incomplete`" through `cached_report_fix`. Do it on or after `worktree-a3-plan`, which rewrites that block of `main()` and adds `--exclude-document-number` (which may be the better remedy).
-
-**Why:** These lines are the only guide out of a stopped build; each should name a command that works.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** `worktree-a3-plan` merged (it rewrites the backfill block of `main()`)
 ### Vote panel tail (batch 6): deferred review findings
 
 **What:** The /gstack-review of `fix/todo-batch-6-vote-panel-tail` (2026-11-01) found three things. (1) `test_a_huge_abstract_is_read_in_bounded_time` keeps a 0.5 s wall-clock bound, `self.assertLess(time.perf_counter() - started, 0.5)`, and now covers two 1.8M-character script-close inputs as well. Add a `gstack-timing-ok` reason or bound the operation count. (2) The `@media print` block does not open `details.vote-context-overflow`, or the abstract fold, so folded Vorgänge are missing on paper. (3) A folded block with a record but no abstract and no Antrag text keeps its `CONTEXT_TEXT_NOT_FETCHED` note inside the fold. The DD3 trailing note covers only a missing record. From the v0.28.0.0 /ship (2026-11-01): (4) `render_vote_context`'s docstring does not mention the fold or where the gap note sits; (5) `test_context_toggles_show_their_state_and_folded_blocks_stay_separated` asserts exact CSS strings, so a reformat breaks it; a browser check of the computed `::before` content and the 44 px target would prove the behaviour.
@@ -1551,6 +1561,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Stale cached-report error lines: polish
+
+Done 2026-11-04. Points 2–4 were done in v0.23.6.0 (2026-10-29). Point 1: the `--backfill-incomplete` stop printed `CACHED_REPORT_FIX`, whose `--document-number <its number>` is a placeholder and a flag `parse_args` refuses beside `--backfill-incomplete`. `backfill_report_fix` now gives the error's own fix with the sitting's number and, where that fix names `--document-number`, adds that it is a separate online update and when a backfill re-run acquires the sitting again (from Wahlperiode 18 on, inside `--protocol-wahlperiode`, not excluded, DIP lists its XML). The scan, the existing-entries merge and the `ERROR [persist]` stop of a backfill run use it. No figure moves.
 
 ### A malformed coverage-exclusions.json ends a build with a traceback
 
