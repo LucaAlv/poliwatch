@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0.0] - 2026-11-04
+
+### Changed
+
+- **`votes/index.html` renders from the SQLite store, not the cached report JSON.** The archive runs the same vote rules as the dossier panel (`merge_fractions`, the Fraktion positions, the Abweichler count, the procedure type, the Politikfeld state, the Drucksache links) on stored rows. On the reference store (619 votes) every archive row is identical to the old one, and the archive agrees with the dossier panel on every vote's result badge, Drucksache links and Abweichler figure. The header and footer now say the list covers the namentliche Abstimmungen of the sittings in this build's database, which are only sittings with a Dossier.
+- **The archive's Politikfelder come from the store.** A refreshed Vorgang cache reaches them only with a repersist; puls.html still reads the cache at render time.
+- **Store schema 10 and export format 14.** The store now keeps what the archive needs: the order of a vote's Drucksachen and Fraktionen (`vote_documents.rank`, `vote_fractions.rank`) and each agenda item's own Drucksache url and order (`agenda_item_documents.url`, `agenda_item_documents.rank`). An existing store is refused until `--offline --repersist` rebuilds it, and the first export after this release re-exports once.
+- **A vote total the source did not give is stored as NULL, not 0** (`votes.yes_count`, `no_count`, `abstain_count`, `absent_count`). The roll-call listing parser no longer pads a missing count with 0, and persist reads a total of four zeros (what older cached reports carry for a listing without chart values) as missing too: a real roll-call's counts add up to the seats. An Abweichler count can no longer rest on an invented zero, on the archive or the dossier panel, and recipe r4 leaves such votes out instead of ranking them first as the closest vote; the Fakten already skipped them (`yes + no > 0`). The reference-store replay, run before the four-zeros rule, found no NULL total; the count of four-zero totals there is still to be replayed. `scripts/compare_store_values.py` lists every vote whose total moved from 0 to NULL.
+
+### Removed
+
+- `collect_votes_archive`, `VotesComponent.write_pages` and the votes archive's feature-selection callables. `render_site` calls the archive writer directly.
+
 ## [0.31.0.0] - 2026-11-02
 
 ### Added

@@ -71,7 +71,6 @@ import contextlib
 import copy
 import csv
 import gzip
-import glob
 import hashlib
 import io
 import json
@@ -80,7 +79,6 @@ import shlex
 import re
 import shutil
 import sqlite3
-import subprocess
 import stat as stat_module
 import sys
 import tempfile
@@ -129,12 +127,10 @@ from stable_ids import (
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
     ENRICHMENT_REGISTRY,
-    REGISTRY,
     EnrichmentSelection,
     FeatureError,
     Selection,
     publication_selection,
-    resolve,
 )
 from features import loader as feature_loader
 from features import votes as votes_feature
@@ -178,9 +174,6 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
     "fact_sources": "Belege je Fakt: Reden, Tagesordnungspunkte, Abstimmungen, Sitzungen oder Drucksachen, aus denen der Wert stammt.",
 }
-
-ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
-
 
 # ---------------------------------------------------------------------------
 # Document numbers, slugs and sort keys
@@ -666,17 +659,43 @@ def backfill_scope_lines(
 COVERAGE_EXCLUSIONS_FILENAME = "coverage-exclusions.json"
 
 
+class CoverageExclusionsError(Exception):
+    """The exclusion record (D2) cannot be read. ``main`` reads it before any
+    work and prints this instead of a traceback; the record is hand-editable."""
+
+
+def coverage_exclusions_readable(output_dir: Path) -> bool:
+    """False, after printing the error line, when ``main`` must stop because the
+    exclusion record cannot be read; checked once before a path that reads it."""
+    try:
+        load_coverage_exclusions(output_dir)
+    except CoverageExclusionsError as exc:
+        print(f"error: {exc}. Fix: repair the file, then re-run.", file=sys.stderr)
+        return False
+    return True
+
+
 def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     """The reviewed sittings of ``--exclude-document-number`` kept out of the
-    store (D2), oldest first; empty when the record does not exist."""
+    store (D2), oldest first; empty when the record does not exist. Raises
+    CoverageExclusionsError for a record that is not ``{"exclusions": [...]}``
+    with a ``document_number`` on every entry."""
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
+    shape = 'it must read {"exclusions": [{"document_number": "21/7", ...}, ...]}'
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
+    # ValueError covers JSONDecodeError, UnicodeDecodeError and an integer past the digit limit.
+    except (OSError, ValueError, RecursionError) as exc:
+        raise CoverageExclusionsError(f"{path} cannot be read ({exc}); {shape}") from exc
     entries = payload.get("exclusions") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
-        raise RuntimeError(f"{path} has no exclusions list")
+        raise CoverageExclusionsError(f"{path} has no exclusions list; {shape}")
+    for position, entry in enumerate(entries, 1):
+        number = entry.get("document_number") if isinstance(entry, dict) else None
+        if not isinstance(number, str) or not number.strip():
+            raise CoverageExclusionsError(f"{path}: exclusion {position} has no document_number; {shape}")
     return entries
 
 
@@ -702,6 +721,17 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
 # report with no store row; require_current_speech_rules only sees sittings the
 # store already holds. Matched on the protocol id, the key persist and the
 # rebuild's missing-evidence check use.
+# What the offline render adds to a coverage refusal (A4 slice 0 review, d): an
+# online update into the same directory writes its reports and its exclusion
+# record before its staged rebuild swaps the store, so a render in between sees
+# a gap the update is about to close. The writer lock covers only the rebuild,
+# not the fetch before it, so a lock probe would miss most of that window.
+CONCURRENT_UPDATE_NOTE = (
+    "If an online update into this directory is still running, wait for it to finish, then re-run: "
+    "it writes its reports and exclusions before it replaces the store."
+)
+
+
 def store_coverage_gap(
     store: sqlite3.Connection, entries: list[dict[str, Any]], *, excluded: Collection[str] = (), limit: int = 5
 ) -> str | None:
@@ -732,7 +762,9 @@ def store_coverage_gap(
     if not_stored:
         parts.append(
             f"{len(not_stored)} cached report(s) are not in the store ({named(not_stored)}). "
-            "Fix: run --offline --repersist to rebuild the store from the cached reports."
+            "Fix: run --offline --repersist to rebuild the store from the cached reports. If that refuses a report, "
+            "follow the Fix it prints. A cached report the store does not hold can instead be moved out of data/, "
+            "and any sitting can be kept out with --exclude-document-number in an online run."
         )
     if not_reported:
         parts.append(
@@ -773,7 +805,8 @@ def update_coverage_exclusions(
     if entries == before:
         return
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
-    ordered = sorted(entries.values(), key=lambda entry: (entry["date"], entry["document_number"]))
+    # A hand-written entry may lack its date.
+    ordered = sorted(entries.values(), key=lambda entry: (str(entry.get("date") or ""), entry["document_number"]))
     dip.write_text_atomic(path, json.dumps({"exclusions": ordered}, ensure_ascii=False, indent=2) + "\n")
 
 
@@ -1222,6 +1255,24 @@ def cached_report_fix(exc: CachedReportError) -> str:
     if len(exc.numbers) == 1:
         return f"Fix: move that report out of data/, then re-fetch its sitting with an online update and {flags}"
     return f"Fix: move those reports out of data/, then re-fetch their sittings with an online update and {flags}"
+
+
+# A --backfill-incomplete run stopped by a cached report: parse_args refuses
+# --document-number beside --backfill-incomplete, so a fix that names it says it
+# is a run of its own. A re-run of the backfill acquires a sitting whose report
+# was moved out only where incomplete_sitting_protocols selects it.
+BACKFILL_DOCUMENT_NUMBER_NOTE = (
+    "run --document-number as its own online update: it cannot be combined with --backfill-incomplete. "
+    "A re-run of --backfill-incomplete acquires the sitting again only if it is from Wahlperiode 18 on, "
+    "inside --protocol-wahlperiode, not excluded, and DIP lists its XML"
+)
+
+
+def backfill_report_fix(exc: CachedReportError) -> str:
+    """``cached_report_fix`` for a --backfill-incomplete run: the same fix, plus
+    BACKFILL_DOCUMENT_NUMBER_NOTE where it names --document-number."""
+    fix = cached_report_fix(exc)
+    return f"{fix} ({BACKFILL_DOCUMENT_NUMBER_NOTE})" if "--document-number" in fix else fix
 
 
 # Collect cached dossiers from data/ for the given protocols (every online build
@@ -3256,7 +3307,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 13
+EXPORT_FORMAT = 14
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3519,6 +3570,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "       ABS(v.yes_count - v.no_count) AS differenz\n"
             "FROM votes v\n"
             "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
+            "WHERE v.yes_count IS NOT NULL AND v.no_count IS NOT NULL\n"
             "ORDER BY differenz ASC, v.date DESC, v.id\n"
             "LIMIT 5;"
         ),
@@ -3535,7 +3587,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
-            "Eine Abstimmung ganz ohne Protokoll fehlt. Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
+            "Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine Ja- oder Nein-Gesamtzahl nennt "
+            "(votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
             "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
         ),
     },
@@ -5326,7 +5379,9 @@ def _daten_page_styles() -> str:
     .summary-band div { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:13px 14px; }
     .summary-band strong { display:block; margin-top:4px; font-size:26px; font-variant-numeric:tabular-nums; }
     .tile-sub { font-size:12px; margin-top:2px; }
-    .scope-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    .scope-line, .stammdaten-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    /* The 64-hex sha256 stays inline in the sentence but may break anywhere at 375px. */
+    .stammdaten-line code { overflow-wrap:anywhere; }
     .table-nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
     .table-nav a {
       display:inline-flex;
@@ -5683,7 +5738,7 @@ def render_landing_page(
         <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
       </section>
     </main>
-    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert. {pulse_html.render_legal_links(depth=0)}</footer>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert {pulse_html.render_legal_links(depth=0)}</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -5811,46 +5866,49 @@ def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
     return (int(text), "") if text.isdigit() else (-1, text)
 
 
-def collect_votes_archive(
-    entries: list[dict[str, Any]], vorgang_cache: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
-    """Every roll-call vote across every dossier, one row per unique vote id.
+def votes_archive_rows(database_path: Path) -> list[dict[str, Any]]:
+    """Every roll-call vote in the store, one row per vote id (A4 slice 1).
 
-    A vote can attach to two agenda items (pulse_html.vote_key handles the
-    dedupe, same rule week_stats uses for the Wochenvergleich vote count). Each
-    row carries the vote's Politikfelder, derived from ``vorgang_cache`` the way
-    persist derives the stored ones.
-    """
-    cache = vorgang_cache or politikfelder.empty_cache()
-    rows: dict[str, dict[str, Any]] = {}
-    for entry in entries:
-        report = entry.get("report") or {}
-        page_path = entry.get("page_path")
-        _, vote_politikfelder = politikfelder.report_politikfelder(report, cache)
-        sitting_documents = derive.report_drucksachen(report)
-        page_href = f"../protocols/{pulse_html.esc(Path(page_path).name)}" if page_path else None
-        for item, vote in derive.iter_report_votes(report):
-            key = pulse_html.vote_key(vote)
-            if key in rows:
-                continue
-            fraction_positions = {
-                fraction["name"]: position
-                for fraction in derive.merge_fractions(vote.get("fractions"))
-                if (position := _fraction_position(fraction, vote.get("inverted") is True)) is not None
-            }
-            rows[key] = {
-                "vote": vote,
-                "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
-                "document_links": votes_feature.document_source_links(item) if item else {},
-                "document_chambers": votes_feature.document_source_chambers(item) if item else {},
-                "fraction_positions": fraction_positions,
-                "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
-                "abweichler": derive.vote_abweichler_count(vote),
-                # The vote's own panel (D9).
-                "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
-            }
+    The store is read once (``votes_feature.stored_votes``) and each vote runs
+    through the rules the dossier panel runs (plan R5): ``derive.merge_fractions``
+    and ``_fraction_position``, ``derive.vote_abweichler_count``,
+    ``_vote_procedure_type``, ``politikfelder.shown`` on the stored tags, and the
+    item's links through ``votes_feature.document_source_links``. With no store
+    file the archive is empty, as the Fakten pages are; ``main`` refuses an
+    offline render without a store before any page is written."""
+    if not database_path.exists():
+        return []
+    conn = facts.open_readonly(database_path)
+    try:
+        stored = votes_feature.stored_votes(conn)
+    finally:
+        conn.close()
+    rows = []
+    for entry in stored:
+        vote, item = entry.vote, entry.item
+        fraction_positions = {
+            fraction["name"]: position
+            for fraction in derive.merge_fractions(vote.get("fractions"))
+            if (position := _fraction_position(fraction, vote.get("inverted") is True)) is not None
+        }
+        page_href = None
+        if entry.document_number:
+            _, page_path, _ = report_paths(Path(), entry.document_number)
+            page_href = f"../protocols/{pulse_html.esc(page_path.name)}"
+        rows.append({
+            "vote": vote,
+            "politikfelder": politikfelder.shown(entry.tagging),
+            "document_links": votes_feature.document_source_links(item) if item else {},
+            "document_chambers": votes_feature.document_source_chambers(item) if item else {},
+            "fraction_positions": fraction_positions,
+            "procedure_type": _vote_procedure_type(vote, item, entry.sitting_documents),
+            "abweichler": derive.vote_abweichler_count(vote),
+            # The vote's own panel (D9), on the dossier the build writes for the
+            # sitting under the same slug (report_paths).
+            "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
+        })
     return sorted(
-        rows.values(),
+        rows,
         key=lambda row: (row["vote"].get("date") or "", _vote_id_sort_key(row["vote"].get("id"))),
         reverse=True,
     )
@@ -5938,17 +5996,17 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
     <header class="page-header">
       <div>
         <h1>Abstimmungen</h1>
-        <p>Jede namentliche Abstimmung aus den erzeugten Plenarprotokoll-Dossiers, neueste zuerst.</p>
+        <p>Jede namentliche Abstimmung der erfassten Sitzungen, neueste zuerst.</p>
       </div>
     </header>
     <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
     {'<section class="archive-filters" aria-label="Nach Politikfeld filtern"><span class="eyebrow">Nach Politikfeld</span><p>Das Politikfeld folgt dem DIP-Sachgebiet des Vorgangs, zu dem die Abstimmung gehört.</p><div class="chip-row">' + feld_chips + '</div></section>' if feld_chips else ''}
     {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><p>Zeigt Abstimmungen mit einer Ja-Mehrheit der gewählten Fraktion. Bei Ablehnungsempfehlungen zählt stattdessen die Nein-Mehrheit als Unterstützung des Antrags.</p><div class="chip-row">' + chips + '</div></section>' if chips else ''}
     <section class="archive-list" data-archive>
-      {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
+      {''.join(items) if items else '<p>In den erfassten Sitzungen wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
       <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Auswahl.</p>
     </section>
-    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
+    <footer>Die Liste umfasst die namentlichen Abstimmungen der Sitzungen in der Datenbank dieses Builds, also nur Sitzungen mit Dossier; sie enthält nicht jede Sitzung des Katalogs. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=1)}</footer>
   </div>
   {render_votes_archive_script()}
   {pulse_html.page_scripts(features)}
@@ -6494,7 +6552,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
       <p>{pulse_html.esc(message)}</p>
     </header>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9163,6 +9221,8 @@ def abgeordnete_styles() -> str:
       cursor:pointer;
     }
     .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
+    :root[data-theme="dark"] :is(.filter-bar input[type="search"], .party-chip) { background:var(--surface-2); color:var(--ink); }
+    :root[data-theme="dark"] .party-chip.is-active { background:var(--blue-soft); color:var(--blue); }
     .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
     .redner-group { margin-top:32px; }
     .redner-group h2 { margin:0 0 6px; font-size:20px; }
@@ -9187,6 +9247,9 @@ def abgeordnete_styles() -> str:
     }
     .vote-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:10px; padding-bottom:10px; border-bottom:1px solid #eef1f5; font-size:13px; }
     .vote-row:last-child { border-bottom:0; padding-bottom:0; }
+    /* A one-word Gesetz title ("Asylverfahrensbeschleunigungsgesetz") would
+       otherwise push the vote column past the viewport. */
+    .vote-row > span:not(.badge) { overflow-wrap:anywhere; }
     .vote-row time { color:var(--muted); }
     .vote-badge { align-self:start; }
     .vote-badge.yes { border-color:#89c5ba; background:#e7f6f3; color:#0f5f59; }
@@ -10710,14 +10773,14 @@ def render_overview(
                 <div>
                   <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
-                  <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
+                  <p>{pulse_html.esc(protocol.get('datum'))}{pulse_html.distributed_phrase(protocol)}</p>
                 </div>
                 <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Öffnen</a>
               </div>
               <div class="metrics">
                 <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
                 <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-                <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+                <div><span>Drucksachen</span><strong>{pulse_html.sitting_document_count(items)}</strong></div>
                 <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
@@ -11009,7 +11072,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -11550,7 +11613,7 @@ def render_catalog_page(
     </section>
     <p class="no-results" data-no-results hidden>Keine Sitzungen entsprechen den Filterkriterien.</p>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>. {pulse_html.render_legal_links(depth=0)}
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a> {pulse_html.render_legal_links(depth=0)}
     </footer>
   </div>
   {render_catalog_script()}
@@ -11784,10 +11847,11 @@ def _legal_page(title: str, lead: str, body: str, features: Selection | None) ->
 
 def render_impressum_page(operator: dict[str, Any] | None, features: Selection | None = None) -> str:
     sections = (
-        ("Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV",
+        # A no-break space after each "§" keeps the sign on the line of its number.
+        ("Angaben gemäß §\u00a05 DDG und §\u00a018 Abs. 1 MStV",
          f"<p>{_operator_address(operator)}</p>"
          f"<p>E-Mail: {_operator_link(operator, 'email', mailto=True)}</p>"),
-        ("Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV",
+        ("Verantwortlich für den Inhalt nach §\u00a018 Abs. 2 MStV",
          f"<p>{_operator_value(operator, 'name')}, Anschrift wie oben.</p>"),
         ("Fehler melden und Kontakt",
          "<p>Fehler in den Daten und auf der Website werden öffentlich über GitHub Issues gemeldet. "
@@ -12805,8 +12869,6 @@ def render_site(
         "mp_lookup": mp_lookup,
         "collect_bill_pages": collect_bill_pages,
         "write_bill_pages": write_bill_pages,
-        "collect_votes_archive": collect_votes_archive,
-        "write_votes_archive_page": write_votes_archive_page,
         "write_abgeordnete_pages": write_abgeordnete_pages,
         "write_facts_pages": write_facts_pages,
         "database_path": database_path,
@@ -12841,9 +12903,9 @@ def render_site(
         f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Perioden (Wochen und Monate)",
         file=sys.stderr,
     )
-    votes_output = components["votes"].write_pages(output_dir, component_context)
-    if votes_output:
-        print(f"abstimmungen: {votes_output['count']} im Archiv", file=sys.stderr)
+    # The archive reads the store, not the reports (A4 slice 1).
+    votes_output = write_votes_archive_page(output_dir, votes_archive_rows(database_path), features)
+    print(f"abstimmungen: {votes_output['count']} im Archiv", file=sys.stderr)
     # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
@@ -12964,56 +13026,6 @@ def _split_feature_tokens(value: Any) -> list[str]:
             tokens.extend(_split_feature_tokens(item))
         return tokens
     raise FeatureError(f"Ungültige Baustein-Konfiguration: {value!r}")
-
-
-# Apply "+id" / "-id" / "id" tokens to the current set. An unknown id is fed
-# through resolve() purely so it raises the standard FeatureError message.
-def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]) -> None:
-    for token in tokens:
-        operation = token[:1] if token[:1] in {"+", "-"} else "+"
-        feature_id = token[1:] if token[:1] in {"+", "-"} else token
-        if feature_id not in REGISTRY:
-            resolve(base=current, enable=(feature_id,))
-        if operation == "+":
-            current.add(feature_id)
-            vetoes.discard(feature_id)
-        else:
-            current.discard(feature_id)
-            vetoes.add(feature_id)
-
-
-# Load enrichment config plus deprecated feature-selection shapes.
-def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise FeatureError(f"Baustein-Datei {path} konnte nicht gelesen werden: {exc}") from exc
-    if isinstance(payload, list):
-        replacement = _split_feature_tokens(payload)
-        current.clear()
-        vetoes.clear()
-        _apply_feature_tokens(current, replacement, vetoes)
-        return
-    if not isinstance(payload, dict):
-        raise FeatureError(f"Baustein-Datei {path} muss ein Objekt oder eine Liste enthalten.")
-    if "features" in payload:
-        replacement = _split_feature_tokens(payload["features"])
-        current.clear()
-        vetoes.clear()
-        if replacement == ["all"]:
-            current.update(REGISTRY)
-        else:
-            _apply_feature_tokens(current, replacement, vetoes)
-    _apply_feature_tokens(current, [f"+{item.lstrip('+')}" for item in _split_feature_tokens(payload.get("enable"))], vetoes)
-    _apply_feature_tokens(current, [f"-{item.lstrip('-')}" for item in _split_feature_tokens(payload.get("disable"))], vetoes)
-    for feature_id in _split_feature_tokens(payload.get("enrich")):
-        if feature_id == "all":
-            current.update(ENRICHMENT_IDS)
-        elif feature_id in ENRICHMENT_IDS:
-            current.add(feature_id)
-        else:
-            choices = ", ".join(sorted(ENRICHMENT_IDS))
-            raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
 
 
 # Enrichments an online update acquires unless an operator vetoes them. Votes
@@ -14146,8 +14158,9 @@ def main() -> int:
     except OperatorFileError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-
     if getattr(args, "fetch_xml", False):
+        if not coverage_exclusions_readable(args.output_dir):
+            return 1
         output_dir = args.output_dir
         try:
             entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
@@ -14178,6 +14191,11 @@ def main() -> int:
         warn_deprecated_feature_configuration(args, root=root)
         print_effective_config(enrichments, args)
         return 0
+    # Every path below reads the hand-editable exclusion record (D2); a typo in
+    # it stops here, naming the file and its shape. The listing and
+    # --explain-config modes above do not read it, so it does not block them.
+    if not coverage_exclusions_readable(args.output_dir):
+        return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
     features = publication_selection()
@@ -14313,11 +14331,18 @@ def main() -> int:
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
         # F7 (A4): the pages read the store, so an offline render needs one;
-        # --repersist has just built it. Refused before anything is written.
+        # --repersist has just built it. Refused before any page or store is
+        # written; the output directories already exist, and the cache loads
+        # above may have moved a corrupt cache aside. A lost store is restored,
+        # not rebuilt: a rebuild allocates person keys anew and, with no store to
+        # carry it over, keeps no MdB roster (_read_roster_rows).
         if not database_path.exists():
             print(
                 f"error: no store at {database_path}; the offline render reads it. "
-                "Fix: run --offline --repersist to build it from the cached reports, or an online update.",
+                "Fix: if a store was there before, restore it from a backup (docs/stable-ids.md, \"Backup and recovery\"): "
+                "a rebuilt store issues its person keys anew, so person keys and page URLs can change. "
+                "Otherwise build one: --offline --repersist builds it from the cached reports without the MdB roster; "
+                "an online update with --enrich mp-roster fetches the roster too.",
                 file=sys.stderr,
             )
             return 1
@@ -14332,7 +14357,7 @@ def main() -> int:
             pulse_store.require_current_schema(store)
             coverage_gap = store_coverage_gap(store, cached_entries, excluded=recorded_exclusions(output_dir))
             if coverage_gap:
-                print(f"error: {coverage_gap}", file=sys.stderr)
+                print(f"error: {coverage_gap} {CONCURRENT_UPDATE_NOTE}", file=sys.stderr)
                 return 1
             if "mp-pages" in features:
                 component_context = {
@@ -14467,7 +14492,7 @@ def main() -> int:
             try:
                 stored_entries = load_existing_detail_entries(output_dir, protocols)
             except CachedReportError as exc:
-                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
                 stored_entries,
@@ -14527,7 +14552,8 @@ def main() -> int:
                 if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in listed
             ]
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
+            fix = backfill_report_fix(exc) if getattr(args, "backfill_incomplete", False) else cached_report_fix(exc)
+            print(f"ERROR [cached input]: {exc}. {fix}", file=sys.stderr)
             return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
@@ -14594,7 +14620,9 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [persist]: {exc}. The previous store is untouched "
-                    f"(Dossiers wurden bereits geschrieben, puls.html nicht). {cached_report_fix(exc)}.",
+                    "(Dossiers wurden bereits geschrieben, puls.html nicht). "
+                    + (backfill_report_fix(exc) if getattr(args, "backfill_incomplete", False) else cached_report_fix(exc))
+                    + ".",
                     file=sys.stderr,
                 )
                 return 1

@@ -219,22 +219,22 @@ def seed_store(path: Path) -> dict[str, Any]:
             conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, 'v2')", (agenda_item_2,))
             conn.execute(
                 """
-                INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote)
-                VALUES ('v1', ?, 9, 1, 0, 0, 10, 'yes')
+                INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote, rank)
+                VALUES ('v1', ?, 9, 1, 0, 0, 10, 'yes', 1)
                 """,
                 (party_spd,),
             )
             conn.execute(
                 """
-                INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote)
-                VALUES ('v1', ?, 1, 7, 0, 0, 8, 'no')
+                INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote, rank)
+                VALUES ('v1', ?, 1, 7, 0, 0, 8, 'no', 2)
                 """,
                 (party_cdu,),
             )
             conn.execute(
                 """
-                INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote)
-                VALUES ('v2', ?, 6, 5, 0, 0, 11, 'yes')
+                INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote, rank)
+                VALUES ('v2', ?, 6, 5, 0, 0, 11, 'yes', 1)
                 """,
                 (party_cdu,),
             )
@@ -285,7 +285,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 conn, now=now, document_number="20/102", document_type="Beschlussempfehlung und Bericht",
                 title="Beschlussempfehlung zur Testbarkeit", origin=["Haushaltsausschuss"],
             )
-            conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES ('v1', ?)", (beschlussempfehlung,))
+            conn.execute("INSERT INTO vote_documents(vote_id, document_id, rank) VALUES ('v1', ?, 1)", (beschlussempfehlung,))
 
             # Seat counts (C1) from four made-up WP 20 Stammdaten records, run
             # through the build's own derivation. stammdaten.seat_rows would

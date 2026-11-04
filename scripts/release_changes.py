@@ -41,7 +41,9 @@ def load_authored(path: Path) -> dict[str, Any]:
         raise ChangesError(f"cannot read the changes file {path}: {exc}") from exc
     try:
         return json.loads(text)
-    except json.JSONDecodeError as exc:
+    # ValueError covers JSONDecodeError and an integer past the 4300-digit
+    # limit; RecursionError a nesting deeper than the parser's stack.
+    except (ValueError, RecursionError) as exc:
         raise ChangesError(f"the changes file {path} is not valid JSON: {exc}") from exc
 
 

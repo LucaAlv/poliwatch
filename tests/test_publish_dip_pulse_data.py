@@ -295,6 +295,11 @@ class RefusalTests(ReleaseTestCase):
         null_previous.write_text("null", encoding="utf-8")
         number_previous = self.work / "number.json"
         number_previous.write_text("7", encoding="utf-8")
+        # Ship findings item 15: an integer past 4300 digits or a deep nesting ended in a traceback.
+        huge_int_previous = self.work / "huge-int.json"
+        huge_int_previous.write_text('{"tag": ' + "9" * 5000 + "}", encoding="utf-8")
+        deep_previous = self.work / "deep.json"
+        deep_previous.write_text("[" * 100_000, encoding="utf-8")
         shapeless_previous = self.work / "shapeless.json"
         shapeless_previous.write_text(json.dumps({"tag": "2026.10.01", "protocols": [], "votes": {"count": 1}}), encoding="utf-8")
 
@@ -311,6 +316,9 @@ class RefusalTests(ReleaseTestCase):
             ("manifest not JSON", lambda: manifest_path.write_text("{nope", encoding="utf-8"), ["--initial"], "cannot read manifest", None, False),
             ("previous manifest absent", lambda: None, ["--previous-manifest", previous_missing], "cannot read previous manifest", None, False),
             ("previous manifest not JSON", lambda: None, ["--previous-manifest", str(garbage)], "cannot read previous manifest", None, False),
+            ("manifest with an integer past 4300 digits", lambda: manifest_path.write_text('{"total_rows": ' + "9" * 5000 + "}", encoding="utf-8"), ["--initial"], "cannot read manifest", None, False),
+            ("previous manifest with an integer past 4300 digits", lambda: None, ["--previous-manifest", str(huge_int_previous)], "cannot read previous manifest", None, False),
+            ("previous manifest nested too deep", lambda: None, ["--previous-manifest", str(deep_previous)], "cannot read previous manifest", None, False),
             ("git tag listing fails", lambda: None, ["--initial"], "git tag --list failed", Runner(git_tag_fails=True), False),
             # /ship review 2026-10-31: these three ended in a traceback.
             ("previous manifest not an object", lambda: None, ["--previous-manifest", str(not_an_object)], "previous manifest", None, False),
@@ -530,6 +538,13 @@ class FollowUpReleaseTests(ReleaseTestCase):
             json.dumps({"summary": "Zwei Sitzungen ergänzt.", "corrections": [{"table": "votes", "key": "v1", "column": "yes_count", "old": 1, "new": 2, "reason": "Endergebnis"}]}),
             encoding="utf-8",
         )
+        # An integer past 4300 digits or a deep nesting in the changes file is refused, not a traceback.
+        for label, text in (("huge integer", '{"summary": ' + "9" * 5000 + "}"), ("deep nesting", "[" * 100_000)):
+            with self.subTest(label):
+                broken = self.work / "broken-changes.json"
+                broken.write_text(text, encoding="utf-8")
+                code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", str(broken))
+                self.assert_refused(code, stderr, "is not valid JSON")
         code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", str(changes))
         self.assertEqual(code, 0, stderr)
         release = self.out / f"data-{VERSION}"

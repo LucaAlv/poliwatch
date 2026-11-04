@@ -65,7 +65,7 @@ class StoreFixture(unittest.TestCase):
                           (vote_id, protocol_id, day, NOW, NOW))
         for party, total in totals.items():
             party_id = pulse_store.upsert_party(self.conn, PARTY.get(party, party), NOW)
-            self.conn.execute("INSERT INTO vote_fractions(vote_id, party_id, total_count) VALUES (?, ?, ?)",
+            self.conn.execute("INSERT INTO vote_fractions(vote_id, party_id, total_count, rank) VALUES (?, ?, ?, 1)",
                               (vote_id, party_id, total))
 
 

@@ -130,12 +130,14 @@ def zusammenschluss(value: Any) -> str | None:
     return text
 
 
-#: The Fraktion Die Linke dissolved on 2023-12-06; its members went on as the
-#: Gruppe Die Linke. The XML of a Rede spells it "Die Linke" all the same, so a
-#: WP 20 Rede from this day on is a Gruppe Die Linke Rede. (The store has no
-#: Rede naming Die Linke between 2023-12-01 and 2024-02-21, so the exact day
-#: inside that gap decides none.) WP 21 has a Fraktion Die Linke again.
-GRUPPE_DIE_LINKE_SINCE = "2023-12-06"
+#: The day the Fraktion Die Linke ended (2023-12-06). The Gruppe Die Linke was
+#: recognised only on 2024-02-02; in between the protocols label its 38 MdBs
+#: fraktionslos, and the MdB-Stammdaten agree (C1 plan, F4). The XML of a Rede
+#: spells both "Die Linke", so a WP 20 Rede naming Die Linke on or after this
+#: day is a Gruppe Die Linke Rede. No Rede names Die Linke between the two
+#: dates, so which of them the rule uses re-files none. WP 21 has a Fraktion
+#: Die Linke again.
+DIE_LINKE_FRAKTION_ENDED = "2023-12-06"
 
 
 VOTE_COUNT_KEYS = ("yes", "no", "abstain", "absent")
@@ -169,10 +171,12 @@ def vote_groups_cover_total(vote: Mapping[str, Any]) -> bool:
     vote ("Niemand stimmt anders …", an Abweichler count) rest on its groups: a
     Zusammenschluss missing from both the rows and the Einzelstimmen leaves the
     others complete. No total, no fraction row or a count the total does not
-    hold as a number covers nothing."""
+    hold as a number covers nothing. Four zeros are no total either: a
+    roll-call's counts add up to the seats, and reports parsed before 0.32
+    padded a listing without chart values with 0 (persist stores them NULL)."""
     total = vote.get("total") or {}
     rows = merge_fractions(vote.get("fractions"))
-    if not total or not rows:
+    if not total or not rows or all(total.get(key) == 0 for key in VOTE_COUNT_KEYS):
         return False
     return all(
         isinstance(total.get(key), int) and not isinstance(total.get(key), bool)
@@ -189,7 +193,7 @@ def speech_zusammenschluss(speaker: Mapping[str, Any] | None, protocol: Mapping[
     name = zusammenschluss((speaker or {}).get("fraktion"))
     if name == "Die Linke" and protocol:
         wahlperiode = str(protocol.get("dokumentnummer") or "").split("/")[0]
-        if wahlperiode == "20" and str(protocol.get("datum") or "") >= GRUPPE_DIE_LINKE_SINCE:
+        if wahlperiode == "20" and str(protocol.get("datum") or "") >= DIE_LINKE_FRAKTION_ENDED:
             return GRUPPE_DIE_LINKE
     return name
 

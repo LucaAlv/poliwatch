@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import lzma
 import os
 import sqlite3
 import sys
@@ -100,9 +101,11 @@ def _xml_bytes(path: Path) -> bytes:
                 raise StammdatenError(f"{path.name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
             with archive.open(info) as member:
                 data = member.read(MAX_XML_BYTES + 1)
-    # zlib.error: a corrupt deflate stream; RuntimeError: an encrypted member;
+    # zlib.error: a corrupt deflate stream; lzma.LZMAError: a corrupt LZMA one
+    # (a corrupt bzip2 stream raises OSError); RuntimeError: an encrypted member;
     # NotImplementedError: a compression method zipfile lacks.
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError, zlib.error, RuntimeError, NotImplementedError) as exc:
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError, zlib.error, lzma.LZMAError,
+            RuntimeError, NotImplementedError) as exc:
         raise StammdatenError(f"{path.name}: not a zip file the Stammdaten can be read from ({exc})") from None
     if len(data) > MAX_XML_BYTES:
         raise StammdatenError(f"{path.name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
