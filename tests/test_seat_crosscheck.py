@@ -10,6 +10,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import build_dip_pulse_site as build
@@ -238,7 +239,7 @@ class ReportTests(StoreFixture):
     #   note on stderr and no report, never an exception, so a routine update is not stopped; fails_when=
     #   the sqlite3.Error from opening or querying escapes log_seat_crosscheck; why_new=TODOS C1 deferred
     #   item 18 (the unreadable-store branch has no test); seam=none (log_seat_crosscheck is production code);
-    #   no_claim=an OSError while writing the report (deferred item 12 says that one still escapes)
+    #   no_claim=an OSError while writing the report (the next two tests)
     def test_a_store_that_cannot_be_read_gives_a_note_not_an_exception(self) -> None:
         garbage = Path(self._tmp.name) / "garbage.sqlite"
         garbage.write_bytes(b"this is not a database" * 100)
@@ -262,6 +263,46 @@ class ReportTests(StoreFixture):
         err, path = self.log()
         self.assertFalse(path.exists())
         self.assertEqual(err.strip().splitlines(), ["stammdaten: no cross-check, MdB-Stammdaten nicht geladen"])
+
+    # Value: protects=the report is written or removed only in a private directory that is a real
+    #   directory, never through a symlink planted at the private directory's place, so neither the
+    #   write nor the unlink of an earlier report reaches a file elsewhere; the build still goes on
+    #   with a note; fails_when=log_seat_crosscheck mkdirs and writes or unlinks without
+    #   registry.ensure_private_dir; why_new=TODOS C1 deferred item 33 (and 8); seam=build.log_seat_crosscheck
+    def test_a_symlinked_private_directory_is_refused_for_the_write_and_the_unlink(self) -> None:
+        for label, with_stammdaten in (("report written", True), ("old report removed", False)):
+            with self.subTest(label):
+                self.setUp()
+                elsewhere = Path(self._tmp.name) / "elsewhere"
+                elsewhere.mkdir()
+                victim = Path(self._tmp.name) / "victim.json"
+                victim.write_text("keep", encoding="utf-8")
+                (elsewhere / "seat-crosscheck.json").symlink_to(victim)
+                registry.private_dir(self.path).symlink_to(elsewhere)
+                self.vote("1040", "2025-06-26", SPD=3, AfD=1)
+                if with_stammdaten:
+                    self.stammdaten(bundestag(SPD=3, AfD=1))
+                err, _ = self.log()
+                self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
+                self.assertTrue((elsewhere / "seat-crosscheck.json").is_symlink())
+                self.assertIn("note: [stammdaten] the cross-check report could not be", err)
+                self.assertIn("symbolic link", err)
+                self.assertNotIn("report:", err)
+
+    # Value: protects=an OSError from writing the report (full disk, permissions) ends in a note and
+    #   the summary lines, never an exception that leaves main() after the store swap and before the
+    #   site and export, as the docstring promises; fails_when=the OSError escapes, or the summary is
+    #   skipped with the report; why_new=TODOS C1 deferred item 12; seam=build.log_seat_crosscheck with
+    #   write_text_atomic failing
+    def test_a_report_that_cannot_be_written_gives_a_note_and_the_summary(self) -> None:
+        self.stammdaten(bundestag(SPD=3, AfD=1))
+        self.vote("1041", "2025-06-26", SPD=3, AfD=1)
+        with mock.patch.object(build.dip, "write_text_atomic", side_effect=OSError(28, "No space left on device")):
+            err, path = self.log()
+        self.assertFalse(path.exists())
+        self.assertIn("note: [stammdaten] the cross-check report could not be written: [Errno 28] No space left on device", err)
+        self.assertIn("stammdaten: cross-check of 1 roll-call against the seat counts: 1 agree, 0 disagree", err)
+        self.assertNotIn("report:", err)
 
 
 if __name__ == "__main__":

@@ -349,6 +349,15 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
     seat tables. Every outcome is one stderr line."""
     path = cache_path(database_path)
     sidecar = etag_path(database_path)
+    # Before anything is read, swept or written there: a symlink, a foreign
+    # owner or a group-writable directory is refused here, not by the writer
+    # lock after the zip and the ETag sidecar were written through it.
+    try:
+        registry.ensure_private_dir(path.parent)
+    except OSError as exc:
+        print(f"warning: [stammdaten] not fetching, the private directory cannot be used ({exc}); "
+              "the cached file, if any, stays as it is", file=sys.stderr)
+        return
     previous = None
     if path.is_file():
         try:
@@ -375,7 +384,6 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
     body, new_etag = answer
     temp: Path | None = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         # A refresh killed while writing leaves its temp file; refreshes run one
         # per build, before the staged rebuild, so any still here is stale.
         for stale in path.parent.glob(".mdb-stammdaten.*.tmp"):

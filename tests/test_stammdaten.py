@@ -286,6 +286,33 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"old"')
         self.assertEqual(self.leftovers(), [])
 
+    # Value: protects=refresh checks the private directory before it reads the cache, sweeps, fetches or
+    #   writes: a symlink planted at its place (here with the ETag sidecar pointing at a file elsewhere,
+    #   and a stale temp file inside) is refused with a warning, so no file behind it is truncated or
+    #   swept; fails_when=refresh reads, sweeps or writes before registry.ensure_private_dir, or lets its
+    #   PermissionError out; why_new=TODOS C1 deferred item 33 (Codex's reproduction) and 8; seam=stammdaten.refresh
+    def test_a_symlinked_private_directory_is_refused_before_anything_is_fetched_or_written(self) -> None:
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        victim = self.tmp / "victim.json"
+        victim.write_text("keep", encoding="utf-8")
+        (elsewhere / stammdaten.ETAG_NAME).symlink_to(victim)
+        (elsewhere / ".mdb-stammdaten.old.tmp").write_bytes(b"not swept")
+        self.cache.parent.symlink_to(elsewhere)
+        err = self.refresh((self.good, '"n"'))
+        self.assertIn("warning: [stammdaten] not fetching, the private directory cannot be used", err)
+        self.assertIn("symbolic link", err)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
+        self.assertEqual(sorted(path.name for path in elsewhere.iterdir()), [".mdb-stammdaten.old.tmp", stammdaten.ETAG_NAME])
+
+    def test_a_private_directory_that_cannot_be_created_is_a_warning_not_a_crash(self) -> None:
+        with mock.patch.object(stammdaten.registry, "ensure_private_dir", side_effect=OSError(13, "Permission denied")):
+            err = self.refresh((self.good, '"n"'))
+        self.assertIn("warning: [stammdaten] not fetching, the private directory cannot be used (", err)
+        self.assertIn("Permission denied", err)
+        self.assertEqual(self.requests, [])
+
     # Value: protects=a cache write that fails (disk full, a concurrent refresh) keeps the previous file
     #   and warns instead of ending the build in a traceback; fails_when=the OSError from writing or
     #   os.replace escapes refresh; why_new=checklist class 10 on step 4; seam=stammdaten.refresh with os.replace failing
