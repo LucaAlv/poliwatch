@@ -73,7 +73,7 @@ Comparable sites:
 
 - **Nonpartisan and neutral.** The site takes no editorial stance, treats all Fraktionen the same way, and ties every claim to a primary source.
 - Generated content is always labelled as generated, and is never presented as editorial or verified.
-- No name, logo or visual identity has been committed yet.
+- No name or logo has been committed yet. The visual direction is committed: see `DESIGN.md` ("Stimmkarte", 2026-11-04). Fraktion colours stay, tuned there.
 
 ## Evidence on Hand
 

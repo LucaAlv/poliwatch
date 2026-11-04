@@ -34,7 +34,7 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 2. The rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". The AI sentence is deferred.
 3. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
-**Frontend:** "Decide the frontend stack" (owner decision 2026-11-02: hold, prototype first). First "DESIGN.md, tokens and a typeface decision via /design-consultation", then a chart prototype, then a written go/no-go.
+**Frontend:** "Decide the frontend stack" (owner decision 2026-11-02: hold, prototype first). DESIGN.md is written (2026-11-04). Next a chart prototype, then a written go/no-go; "Apply DESIGN.md to the site" can run alongside.
 
 **C. Analysen (long-term view)**
 
@@ -704,24 +704,31 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 ## Design
 
-### DESIGN.md, tokens and a typeface decision via /design-consultation
+### Apply DESIGN.md to the site
 
-**What:** Write a DESIGN.md (tokens, type scale, spacing, component vocabulary, focus/visited/selection rules) and decide the site's typeface. Name once the tokens individual pages had to invent, including the Daten page's light `--surface-2`/`--surface-3`.
+**What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04. No site page uses it yet. Apply it in the current Python renderer:
+1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
+2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
+3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values fail on the grey ground.
+4. **Components.** Vote wall and strip, tally, source line, gap, slip versus ground, navigation. Votes pages first: the archive now renders from the store (#133).
 
-**Why:** Every page carries its own `:root` token block and the only typeface is Inter / ui-sans-serif / system-ui; every design review re-derives the tokens and flags the default font stack. The Daten page (after the dossier) was the second page to have to invent tokens a shared system would already provide. No `DESIGN.md` exists as of 2026-09-19 (`docs/design/bundestag-pulse-design.md` is the product design doc, not a design system).
+**Why:** the owner finds the site unattractive, and the design system does nothing until pages use it. Every page has to carry the token blocks and the font stack today.
 
-**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass.
+**Context:**
+- Preview on real data: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte.html`. It also holds the generator, for values and markup.
+- Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
+- Nobody outside this project has seen the design. Test the grey ground and the vote wall with real readers.
+- The `:visited`/`:focus-visible` item under Daten and the nested cards the puls.html review flagged are absorbed here. Visited links now look like unvisited ones.
+- Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks).
 
-**Raised to P2 (owner decision, 2026-11-02):** this is step 1 of "Decide the frontend stack" below. Do it as plain CSS with one shared stylesheet, in the current Python renderer.
-
-**Effort:** M
+**Effort:** L
 **Priority:** P2
 **Depends on:** None
 
 ### Decide the frontend stack
 
 **What:** Decide whether the site stays Python-generated HTML (PRODUCT.md:58) or moves to a static site generator with islands (Astro-class), under the rule "the frontend computes no figure". A single-page app and a hybrid were rejected. The owner chose "Hold, prototype first" (R17). The order:
-1. "DESIGN.md, tokens and a typeface decision via /design-consultation" above, as plain CSS with one shared stylesheet.
+1. Design pass: done, see `DESIGN.md` (2026-11-04). Applying it is the item above.
 2. A chart prototype in a candidate generator, most likely the Diskursanalyse throwaway.
 3. A written go/no-go against the stdlib option (SVG charts drawn from Python). Write the criteria down before the prototype.
 
@@ -735,12 +742,12 @@ If the answer is go:
 - The pilot the eng review planned (the votes archive) tested neither goal: it had no chart and left design out of scope.
 
 **Context:**
-- The eng review of 2026-11-02 settled ledger entries R10–R16 and a scope record for the frontend plan: pilot votes archive, parallel build, state codes, payload-diff oracle, strict npm policy, raw-HTML ban, 50 KB island budget. They were meant to go into `docs/plans/a4-site-from-release.md`, but that text never reached main. Redo it from the review if the answer is go.
+- The eng review of 2026-11-02 settled ledger entries R10–R16 and a scope record for the frontend plan: pilot votes archive, parallel build, state codes, payload-diff oracle, strict npm policy, raw-HTML ban, 50 KB island budget. They are in `docs/plans/a4-site-from-release.md`, part "A4 re-scope for a new frontend". Slice 1 has since shipped in Python, so the pilot needs rethinking if the answer is go.
 - PRODUCT.md:58 stays in force until the decision.
 
 **Effort:** M (design pass and prototype); L if the answer is go
 **Priority:** P2
-**Depends on:** "DESIGN.md, tokens and a typeface decision via /design-consultation"
+**Depends on:** The Diskursanalyse prototype's term lists
 
 ## Publication
 
