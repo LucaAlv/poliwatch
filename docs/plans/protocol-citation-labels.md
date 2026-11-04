@@ -2,7 +2,7 @@
 
 Status: implemented 2026-10-22; validation recorded below.
 Branch: `fix/protocol-citation-labels`.
-Source TODO: [Cite protocols as „BT-PlPr." per DIP no. 4c](../../TODOS.md#cite-protocols-as-bt-plpr-per-dip-no-4c).
+Source TODO: [Cite protocols as „BT-PlPr." per DIP no. 4c](https://github.com/LucaAlv/poliwatch/blob/c932255/TODOS.md#cite-protocols-as-bt-plpr-per-dip-no-4c).
 
 ## Required behavior
 
