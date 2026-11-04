@@ -263,14 +263,25 @@ class PersistTests(unittest.TestCase):
         # No pseudo-Fraktion "Regierung" (or "Bundesregierung") in parties.
         self.assertEqual({row["name"] for row in conn.execute("SELECT name FROM parties")}, {"SPD", "CDU/CSU"})
 
-    def test_the_redeanteil_recipe_gives_the_sides_their_own_rows_and_the_shares_sum_to_100(self) -> None:
+    def test_the_textanteil_recipe_gives_the_sides_their_own_rows_and_the_shares_sum_to_100(self) -> None:
         conn = self.store(report("21/1", MERZ, GESUNDHEIT, SOEDER, EVA, ADA, STAATSSEKRETAER_MDB))
-        recipe = next(r for r in build.RECIPES if r["id"] == "r2-redeanteil-fraktion")
+        recipe = next(r for r in build.RECIPES if r["id"] == "r2-textanteil-fraktion")
         sql = recipe["sql"].rstrip().removesuffix("LIMIT 5;")
         rows = {row["fraktion"]: (row["reden"], row["anteil_prozent"]) for row in conn.execute(sql)}
         self.assertEqual(set(rows), {"Bundesregierung", "Bundesrat", "weitere Sprechrolle", "SPD"})
         self.assertEqual(rows["Bundesregierung"][0], 3)
         self.assertAlmostEqual(sum(share for _, share in rows.values()), 100.0, places=0)
+
+    def test_the_textanteil_recipe_is_ordered_by_characters_then_name_not_by_reden(self) -> None:
+        # char_count is 100 times the speaker's place: SPD 2 Reden / 300 characters, Bundesrat
+        # 1 / 300, CDU/CSU 1 / 400.
+        adam = {"xml_redner_id": "7", "display_name": "Adam Riese", "fraktion": "SPD"}
+        cdu = {"xml_redner_id": "8", "display_name": "Carl Christ", "fraktion": "CDU/CSU"}
+        conn = self.store(report("21/1", ADA, adam, SOEDER, cdu))
+        recipe = build.RECIPES_BY_ID["r2-textanteil-fraktion"]
+        self.assertEqual(recipe["title"], "Textanteil je Fraktion oder Gruppe")
+        rows = [(row["fraktion"], row["reden"], row["anteil_prozent"]) for row in conn.execute(recipe["sql"])]
+        self.assertEqual(rows, [("CDU/CSU", 1, 40.0), ("Bundesrat", 1, 30.0), ("SPD", 2, 30.0)])
 
     def test_a_fact_row_names_the_side_not_a_fraktion_for_a_role_speech(self) -> None:
         conn = self.store(report("21/1", MERZ, ADA))

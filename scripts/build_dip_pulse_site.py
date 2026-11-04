@@ -3451,8 +3451,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         ),
     },
     {
-        "id": "r2-redeanteil-fraktion",
-        "title": "Redeanteil je Fraktion nach Zeichen",
+        "id": "r2-textanteil-fraktion",
+        "title": "Textanteil je Fraktion oder Gruppe",
         "sql": (
             "WITH sitting AS (\n"
             "  SELECT DISTINCT " + _wahlperiode_sql("p") + " AS wahlperiode, p.date FROM protocols p\n"
@@ -3478,7 +3478,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "         CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
             "                            WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
             "                            ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
-            "         COUNT(*) AS reden,\n"
+            "         COUNT(*) AS reden, SUM(s.char_count) AS zeichen,\n"
             "         ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
             + _wahlperiode_sql("p") + "), 1) AS anteil_prozent\n"
             "  FROM speeches s\n"
@@ -3492,14 +3492,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "            THEN ROUND(ss.sitzanteil, 1) END AS sitzanteil_prozent\n"
             "FROM speech_share r\n"
             "LEFT JOIN seat_share ss ON ss.seat_wahlperiode = r.wahlperiode AND ss.seat_fraktion = r.fraktion\n"
-            "ORDER BY wahlperiode DESC, reden DESC, fraktion\n"
+            "ORDER BY r.wahlperiode DESC, r.zeichen DESC, r.fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
             {"name": "wahlperiode", "meaning": _WP_SPEECH_MEANING, "align": "num"},
             {"name": "fraktion", "meaning": "Gruppe der Rede: Bundesregierung, Bundesrat oder weitere Sprechrolle nach speeches.sprechrolle, sonst speeches.fraktion, ersatzweise die Partei der Redneraufzeichnung.", "align": "text"},
             {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe in dieser Wahlperiode mit Redneraufzeichnung.", "align": "num"},
-            {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an den Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle.", "align": "num"},
+            {"name": "anteil_prozent", "meaning": "Textanteil: Anteil der Gruppe an den Zeichen der Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle; Zeichen sind keine Redezeit.", "align": "num"},
             {"name": "sitzanteil_prozent", "meaning": (
                 "Mittlerer Sitzanteil des Zusammenschlusses (oder der Fraktionslosen) über die Sitzungstage der "
                 "Wahlperiode im Store: Summe seiner Sitze an diesen Tagen (party_seats) geteilt durch die Summe aller "
@@ -3525,7 +3525,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "Sitzanteile zusammen weniger als 100 % ergeben können. Ein Zusammenschluss, den es nur einen Teil der "
             "Wahlperiode gab, zählt an den übrigen Tagen 0: Sein Wert ist der Mittelwert über die ganze Wahlperiode, "
             "nicht sein Anteil, solange er bestand. Die Gruppe wird über den Namen zugeordnet (parties.name). "
-            "Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann Gruppenname. " + _WP_LIMIT_METHOD
+            "Reihenfolge: Wahlperiode absteigend, dann Zeichen (SUM(char_count)) absteigend, dann Gruppenname; die Zahl der "
+            "Reden bestimmt die Reihenfolge nicht. " + _WP_LIMIT_METHOD
         ),
     },
     {

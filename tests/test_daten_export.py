@@ -32,7 +32,7 @@ READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready
 
 
 def _r2_limited_to_4() -> tuple[dict, ...]:
-    return tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+    return tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-textanteil-fraktion" else r for r in b.RECIPES)
 
 
 def authored(field: str) -> Path:
@@ -845,7 +845,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         # must not rewrite history). Without the switch, CDU/CSU would read 4
         # Reden and SPD 2; with it, both read 3.
         manifest = self.export()
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         spd_row = next(row for row in r2["rows"] if row["fraktion"] == "SPD")
         cdu_row = next(row for row in r2["rows"] if row["fraktion"] == "CDU/CSU")
         self.assertEqual(spd_row["reden"], 3)
@@ -863,7 +863,7 @@ class ExportDistributionDataTests(unittest.TestCase):
 
     def _r2_seat_shares(self) -> dict:
         manifest = self.export()
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         return {(row["wahlperiode"], row["fraktion"]): row["sitzanteil_prozent"] for row in r2["rows"]}
 
     # Value: protects=R2's sitzanteil_prozent is the group's seats summed over the WP's sitting dates over
@@ -946,7 +946,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                     finally:
                         conn.close()
                 manifest = self.export()
-                caveat = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")["caveat"]
+                caveat = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")["caveat"]
                 if loaded:
                     self.assertIn("MdB-Stammdaten, Stand 30.06.2024", caveat)
                     self.assertIn("gilt für spätere Sitzungstage die Zusammensetzung am Stand", caveat)
@@ -982,7 +982,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(recipe=recipe["id"]):
                 self.assertIn("wahlperiode", recipe["columns"])
                 self.assertTrue(all(isinstance(row["wahlperiode"], int) for row in recipe["rows"]), recipe["rows"])
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         spd = {row["wahlperiode"]: row for row in r2["rows"] if row["fraktion"] == "SPD"}
         self.assertEqual((spd[18]["reden"], spd[18]["anteil_prozent"]), (1, 100.0))
         self.assertEqual(spd[20]["reden"], 3)
@@ -1031,13 +1031,13 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
             {**recipe, "sql": "SELECT * FROM speeches_does_not_exist LIMIT 5;"}
-            if recipe["id"] == "r2-redeanteil-fraktion"
+            if recipe["id"] == "r2-textanteil-fraktion"
             else recipe
             for recipe in b.RECIPES
         )
         with self.assertRaises(RuntimeError) as ctx:
             self.export(recipes=broken)
-        self.assertIn("r2-redeanteil-fraktion", str(ctx.exception))
+        self.assertIn("r2-textanteil-fraktion", str(ctx.exception))
 
     def test_recipe_on_empty_votes_table_yields_empty_reason_not_a_failure(self) -> None:
         # A separate, narrower store: dossiers exist (so R1/R2/R5 have rows)
@@ -1424,7 +1424,7 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_skip_rule_reexports_when_recipes_change(self) -> None:
         first = self.export()
         changed = tuple(
-            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r
+            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-textanteil-fraktion" else r
             for r in b.RECIPES
         )
         second = self.export(recipes=changed)
@@ -1465,7 +1465,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                 raise OSError("disk full")
             return real_write(*args, **kwargs)
 
-        changed = tuple({**r, "sql": r["sql"] + " "} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        changed = tuple({**r, "sql": r["sql"] + " "} if r["id"] == "r2-textanteil-fraktion" else r for r in b.RECIPES)
         for label, kwargs in (("new generation", {"recipes": changed}), ("forced re-export", {"force": True})):
             with self.subTest(label), mock.patch.object(b, "_write_csv", side_effect=failing_write):
                 calls.clear()
@@ -1558,7 +1558,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         first_gen_dir = self.exports_dir / first["generation"]
         self.assertTrue(first_gen_dir.exists())
         changed = tuple(
-            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r
+            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-textanteil-fraktion" else r
             for r in b.RECIPES
         )
         self.export(recipes=changed)
