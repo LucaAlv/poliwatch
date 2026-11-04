@@ -439,10 +439,6 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         self.assertIsNone(dip.parse_member_votes(card)[0]["profile_url"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PersonCacheTests(unittest.TestCase):
     # Value (D5): protects=a backfill pays one /person request per person, not one per sitting,
     # and never keeps a failed lookup; fails_when=a repeat person is fetched again or a failure
@@ -498,3 +494,7 @@ class PersonCacheTests(unittest.TestCase):
                                          parsed, person_limit=0, vote_scan_pages=0, person_cache={})
         self.assertEqual(requests, ["/person/p0", "/person/p1", "/person/p2", "/person/p3"])
         self.assertEqual(result["api_totals"]["person_record_fetch_error_count"], 5)
+
+
+if __name__ == "__main__":
+    unittest.main()
