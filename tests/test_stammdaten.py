@@ -152,13 +152,14 @@ class ReadZipTests(unittest.TestCase):
 CDU_CSU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
 
 
-def whole_bundestag_zip(path: Path, version: int = 1777449783) -> bytes:
+def whole_bundestag_zip(path: Path, version: int = 1777449783, art: str = "Fraktion/Gruppe") -> bytes:
     """A zip the size check accepts: a WP 21 Bundestag of 630 CDU/CSU MdBs
-    from the constituent day, in the file's element names."""
+    from the constituent day, in the file's element names. ``art`` is the
+    ``INSART_LANG`` label of their membership."""
     mdbs = "".join(
         f"<MDB><ID>110{index:05d}</ID><NAMEN><NAME><NACHNAME>Muster{index}</NACHNAME><VORNAME>Max</VORNAME>"
         f"<HISTORIE_VON>25.03.2025</HISTORIE_VON></NAME></NAMEN><WAHLPERIODEN><WAHLPERIODE><WP>21</WP>"
-        f"<MDBWP_VON>25.03.2025</MDBWP_VON><MDBWP_BIS/><INSTITUTIONEN><INSTITUTION><INSART_LANG>Fraktion/Gruppe</INSART_LANG>"
+        f"<MDBWP_VON>25.03.2025</MDBWP_VON><MDBWP_BIS/><INSTITUTIONEN><INSTITUTION><INSART_LANG>{art}</INSART_LANG>"
         f"<INS_LANG>{CDU_CSU}</INS_LANG><MDBINS_VON>25.03.2025</MDBINS_VON><MDBINS_BIS/></INSTITUTION></INSTITUTIONEN>"
         f"</WAHLPERIODE></WAHLPERIODEN></MDB>"
         for index in range(630)
@@ -269,6 +270,21 @@ class RefreshTests(unittest.TestCase):
                         self.assertFalse(self.cache.exists())
                         self.assertIn("no cached file: keine Sitzzahlen", err)
                     self.assertEqual(self.leftovers(), [])
+
+    # Value: protects=a download whose Fraktion/Gruppe label was renamed (every MdB then reads fraktionslos,
+    #   630 seats, the legal size) is refused and the cached file kept, with a warning naming the cause;
+    #   fails_when=refresh caches a file that publishes fraktionslos at 100 %; why_new=TODOS C1 deferred
+    #   item 30; seam=stammdaten.refresh
+    def test_a_download_with_a_renamed_fraktion_label_keeps_the_previous_file_and_warns(self) -> None:
+        self.seed(self.good)
+        renamed = whole_bundestag_zip(self.tmp / "renamed.zip", version=1780000000, art="Fraktion")
+        err = self.refresh((renamed, '"r"'))
+        self.assertIn("warning: [stammdaten] the downloaded file fails the seat checks", err)
+        self.assertIn("WP 21: every Mandat is fraktionslos", err)
+        self.assertIn("keeping the cached file (Stand 29.04.2026)", err)
+        self.assertEqual(self.cache.read_bytes(), self.good)
+        self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"old"')
+        self.assertEqual(self.leftovers(), [])
 
     # Value: protects=a cache write that fails (disk full, a concurrent refresh) keeps the previous file
     #   and warns instead of ending the build in a traceback; fails_when=the OSError from writing or

@@ -164,7 +164,8 @@ def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple
     and on rows the store's tables would refuse (``persist_seat_counts``: a
     Zugehörigkeit or seat row that ends no later than it starts, seats of zero
     or less, a repeated primary key), which would otherwise be cached and then
-    fail every later rebuild."""
+    fail every later rebuild, and on a Wahlperiode whose Mandate are all
+    fraktionslos."""
     zugehoerigkeiten = derive.mdb_zugehoerigkeiten(records, since_wahlperiode=since_wahlperiode)
     keys: set[tuple[str, int, str]] = set()
     for row in zugehoerigkeiten:
@@ -174,6 +175,17 @@ def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple
         if key in keys:
             raise StammdatenError(f"MdB {key[0]}, WP {key[1]}: the Zugehörigkeit from {key[2]} is listed twice")
         keys.add(key)
+    # A renamed INSART_LANG label would match no membership, file every Mandat
+    # as fraktionslos and still total the legal size.
+    groups: dict[int, set[str]] = {}
+    for row in zugehoerigkeiten:
+        groups.setdefault(row["wahlperiode"], set()).add(row["party"])
+    for wahlperiode, parties in sorted(groups.items()):
+        if parties == {"fraktionslos"}:
+            raise StammdatenError(
+                f"WP {wahlperiode}: every Mandat is fraktionslos, no INSART_LANG {derive.STAMMDATEN_FRAKTION_ART!r} "
+                "membership was read; the file's labels may have changed"
+            )
     seats = derive.party_seats(zugehoerigkeiten)
     derive.check_seat_totals(seats)
     keys = set()

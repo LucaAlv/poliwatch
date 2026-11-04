@@ -425,6 +425,26 @@ class SeatRowsGateTests(unittest.TestCase):
         with self.assertRaisesRegex(derive.StammdatenError, "11000001.*twice"):
             self.gate(record, record)
 
+    # Value: protects=a Wahlperiode whose every Mandat reads fraktionslos is refused, so a renamed
+    #   INSART_LANG label (which no Fraktion/Gruppe row then matches) cannot cache a file that publishes
+    #   fraktionslos at 100 %, the 630 seats passing the size check; fails_when=the check is dropped, or
+    #   it fires for a Wahlperiode with a single real Fraktion; why_new=TODOS C1 deferred item 30;
+    #   seam=stammdaten.seat_rows; no_claim=the live file (its label is intact)
+    def test_a_wahlperiode_with_mandates_but_no_fraktion_is_refused(self) -> None:
+        def bundestag(art: str) -> list[dict[str, object]]:
+            return [mdb(f"110{index:05d}", wahlperiode(21, "25.03.2025", "", institution(CDU, "25.03.2025", art=art)))
+                    for index in range(630)]
+
+        self.assertTrue(stammdaten.seat_rows(bundestag("Fraktion/Gruppe"), since_wahlperiode=18)[1])
+        with self.assertRaises(derive.StammdatenError) as raised:
+            stammdaten.seat_rows(bundestag("Fraktion"), since_wahlperiode=18)
+        for part in ("WP 21", "fraktionslos", derive.STAMMDATEN_FRAKTION_ART):
+            self.assertIn(part, str(raised.exception))
+        # One real Fraktion among fraktionslos Mandate is enough: no share threshold.
+        one = bundestag("Fraktion")
+        one[0] = mdb("11000000", wahlperiode(21, "25.03.2025", "", institution(CDU, "25.03.2025")))
+        self.assertTrue(stammdaten.seat_rows(one, since_wahlperiode=18)[1])
+
 
 class SeatTotalsTests(unittest.TestCase):
     def test_the_legal_sizes_are_the_four_bundestage(self) -> None:
