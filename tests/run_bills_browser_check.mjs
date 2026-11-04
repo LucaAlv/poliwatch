@@ -23,11 +23,14 @@ if (typeof WebSocket !== 'function') throw new Error('Node 21+ with native WebSo
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'bills-browser-'));
 let browser, server, ws;
-const waitFor = async (fn, ms = 15000) => {
+const waitFor = async (fn, ms = 15000, what = 'Chrome DevTools') => {
   const end = Date.now() + ms;
   while (Date.now() < end) { const value = await fn(); if (value) return value; await delay(100); }
-  throw new Error('Timed out waiting for Chrome DevTools');
+  throw new Error(`Timed out after ${ms / 1000} s waiting for ${what}`);
 };
+// A cold Chrome on a loaded CI runner needs well over the 15 s a page interaction gets
+// (one run on PR #131 timed out at about 16 s while the push run on the same commit passed).
+const CHROME_START_MS = 60000;
 function connect(url) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url), pending = new Map(), listeners = new Map();
@@ -101,7 +104,10 @@ async function main() {
   browser = spawn(chrome, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
   await once(browser, 'spawn');
   const portFile = path.join(profile, 'DevToolsActivePort');
-  await waitFor(() => fs.existsSync(portFile) && fs.readFileSync(portFile, 'utf8').split('\n')[0]);
+  await waitFor(() => {
+    if (browser.exitCode !== null || browser.signalCode !== null) throw new Error(`Chrome exited before DevTools was ready (${browser.signalCode ? `signal ${browser.signalCode}` : `exit code ${browser.exitCode}`}): ${chrome}`);
+    return fs.existsSync(portFile) && fs.readFileSync(portFile, 'utf8').split('\n')[0];
+  }, CHROME_START_MS, 'Chrome to write DevToolsActivePort');
   const port = fs.readFileSync(portFile, 'utf8').split('\n')[0];
   const targets = await (await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(10000) })).json();
   ws = await connect(targets.find(x => x.type === 'page').webSocketDebuggerUrl);
@@ -177,7 +183,7 @@ async function main() {
         if (result.keyboardEnter !== 'pending on focused Repeat speech link') throw new Error(`${label} protocol missed keyboard setup: ${JSON.stringify(result)}`);
         await ws.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
         await ws.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-        await waitFor(() => ws.evaluate('document.getElementById("speech-4-ID0").open'));
+        await waitFor(() => ws.evaluate('document.getElementById("speech-4-ID0").open'), 15000, 'the focused speech to open on Enter');
         result = await ws.evaluate(expression);
         if (result.keyboardEnter !== 'passed') throw new Error(`${label} keyboard Enter failed: ${JSON.stringify(result)}`);
       }
@@ -192,5 +198,6 @@ main().catch(error => { console.error(`FAIL bills browser check: ${error.stack |
     await Promise.race([once(browser, 'exit'), delay(2000)]);
     if (browser.exitCode === null && browser.signalCode === null) { browser.kill('SIGKILL'); await once(browser, 'exit'); }
   }
-  fs.rmSync(temp, { recursive: true, force: true });
+  // Chrome's helper processes can still write into the profile while it is removed (ENOTEMPTY).
+  fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
