@@ -3370,19 +3370,26 @@ def _wahlperiode_sql(alias: str) -> str:
     return f"CAST(substr({alias}.document_number, 1, instr({alias}.document_number, '/') - 1) AS INTEGER)"
 
 
+# The sitting's number within its Wahlperiode: the part after the slash as a
+# number, so "21/99" comes before "21/100" (as text it comes after).
+def _sitting_number_sql(alias: str) -> str:
+    return f"CAST(substr({alias}.document_number, instr({alias}.document_number, '/') + 1) AS INTEGER)"
+
+
 # The sitting of a vote: its own protocol, else the first sitting whose agenda
-# item claims it.
+# item claims it, by Wahlperiode, then sitting number.
 _VOTE_PROTOCOL_SQL = (
     "COALESCE((SELECT ai.protocol_id FROM agenda_item_votes aiv JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
     "                  JOIN protocols p0 ON p0.id = ai.protocol_id\n"
-    "                  WHERE aiv.vote_id = v.id ORDER BY p0.document_number LIMIT 1), v.protocol_id)"
+    "                  WHERE aiv.vote_id = v.id\n"
+    "                  ORDER BY " + _wahlperiode_sql("p0") + ", " + _sitting_number_sql("p0") + ", p0.document_number LIMIT 1), v.protocol_id)"
 )
 
 # Output definitions of the wahlperiode column, by what the row counts.
 _WP_SPEECH_MEANING = "Wahlperiode der Sitzung der Rede: Präfix der Protokollnummer (protocols.document_number) als Zahl."
 _WP_VOTE_MEANING = (
-    "Wahlperiode der Sitzung der Abstimmung: Präfix der lexikografisch kleinsten Protokollnummer der Sitzungen, "
-    "deren TOP sie zugeordnet ist, ersatzweise von votes.protocol_id, als Zahl."
+    "Wahlperiode der Sitzung der Abstimmung: Präfix der Protokollnummer der ersten Sitzung (nach Wahlperiode, dann "
+    "Sitzungsnummer als Zahl), deren TOP sie zugeordnet ist, ersatzweise von votes.protocol_id, als Zahl."
 )
 # What LIMIT 5 does to a recipe ordered by Wahlperiode first.
 _WP_LIMIT_METHOD = (
@@ -3575,7 +3582,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "document_number", "meaning": "Lexikografisch kleinste Protokollnummer der Sitzungen, deren TOP die Abstimmung zugeordnet ist, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "document_number", "meaning": "Protokollnummer der ersten Sitzung (nach Wahlperiode, dann Sitzungsnummer als Zahl), deren TOP die Abstimmung zugeordnet ist, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
             {"name": "wahlperiode", "meaning": _WP_VOTE_MEANING, "align": "num"},
             {"name": "date", "meaning": "Datum der Abstimmung als ISO-Kalendertag YYYY-MM-DD, ohne Uhrzeit/Zeitzone.", "align": "text"},
             {"name": "title", "meaning": "Titel der Abstimmung laut Quelle (votes.title).", "align": "text", "link": "document", "truncate": 90},
@@ -3587,8 +3594,9 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
-            "Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine Ja- oder Nein-Gesamtzahl nennt "
-            "(votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
+            "Gehört eine Abstimmung zu TOPs mehrerer Sitzungen, zählt die erste nach Wahlperiode, dann Sitzungsnummer als "
+            "Zahl (21/99 vor 21/100). Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine "
+            "Ja- oder Nein-Gesamtzahl nennt (votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
             "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
         ),
     },
@@ -3599,7 +3607,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "SELECT pr.id AS proceeding_id, " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
             "       pr.title, pr.proceeding_type AS typ,\n"
             "       COUNT(DISTINCT s.id) AS reden, COUNT(DISTINCT ai.protocol_id) AS sitzungen,\n"
-            "       MIN(p.document_number) AS erste_drucksache\n"
+            "       substr(MIN(printf('%09d', " + _sitting_number_sql("p") + ") || p.document_number), 10) AS erste_drucksache\n"
             "FROM proceedings pr\n"
             "JOIN proceeding_positions pp ON pp.proceeding_id = pr.id\n"
             "JOIN agenda_items ai ON ai.id = pp.agenda_item_id\n"
@@ -3614,7 +3622,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "wahlperiode", "meaning": "Wahlperiode der Sitzungen mit verknüpftem TOP: Präfix der Protokollnummer (protocols.document_number) als Zahl.", "align": "num"},
             {"name": "title", "meaning": "Titel des Vorgangs laut DIP (proceedings.title).", "align": "text", "link": "proceeding", "truncate": 90},
             {"name": "typ", "meaning": "Vorgangstyp gemäß DIP.", "align": "text"},
-            {"name": "erste_drucksache", "meaning": "Trotz des Namens: lexikografisch kleinste Plenarprotokollnummer der verknüpften Sitzungen dieser Wahlperiode, keine Drucksache.", "align": "text"},
+            {"name": "erste_drucksache", "meaning": "Trotz des Namens: Plenarprotokollnummer der ersten der verknüpften Sitzungen dieser Wahlperiode (kleinste Sitzungsnummer als Zahl), keine Drucksache.", "align": "text"},
             {"name": "reden", "meaning": "Anzahl unterschiedlicher Reden (speeches.id) zu Tagesordnungspunkten dieses Vorgangs in dieser Wahlperiode.", "align": "num"},
             {"name": "sitzungen", "meaning": "Anzahl unterschiedlicher Sitzungen dieser Wahlperiode mit verknüpftem TOP und mindestens einer Rede zu diesem Vorgang.", "align": "num"},
         ),
@@ -3622,7 +3630,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": "Je Wahlperiode gezählt, die jüngste zuerst.",
         "method": (
             "Nur Verknüpfungen über proceeding_positions und agenda_items zählen; ein Vorgang mit Sitzungen in zwei "
-            "Wahlperioden erscheint mit einer Zeile je Wahlperiode. Reihenfolge: Wahlperiode absteigend, dann Reden, dann "
+            "Wahlperioden erscheint mit einer Zeile je Wahlperiode. Die erste Sitzung ist die mit der kleinsten "
+            "Sitzungsnummer als Zahl (21/99 vor 21/100). Reihenfolge: Wahlperiode absteigend, dann Reden, dann "
             "Sitzungen absteigend, dann Kennung. " + _WP_LIMIT_METHOD + " Die CSV folgt der SQL-Projektion; das HTML "
             "zeigt erste_drucksache vor reden und sitzungen."
         ),
