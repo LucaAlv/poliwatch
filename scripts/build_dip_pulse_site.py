@@ -13251,35 +13251,47 @@ def print_effective_config(selection: EnrichmentSelection, args: argparse.Namesp
 # ---------------------------------------------------------------------------
 
 
-_ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
+# A leading "scheme:" as a browser reads it: a letter, then letters, digits, "+",
+# "-" or "." up to the first colon. A "/" before the colon makes it a path.
+_LEADING_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 
 
 # --data-base-url only decides where download links point. Absolute only for
-# https://, http:// or a leading /; any other scheme:// is a build-time error
-# (F3.1) rather than a silently broken or unsafe href.
+# https://, http:// or a leading /; any other scheme: is a build-time error
+# (F3.1) rather than a silently broken or unsafe href, and so is anything a
+# browser would read as a different URL than the one named here: a backslash,
+# whitespace or control characters (browsers strip or drop them), a query or a
+# fragment (the links append a path to the base) and a port that is no number.
 def resolve_data_base_url(value: str) -> str:
+    # A value with an "@" may hold credentials, which no message may print.
+    shown = repr(value) if "@" not in value else "(shown without the value: it contains an @)"
     # Browsers read a backslash as "/", so "/\host/" leaves the site while
     # urlsplit sees no host and datenschutz.html would name none.
     if "\\" in value:
-        raise ValueError(f"--data-base-url {value!r} contains a backslash")
-    if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
+        raise ValueError(f"--data-base-url {shown} contains a backslash")
+    if any(char.isspace() or unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
+        raise ValueError(f"--data-base-url {shown} contains whitespace or a control character")
+    if "?" in value or "#" in value:
+        raise ValueError(f"--data-base-url {shown} contains a query or fragment; the download links append a path to the base")
+    scheme = _LEADING_SCHEME_RE.match(value)
+    if scheme and not (scheme.group(1).lower() in ("https", "http") and value[scheme.end():].startswith("//")):
+        raise ValueError(
+            f"--data-base-url {shown} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
+        )
+    if scheme or value.startswith("/"):
         # A host part (also a protocol-relative "//host/") must parse and be
         # non-empty: datenschutz.html names it as the download host.
         try:
             parsed = urllib.parse.urlsplit(value)
             host = parsed.hostname
+            parsed.port  # a port that is no number or past 65535 raises here
         except ValueError as exc:
-            raise ValueError(f"--data-base-url {value!r} is not a valid URL: {exc}") from exc
+            raise ValueError(f"--data-base-url {shown} is not a valid URL: {exc}") from exc
         if host is None and (value.startswith("//") or not value.startswith("/")):
-            raise ValueError(f"--data-base-url {value!r} names no host")
+            raise ValueError(f"--data-base-url {shown} names no host")
         # Every download href would carry them; the value is not echoed.
         if parsed.username is not None or parsed.password is not None:
             raise ValueError("--data-base-url contains credentials (user:password@); remove them")
-        return value if value.endswith("/") else value + "/"
-    if _ABSOLUTE_SCHEME_RE.match(value):
-        raise ValueError(
-            f"--data-base-url {value!r} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
-        )
     return value if value.endswith("/") else value + "/"
 
 
@@ -13759,7 +13771,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Base URL the Daten page's download links are built from. Defaults to "
             "data/exports/ (or $BUNDESTAG_PULSE_DATA_BASE_URL); absolute only for "
-            "https://, http:// or a leading /."
+            "https://, http:// or a leading /. No credentials, query, fragment or whitespace."
         ),
     )
     parser.add_argument(
