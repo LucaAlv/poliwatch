@@ -1801,9 +1801,12 @@ def normalize_faction(value: str | None) -> str:
     return derive.zusammenschluss(value) or "Unbekannt"
 
 
-def vote_counts_from_csv(value: str | None) -> dict[str, int]:
-    numbers = [int(part) for part in re.findall(r"\d+", value or "")[:4]]
-    numbers.extend([0] * (4 - len(numbers)))
+def vote_counts_from_csv(value: str | None, missing: int | None = 0) -> dict[str, int | None]:
+    """The four counts of a ``data-chart-values`` string; a count the string
+    does not give becomes ``missing``. A vote's total passes ``None`` so a
+    tally the source never printed is stored as NULL, not as an invented 0."""
+    numbers: list[int | None] = [int(part) for part in re.findall(r"\d+", value or "")[:4]]
+    numbers.extend([missing] * (4 - len(numbers)))
     return dict(zip(VOTE_KEYS, numbers))
 
 
@@ -2611,7 +2614,7 @@ def parse_roll_call_list_page(html_text: str) -> list[dict[str, Any]]:
                 "description": strip_tags(description_match.group(1)) if description_match else "",
                 "document_numbers": document_numbers,
                 "detail_url": roll_call_vote_url(vote_id),
-                "total": vote_counts_from_csv(counts_match.group(1) if counts_match else None),
+                "total": vote_counts_from_csv(counts_match.group(1), missing=None) if counts_match else {},
             }
         )
     return entries

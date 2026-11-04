@@ -171,10 +171,12 @@ def vote_groups_cover_total(vote: Mapping[str, Any]) -> bool:
     vote ("Niemand stimmt anders …", an Abweichler count) rest on its groups: a
     Zusammenschluss missing from both the rows and the Einzelstimmen leaves the
     others complete. No total, no fraction row or a count the total does not
-    hold as a number covers nothing."""
+    hold as a number covers nothing. Four zeros are no total either: a
+    roll-call's counts add up to the seats, and reports parsed before 0.32
+    padded a listing without chart values with 0 (persist stores them NULL)."""
     total = vote.get("total") or {}
     rows = merge_fractions(vote.get("fractions"))
-    if not total or not rows:
+    if not total or not rows or all(total.get(key) == 0 for key in VOTE_COUNT_KEYS):
         return False
     return all(
         isinstance(total.get(key), int) and not isinstance(total.get(key), bool)

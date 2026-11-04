@@ -536,7 +536,9 @@ The one differing link is vote 493, Drucksache 19/19. `documents.url` holds the 
 
 **Drucksachen card from #132** (measured on B's reports): it moves on 572 of 716 dossiers, from a total of 5,198 to 29,353 (e.g. 18/100 0 → 72, 18/130 0 → 86). Recorded in the TODOS.md Completed note.
 
-**Still owed:** the browser check of `votes/index.html` filter chips at 375px and in dark mode.
+**Browser check (2026-11-04, ship):** `tests/run_bills_browser_check.mjs` passes the votes archive filter and `?politikfeld` preload at desktop and mobile; at 375 px in dark mode the fixture page has 0 px overflow and the Verkehr chip filters 4 rows to 2.
+
+**Ship review fix (2026-11-04):** the review found that NULL totals could not arise from fresh parser output: `vote_counts_from_csv` padded a listing without `data-chart-values` with four zeros. The listing parser now keeps a missing count as `None` (no chart values: no total), and persist stores a four-zero total as NULL (`_stored_total`), which also covers cached reports. **Owed on the reference store:** the 0 → NULL list from `compare_store_values.py A B` and r4's old and new first rows; facts cannot move (`yes + no > 0`). `derive.vote_groups_cover_total` also reads four zeros as no total, so the archive and the dossier panel keep agreeing: beside four-zero Fraktion rows the panel would otherwise say "Niemand stimmt anders" (0) where the store path gives no figure. Such a vote's Abweichler figure moves from 0 to absent on both pages; its count on the reference store is owed with the replay.
 
 ## Verification (each slice)
 

@@ -49,8 +49,8 @@
         "url": {
           "meaning": "URL, die diese Quelle (Protokoll-XML oder DIP) für die Drucksache unter diesem Tagesordnungspunkt nennt; documents.url ist dagegen eine URL je Drucksache über alle Sitzungen. Nennt die XML eine Drucksache unter einem Punkt mehrfach, gilt die letzte genannte URL, bei DIP die erste.",
           "unit": "URL als Text oder NULL, wenn die Quelle keine nennt.",
-          "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
-          "license": "eigene-metadaten-zuordnung"
+          "source": "Protokoll-XML bzw. DIP-API: die URL, die diese Quelle für die Drucksache unter diesem Tagesordnungspunkt nennt, unverändert übernommen.",
+          "license": "dip"
         },
         "rank": {
           "meaning": "Position der ersten Nennung der Drucksache in der Liste ihrer Quelle für diesen Tagesordnungspunkt, getrennt nach xml und api.",

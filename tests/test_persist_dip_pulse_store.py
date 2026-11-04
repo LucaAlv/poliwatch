@@ -776,6 +776,25 @@ class ArchiveColumnsTests(unittest.TestCase):
                 conn.close()
 
 
+    # Value: protects=a cached report's four-zero total (the pre-0.32 listing padding) is stored as NULL, while a real 0 beside other counts stays 0; fails_when=_stored_total goes and r4 ranks a 0:0 vote as the closest vote; why_new=0.32 ship review; seam=none
+    def test_four_zero_total_is_stored_as_missing(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        vote["total"] = {"yes": 0, "no": 0, "abstain": 0, "absent": 0}
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT yes_count, no_count, abstain_count, absent_count FROM votes WHERE id = ?", (str(vote["id"]),)
+                    ).fetchone()[:],
+                    (None, None, None, None),
+                )
+            finally:
+                conn.close()
+
+
 class ConnectGuardTests(unittest.TestCase):
     def test_connect_refuses_a_store_with_a_nonzero_user_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

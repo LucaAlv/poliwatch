@@ -422,6 +422,21 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** none (A4 slice 1 is built)
 
+### A4 slice 1 /ship review: deferred findings (2026-11-04)
+
+**What:** Non-correctness findings from the manual ship of A4 slice 1 (v0.32.0.0; checklist pass and red team). None moves a figure today.
+- (a) **Archive vs dossier after a failed online rebuild.** Online step 2 writes the refreshed reports and dossier pages before `rebuild_database_from_entries`; when that raises `DatabaseRebuildError` the old store stays. A later plain `--offline` passes `store_coverage_gap` (it compares protocol ids only) and renders the dossiers from the new reports but `votes/index.html` from the old store, so a late-published roll-call vote shows in the dossier and not in the archive (R3). Needs the same fix as "Refuse a render when the Vorgang cache is newer than the store": persist a per-report fingerprint and refuse a render whose cached report differs, or leave a "repersist pending" marker after a failed rebuild.
+- (b) `_total_count` coerces any value with `int()` (`"3"`, `3.0`, `True` → 3, 3, 1; `12.7` → 12), while `derive.vote_groups_cover_total` on the report path accepts only real ints, so archive and panel could disagree on the Abweichler count. Latent: the parser emits ints or `None`. Store NULL for anything but an int.
+- (c) A cached report from before 0.32 still prints "0 Ja, 0 Nein, 0 Enthaltungen" in its dossier lead for a listing that had no chart values, until the sitting is fetched again; the store already holds NULL. Read four zeros as missing on the report path too, or reparse.
+- (d) `require_current_schema` checks only `vote_fractions.rank`; a hand-altered store missing `vote_documents.rank` or `agenda_item_documents.rank` fails with a raw SQLite error. No code path makes such a store.
+- (e) Wording: the `stored_votes` docstring still says 556 votes / 382,441 `vote_members` (reference store now 619 / 425,322); the `rank` dictionary text says "Position der ersten Nennung" while the value is a dense rank over accepted references; `vote_documents.rank` follows the parser's `sorted(set(...))`, not page order; a double blank line in `features/votes.py` where `write_pages` was.
+- (f) Persist runs one `SELECT` per TOP Drucksache reference for its `seen` check; a Python set would do. Not measured.
+- (g) Test hygiene: `test_politikfelder.CacheFileTests.test_save_falls_back_to_data_on_another_file_system_or_a_read_only_parent` fails when the suite runs as root (chmod 0o555 does not stop root), as in the cloud container; skip it when `os.geteuid() == 0`. `tests/run_bills_browser_check.mjs` can exit 1 after every check passed, when Chrome still writes into its temp profile during cleanup (`ENOTEMPTY`); retry the `rmSync` or pass `maxRetries`.
+
+**Effort:** S each
+**Priority:** P3 ((a) P2)
+**Depends on:** none
+
 ### A4 slice 0 review: deferred findings
 
 **What:** Non-blocking findings from the `/gstack-review` of A4 slice 0 (e184ccc, 2026-11-01; specialists, Claude adversarial, red team). None moves a figure or breaks a page.

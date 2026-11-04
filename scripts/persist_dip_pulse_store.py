@@ -1395,6 +1395,17 @@ def _total_count(value: Any) -> int | None:
     return int(value)
 
 
+def _stored_total(total: Mapping[str, Any]) -> tuple[int | None, int | None, int | None, int | None]:
+    """A vote's Ja, Nein, Enthaltung and nicht abgegeben as stored. Four zeros
+    are a missing total, not a tally: a roll-call's counts add up to the
+    seats, and reports parsed before 0.32 padded a listing without chart
+    values with 0 (``vote_counts_from_csv``)."""
+    counts = tuple(_total_count(total.get(key)) for key in ("yes", "no", "abstain", "absent"))
+    if all(count == 0 for count in counts):
+        return (None, None, None, None)
+    return counts
+
+
 def persist_vote(
     conn: sqlite3.Connection,
     vote: dict[str, Any],
@@ -1461,10 +1472,7 @@ def persist_vote(
             clean(vote.get("title")),
             clean(vote.get("description")),
             clean(vote.get("detail_url")),
-            _total_count(total.get("yes")),
-            _total_count(total.get("no")),
-            _total_count(total.get("abstain")),
-            _total_count(total.get("absent")),
+            *_stored_total(total),
             clean(result_raw),
             clean(result_source),
             clean(vote.get("result_scope")),
