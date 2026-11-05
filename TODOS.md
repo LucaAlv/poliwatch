@@ -718,11 +718,42 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 - Preview on real data: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte.html`. It also holds the generator, for values and markup.
 - Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
 - Nobody outside this project has seen the design. Test the grey ground and the vote wall with real readers.
-- The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so the teal `a:visited` rule in `global_header_styles` goes.
+- The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so every link `:visited` rule goes (`render_dip_pulse_html.py`, `build_dip_pulse_site.py`).
 - Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks).
+- The preview and the chart prototype exist only on the owner's machine, under `~/.gstack`. Copy into the repository whatever the pages need.
+
+**Settle while applying** (found by the v0.32.1.0 reviews; `DESIGN.md` does not answer these yet):
+- **Inverted votes.** On a vote with `inverted` set, a Ja means "gegen den Antrag" (`derive.fraction_position`), so a blue Ja card reads as approval when it means the opposite. The key and the rows must say what Ja means on such a vote. Put an inverted vote in the tests.
+- **Touch targets.** `DESIGN.md` sets controls at 36px, but the site ships 44px touch targets (`min-height:44px` in `render_dip_pulse_html.py`, CHANGELOG entries on the filter buttons and the Wochenübersicht). Do not regress them: ask the owner to change `DESIGN.md`.
+- **Where computed figures sit.** "No computed figures on a slip" collides with "the vote wall sits on a slip": the preview prints each row's counts inside the slip. The list strip is computed too, and its vote colours fail on the ground (Nein 2.08:1). Decide, and write the answer into `DESIGN.md`.
+- **The wall as text.** A card's `title` does not show on touch or reliably reach a screen reader. Give the member votes as text too, such as a `<details>` list or table per Fraktion.
+- **Dark mode.** `theme_bootstrap_script` follows the saved choice, then `prefers-color-scheme`, and the Datenschutz page names the `bundestag-pulse-theme` key. Keep the toggle and the key. "Light by default" applies only when neither says dark.
+- **Fraktion colours in both modes.** `PARTY_COLORS` writes one hex value into inline styles; only CDU/CSU is a variable. `DESIGN.md` has a light and a dark value per Fraktion, so emit a variable for each.
+- **Fonts without a package manager.** The `@fontsource` packages are a one-time download source. Commit the five WOFF2 files (D-DIN Condensed Bold; Atkinson Next variable, latin and latin-ext; Atkinson Mono 400 and 700) and the licence texts, with no `package.json`.
+- **Stale stylesheet.** Put a content hash or version in the stylesheet's URL, so new HTML never pairs with a cached old file.
+- **Long compounds.** Bill titles come from DIP, so nobody inserts the soft hyphens `DESIGN.md` asks for. Add an overflow fallback and check long titles at 375 px.
+- **Enthaltung and provenance.** There is no outline token for the Enthaltung card. Slip against ground is only 1.59:1 in light mode and 1.40:1 in dark mode, so the surface alone may not carry provenance for a low-vision reader.
+- **Reviews until this lands.** The `CLAUDE.md` rule to flag UI that does not match `DESIGN.md` means new or changed UI. Existing pages are this entry, not findings.
 
 **Effort:** L
 **Priority:** P2
+**Depends on:** None
+
+### Design hand-over leftovers
+
+**What:**
+- `PRODUCT.md:58` says the votes archive renders from report JSON and only the Abgeordnete, Fakten and Daten pages read the store. The archive has rendered from the store since #133.
+- The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.
+- `docs/designs/gesetzesvorhaben.md:300` names the removed TODO "DESIGN.md, tokens and a typeface decision".
+- `README.md:494` and `docs/project-documentation.md:21,313` link to `docs/design/bundestag-pulse-design.md`, deleted in ad389bf. Remove the links or point them at `PRODUCT.md` and `DESIGN.md`.
+- `DESIGN.md` has not been checked against two outside sources in the v0.32.1.0 reviews: the colour-blind ΔE figures (validator not re-run) and the bundestag.de ballot-card link (not reachable from the sandbox).
+
+**Why:** none of these moves a figure or misleads a site reader, but each can send a later reader the wrong way.
+
+**Context:** found by the v0.32.1.0 reviews and deferred under CLAUDE.md "Review findings". The `PRODUCT.md` sentence predates that release.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ## Publication
