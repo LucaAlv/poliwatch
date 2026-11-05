@@ -270,7 +270,7 @@ class PersistReportTests(unittest.TestCase):
                 conn.close()
 
     # Value: protects=MPs whose member cards link back to the Abstimmung keep one vote_members row each, so every group's rows add up to its vote_fractions counts;
-    #   fails_when=the Abstimmung URL serves as a profile identity and folds them into one mp, the last row written keeping its party and Stimme (63 rows in 22 groups of 11 votes lost on the 2026-10-20 reference store, 912 fraktionslos 5 Ja of 40);
+    #   fails_when=the Abstimmung URL serves as a profile identity and folds them into one mp, the last row written keeping its party and Stimme (63 rows in 22 groups of 11 votes on the reference store, TODOS Completed), or a Stimme is stored with the wrong vote or group, or a group's vote_fractions row goes missing;
     #   why_new=found while keying the Abweichler dedupe on identity (2026-10-22); the per-group check is the symptom of the TODOS entry; seam=derive.vote_member_identity
     def test_members_linked_to_the_abstimmung_page_stay_one_row_each(self) -> None:
         report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
@@ -281,6 +281,7 @@ class PersistReportTests(unittest.TestCase):
             {"name": "CDU/CSU", "counts": {"yes": 0, "no": 1, "abstain": 0, "absent": 0}, "total": 1},
             {"name": "fraktionslos", "counts": {"yes": 1, "no": 0, "abstain": 0, "absent": 0}, "total": 1},
         ]
+        vote["total"] = {"yes": 2, "no": 1, "abstain": 0, "absent": 0}
         for member in vote["members"]:
             member["profile_url"] = vote["detail_url"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,6 +295,8 @@ class PersistReportTests(unittest.TestCase):
                     [tuple(row) for row in rows],
                     [("Ada Lovelace", None), ("Bruno Beispiel", None), ("Carla Muster", None)],
                 )
+                # The query below reads from vote_fractions, so an empty table would pass it.
+                self.assertEqual(tuple(conn.execute("SELECT COUNT(*), SUM(total_count) FROM vote_fractions").fetchone()), (3, 3))
                 short_groups = conn.execute(
                     """
                     SELECT p.name, f.yes_count, f.no_count, COUNT(vm.mp_id),
