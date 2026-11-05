@@ -227,7 +227,9 @@ class ExportHelpersTests(unittest.TestCase):
     def test_resolve_data_base_url_never_echoes_credentials(self) -> None:
         # The credential URLs are split so the pre-push scanner skips the fakes.
         for bad in ("https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/", "https://u:p" + "@dl.example.org/x/?y",
-                    "https://u:p" + "@dl.example.org:abc/x/", "javascript://u:p" + "@dl.example.org/x/"):
+                    "https://u:p" + "@dl.example.org:abc/x/", "javascript://u:p" + "@dl.example.org/x/",
+                    # urlsplit's own error quotes the whole netloc for a character whose NFKC form is a separator.
+                    "https://u:p" + "@dl.example.org／/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError) as caught:
                     b.resolve_data_base_url(bad)

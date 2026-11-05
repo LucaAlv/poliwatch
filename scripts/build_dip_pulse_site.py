@@ -13314,7 +13314,10 @@ def resolve_data_base_url(value: str) -> str:
             host = parsed.hostname
             parsed.port  # a port that is no number or past 65535 raises here
         except ValueError as exc:
-            raise ValueError(f"--data-base-url {shown} is not a valid URL: {exc}") from exc
+            # urlsplit's text can quote the whole netloc, credentials included, so
+            # it goes only where the value may show, and the chain drops it too.
+            reason = f": {exc}" if "@" not in value else ""
+            raise ValueError(f"--data-base-url {shown} is not a valid URL{reason}") from None
         if host is None and (value.startswith("//") or not value.startswith("/")):
             raise ValueError(f"--data-base-url {shown} names no host")
         # Every download href would carry them; the value is not echoed.
