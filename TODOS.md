@@ -718,7 +718,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 - Preview on real data: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte.html`. It also holds the generator, for values and markup.
 - Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
 - Nobody outside this project has seen the design. Test the grey ground and the vote wall with real readers.
-- The `:visited`/`:focus-visible` item under Daten and the nested cards the puls.html review flagged are absorbed here. Visited links now look like unvisited ones.
+- The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so the teal `a:visited` rule in `global_header_styles` goes.
 - Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks).
 
 **Effort:** L

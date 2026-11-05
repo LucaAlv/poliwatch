@@ -141,7 +141,7 @@ Line counts include the shared `tip.js` for A and C (2 lines per task). The fixe
 **Limits of this result**
 - Only line small multiples were tested. A chart type that is hard to hand-draw (heatmap, beeswarm, many-scale facets) could favour a library. Revisit when a real chart needs one.
 - An agent made every change. Developer comforts such as Astro's hot reload and component files are invisible in line counts, and a person may weigh them differently.
-- A's 172 lines are a small clean module, not today's 14,556-line build file. The iteration pain the owner felt comes at least partly from that file's structure, which this result does not fix. New pages should be small modules like this one.
+- A's 172 lines are a small clean module, not today's 14,775-line build file. The iteration pain the owner felt comes at least partly from that file's structure, which this result does not fix. New pages should be small modules like this one.
 - Migration cost for existing pages was not estimated, because the rule already fails without it. It would add to the case against, not for.
 - Figures are provisional and are not results: term lists unreviewed, and monthly values get noisy where a month has few sittings.
 
