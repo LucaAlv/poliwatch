@@ -292,6 +292,36 @@ class RefreshTests(unittest.TestCase):
     #   a build without seat counts; with no cached file at all the old wording stays and a failed cache write
     #   leaves no cache; fails_when=kept words a corrupt cache like an absent one; why_new=TODOS C1 deferred
     #   items 22 and 24 (the corrupt-cache and no-cache rows of the matrix); seam=stammdaten.refresh
+    def test_a_lost_etag_write_says_the_file_is_cached(self) -> None:
+        # Value: protects=once the good file is in place, a failed ETag write is reported as that, not as the
+        #   state before the download; fails_when=the sidecar shares the except of the file swap again;
+        #   why_new=every cache-write row above fails the swap itself; seam=none;
+        #   no_claim=a real full disk (the write is mocked)
+        real_write_text = Path.write_text
+
+        def failing(path, *args, **kwargs):
+            if path.name == stammdaten.ETAG_NAME:
+                raise OSError(28, "No space left on device")
+            return real_write_text(path, *args, **kwargs)
+
+        for label, before, gone in (
+            ("corrupt cache", b"<html>half a zip</html>", "unreadable"),
+            ("no cache", None, "no cached file"),
+            ("good cache", self.good, "keeping the cached file"),
+        ):
+            with self.subTest(label):
+                self.cache.unlink(missing_ok=True)
+                if before:
+                    self.seed(before)
+                with mock.patch.object(Path, "write_text", failing):
+                    err = self.refresh((self.newer, '"n"'))
+                self.assertEqual(self.cache.read_bytes(), self.newer)
+                self.assertNotIn(gone, err)
+                self.assertNotIn("could not be cached", err)
+                self.assertIn("No space left on device", err)
+                self.assertIn("the next run downloads it in full", err)
+                self.assertIn("stammdaten: fetched", err)
+
     def test_a_corrupt_cache_is_named_unreadable_when_the_fetch_or_the_cache_write_fails(self) -> None:
         mini = io.BytesIO()
         with zipfile.ZipFile(mini, "w") as archive:

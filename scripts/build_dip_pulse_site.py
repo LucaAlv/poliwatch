@@ -13291,8 +13291,11 @@ _LEADING_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 # whitespace or control characters (browsers strip or drop them), a query or a
 # fragment (the links append a path to the base) and a port that is no number.
 def resolve_data_base_url(value: str) -> str:
-    # A value with an "@" may hold credentials, which no message may print.
-    shown = repr(value) if "@" not in value else "(shown without the value: it contains an @)"
+    # A value with an "@", a query, a fragment or a non-ASCII character (urlsplit
+    # quotes the netloc for a full-width at-sign, which is no separator) may hold
+    # credentials or a token, which no message may print.
+    private = not value.isascii() or any(char in value for char in "@?#")
+    shown = "(shown without the value: it may hold credentials or a token)" if private else repr(value)
     # Browsers read a backslash as "/", so "/\host/" leaves the site while
     # urlsplit sees no host and datenschutz.html would name none.
     if "\\" in value:
@@ -13316,7 +13319,7 @@ def resolve_data_base_url(value: str) -> str:
         except ValueError as exc:
             # urlsplit's text can quote the whole netloc, credentials included, so
             # it goes only where the value may show, and the chain drops it too.
-            reason = f": {exc}" if "@" not in value else ""
+            reason = f": {exc}" if not private else ""
             raise ValueError(f"--data-base-url {shown} is not a valid URL{reason}") from None
         if host is None and (value.startswith("//") or not value.startswith("/")):
             raise ValueError(f"--data-base-url {shown} names no host")

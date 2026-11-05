@@ -12,6 +12,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import traceback
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -229,13 +230,20 @@ class ExportHelpersTests(unittest.TestCase):
         for bad in ("https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/", "https://u:p" + "@dl.example.org/x/?y",
                     "https://u:p" + "@dl.example.org:abc/x/", "javascript://u:p" + "@dl.example.org/x/",
                     # urlsplit's own error quotes the whole netloc for a character whose NFKC form is a separator.
-                    "https://u:p" + "@dl.example.org／/"):
+                    "https://u:p" + "@dl.example.org／/",
+                    # Value: protects=a token in a query or fragment, or credentials behind a full-width at-sign (no
+                    # ASCII "@" and urlsplit quotes the netloc), stays out of the refusal; fails_when=the guard keys on
+                    # "@" alone again; why_new=every row above has an ASCII "@"; seam=none
+                    "https://dl.example.org/x/?token=u:p", "https://dl.example.org/x/#u:p", "https://u:p＠dl.example.org/x/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError) as caught:
                     b.resolve_data_base_url(bad)
                 message = str(caught.exception)
+                # Value: protects=the refusal drops urlsplit's own error, which quotes the netloc with its credentials, from the exception chain too, so a traceback in a CI log carries none; fails_when=`from None` becomes `from exc` (the full-width slash row then leaks u:p in the chained error); why_new=the loop checked str(exception) only, which the chain does not appear in; seam=none; no_claim=other rows, which echo the value on purpose
+                chain = "".join(traceback.format_exception(caught.exception))
                 for secret in ("u:p", "dl.example.org"):
                     self.assertNotIn(secret, message)
+                    self.assertNotIn(secret, chain)
 
     def test_is_url(self) -> None:
         self.assertTrue(b.is_url("https://example.org/datenstand.json"))

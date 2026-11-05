@@ -407,8 +407,12 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
         os.replace(temp, path)
         # Written after the file: a crash in between leaves the new file with the
         # old ETag, which costs one full download next time, never a stale 304.
-        sidecar.write_text(json.dumps({"etag": new_etag, "fetched_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()}),
-                           encoding="utf-8")
+        try:
+            sidecar.write_text(json.dumps({"etag": new_etag, "fetched_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()}),
+                               encoding="utf-8")
+        except OSError as exc:
+            print(f"warning: [stammdaten] the file is cached, but its ETag could not be saved ({exc}); "
+                  "the next run downloads it in full", file=sys.stderr)
     except OSError as exc:
         print(f"warning: [stammdaten] the downloaded file could not be cached ({exc}); {kept}", file=sys.stderr)
         return
