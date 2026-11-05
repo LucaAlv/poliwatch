@@ -1135,7 +1135,7 @@ class RepersistTests(unittest.TestCase):
         self.assertTrue(rebuilt.replaced)
         conn = sqlite3.connect(self.database)
         try:
-            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 10)
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 11)
             self.assertGreater(conn.execute("SELECT COUNT(*) FROM vote_fractions").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_fractions WHERE rank < 1").fetchone()[0], 0)
         finally:

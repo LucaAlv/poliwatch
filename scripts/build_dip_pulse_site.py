@@ -1609,6 +1609,32 @@ def read_cached_stammdaten(database_path: Path) -> stammdaten.Stammdaten | None:
     return stammdaten.read_zip(path) if path.is_file() else None
 
 
+def refile_entry_votes(entries: list[dict[str, Any]], database_path: Path) -> None:
+    """Mark in ``entries`` the roll-call members the cached MdB-Stammdaten place in
+    another group than the page does (``derive.refile_vote_members``). Runs before
+    a report is persisted or rendered, and also clears the marks a cached report
+    holds when no file is cached. Raises DatabaseRebuildError for a cached file
+    that cannot be read."""
+    try:
+        cached = read_cached_stammdaten(database_path)
+        source = (derive.refiling_source(derive.mdb_zugehoerigkeiten(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE), cached.stand)
+                  if cached else None)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    refused: list[str] = []
+    moved: set[tuple[str, str]] = set()
+    for entry in entries:
+        refused += derive.refile_report_votes(entry["report"], source)
+        moved |= {(derive.vote_identity(vote), str(member.get("name")))
+                  for _, vote in derive.iter_report_votes(entry["report"])
+                  for member in vote.get("members") or [] if member.get("refiled_to")}
+    if moved:
+        print(f"refile: {len(moved)} Stimmen in {len({vote for vote, _ in moved})} Abstimmungen from the MdB-Stammdaten", file=sys.stderr)
+    if refused:
+        print(f"warning: [refile] the fraction rows of {len(set(refused))} votes cannot absorb the moves; the page's groups stay: "
+              f"{', '.join(sorted(set(refused)))}", file=sys.stderr)
+
+
 def rebuild_seat_counts(store: sqlite3.Connection, database_path: Path) -> None:
     """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the cached
     MdB-Stammdaten into the staged store (C1). With no cached file the tables
@@ -1759,6 +1785,7 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
+    refile_entry_votes(entries, database_path)
     temp_path = _staged_store_path(database_path)
     store = pulse_store.connect(temp_path)
     try:
@@ -3307,7 +3334,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 14
+EXPORT_FORMAT = 15
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -14325,6 +14352,13 @@ def main() -> int:
                 print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
                 return 1
             warn_unparsed_reports(cached_entries)
+            # The store may have been rebuilt without writing these reports back
+            # (validate_store_gate --persist-only): the panels must match it.
+            try:
+                refile_entry_votes(cached_entries, database_path)
+            except DatabaseRebuildError as exc:
+                print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten or remove it, then re-run.", file=sys.stderr)
+                return 1
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.

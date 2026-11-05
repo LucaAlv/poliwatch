@@ -20,8 +20,6 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 
 **A. Counts and coverage: fix what A3 and C1 surfaced, then finish the split**
 1. Correctness P1s. Each one moves published figures:
-   - "Unmatched roll-call votes never reach the report (`sitting_votes`)": 63 votes in 41 sittings were dropped. Probably fixed by #109. It needs a check on a store repersisted from main, not new code.
-   - "Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten".
    - "The carried-forward registry diverges from a fresh build after A3", part 2: 289 pages of persons who hold only retired bindings. Fix it together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs". The MdB-Stammdaten from C1 can be the membership source.
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". This needs an owner decision on the kinds first. 18/1 and 19/1 stay excluded until then.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings": measure the abgeordnetenwatch match share of the WP 18/19 Redner.
@@ -60,21 +58,6 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
 **Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B and C, and the Puls and copy fixes. These stay at their own priorities. WP 1–17 come after v1, because the DIP catalog has no structured XML for them.
 
 ## Daten
-
-### Unmatched roll-call votes never reach the report (`sitting_votes`)
-
-**Probably fixed, check before working on it (2026-11-02):**
-- Since v0.22.0.0 (#109), `build_report` copies the key into the report (`"sitting_votes": enrichment["sitting_votes"]`, `scripts/validate_dip_protocol.py`).
-- `interpret_report_votes` restores it from `api_records` for reports written before that.
-- What is left: count the stored votes without a TOP on a store repersisted from main, and look at one sitting under "TOP nicht zugeordnet". If the 63 votes are there, close this item.
-
-**What (as found):** `enrich_with_api` returns the fetched roll-call votes that match no TOP as `sitting_votes`. But the report dict built at the end of `build_report` (`scripts/validate_dip_protocol.py`, near line 3520) does not copy that key; only `api_records.sitting_votes` keeps the votes. Persist (`derive.py`) and render ("TOP nicht zugeordnet") read the top-level key, so these votes are never stored or shown. Copy the key, then replay the cache offline with `--repersist`. No request is needed, because the cached reports hold the full vote details. Done when the 63 votes appear in the store and in their dossiers under "TOP nicht zugeordnet", with an old/new report.
-
-**Why:** A3 Phase 4 (2026-10-29): 63 votes in 41 sittings are fetched and then dropped. Examples: 261 EUFOR RCA, 510 MINUSMA, 1008 Jahresemissionsgesamtmengen-Verordnung. The Completed item "Match roll-call votes to a TOP when Drucksache numbers fail" (v0.10.0.0) promised this section; it has never shown a vote.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** None
 
 ### `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF
 
@@ -971,6 +954,8 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 
 Also: DATA.md's sources paragraph (`_codebook_sources_and_citation`) names the open redistribution question for the roll-call data only; name the MdB-Stammdaten there too until the terms are settled (ship adversarial pass 3).
 
+The answer also reaches two tables outside this layer. Since E4 (2026-11-05), 100 rows of `vote_members.party_id` and 146 rows of `vote_fractions` counts rest partly on the Stammdaten, while the dictionary still tags those columns `bundestag-abstimmungen` alone. If the file can't be redistributed, dropping the seat tables does not remove these rows: decide then whether a correction may stay, and tag the columns to match.
+
 Done when the layer has written terms and DATA.md's attribution names the file.
 
 **Why:** It is a release blocker under track D, not an implementation blocker. The zip itself stays in the private directory, never in OUTPUT (D9).
@@ -1164,26 +1149,17 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 ## Abstimmungen
 
-### Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten
+### E4 re-filing: what it leaves open
 
-**What:** On 55 roll-calls in WP 19 and WP 20 (rebuilt store, 2026-11-02; 47 in the older store file), bundestag.de files six MdBs under the wrong group: Kamann, Bülow, Pasemann, Witt, Huber and Heßenkemper (`docs/source-errors.md` E4). `vote_members.party_id` and `vote_fractions` copy the pages, so these members' Stimmen count for the wrong group. That affects the vote panel's group blocks, the Mehrheitsvotum and Abweichler (R3, Fakten). Re-file each member's Stimme under their Zugehörigkeit on the vote's date from `mdb_zugehoerigkeiten`, recompute the affected `vote_fractions` rows and Mehrheitsvoten, and report old and new values per vote.
+The rule in `derive.refile_vote_members` moved 100 Stimmen in 55 roll-calls (2026-11-05, `docs/plans/e4-refiled-votes-old-new.tsv`). Nothing here moves a known figure:
+1. **`data/bills.json` and a bill page's raw block show the page's `fractions`.** They dump the report's vote as it is, with the `refiled_to` marks beside the counts, so a reader summing `fractions` there gets the Bundestag page's figures, not the store's. No bill page renders group counts. Either give the dump `derive.filed_fractions` or say so in the data docs.
+2. **20 member names (2,567 rows) find no Stammdaten name, and 2 (50 rows) have no row in their Wahlperiode.** Examples: Dagdelen/Dağdelen, Özoguz/Özoğuz, Merkel "Angela Dorothea", and Breilmann and Zschau, who joined after the Stand. They keep the page's group. The cross-check would show a misfiling among them as `shift_between_groups`, and shows none today. A stored link from a vote member to the MdB id (via the registry) would replace the name match.
+3. **`mps.party_id` keeps the page's group on purpose,** because the registry reads it as name-and-party evidence. Passing the corrected group split Pasemann's Reden from his Stimmen and moved Heßenkemper's page in the first replay. So "Fraktion" on a Personenseite can still rest on a misfiled vote row (Kamann, Bülow). Those pages need the Zugehörigkeit from the Stammdaten, which "Link `mdb_zugehoerigkeiten` to the MP pages" covers.
+4. **The panel note is plain body text.** Its look belongs to "Apply DESIGN.md to the site".
 
-Done when:
-- the C1 cross-check (`seat-crosscheck.json`) shows no `shift_between_groups` roll-call;
-- the page's totals stay available as the source's own figures;
-- the fix runs on every rebuild, not as a one-off patch.
-
-**Why:** The C1 cross-check measured it on 2026-11-01. The Textarchiv backs the Stammdaten in every case. Until this is fixed, the published group counts of those 55 votes are wrong.
-
-**Context:**
-- **Vote ids:** `docs/plans/c1-seat-counts.md` "Step 9 result" lists them: 38 from 487 to 571, 10 from 696 to 706, 750–754 and 756–757.
-- **Where the rule goes:** at persist time, after the C1 tables exist in the staged store. The rebuild order puts `rebuild_seat_counts` after the reports are persisted, so the rule needs a pass after it, or the seat tables must move earlier.
-- **Votes from before WP 18** have no Stammdaten rows and stay as the source has them.
-- **Decide** whether a Stimme keeps the page's group as a second column, the page being the source.
-
-**Effort:** M
-**Priority:** P1 (a wrong published figure)
-**Depends on:** Fraktion seat counts in the store (done)
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
@@ -1577,6 +1553,8 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: 2026-11-05, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
+- Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by #109; checked 2026-11-04 on a store repersisted from main: 63 votes without a TOP in 41 sittings, 41 dossiers show "TOP nicht zugeordnet"
 - Stale cached-report error lines: polish: #134, 2026-11-04
 - A malformed coverage-exclusions.json ends a build with a traceback: #132, 2026-11-03
 - Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am": #132, 2026-11-03

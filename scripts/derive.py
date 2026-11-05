@@ -14,8 +14,10 @@ Each function follows the CONTEXT.md entry of the same term.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
@@ -165,6 +167,32 @@ def merge_fractions(fractions: Iterable[Mapping[str, Any]] | None) -> list[dict[
     return [{"name": name, **row} for name, row in merged.items()]
 
 
+def member_group(member: Mapping[str, Any]) -> str:
+    """The group a roll-call member's Stimme counts for: the one the MdB-Stammdaten
+    prove (``refile_vote_members``), else the one the page lists."""
+    return member.get("refiled_to") or zusammenschluss(member.get("faction")) or "Unbekannt"
+
+
+def filed_fractions(vote: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The vote's fraction rows (``merge_fractions``) with each re-filed member's
+    Stimme moved from the group the page lists to ``member_group``. A group left
+    with nobody loses its row; a group the page has no row for gets one at the
+    end. The vote's own fields stay what the page printed, so this is computed
+    afresh on every read and can't be applied twice."""
+    rows = {row["name"]: row for row in merge_fractions(vote.get("fractions"))}
+    emptied = set()
+    for member in vote.get("members") or []:
+        if not member.get("refiled_to"):
+            continue
+        listed = zusammenschluss(member.get("faction")) or "Unbekannt"
+        for name, step in ((listed, -1), (member["refiled_to"], 1)):
+            row = rows.setdefault(name, {"name": name, "counts": {key: 0 for key in VOTE_COUNT_KEYS}, "total": 0})
+            row["counts"][member["vote"]] += step
+            row["total"] += step
+        emptied.add(listed)
+    return [row for row in rows.values() if row["total"] or row["name"] not in emptied]
+
+
 def vote_groups_cover_total(vote: Mapping[str, Any]) -> bool:
     """Whether the vote's fraction rows, fraktionslos and Unbekannt included,
     add up to its total on every count. Only then can a claim about the whole
@@ -175,7 +203,7 @@ def vote_groups_cover_total(vote: Mapping[str, Any]) -> bool:
     roll-call's counts add up to the seats, and reports parsed before 0.32
     padded a listing without chart values with 0 (persist stores them NULL)."""
     total = vote.get("total") or {}
-    rows = merge_fractions(vote.get("fractions"))
+    rows = filed_fractions(vote)
     if not total or not rows or all(total.get(key) == 0 for key in VOTE_COUNT_KEYS):
         return False
     return all(
@@ -668,9 +696,9 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     latest = {vote_member_identity(member): member for member in vote.get("members") or []}
     members_by_group: dict[str, list[Mapping[str, Any]]] = {}
     for member in latest.values():
-        members_by_group.setdefault(zusammenschluss(member.get("faction")) or "Unbekannt", []).append(member)
+        members_by_group.setdefault(member_group(member), []).append(member)
     result: dict[str, dict[str, Any]] = {}
-    for fraction in merge_fractions(vote.get("fractions")):
+    for fraction in filed_fractions(vote):
         name = fraction["name"]
         if name in NO_ZUSAMMENSCHLUSS:
             continue
@@ -1019,6 +1047,111 @@ def party_seats(zugehoerigkeiten: Iterable[Mapping[str, Any]]) -> list[dict[str,
                 open_row = {"party": party, "wahlperiode": wahlperiode, "valid_from": day, "valid_until": None, "seats": count}
                 rows.append(open_row)
     return rows
+
+
+_NAME_PARENTHESES = re.compile(r"\([^()]*\)")
+
+
+def person_name_key(name: Any) -> frozenset[str]:
+    """The words of a person's name, whatever their order and without titles, so
+    a roll-call page's "Heßenkemper, Prof. Dr. Heiko" and the Stammdaten's "Heiko
+    Heßenkemper" are one key: casefolded, without parentheses ("(Univ Kyiv)") and
+    without words ending in a dot. Empty for a name with no word left."""
+    text = _NAME_PARENTHESES.sub(" ", unicodedata.normalize("NFC", str(name or ""))).replace(",", " ")
+    return frozenset(word for word in text.casefold().split() if not word.endswith("."))
+
+
+@dataclass(frozen=True)
+class RefilingSource:
+    """``mdb_zugehoerigkeiten`` rows as ``refile_vote_members`` looks them up: the
+    MdBs behind a name per Wahlperiode, each MdB's rows, and the last day the file
+    covers."""
+
+    mdb_ids: dict[tuple[int, frozenset[str]], set[str]]
+    rows: dict[tuple[int, str], list[Mapping[str, Any]]]
+    stand_day: str
+
+
+def refiling_source(zugehoerigkeiten: Iterable[Mapping[str, Any]], stand: str) -> RefilingSource:
+    """The lookup for ``zugehoerigkeiten``; ``stand`` is the file's Stand, a UTC
+    instant, and the file covers the whole of its day."""
+    mdb_ids: dict[tuple[int, frozenset[str]], set[str]] = {}
+    rows: dict[tuple[int, str], list[Mapping[str, Any]]] = {}
+    for row in zugehoerigkeiten:
+        mdb_ids.setdefault((row["wahlperiode"], person_name_key(row["name"])), set()).add(row["mdb_id"])
+        rows.setdefault((row["wahlperiode"], row["mdb_id"]), []).append(row)
+    return RefilingSource(mdb_ids, rows, datetime.fromisoformat(stand).astimezone(timezone.utc).date().isoformat())
+
+
+def _proved_group(source: RefilingSource, wahlperiode: int | None, name: Any, day: str) -> str | None:
+    """The group the Stammdaten prove for the member named ``name`` on ``day``, or
+    None where they prove none and the page stands:
+
+        after the Stand ───────────────────► None  (a later change is not in the file)
+        no one MdB of that name in the WP ─► None  (a namesake, or no such MdB)
+        a change on that very day ─────────► None  (the day can't say which came first)
+        no row covers the day ─────────────► None
+    """
+    key = person_name_key(name)
+    ids = source.mdb_ids.get((wahlperiode, key), ()) if key else ()
+    if day > source.stand_day or len(ids) != 1:
+        return None
+    rows = source.rows[(wahlperiode, next(iter(ids)))]
+    if any(day in (row["valid_from"], row["valid_until"]) for row in rows):
+        return None
+    covering = [row for row in rows if row["valid_from"] < day and (row["valid_until"] is None or day < row["valid_until"])]
+    return covering[0]["party"] if len(covering) == 1 else None
+
+
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def refile_vote_members(vote: Mapping[str, Any], wahlperiode: int | None, source: RefilingSource | None) -> bool:
+    """Mark each member the Stammdaten place in another group than the roll-call
+    page does with ``refiled_to`` (docs/source-errors.md E4), after clearing any
+    mark an earlier run left: the mark is always worked out from what the page
+    printed. Without ``source`` no member is marked. Returns False for a vote left
+    as the page has it because its fraction rows can't absorb the moves (no row to
+    take a Stimme from, or a Stimme that is no count), which says the page's rows
+    and member list disagree, else True."""
+    members = vote.get("members") or []
+    for member in members:
+        member.pop("refiled_to", None)
+    day = str(vote.get("date") or "")
+    if source is None or not _ISO_DAY.fullmatch(day):
+        return True
+    listed_times = Counter(person_name_key(member.get("name")) for member in members)
+    moves = []
+    for member in members:
+        group = _proved_group(source, wahlperiode, member.get("name"), day)
+        listed = zusammenschluss(member.get("faction")) or "Unbekannt"
+        if group and group != listed and listed_times[person_name_key(member.get("name"))] == 1:
+            moves.append((member, listed, group))
+    if not moves:
+        return True
+    left = {row["name"]: Counter(row["counts"]) for row in merge_fractions(vote.get("fractions"))}
+    for member, listed, _group in moves:
+        stimme = member.get("vote")
+        if stimme not in VOTE_COUNT_KEYS or left.get(listed, Counter())[stimme] < 1:
+            return False
+        left[listed][stimme] -= 1
+    for member, _listed, group in moves:
+        member["refiled_to"] = group
+    return True
+
+
+def refile_report_votes(report: Mapping[str, Any], source: RefilingSource | None) -> list[str]:
+    """``refile_vote_members`` on every copy of every vote in ``report`` (a vote can
+    sit under two TOPs, and each copy is rendered). Returns the votes it had to
+    leave as the page has them."""
+    number = report_wahlperiode(report)
+    wahlperiode = int(number) if number.isascii() and number.isdigit() else None
+    refused = []
+    for votes in [*(item_votes(item) for item in report.get("agenda_items") or []), report.get("sitting_votes") or []]:
+        for vote in votes:
+            if not refile_vote_members(vote, wahlperiode, source):
+                refused.append(vote_identity(vote))
+    return refused
 
 
 #: Each Wahlperiode's legal number of seats, overhang and balance seats

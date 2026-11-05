@@ -86,6 +86,7 @@ A list of places where an official source file says something wrong or files con
   - Heßenkemper: 2 (753–754).
 
   The 8 roll-calls added since the first measurement (489, 490, 510, 531–533, 556 and 705) fall in the same windows. No other MdB appears.
+- **Corrected in poliwatch, 2026-11-05:** each of these Stimmen now counts for the group the Stammdaten prove on the vote's day (`derive.refile_vote_members`): 100 Stimmen in the 55 roll-calls. `vote_members.listed_party_id` keeps the page's group, and the page's totals can be read back from the store. The dossier panel names the difference. Old and new figures per vote and group are in `docs/plans/e4-refiled-votes-old-new.tsv`. The seat cross-check now finds no `shift_between_groups`. The Bundestag's pages still show these errors, so the entry stands for a correction request.
 
 ### E5. 2016-11-09: two CDU/CSU members missing from one roll-call list
 
