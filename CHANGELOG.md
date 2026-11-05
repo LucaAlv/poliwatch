@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0.0] - 2026-11-05
+
+Twenty small backlog items. No row of the store moved, and every recipe publishes the same rows as before (measured on a 716-sitting store, main's code against this one).
+
+### Changed
+
+- **Export format 15: the r2 recipe is now `r2-textanteil-fraktion`, "Textanteil je Fraktion oder Gruppe".** It was `r2-redeanteil-fraktion`, "Redeanteil je Fraktion nach Zeichen". Characters are not speaking time, so the recipe no longer calls them a Redeanteil. It now sorts by characters within a Wahlperiode, not by the number of Reden. The 40 rows of its full result are unchanged and reorder; its published rows are the same.
+- **Recipes pick "the first sitting" by sitting number, not by the text of the protocol number,** so 21/99 comes before 21/100. This applies to `_VOTE_PROTOCOL_SQL` (r3, r4, r6) and to r5's `erste_drucksache`. In r5's full result, 278 of 7,925 rows get a smaller number (for example 19/21 becomes 19/5); none is in the published top rows, and r1, r3, r4 and r6 move no row.
+- **The Daten page's scope line names the excluded sittings when there are any.**
+- **`vote_documents.rank` is described as what it is:** a gapless rank in the vote's sorted number list, not the place of the first mention. The value does not change.
+- **The exclusion record is written after the store swap,** so a rebuild that fails leaves the record naming what the store still holds.
+
+### Fixed
+
+- **A bad data option stops the build before any network or store work:** `--data-base-url`, `--data-issues-url`, and a release tag beside `$BUNDESTAG_PULSE_DATA_MANIFEST` used to fail only after a whole online update.
+- **`--data-base-url` refuses what a browser reads as another URL:** any other `scheme:` (such as `javascript:`), a bad port, whitespace or control characters, a query and a fragment. A value that may hold credentials or a token is never printed.
+- **`--exclude-document-number` refuses a number DIP does not list,** and refuses to run beside `--offline` or `--fetch-xml`, where it used to be silently dropped or ignored.
+- **Operator file:** an empty `--operator-file` or `$BUNDESTAG_PULSE_OPERATOR_FILE` is an error (an unset CI secret used to build placeholder legal pages with exit 0). A repeated key, a non-regular file and a file over 64 KiB are refused, a refused e-mail is not echoed, and a stale path no longer blocks modes that render nothing.
+- **The MdB-Stammdaten gate refuses what would break a later rebuild or silently misfile seats:** a Wahlperiode whose Mandate are all fraktionslos (a renamed `INSART_LANG` label), a membership or seat row with no day left, a negative or zero seat count, and a repeated row. The current file passes (2,914 Zugehörigkeiten, 171 seat rows). A refused download keeps the cached file.
+- **`refresh` and the cross-check report check the private directory first and no longer fail the build on an `OSError`.** A corrupt cache is named as unreadable rather than as "no cached file", and a lost ETag write says the file was cached.
+- **The README's "Validate a data correction" recipe copies the cached MdB-Stammdaten,** without which a replay falsely reported the seat tables as moved, and the README says `--enrich all` includes that download.
+
 ## [0.32.1.0] - 2026-11-05
 
 Documents only: no page, figure or export changes in this release.
