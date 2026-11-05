@@ -264,7 +264,7 @@ python3 -m unittest discover -s tests
 scripts/preview_dip_pulse_site.sh
 ```
 
-The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 10 (integer IDs, documents keyed by URL, no Politikfeld tables, no vote context, no `votes.debate_url` column, no quoted Antrag passages, no seat tables, or no stored link and fraction order) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
+The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 11 (integer IDs, documents keyed by URL, no Politikfeld tables, no vote context, no `votes.debate_url` column, no quoted Antrag passages, no seat tables, no stored link and fraction order, or no `vote_members.listed_party_id` column) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
@@ -313,6 +313,11 @@ cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -
 
 # 2. Apply the change to a second copy, by the route it needs (4c)
 cp -cR .context/baseline .context/after
+#    and the cached MdB-Stammdaten from the private directory beside the store, without which the rebuild
+#    of `after` leaves the seat tables empty and the compare reports them as moved (`baseline` keeps the
+#    copied rows; on a machine without the cache, skip this and expect the seat tables to read as moved)
+mkdir -p .context/.after.private
+cp .context/.dip-pulse-site.private/mdb-stammdaten.* .context/.after.private/
 #    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...), or from the cached
 #    Plenarprotokoll XML (what counts as a Rede, Redner parsing; run `--fetch-xml` first if data/xml/ is empty):
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after

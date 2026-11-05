@@ -246,6 +246,7 @@ class RefusalTests(ReleaseTestCase):
             "extra file": (lambda: (generation / "extra.txt").write_text("x"), "extra.txt"),
             "missing file": (lambda: (generation / self.manifest["files"][-1]["name"]).unlink(), self.manifest["files"][-1]["name"]),
             "unusable manifest": (lambda: self.edit_manifest(files=[]), "not a usable"),
+            "no Stammdaten": (lambda: self.edit_manifest(stammdaten=None), "MdB-Stammdaten"),
         }
         for label, (tamper, fragment) in cases.items():
             with self.subTest(label):

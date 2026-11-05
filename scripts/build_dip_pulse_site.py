@@ -144,7 +144,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "parties": "Zusammenschlüsse (Fraktionen und Gruppen, etwa CDU/CSU oder Gruppe BSW) und fraktionslos für Abgeordnete ohne Zusammenschluss.",
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
     "mdb_zugehoerigkeiten": "Zugehörigkeit jedes MdB je Wahlperiode und Zeitraum: welcher Zusammenschluss oder fraktionslos, aus den MdB-Stammdaten des Bundestages.",
-    "mdb_stammdaten_stand": "Stand und sha256 der MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats gebildet sind; leer ohne geladene Datei.",
+    "mdb_stammdaten_stand": "Stand und sha256 der MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats gebildet und Stimmen in vote_members und vote_fractions umgebucht sind; leer ohne geladene Datei.",
     "party_seats": "Sitzzahl je Zusammenschluss (und fraktionslos), Wahlperiode und Zeitraum, gezählt aus mdb_zugehoerigkeiten.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
@@ -1646,7 +1646,8 @@ def rebuild_seat_counts(store: sqlite3.Connection, database_path: Path) -> None:
         raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
     if cached is None:
         print("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen): "
-              "mdb_zugehoerigkeiten and party_seats stay empty; fetch them with --enrich mdb-stammdaten", file=sys.stderr)
+              "mdb_zugehoerigkeiten and party_seats stay empty and every Stimme counts for the group its roll-call page lists; "
+              "fetch them with --enrich mdb-stammdaten", file=sys.stderr)
         return
     try:
         zugehoerigkeiten, seats = stammdaten.seat_rows(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE)
@@ -4417,6 +4418,13 @@ def export_distribution_data(
     try:
         pulse_store.require_current_schema(source)
         pulse_store.require_current_speech_rules(source)
+        # Without the file the seat tables are empty and every Stimme is back under
+        # the group its roll-call page lists (E4), while DATA.md describes the correction.
+        if tag != "local" and source.execute("SELECT 1 FROM mdb_stammdaten_stand").fetchone() is None:
+            raise RuntimeError(
+                f"export: release {tag} needs the MdB-Stammdaten, and this store was built without them. Fix: an online build "
+                "with --enrich mdb-stammdaten, or restore mdb-stammdaten.* to the store's private directory and run --offline --repersist"
+            )
     finally:
         source.close()
     has_page_ids = set((mp_lookup or {}).values())
@@ -5034,9 +5042,9 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     source = manifest.get("stammdaten")
     if source:
         stammdaten_line = (f"Sitzzahlen: MdB-Stammdaten des Bundestages, Stand {stammdaten_stand_day(source)} &middot; sha256 "
-                           f"<code>{pulse_html.esc(source['sha256'])}</code>")
+                           f"<code>{pulse_html.esc(source['sha256'])}</code> &middot; auch Grundlage der berichtigten Zuordnung namentlicher Abstimmungen")
     else:
-        stammdaten_line = "Sitzzahlen: keine (MdB-Stammdaten nicht geladen)"
+        stammdaten_line = "Sitzzahlen: keine (MdB-Stammdaten nicht geladen); jede Stimme zählt, wo die Abstimmungsseite das Mitglied führt"
     return f"""
     <section class="summary-band">
       <div><span class="eyebrow">Datenstand</span><strong><time datetime="{pulse_html.esc(iso)}">{pulse_html.esc(display)}</time></strong></div>
@@ -12343,7 +12351,7 @@ def render_sources_page(
           <article class="source-card">
             <span class="eyebrow">Namentliche Abstimmungen</span>
             <h3>Namentliche Abstimmungen</h3>
-            <p>Abstimmungssummen, Fraktionssummen und einzelne Stimmen kommen von den Bundestag-Seiten zu namentlichen Abstimmungen und werden über Sitzungsdatum und Drucksachennummern zugeordnet.</p>
+            <p>Abstimmungssummen, Fraktionssummen und einzelne Stimmen kommen von den Bundestag-Seiten zu namentlichen Abstimmungen und werden über Sitzungsdatum und Drucksachennummern zugeordnet. Führt eine Seite ein Mitglied unter einem Zusammenschluss, dem es laut den geladenen MdB-Stammdaten an diesem Tag nicht angehörte, zählt seine Stimme für den Zusammenschluss aus den Stammdaten; das Dossier nennt jede solche Abstimmung.</p>
             <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Bundestag namentliche Abstimmungen</a>
           </article>
           <article class="source-card">
