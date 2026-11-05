@@ -4,6 +4,8 @@
 
 This is roadmap item A4: TODOS.md "Split the dataset from the site: the site builds from a release alone" (effort L, P2). A1–A3 are done (v0.27.0.0, 4705fb3). The TODO's done criterion is: an offline build from a downloaded release SQLite, with no report JSON present, produces the same site as today's build. The dev-view API dumps are exempt.
 
+**Status (2026-11-04):** a re-scope to a static site generator was reviewed and **held by the owner** (ledger R17, part "A4 re-scope for a new frontend" near the end of this file): design pass, chart prototype and a go/no-go come first (TODOS.md "Decide the frontend stack"). Slice 1 has since shipped in Python (#133, v0.32.0.0). **The go/no-go ended in no-go on 2026-11-04 (`docs/plans/frontend-go-no-go.md`), so R10 to R16 are not applied and A4 continues in Python.**
+
 **Status (2026-11-03):** slices 0 and 1 built (slice 1's reference-store oracle owed, see "Slice 1 result"). **Status (2026-11-01):** passed /plan-eng-review (see the review part at the end of this file). Ledger entries R1–R9 are settled; do not reopen them without new evidence. Owner decisions D8–D10 stay open until their slices. Slices 0 and 1 are planned down to individual tasks and land as two PRs; later slices are headlines only, because slice 1 will change what they need.
 
 ### What the code does today (census, 2026-11-01, at 4705fb3)
@@ -1169,6 +1171,667 @@ Synthesized from this review's findings. Each task derives from a specific findi
 ## Suppressed findings (appendix)
 
 - F4 [P3] (confidence 3/10) Fraktion name keys might differ between the archive and `parties.name`. Suppressed: `derive.merge_fractions` docstring (derive.py:146-150) says "Persistence, the vote panel and the votes archive all go through this", so both sides use the same `zusammenschluss` names.
+
+# /plan-eng-review: A4 re-scope for a new frontend (2026-11-02)
+
+Review started 2026-11-02 on `main` at 511ae75 (v0.30.0.0). **Target:** the re-scope proposal below, drafted in conversation on 2026-11-02, applied to this plan. Nothing in it is approved until the ledger below says so. Question numbers in this part restart at D1; they are not the plan's own D1–D10 above. Ledger entries continue at R10. Design-doc lookup returned `docs/designs/daten-page.md` and the `expand-database` CEO plan; both unrelated, not used.
+
+## Re-scope proposal (original, unchanged)
+
+Motivation: the owner finds the site unattractive and wants richer charts for the long-term analyses. Conversation verdict: the look is a design problem (no hierarchy, data shown as text, no design system), but the stack costs iteration speed (HTML in f-strings across `render_dip_pulse_html.py` 4,254 lines and `build_dip_pulse_site.py` 14,556 lines) and makes interactive charts painful.
+
+1. **Frontend:** a static site generator with islands (Astro or similar; no version pinned) pre-renders every page to plain HTML and ships JS only for interactive parts. It replaces the Python HTML renderers. No hybrid of Python-written HTML plus a JS layer.
+2. **Contract:** the dataset side emits a versioned page-data contract from a release alone. The frontend computes no figure: Python/SQL produce every number, JS only formats and draws.
+3. **A4 re-scope:** drop renderer porting from slices 1+; keep the store-completeness work (the "Store additions" column of the slice map, D8–D10).
+4. **Pilot:** the first C-series analysis page (Diskursanalyse term series per Zusammenschluss and month).
+5. **Migration:** existing pages move one at a time; old and new coexist under one deploy.
+6. **Tests:** the HTML-asserting tests become contract tests plus a thinner frontend layer.
+7. **Toolchain:** Node and npm become a build dependency; supply-chain policy to be set.
+8. **Oracle:** "same site as today's build" (slice 10) is replaced; the replacement is open.
+
+Review questions named at the start: contract shape, where renderer-embedded interpretation moves, test strategy, toolchain policy, fate of R1–R9 and slice-0 decisions, oracle replacement.
+
+## Scope Challenge assessment (re-scope)
+
+**What already solves each sub-problem**
+- Pure data helpers already exist for much of the logic (census by an Explore subagent, static read; line refs below): `item_stats` R:1374, `week_stats` R:1491, `week_comparison` R:1640, `week_topic_rows` R:2197, `collect_votes_archive` B:5628, `collect_bill_pages` B:7381, `collect_abgeordnete` B:8672, `build_catalog_rows` B:10857, and the vote readings in `derive.py` (`vote_outcome` :798, `vote_abweichler` :637, `merge_fractions` :143).
+- Machine-readable outputs already written: `feeds/week-radar.json` (`week_radar_feed._week_payload` :130, schema version 1), `data/bills.json` (B:8483), `data/abgeordnete.json` (B:9535), `data/features.json`, the export SQLite/CSVs and the build-time SQL recipes (B:3245-3464). Not available as data: puls week-comparison cards, votes archive rows, landing page, overview.
+- Node is already in CI: `.github/workflows/ci.yml:30-38` pins `actions/setup-node@v4` with `node-version: "24"` for the zero-dependency browser runner `tests/run_bills_browser_check.mjs`. No `package.json` exists.
+
+**Interpretation logic interleaved with HTML** (census estimate, not measured line by line): about 170 places across `render_html` R:2989 (~40), other R renderers (~25), `features/votes.py` (~20: `render_result_badge` :33, `render_vote_lead` :230, `_STATUS_COPY` :425, `render_vote_summary` :524), landing/puls in B (~35: `week_header_facts` B:6325 with `STALE_AFTER_WEEKS = 4` B:6322), bills/MP/other in B (~50). Mixed render+logic is estimated at ~1,900 lines in R and ~4,000 in B. Much of it is copy chosen by data state (status lines, "keine Daten" messages, stale-week states), not arithmetic. Shipped JS already embeds one rule: the votes-archive "Ja-Mehrheit" chip treats `'yes'` or `'für den Antrag'` as support (B:5866), duplicating `_fraction_position` (B:5610).
+
+**Complexity check** (proposed changed files and new components, estimated): new frontend app (config, lockfile, layouts, components, pages: 10+ files), a page-data emitter (new module), JSON contract versioning, CI job, ADR, PRODUCT.md, AGENTS.md/CONTRIBUTING, this plan, tests. 8+ files and 2+ new components (emitter, frontend app): the complexity gate trips.
+
+**Search check** (WebSearch; Aside not installed; secondary sources only, docs.astro.build not consulted):
+- [Layer 2] Islands: props passed to an island are serialised into the HTML, so large datasets passed as props bloat every page; islands share no state. Relevant to dossiers, see Performance.
+- [Layer 2] Build time at scale is disputed between blogs; one production report puts Astro at about 4-7 minutes for 5,000 pages [unverified]. Today's site is 5,063 HTML pages for 290 dossiers [measured: `.context/dip-pulse-site`], so a full 716-sitting build is roughly 5,500-6,000 pages [estimated: 4,044 MP + 563 bills + 155 fakt pages do not scale with sittings].
+- context7 is not authorized in this session; no framework API or version claim in this review is verified. Per the owner's CLAUDE.md, the implementation must read the installed version's docs first.
+
+**TODOS cross-reference**
+- Blocks the proposed pilot: "Diskursanalyse: precomputed term series" (TODOS.md:1026) depends on "The Rede-counting items; v1 coverage; stable ids" (TODOS.md:1044) and asks for a throwaway prototype plus an owner decision on term lists before any page (TODOS.md:1038). "One module that counts Reden and Beiträge" (TODOS.md:1369) is open.
+- Fits: "Typed completeness gaps instead of reason strings" (TODOS.md:1387) is the vocabulary a contract needs for state-dependent copy.
+- Changes: "Split the dataset from the site" (TODOS.md:1288) done criterion ("produces the same site as today's build") no longer applies once the renderer is replaced.
+
+**Distribution check:** the new artifact is a static build output. CI must build it (Node 24 is present). Host is undecided (PRODUCT.md), which a static output keeps open.
+
+### Reality rows (re-scope)
+
+**Premise table**
+
+| Premise | Claim | Receipt | Verdict |
+| --- | --- | --- | --- |
+| P1 | The stack is a stated product constraint | PRODUCT.md:58 "There is no package manager, framework or build toolchain" | true; the re-scope reverses it |
+| P2 | Nothing is published, so no compatibility is owed | CLAUDE.md:3 "Nothing is published." | true |
+| P3 | Node already runs in CI | ci.yml:30-38 `node-version: "24"` | true |
+| P4 | Renderers hold substantial interpretation logic | R:2989 `render_html`; features/votes.py:425 `_STATUS_COPY`; B:6322 `STALE_AFTER_WEEKS` | true; ~170 places is an estimate |
+| P5 | Shipped JS already computes a rule | B:5866 `positions[name] === 'yes' \|\| positions[name] === 'für den Antrag'` | true |
+| P6 | The Diskursanalyse pilot is unblocked | TODOS.md:1044 "Depends on: The Rede-counting items; v1 coverage; stable ids" | false |
+| P7 | Pure data helpers already exist for puls/votes/bills/MPs | week_radar_feed.py:130 `_week_payload`; B:5628, B:7381, B:8672 | true |
+| P8 | ~340 tests assert on Python HTML | 357 `def test_` in the three render test files; 238 HTML-ish `assertIn` lines; 23 test files contain markup literals [measured by grep] | partly: 357 functions, not all assert HTML |
+| P9 | A 5,000-page Astro build takes minutes | blog report only | unverified |
+| P10 | Dossier pages are large | largest `protocols/plenarprotokoll-20-47.html` 2,603,877 bytes, 41,232 bytes inline `<style>` per page [measured] | true |
+
+`unverified=1`
+
+REALITY: premise-table finding 1 false premise (P6 pilot blocked), 1 unverified (P9) TODOS.md:1044
+REALITY: already-done pass `git fetch origin main` failed (sandbox network); local origin/main = HEAD 511ae75, no commits since 2026-11-01 beyond #128/#129, neither touches renderers for a frontend docs/plans/a4-site-from-release.md:187
+REALITY: surface-check finding no new CLI in the proposal except slice 10's proposed `--from-release`; frontend tool commands unverified (context7 unauthorized) docs/plans/a4-site-from-release.md:138
+REALITY: binding-decisions finding the re-scope reverses PRODUCT.md's stack constraint and D1/D4's HTML-diff oracle; needs an ADR, not a silent change PRODUCT.md:58
+REALITY: numbers finding "~340 HTML tests" corrected to 357 test functions (subset asserts HTML); page count 5,063 measured for 290 dossiers tests/test_build_dip_pulse_site.py:1
+REALITY: deferred-asks pass no linked issue; TODOS.md:1288 is the source item TODOS.md:1288
+REALITY: pr-count finding default one PR per wave (no .gstack/ship-policy.json); the re-scope implies an ADR/plan PR, a toolchain+pilot PR and one PR per migrated page group docs/plans/a4-site-from-release.md:124
+
+## Scope record (re-scope)
+
+feature answers: D1 A "Votes archive" (pilot is `votes/index.html`; auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02), D2 A "Parallel build" (cut "coexist under one deploy"; adjudicator, 2026-11-02); structure: D3 B "Smaller arrangement" (adjudicator, 2026-11-02); accepted scope: proposal items 1, 2, 3, 6, 7, 8 as written; item 4 replaced by the votes-archive pilot (slice 1 T1.1–T1.3 kept, T1.4's rewire replaced by a page-data emitter plus the frontend page; Diskursanalyse stays on its own track); item 5 replaced by a parallel frontend build into its own output with one cutover that deletes the Python renderers; arrangement: one `scripts/site_data.py` (contract version, writer), payload functions beside their collectors, Python tests pin payloads, the frontend build fails on a missing field, plus the `site/` app; pending remedies: R10, R11, R12, R13.
+
+Scope Challenge result: scope reduced per recommendation (coexistence cut; pilot replaced).
+
+## Decision ledger (re-scope)
+
+### R10: who decides state-dependent copy under "the frontend computes no figure"
+Finding: S4, P1, confidence 8/10, features/votes.py:425 `_STATUS_COPY = {`, B:6322 `STALE_AFTER_WEEKS = 4`, B:5866 `positions[name] === 'yes' || positions[name] === 'für den Antrag'`; reviewer: Claude (Scope Challenge, census subagent)
+Plan baseline: proposal item 2, "Python/SQL produce every number, JS only formats and draws"; says nothing about copy chosen by data state.
+Runtime evidence: about 170 render sites pick copy from data state (census estimate); one shipped script already re-implements a rule (B:5866 vs `_fraction_position` B:5610).
+Comparison grid:
+
+| Choice | Current | A | B | C |
+| --- | --- | --- | --- | --- |
+| R10 state-copy split | unspecified, pending | Python computes every state as a typed code plus its parameters; the frontend maps code to German copy and fails the build on an unknown code | Python emits finished German sentences; the frontend prints them | unspecified; each page decides |
+| Ja-Mehrheit chip rule (B:5866), consequence of R10 | JS string test | payload boolean | payload boolean | unchanged JS string test |
+| Pilot (D1) | votes archive, approved | unchanged | unchanged | unchanged |
+| Migration (D2) | parallel build, approved | unchanged | unchanged | unchanged |
+| Structure (D3) | smaller arrangement, approved | unchanged | unchanged | unchanged |
+| R11 oracle / R12 toolchain / R13 tests | pending | pending | pending | pending |
+
+Question D4:
+D4 — Who decides which message a page shows for a data state?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive, parallel build, smaller arrangement approved.
+ELI10: "JS computes no figure" covers numbers, but about 170 places pick a sentence from the data: "Abstimmungsergebnis fehlt", "letzte Woche mit Sitzung vor 7 Wochen", the Ja-Mehrheit filter. Each of those hides a rule (a threshold, a state). If the frontend decides them, the rules quietly move into JS, which already happened once (B:5866 copies `_fraction_position`). We need to say who owns the decision and who owns the words.
+Stakes if we pick wrong: rules drift between Python and JS and a page shows a state the release does not support, or the copy gets locked inside Python strings the design cannot shape.
+Recommendation: A because the rule stays in Python and testable while the words and their styling stay with the design; it is also the vocabulary the "Typed completeness gaps" TODO (TODOS.md:1387) asks for.
+Completeness: A=9/10, B=8/10, C=3/10
+Pros / cons:
+A) State codes plus parameters (recommended)
+  ✅ Every threshold and state (stale weeks, acquisition state, Ja-Mehrheit support) is computed and tested in Python
+  ✅ The design can style parts of a sentence (bold count, inline link) because the frontend owns the words
+  ❌ Code-to-copy table lives in the frontend, so a new state needs a change on both sides and a build check
+B) Finished German sentences
+  ✅ Reuses today's copy functions such as `_STATUS_COPY` almost unchanged; one place per message
+  ✅ The frontend needs no copy table and no tests for message choice at all
+  ❌ Sentences are opaque strings, so links or emphasis inside them mean markup in data or losing them
+C) Leave it to each page
+  ✅ No up-front design work; each page migration decides what fits that page
+  ❌ Repeats B:5866: rules leak into JS one page at a time and nothing catches the drift
+Net: A keeps rules in Python and words with the design at the cost of a small two-sided table.
+Header: State copy
+Options:
+A) State codes (recommended)
+Python computes every data-dependent state as a typed code plus its parameters (counts, dates, urls); the frontend maps codes to German copy and fails the build on an unknown code. The votes-archive Ja-Mehrheit chip reads a boolean from the payload instead of B:5866's string test. Effort human ~1 day / CC ~30 min for the pilot.
+B) German sentences
+Python emits finished German sentences for every data-dependent message (reusing `_STATUS_COPY` and siblings); the frontend prints them verbatim. Ja-Mehrheit still becomes a payload boolean. Effort human ~half day / CC ~20 min for the pilot.
+C) Leave unspecified
+No rule in the plan; each page migration decides. The B:5866 duplicate stays until someone notices. No effort now.
+
+State: approved
+Actual answer: A "State codes (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D4)
+Accepted scope: Python computes every data-dependent state as a typed code plus its parameters (counts, dates, urls); the frontend maps codes to German copy and fails the build on an unknown code; the votes-archive Ja-Mehrheit chip reads a payload boolean instead of B:5866's string test. Pilot effort human ~1 day / CC ~30 min.
+History: none
+
+## Section 1: Architecture review (re-scope)
+
+**Factual mapping of earlier decisions** (no behaviour choice; recorded so later slices do not reopen them):
+
+| Earlier decision | Under the re-scope |
+| --- | --- |
+| R1 the site always renders from a store | kept: the emitter reads only a store or release |
+| R2 coverage refusal, F7 missing-store refusal | kept: `scripts/site_data.py` runs the same pre-checks before writing any payload |
+| R3 archive and dossier panel agree | kept as a data comparison: during the parallel build the dossier panel still renders in Python from report JSON |
+| R4 regression contract (strict HTML diff) | replaced by R11 below |
+| R5 store-to-vote adapter in `features/votes.py` | kept: it now feeds the payload function instead of `render_votes_archive_index` |
+| R6 `agenda_item_documents.url`, R8 `vote_fractions.rank` | kept: the payload needs per-link urls and fraction order |
+| R7 two PRs for slices 0 and 1 | done (PR #128 landed slice 0) |
+| R9 Vorgang-cache staleness TODO | kept |
+| Plan D4 no golden HTML test | kept and extended: no golden HTML in either stack |
+| Plan D7 one schema bump per slice | kept; the page-data contract gets its own `CONTRACT_VERSION`, independent of `SCHEMA_VERSION` and `EXPORT_FORMAT` |
+| Slice map "Store additions" column, D8–D10 | kept as the store-completeness track |
+| Slice 10 `--from-release` | kept as the emitter's input mode (proposed flag, not yet built) |
+| Slice 11 file split | becomes the cutover: the Python renderers are deleted, not moved |
+| Contract versioning (proposal item 2) | implemented as: the frontend build refuses a payload whose `CONTRACT_VERSION` differs from the one it was written for; the emitter writes into a staging dir and swaps (checklist class 10) |
+
+### R11: what replaces "same site as today's build" as the regression oracle
+Finding: A1, P1, confidence 9/10, docs/plans/a4-site-from-release.md:65 "compares them with a strict `diff -ru`" and :148 "compare all pages with a compare script"; reviewer: Claude (Architecture)
+Plan baseline: proposal item 8, "the replacement is open"; R4/R8 (strict HTML diff per slice) and slice 10's full-site compare are void once the Python renderer is replaced.
+Runtime evidence: the old pages' data comes from pure collectors that return dicts (e.g. `collect_votes_archive` B:5628), so the old side can be captured as data without parsing HTML [static read].
+Comparison grid:
+
+| Choice | Current | A | B | C |
+| --- | --- | --- | --- | --- |
+| R11 oracle per migrated page | HTML `diff -ru` (void) | one-off payload diff: the old collector's output on the JSON path vs the new payload from the same store, field by field, every difference recorded as (a) store more correct or (b) fixed | rendered-text diff: visible text of old and new HTML, normalised and diffed | none: store-seeded fixture tests only |
+| Where it runs | n/a | per page migration, results recorded in this plan; a small compare script kept until cutover | per page migration, needs an HTML text extractor | n/a |
+| R10 state copy | approved A | unchanged | unchanged | unchanged |
+| D1–D3 | approved | unchanged | unchanged | unchanged |
+| R12 toolchain / R13 tests / R14 raw HTML | pending | pending | pending | pending |
+
+Question D5:
+D5 — How do we prove a migrated page still shows the same facts?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive, parallel build, state codes approved.
+ELI10: Until now each A4 slice proved itself by diffing old and new HTML: any changed byte had to be explained. With a new design the HTML changes everywhere, so that check is useless. We need a new check that catches a lost vote, a wrong badge or a dropped link, without drowning in layout noise.
+Stakes if we pick wrong: a migrated page silently drops or changes figures and nobody notices before launch, or the check is so noisy it gets skipped.
+Recommendation: A because the old collectors already return data, so comparing data to data is exact and quiet, and it keeps D1's "every difference is explained" discipline.
+Completeness: A=9/10, B=7/10, C=4/10
+Pros / cons:
+A) Payload diff (recommended)
+  ✅ Exact: old collector output and new payload are both data, so every changed figure or link shows up by field
+  ✅ Keeps the (a)/(b) discipline from D1: each difference is recorded with old and new values or fixed
+  ❌ Does not see a frontend that receives the right data and fails to print it; R13's tests have to cover that
+B) Rendered-text diff
+  ✅ End to end: catches both data changes and frontend printing bugs in one comparison
+  ❌ New wording and layout make most lines differ, so the diff is noisy and needs a text extractor to build
+C) No oracle
+  ✅ No one-off work per page; permanent fixture tests are the only proof
+  ❌ Fixture tests cover chosen cases; a real-store regression on one of 556 votes goes unseen
+Net: A gives an exact, quiet data check and leaves the printing check to the frontend tests.
+Header: Oracle
+Options:
+A) Payload diff (recommended)
+Per migrated page, a one-off comparison of the old collector's output (JSON path) with the new payload from the same store, field by field; every difference recorded in this plan as (a) store more correct (old/new values) or fixed as (b). A small compare script lives until cutover. Effort human ~1 day / CC ~30 min per page type.
+B) Rendered-text diff
+Per migrated page, extract and normalise the visible text of the old and the new HTML and diff it; explain every difference. Needs an HTML text extractor. Effort human ~2 days / CC ~1 h first page, less after.
+C) No oracle
+Rely on store-seeded fixture tests only; no per-page comparison on the real store. No extra effort.
+
+State: approved
+Actual answer: A "Payload diff (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D5)
+Accepted scope: per migrated page, a one-off comparison of the old collector's output (JSON path) with the new payload from the same store, field by field; every difference recorded in this plan as (a) store more correct (old/new values) or fixed as (b); a small compare script lives until cutover. Effort human ~1 day / CC ~30 min per page type.
+History: none
+
+### R12: supply-chain and toolchain policy for the frontend
+Finding: A3, P1, confidence 8/10, PRODUCT.md:58 "There is no package manager, framework or build toolchain"; ci.yml:30-38 `node-version: "24"`; datenschutz page (built `datenschutz.html`) "Schriften, Skripte oder andere Inhalte von fremden Servern werden nicht geladen" and names two localStorage keys; reviewer: Claude (Architecture, distribution)
+Plan baseline: proposal item 7, "Node and npm become a build dependency; supply-chain policy to be set".
+Runtime evidence: no `package.json` exists; CI already installs Node 24 for a zero-dependency browser runner [static read].
+Comparison grid:
+
+| Choice | Current | A | B |
+| --- | --- | --- | --- |
+| R12 install policy | none (no npm) | committed lockfile; `npm ci --ignore-scripts` in CI and docs; exact versions, no `^`/`~`; Node 24 in `engines` and `.nvmrc`, matching ci.yml | committed lockfile; `npm ci`; caret ranges; Node version from CI only |
+| R12 dependency set | none | allowlist recorded in the ADR: the site generator and at most one chart library; any new direct dependency needs a one-line ADR note | no allowlist; add what a page needs |
+| R12 updates | n/a | manual, one PR per upgrade with the oracle and tests rerun; no auto-update bot | ad hoc |
+| Runtime third-party requests (Datenschutz claim, existing behaviour) | none; two localStorage keys | kept: everything bundled and served from the same host, same two keys | kept: same |
+| D1–D5, R10, R11 | approved | unchanged | unchanged |
+| R13 tests / R14 raw HTML | pending | pending | pending |
+
+Question D6:
+D6 — How strict should the npm toolchain policy be?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive, parallel build, state codes and payload-diff oracle approved.
+ELI10: Today the project installs nothing: Python standard library only. The frontend brings npm, and npm packages can run code at install time and pull in hundreds of indirect packages that change under you. A research-grade dataset site also promises reproducible builds and, on its Datenschutz page, no content from foreign servers. The policy decides how much of that risk we accept.
+Stakes if we pick wrong: a compromised or silently updated package changes the build or leaks into the site, or the policy is so heavy it blocks routine work.
+Recommendation: A because one SSG plus one chart library keeps the allowlist tiny, and exact pins with ignored install scripts are cheap insurance for a site that sells reproducibility.
+Completeness: A=9/10, B=6/10
+Pros / cons:
+A) Strict pins and allowlist (recommended)
+  ✅ Exact versions, a lockfile and `npm ci --ignore-scripts` make two builds of one commit install the same code
+  ✅ The allowlist (site generator plus at most one chart library) keeps the dependency tree small and reviewable
+  ❌ Every upgrade is a deliberate PR with tests rerun, and some packages may need install scripts to work
+B) Standard npm practice
+  ✅ Less ceremony: caret ranges pick up fixes, and any package can be added when a page needs it
+  ❌ Install scripts run unchecked and the tree grows page by page, which a lockfile alone does not stop
+Net: A costs a deliberate step per upgrade and buys reproducible, reviewable installs.
+Header: Toolchain
+Options:
+A) Strict policy (recommended)
+Committed lockfile; `npm ci --ignore-scripts` in CI and docs; exact versions (no ^/~); Node 24 in `engines` and `.nvmrc` matching ci.yml; dependency allowlist in the ADR (site generator + at most one chart library; new direct dependencies need an ADR note); manual upgrades, one PR each with tests and oracle rerun. Built site loads nothing from other hosts and keeps the two localStorage keys the Datenschutz page names. Effort human ~half day / CC ~15 min.
+B) Standard practice
+Committed lockfile; `npm ci`; caret ranges; no allowlist; upgrades ad hoc. Built site loads nothing from other hosts and keeps the two localStorage keys the Datenschutz page names. Effort human ~1 h / CC ~5 min.
+
+State: approved
+Actual answer: A "Strict policy (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D6); adjudicator caveat: if the chosen generator needs an install script, record an explicit exception in the ADR
+Accepted scope: committed lockfile; `npm ci --ignore-scripts` in CI and docs; exact versions (no ^/~); Node 24 in `engines` and `.nvmrc` matching ci.yml; dependency allowlist in the ADR (site generator + at most one chart library; new direct dependencies need an ADR note; any needed install script is a named exception); manual upgrades, one PR each with tests and oracle rerun; built site loads nothing from other hosts and keeps the two localStorage keys the Datenschutz page names. Effort human ~half day / CC ~15 min.
+History: none
+
+### R14: how payload text reaches the page without becoming markup
+Finding: A4, P1, confidence 7/10, features/votes.py:524 `render_vote_summary` (allowlists urls before printing them, per the census); payload text originates in DIP XML/API and abgeordnetenwatch; reviewer: Claude (Architecture, security)
+Plan baseline: proposal item 1 says the frontend "formats and draws"; nothing on escaping or url checks.
+Runtime evidence: today every string passes through Python escaping in the renderers, and vote-summary urls are allowlisted before output [census, static read]. The frontend's default escaping is unverified in this session (context7 unauthorized).
+Comparison grid:
+
+| Choice | Current | A | B |
+| --- | --- | --- | --- |
+| R14 text handling | Python escapes every string at render | payload strings are plain text; the frontend never injects payload data as raw HTML; a CI check fails on raw-HTML APIs (`set:html`, `innerHTML`, `dangerouslySetInnerHTML`, `outerHTML`) under `site/src`, with a named allowlist file for exceptions | rely on the framework's default escaping; code review only |
+| Url checks (existing behaviour, R10 consequence) | allowlisted in `render_vote_summary` | kept in Python: the payload carries only urls that passed the same allowlist | kept in Python: same |
+| D1–D6, R10–R12 | approved | unchanged | unchanged |
+| R13 tests | pending | pending | pending |
+
+Question D7:
+D7 — How do we stop source text from turning into live markup on the new pages?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive, parallel build, state codes, payload-diff oracle and strict toolchain approved.
+ELI10: Speech text, titles and names come from outside sources. Today Python escapes every one of them before it lands in HTML. In the new frontend, normal template output is escaped too, but every framework has a "print this as raw HTML" escape hatch, and one careless use lets a stray tag in a source record run as code on our pages.
+Stakes if we pick wrong: a malformed or hostile source string becomes script or broken markup on a citizen-facing page.
+Recommendation: A because a grep-level CI check is cheap and turns a review-time hope into a build failure.
+Completeness: A=9/10, B=6/10
+Pros / cons:
+A) Plain text plus a CI ban (recommended)
+  ✅ Payload strings stay plain text, so the only path to markup is the template's own escaping
+  ✅ A CI check on raw-HTML APIs catches the escape hatch the day someone reaches for it
+  ❌ Rich text inside speeches (paragraph breaks, emphasis) has to arrive as structure, not HTML strings
+B) Framework default escaping only
+  ✅ No extra check; templates escape expressions by default in common generators
+  ❌ Nothing stops a raw-HTML call slipping through review, and the default is unverified here
+Net: A spends one CI line to make the escape hatch visible.
+Header: Raw HTML
+Options:
+A) Plain text + CI ban (recommended)
+Payload strings are plain text (paragraphs as arrays, not HTML); the frontend never injects payload data as raw HTML; a CI check fails on `set:html`, `innerHTML`, `dangerouslySetInnerHTML`, `outerHTML` under `site/src` except files listed in one allowlist. Urls stay allowlisted in Python before entering the payload. Effort human ~2 h / CC ~10 min.
+B) Default escaping only
+Rely on the generator's default escaping and code review. Urls stay allowlisted in Python before entering the payload. No extra effort.
+
+State: approved
+Actual answer: A "Plain text + CI ban (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D7)
+Accepted scope: payload strings are plain text (paragraphs as arrays, not HTML); the frontend never injects payload data as raw HTML; a CI check fails on `set:html`, `innerHTML`, `dangerouslySetInnerHTML`, `outerHTML` under `site/src` except files listed in one allowlist; urls stay allowlisted in Python before entering the payload. Effort human ~2 h / CC ~10 min.
+History: none
+
+**Section 1 findings**
+- [P1] (confidence: 9/10) docs/plans/a4-site-from-release.md:65 — A1: the strict HTML-diff oracle is void under a new renderer.
+- [P1] (confidence: 8/10) PRODUCT.md:58 — A3: npm enters a stdlib-only project with no supply-chain policy.
+- [P1] (confidence: 7/10) features/votes.py:524 — A4: escaping and url checks move out of Python with no stated rule.
+- [P2] (confidence: 9/10) PRODUCT.md:58 — S3 (from Scope Challenge): the stack rule is a written product constraint; reversing it needs ADR 0005 plus PRODUCT.md, AGENTS.md and CONTRIBUTING.md updates. Required documentation of the accepted re-scope, no separate choice.
+
+Dispositions: A1 accepted (R11, D5); A3 accepted (R12, D6); A4 accepted (R14, D7); S3 accepted as required docs (task list).
+
+Failure path per new integration: emitter → payload dir → frontend build. Realistic failure: the frontend builds against a payload dir left from an older emitter run. Handled by the `CONTRACT_VERSION` refusal and the staging swap (mapping table above); the operator sees a build error naming both versions, never a silently stale page.
+
+## Section 2: Code quality review (re-scope)
+
+- [P2] (confidence: 9/10) scripts/features/votes.py:33 `def render_result_badge(vote: dict[str, Any]) -> str:` — C1: the badge decision has two verified callers, the archive (B:5714 `badge_html = votes_feature.render_result_badge(vote)`) and the dossier panel (votes.py:590 `result_badge = render_result_badge(vote)`). Under R10 the archive payload needs the badge as a state code while the Python dossier panel keeps printing HTML until cutover. If the payload computes the code separately, R3's agreement breaks by construction. Required implementation of R10 + R3, no separate choice: split out `result_badge_state(vote) -> (code, params)` beside it; `render_result_badge` maps that code to copy, the payload function emits it. The same split applies to `_fraction_position` (B:5600, callers B:5653 and the JS copy at B:5866), whose result becomes the payload's Ja-Mehrheit boolean. Shared-code rubric: two existing callers each, same inputs/outputs, net lines roughly zero (moved, not added); blast radius: a wrong state shows on both pages at once, which R3's comparison catches.
+- [P3] (confidence: 8/10) scripts/features/votes.py:425 `_STATUS_COPY = {` — C2: during the parallel build the German copy lives twice, in Python for the old pages and in the frontend copy table for the new ones. Accepted as temporary; the Python copy goes at cutover. Recorded, no task beyond cutover.
+- Error handling and edge cases for the pilot: an empty archive (0 votes) must emit an empty list plus a state code, not omit the payload; a vote with no `vote_documents` (4 on the A3 store) and a sitting-level vote must appear (both already T1.6 cases). Carried into R13.
+
+Dispositions: C1 accepted as required implementation (task list); C2 accepted as temporary, no task.
+
+## Section 3: Test review (re-scope)
+
+### R15: what the new votes archive must keep from today's archive (regression contract)
+Finding: T1, P1, confidence 9/10, tests/votes_archive_browser_check.js (existing browser check of the chip filters), B:5830 `render_votes_archive_script`, plan "Verification" line "Check that the Fraktion and Politikfeld filter chips still work"; reviewer: Claude (Test review, IRON RULE)
+Plan baseline: R4 (strict HTML diff) covered the archive's behaviour implicitly; R11 now covers only its data.
+Runtime evidence: today's archive filters by Fraktion position, Politikfeld and Ja-Mehrheit over `data-*` attributes, shows month headings and a count line, and lists every row without JS [census, static read of B:5830].
+Comparison grid:
+
+| Choice | Current | A | B |
+| --- | --- | --- | --- |
+| R15 kept behaviour | implicit in R4 | every vote row and figure (via R11); Fraktion, Politikfeld and Ja-Mehrheit filters with today's semantics; a visible count of shown votes; all rows readable with JS off; usable at 375 px and in dark mode; same-host assets and the two named localStorage keys | data only (R11); filters, counts and no-JS behaviour are redesign choices |
+| R15 intended changes | n/a | layout, typography, wording, chip styling, month grouping presentation | anything except the data |
+| D1–D7, R10–R12, R14 | approved | unchanged | unchanged |
+| R13 test strategy | pending | pending | pending |
+
+Question D8:
+D8 — What must the redesigned votes archive keep from today's page?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive with payload-diff oracle, state codes, strict toolchain, raw-HTML ban approved.
+ELI10: The payload diff proves the data is the same. It says nothing about what a visitor can do: filter by Fraktion or Politikfeld, see how many votes match, read the list with JavaScript off. A redesign should be free to change the look, but these behaviours are what the page is for. Writing them down now gives the frontend tests a target.
+Stakes if we pick wrong: the new page looks better but quietly loses a filter or breaks without JS, or every visual change gets treated as a regression.
+Recommendation: A because it locks only what visitors use and leaves every visual choice open.
+Completeness: A=9/10, B=5/10
+Pros / cons:
+A) Keep behaviour, free the look (recommended)
+  ✅ Filters, the count line and no-JS reading keep working, and tests can assert them directly
+  ✅ Layout, wording and styling stay entirely open for the design pass
+  ❌ A redesign that wants to drop a filter must reopen this contract explicitly
+B) Data only
+  ✅ Maximum freedom for the redesign, including dropping or reshaping filters
+  ❌ A lost filter or a JS-only list ships without any test noticing
+Net: A protects what visitors do on the page and nothing about how it looks.
+Header: Archive contract
+Options:
+A) Keep behaviour (recommended)
+The new archive keeps: every vote row and figure (R11); Fraktion, Politikfeld and Ja-Mehrheit filters with today's semantics; a visible count of shown votes; all rows readable with JS off; usable at 375 px and in dark mode; same-host assets and the two named localStorage keys. Free to change: layout, typography, wording, chip styling, month grouping presentation.
+B) Data only
+Only R11's data equality is protected; filters, counts and no-JS behaviour become redesign choices.
+
+State: approved
+Actual answer: A "Keep behaviour (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D8)
+Accepted scope: the new archive keeps every vote row and figure (R11); Fraktion, Politikfeld and Ja-Mehrheit filters with today's semantics; a visible count of shown votes; all rows readable with JS off; usable at 375 px and in dark mode; same-host assets and the two named localStorage keys. Free to change: layout, typography, wording, chip styling, month grouping presentation.
+History: none
+
+**Coverage diagram (proposed paths; nothing below exists yet)**
+
+```
+CODE PATHS                                              USER FLOWS
+[+] scripts/site_data.py (new)                          [+] Votes archive (new frontend)
+  ├── pre-checks F7 / R2          [GAP] emitter path      ├── [GAP] [→E2E] filter by Fraktion position
+  │     (main() path: ★★★ T0.1/T0.5 tests)               ├── [GAP] [→E2E] filter by Politikfeld
+  ├── CONTRACT_VERSION stamp      [GAP]                   ├── [GAP] [→E2E] Ja-Mehrheit chip
+  └── staging write + swap        [GAP] interrupted run   ├── [GAP] [→E2E] count line follows filters
+[+] scripts/features/votes.py                             ├── [GAP]        every row readable, JS off
+  ├── result_badge_state()        [GAP] (HTML badge:      └── [GAP]        375 px, dark mode (manual)
+  │     existing archive tests, B-side)                 [+] Error / empty states
+  └── votes_archive_payload()     [GAP]                   ├── [GAP] 0 votes: empty list + state code
+        ├── vote w/o vote_documents  [GAP]                ├── [GAP] build refuses CONTRACT_VERSION mismatch
+        ├── sitting-level vote       [GAP]                ├── [GAP] build refuses unknown code / missing field
+        ├── not_fetched vs untagged  [GAP]                └── [GAP] no asset from another host
+        └── Ja-Mehrheit boolean, inverted vote [GAP]    [+] CI
+[+] site/ (new)                                           └── [GAP] raw-HTML API ban (R14)
+  └── code → copy table           [GAP] unknown code
+
+COVERAGE: 0/21 proposed paths tested (all are future code) | GAPS: 21 (5 E2E, 0 eval)
+LLM integration: none touched (AI summaries are slice 5 / D8, outside the pilot).
+```
+
+Test framework: Python `unittest` (AGENTS.md:5); browser checks through the zero-dependency `tests/run_bills_browser_check.mjs` on Node 24 (ci.yml:30-38).
+
+### R13: how the new frontend and the payloads are tested
+Finding: T2, P1, confidence 8/10, tests/run_bills_browser_check.mjs (zero-dependency runner), tests/votes_archive_browser_check.js, plan T1.6 (archive suites to port); reviewer: Claude (Test review)
+Plan baseline: proposal item 6, "contract tests plus a thinner frontend layer", unspecified.
+Runtime evidence: 357 test functions in the three render test files, many asserting HTML (238 HTML-ish `assertIn` lines) [measured by grep]; the archive's filters are checked today by a browser script injected through the Node runner [static read].
+Comparison grid:
+
+| Choice | Current | A | B | C |
+| --- | --- | --- | --- | --- |
+| R13 Python side | HTML assertions on the archive (T1.6 list) | payload tests on store-seeded fixtures: T1.6's assertions ported to payload fields, plus the empty-archive, `result_badge_state` and Ja-Mehrheit cases | same as A | same as A |
+| R13 frontend side | none | build from a committed fixture payload; a `node:test` script (built in, no dependency) asserts the R15 behaviours on the built HTML (every row and figure present JS-off, count line, empty state, no foreign-host asset, build refuses bad version / unknown code); `tests/votes_archive_browser_check.js` re-pointed at the new page for filter clicks | a JS test framework (component tests plus a browser driver) added under an R12 allowlist exception | build success only |
+| Old archive tests | kept | kept until cutover, deleted with the Python archive | same | same |
+| D1–D8, R10–R12, R14, R15 | approved | unchanged | unchanged | unchanged |
+
+Question D9:
+D9 — How do we test the new frontend without breaking the dependency allowlist?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive, archive contract (R15) and strict toolchain (R12) approved.
+ELI10: Python tests will check that each payload carries the right data. Something also has to check that the built page actually prints it and that filters work: that is the gap the payload diff leaves (R11). We can do that with Node's built-in test runner plus the browser runner the repo already has, or add a JavaScript test framework, which the strict toolchain policy only allows as a named exception.
+Stakes if we pick wrong: the page drops data or a filter breaks and nothing fails, or the test stack doubles the dependency tree the policy just capped.
+Recommendation: A because it covers every R15 behaviour with tools already in the repo and adds zero packages.
+Completeness: A=9/10, B=9/10, C=4/10
+Pros / cons:
+A) Built-in Node tests plus the existing browser runner (recommended)
+  ✅ Every R15 behaviour gets a test, and the dependency allowlist stays at generator plus one chart library
+  ✅ Reuses `tests/run_bills_browser_check.mjs`, which CI already runs on Node 24
+  ❌ Assertions on built HTML are coarser than component tests and need small hand-written helpers
+B) Add a JS test framework
+  ✅ Component-level tests with a mature runner and browser driver, convenient as pages multiply
+  ❌ Needs an R12 exception and adds the largest dependency trees in the npm ecosystem
+C) Build success only
+  ✅ No frontend test code at all; payload tests carry the whole load
+  ❌ A page that drops rows or breaks a filter still builds, and R11 cannot see it
+Net: A and B cover the same behaviours; A does it with zero new packages.
+Header: Frontend tests
+Options:
+A) Node built-ins + runner (recommended)
+Python payload tests on store-seeded fixtures (T1.6 assertions ported, plus empty archive, `result_badge_state`, Ja-Mehrheit). Frontend: build from a committed fixture payload; a `node:test` script asserts R15 on the built HTML (rows and figures JS-off, count line, empty state, no foreign-host asset, refusal on bad version or unknown code); `tests/votes_archive_browser_check.js` re-pointed at the new page. Old archive tests stay until cutover. Effort human ~2 days / CC ~1 h.
+B) Add JS test framework
+Same Python side; frontend component tests and a browser driver from a JS test framework, recorded as an R12 allowlist exception. Old archive tests stay until cutover. Effort human ~2 days / CC ~1 h plus setup.
+C) Build success only
+Same Python side; the frontend is checked only by a successful build. Old archive tests stay until cutover. Effort human ~1 day / CC ~30 min.
+
+State: approved
+Actual answer: A "Node built-ins + runner (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D9)
+Accepted scope: Python payload tests on store-seeded fixtures (T1.6 assertions ported, plus empty archive, `result_badge_state`, Ja-Mehrheit); frontend built from a committed fixture payload; a `node:test` script asserts R15 on the built HTML (rows and figures JS-off, count line, empty state, no foreign-host asset, refusal on bad version or unknown code); `tests/votes_archive_browser_check.js` re-pointed at the new page; old archive tests stay until cutover. Effort human ~2 days / CC ~1 h.
+History: none
+
+Test Plan Artifact: `~/.gstack/projects/LucaAlv-poliwatch/Luca-main-eng-review-test-plan-20261102-004653.md`.
+
+Tests made obsolete by this plan (proposal only): the archive's HTML-asserting suites listed in T1.6 retire at cutover with the Python archive, not before.
+
+**Section 3 findings**
+- [P1] (confidence: 9/10) tests/votes_archive_browser_check.js — T1: the archive's user-facing behaviour had no contract once R4 went. Accepted: R15 (D8).
+- [P1] (confidence: 8/10) tests/run_bills_browser_check.mjs — T2: no test strategy for the frontend or payloads. Accepted: R13 (D9).
+- 21 proposed paths, 21 gaps, 5 E2E (diagram above), all covered by R13's accepted scope.
+
+Dispositions: T1 accepted (R15, D8); T2 accepted (R13, D9).
+
+## Section 4: Performance review (re-scope)
+
+- [P2] (confidence: 8/10) protocols/plenarprotokoll-20-47.html (built site) — P1: dossiers reach 2,603,877 bytes, about 1.1 MB of it text [measured]. The search check found that islands serialise their props into the HTML. If a later dossier island receives speech text or row lists as props, every such page roughly doubles. The pilot archive has 556 votes [measured on the A3 store], small, but it sets the pattern. → R16 below.
+- [P3] (confidence: 9/10) the same page carries 41,232 bytes of inline `<style>` [measured]; repeated on each of about 5,000 pages that is roughly 200 MB of duplicated CSS [estimated]. The new frontend serves one cached stylesheet, so this goes away at cutover. No task.
+- [P3] (confidence: 5/10) build time: about 5,500–6,000 pages at full coverage [estimated]; one blog puts a 5,000-page build of the leading candidate at 4–7 minutes [unverified]. Today's repersist + render + export already takes about 27 minutes (slice 0 result), so minutes more are tolerable. Measured when the first multi-thousand-page type migrates; recorded in the slice map, no task now.
+- Emitter reads keep T1.3's rule: set-based, one query per table grouped by `vote_id`, never per vote (382,441 `vote_members` rows [measured on the A3 store]).
+
+### R16: how much data an interactive island may carry
+Finding: P1, P2, confidence 8/10, built `protocols/plenarprotokoll-20-47.html` 2,603,877 bytes; search check (secondary sources) "props are serialised into the HTML"; reviewer: Claude (Performance)
+Plan baseline: proposal item 1, "ships JS only for interactive parts"; nothing on what data those parts receive.
+Runtime evidence: today's interactive scripts read `data-*` attributes on server-rendered rows (archive B:5830, radar B:6564, MPs B:9022) and carry no data copies [census, static read].
+Comparison grid:
+
+| Choice | Current | A | B |
+| --- | --- | --- | --- |
+| R16 island data | scripts read `data-*` on server-rendered rows | lists and long text render as static HTML; islands get only small props (ids, filter options, a chart's series) and read row data from `data-*`; the `node:test` script fails if a built page's inline island payload exceeds 50 KB | each page decides what its islands receive |
+| D1–D9, R10–R15 | approved | unchanged | unchanged |
+
+Question D10:
+D10 — How much data may an interactive part of a page carry?
+Project/branch/task: main at 511ae75, A4 re-scope; pilot votes archive; tests via node:test and the browser runner approved.
+ELI10: In the new frontend, an interactive part (a filter, a chart) gets its data embedded into the page as JSON. If we hand it the whole list of votes or a dossier's speeches, the page carries that data twice: once as HTML, once as JSON. Dossiers are already up to 2.6 MB. Today's filters avoid this by reading small attributes on rows that are already on the page.
+Stakes if we pick wrong: pages double in size on phones, or a rule so strict a chart cannot get its series.
+Recommendation: A because it keeps today's proven pattern and makes a size regression fail a test instead of a phone.
+Completeness: A=9/10, B=5/10
+Pros / cons:
+A) Static rows, small props, 50 KB budget (recommended)
+  ✅ Keeps today's pattern: filters read `data-*` on rows that are already in the HTML, so no data is shipped twice
+  ✅ A size check in the existing node:test script catches a page whose island payload grows past 50 KB
+  ❌ A future chart with a large series must aggregate in Python first or justify raising the budget
+B) Each page decides
+  ✅ No rule to follow; whichever approach is fastest to build for a page is allowed
+  ❌ The first dossier island that gets speech text as props doubles a 2.6 MB page and no test notices
+Net: A keeps pages lean by default at the cost of an explicit budget.
+Header: Island data
+Options:
+A) Small props + budget (recommended)
+Lists and long text render as static HTML; islands receive only small props (ids, filter options, a chart's series) and read row data from `data-*` attributes; the R13 `node:test` script fails when a built page's inline island payload exceeds 50 KB. Effort human ~2 h / CC ~10 min.
+B) Page decides
+No rule; each page chooses what its islands receive. No effort.
+
+State: approved
+Actual answer: A "Small props + budget (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D10)
+Accepted scope: lists and long text render as static HTML; islands receive only small props (ids, filter options, a chart's series) and read row data from `data-*` attributes; the R13 `node:test` script fails when a built page's inline island payload exceeds 50 KB. Effort human ~2 h / CC ~10 min.
+History: none
+
+**Section 4 findings**: P1 accepted (R16, D10); P2 no task (goes away at cutover); P3 measured at the first multi-thousand-page migration (no task now).
+
+## Outside voice (re-scope)
+
+Codex is installed but failed inside the session sandbox (`failed to initialize in-process app-server client: Operation not permitted`; network to its auth host denied), the known limit from project memory. A native Claude Plan subagent ran as the fallback and returned a complete report within the five-minute timer. That is missing cross-model coverage, not a clean outside review.
+
+| # | Severity | Finding (condensed) | Reviewer's evidence | Disposition |
+| --- | --- | --- | --- | --- |
+| O1 | Critical | The votes-archive pilot tests neither goal: no chart, and the look is out of scope; it proves only plumbing | proposal motivation; archive filters already work (B:5800-5900) | **pending owner** (reopens D1) |
+| O2 | Critical | No person chose to reverse PRODUCT.md:58; D1–D10 were picked by the adjudicator hook, and the adoption of the re-scope itself was never asked | PRODUCT.md:58; ledger answers | **pending owner** |
+| O3 | High | A simpler alternative was never compared: one shared stylesheet now (~1 h), a plain-CSS design system, Python-rendered SVG charts with a little hover JS; keeps stdlib, the 357 tests and the HTML oracle | built page: 41,232 bytes inline CSS | **pending owner** |
+| O4 | High | R12/R14/R16 assume one generator's model while "which generator" is undecided; pick it and read its installed docs before the ADR | context7 unauthorized, P9 unverified | pending (depends on O2/O3) |
+| O5 | High | Porting pages before a design system means redoing them; the pilot must be the design system's first consumer or wait | R15 "layout and wording are free" | pending (depends on O2/O3) |
+| O6 | High | Parallel build has no end date and no go/no-go gate after the pilot; dossiers migrate last and are hardest | D2; `render_html` holds ~40 copy-by-state sites | pending (depends on O2/O3) |
+| O7 | Medium | New-archive links to `../protocols/…` and the global nav point at pages absent from the frontend's own output during the parallel build | B:5662; D2 | pending |
+| O8 | Medium | Copy lives twice; the payload diff compares data, not the code-to-text mapping, so a wrong reason sentence passes | votes.py:40-43 | pending |
+| O9 | Medium | The pilot reads the store, not a release; state "the store until slice 10" | slice map row 10 | factual correction: the contract's input is the store until slice 10's `--from-release` |
+| O10 | Low | Operator workflow: `preview_dip_pulse_site.sh` needs Node 24 and `npm ci`; no path stated | PRODUCT.md operator role | pending |
+| O11 | Low | The 50 KB island budget will block the first long-term chart unless Python aggregates (monthly) first | R16 | pending |
+
+Reviewer's recommendation: hold the re-scope and its ADR until the owner decides explicitly; compare the rewrite against "shared stylesheet + CSS design system + Python-rendered SVG charts"; only if the rewrite wins, choose the generator, pilot a page with a chart that uses the design system, and add a pilot go/no-go gate.
+
+**Cross-model tension.** Parent and outside voice agree on the facts (pilot has no chart, the look is a design problem, the hook decided). They differ on weight: the parent review treated adoption of the re-scope as given by the owner's request for a review; the outside voice holds that a binding product rule needs the owner's own answer. The outside voice is right on that point: the adoption question was never put to the owner. O1 and O3 are new evidence that reopen D1. The review paused and put the adoption question to the owner in chat (not through AskUserQuestion, which the hook answers).
+
+### R17: adopt the frontend re-scope now, or hold it
+Finding: O2 + O1 + O3 (outside voice), Critical, PRODUCT.md:58
+Plan baseline: the re-scope proposal; adoption never asked.
+Comparison grid:
+
+| Choice | Current | A (chosen) | B |
+| --- | --- | --- | --- |
+| R17 adoption | unasked | hold: design pass first (plain CSS, usable by either stack), then one chart prototype in a candidate generator, then a go/no-go with written criteria | adopt as reviewed, folding in O4–O11 |
+| PRODUCT.md:58 stdlib rule | in force | stays in force until the go/no-go; no ADR 0005 yet | reversed by ADR 0005 now |
+| D1–D10 (R10–R16, scope record) | auto-decided | kept as the plan to apply if the go/no-go picks the frontend; O4–O11 get resolved then | applied now |
+| A4 slice 1 | planned | T1.1–T1.3 (measure, schema-9 columns, store adapter) proceed, useful in either stack; T1.4 rewire waits for the go/no-go | T1.4 becomes the payload emitter |
+
+State: approved
+Actual answer: A "Hold, prototype first", typed by the owner in chat, 2026-11-02
+Accepted scope: hold the re-scope. Order: (1) design pass producing a plain-CSS design system usable by either stack; (2) one chart prototype in a candidate generator (the Diskursanalyse throwaway prototype in TODOS.md:1038 is the natural vehicle); (3) go/no-go with written criteria comparing the generator against "shared stylesheet + CSS design system + Python-rendered SVG charts". PRODUCT.md:58 stays in force until then. D1–D10 remain the frontend plan if the go/no-go picks it; O4–O11 are resolved at that point. A4 slice 1 T1.1–T1.3 proceed; T1.4 waits.
+History: none
+
+**Outside-voice dispositions after R17:** O1, O2, O3 resolved by R17 (hold, owner's answer). O4, O5, O6, O7, O8, O10, O11 deferred to the go/no-go (recorded in the TODOS entry). O9 factual correction recorded.
+
+## TODOS.md proposals (re-scope)
+
+### R18: TODO — frontend go/no-go after a design pass and a chart prototype
+Finding: R17 accepted scope; TODOS.md "DESIGN.md, tokens and a typeface decision via /design-consultation" (## Design, P3) already covers step 1
+Plan baseline: R17 order (design pass, chart prototype, go/no-go) exists only in this plan.
+Comparison grid:
+
+| Choice | Current | A | B | C |
+| --- | --- | --- | --- | --- |
+| R18 | not in TODOS.md | add "Decide the frontend stack: chart prototype and go/no-go" under ## Design (P2, L), depending on the DESIGN.md item, which rises from P3 to P2; criteria and O4–O11 listed in it | skip; R17 lives only in this plan | build the prototype in this review |
+
+Question D11:
+D11 — Add the frontend go/no-go to TODOS.md?
+Project/branch/task: main at 511ae75; the owner held the frontend re-scope (R17) pending a design pass, a chart prototype and a go/no-go.
+ELI10: The hold decision has three steps. The design pass is already a TODO (P3). The chart prototype and the go/no-go are written only in this plan file, where a future session working from TODOS.md would not find them. One entry that names the steps, the comparison and the open review findings keeps the decision from getting lost.
+Stakes if we pick wrong: the stack question resurfaces later with the evidence and review findings forgotten.
+Recommendation: A because TODOS.md is where the project tracks follow-ups, and the DESIGN.md item is now on the critical path.
+Completeness: A=9/10, B=4/10, C=8/10
+Pros / cons:
+A) Add to TODOS.md (recommended)
+  ✅ The prototype, the comparison against the stdlib option and O4–O11 stay findable for any session
+  ✅ Raising the DESIGN.md item to P2 puts step 1 of the hold where it belongs in the queue
+  ❌ One more L-sized open item in an already long TODOS.md
+B) Skip
+  ✅ No TODOS.md churn; the plan file records the hold
+  ❌ Sessions that read TODOS.md first never see it
+C) Build it now
+  ✅ Starts the prototype right away
+  ❌ The design pass is step 1 and has not happened; building the chart prototype first skips it
+Net: A records the hold where the project looks for work.
+Header: Go/no-go TODO
+Options:
+A) Add to TODOS.md (recommended)
+Add "Decide the frontend stack: chart prototype and go/no-go" under ## Design (P2, effort L, depends on the DESIGN.md item); raise "DESIGN.md, tokens and a typeface decision" from P3 to P2. The entry lists the steps, the written go/no-go criteria to set, the stdlib alternative to compare, and O4–O11.
+B) Skip
+Leave R17 in this plan file only.
+C) Build it now
+Start the chart prototype in this session instead of deferring.
+
+State: approved
+Actual answer: A "Add to TODOS.md (recommended)", auto-decided by the owner's AskUserQuestion adjudicator hook, 2026-11-02 (D11)
+Accepted scope: added "Decide the frontend stack: chart prototype and go/no-go" under TODOS.md ## Design (P2, effort L, depends on the DESIGN.md item); raised "DESIGN.md, tokens and a typeface decision" from P3 to P2 with the shared-stylesheet step noted. Done in this review.
+History: none
+
+Other TODO candidates considered and folded in rather than proposed separately: the shared stylesheet (41 KB inline CSS per page) went into the DESIGN.md item as part of step 1; the Ja-Mehrheit rule duplicated in JS (B:5866) is resolved by R10 if the frontend goes ahead, and otherwise stays a latent drift with no current wrong output (both copies agree today), below the bar for its own entry.
+
+## Approval readiness (re-scope)
+
+Checked: scope record (D1 A, D2 A, D3 B), R10 (D4), R11 (D5), R12 (D6), R14 (D7), R15 (D8), R13 (D9), R16 (D10), R17 (owner, chat), R18 (D11). Every accepted remedy cites its own answer. R10–R16 and the scope record are conditional on the R17 go/no-go; R17 and R18 are in effect now.
+
+Approval readiness: PASS (scope record, R10–R18; answers D1–D11 by the adjudicator hook, R17 by the owner in chat)
+
+## NOT in scope (re-scope review)
+
+- Building any frontend code: held by R17 until the go/no-go.
+- ADR 0005 and the PRODUCT.md/AGENTS.md/CONTRIBUTING.md stack edits: written only if the go/no-go picks the generator.
+- Choosing the generator: part of the prototype step; no version or API claim in this review is verified.
+- The visual design itself: TODOS.md "DESIGN.md, tokens and a typeface decision" (now P2).
+- Migration order for pages after the pilot, the public host, Diskursanalyse term lists.
+- Plan-level owner decisions D8–D10 (AI summaries, third-party data, raw dumps): unchanged, still due at their slices.
+
+## What already exists (re-scope review)
+
+- Pure collectors and rules that a page-data layer would reuse: `collect_votes_archive` B:5628, `collect_bill_pages` B:7381, `collect_abgeordnete` B:8672, `build_catalog_rows` B:10857, `item_stats`/`week_stats`/`week_topic_rows` in R, the vote rules in `derive.py`.
+- Existing data outputs: `feeds/week-radar.json` (`week_radar_feed._week_payload` :130), `data/bills.json`, `data/abgeordnete.json`, `data/features.json`, the export SQLite/CSVs, the build-time SQL recipes.
+- Node 24 in CI and the zero-dependency browser runner `tests/run_bills_browser_check.mjs` with six injected checks.
+- The store-seeded test fixture `tests/_site_store_fixture.py` (slice 0).
+- C1 (`result_badge_state` split) is reuse of an existing function with two verified callers, not a new helper.
+
+## Diagrams (re-scope review)
+
+```
+now (R17 hold)                                     after the go/no-go
+DESIGN.md + plain-CSS tokens + one stylesheet ─┐   go:    ADR 0005 → resolve O4–O11 → pilot (R10–R16, scope record)
+   (TODOS ## Design, P2)                       │          store ─ site_data.py ─ payload JSON ─ generator ─ dist/
+chart prototype in a candidate generator ──────┼─→ no-go: stdlib path: shared stylesheet + CSS design system
+   (Diskursanalyse throwaway, uses the CSS)    │          + Python-rendered SVG charts; A4 slices 1–11 as planned
+written go/no-go criteria (set first) ─────────┘
+A4 slice 1 T1.1–T1.3 (store work) ── runs in parallel, useful on both branches
+```
+
+## Failure modes (re-scope review)
+
+| Path | Realistic failure | Covered by | User sees |
+| --- | --- | --- | --- |
+| Hold (now) | the stack question resurfaces without the review's evidence | TODOS.md entry + R17 in this plan | n/a |
+| Frontend (if go) | payload dir from an older emitter run | `CONTRACT_VERSION` refusal + staging swap (mapping table) | build error naming both versions |
+| Frontend (if go) | archive links to dossiers absent from the frontend output | O7, deferred to the go/no-go entry | dead link in preview only, never published (parallel build) |
+| Frontend (if go) | wrong code-to-text mapping passes the payload diff | O8, deferred to the go/no-go entry | wrong reason sentence, caught by the text check O8 asks for |
+| Frontend (if go) | island payload balloons | R16 50 KB check in node:test | test failure |
+
+Critical gaps (no test, no handling, silent): 0. O7 and O8 have no handling yet, but no code exists and both are written into the go/no-go entry as preconditions.
+
+## Worktree parallelization strategy (re-scope review)
+
+| Step | Modules touched | Depends on |
+| --- | --- | --- |
+| Design pass (DESIGN.md, CSS tokens, shared stylesheet) | `scripts/` render CSS, `docs/` | — |
+| A4 slice 1 T1.1–T1.3 | `scripts/persist_dip_pulse_store.py`, `scripts/features/votes.py`, `tests/`, DATA.md | — |
+| Chart prototype + go/no-go | throwaway dir outside the site build | design pass; Diskursanalyse term lists |
+
+**Parallel lanes:** Lane A: design pass. Lane B: slice 1 T1.1–T1.3. Then the prototype after lane A.
+**Execution order:** launch A + B; the prototype starts when A lands.
+**Conflict flags:** both lanes may touch `scripts/build_dip_pulse_site.py` (CSS strings in A, export columns in B); sequence the merges.
+
+## Implementation Tasks (re-scope review)
+
+Synthesized from this review's findings. Ratios assumed: design/architecture ~5x, research ~3x.
+
+- [ ] **T1 (P2, human: ~2 days / CC: ~1 h)** — design — Run `/gstack-design-consultation`: DESIGN.md, plain-CSS tokens and type, one shared stylesheet replacing the per-page inline `<style>`
+  - Surfaced by: Outside voice — O3, O5; R17
+  - Files: `scripts/render_dip_pulse_html.py`, `scripts/build_dip_pulse_site.py` (CSS strings), new `DESIGN.md`
+  - Verify: full suite; browser check at 375 px and dark mode; inline `<style>` per dossier drops from 41,232 bytes
+- [ ] **T2 (P2, human: ~3 days / CC: ~2 h)** — decision — Write the go/no-go criteria first, then build one chart prototype in a candidate generator using T1's CSS, and read that generator's installed docs
+  - Surfaced by: Outside voice — O1, O4; R17
+  - Files: throwaway prototype dir; criteria in TODOS.md "Decide the frontend stack" or a new plan
+  - Verify: criteria answered in writing; owner decides go or no-go in chat
+- [ ] **T3 (P2, human: ~1 day / CC: ~30 min, only if go)** — docs — ADR 0005 and the stack edits in PRODUCT.md, AGENTS.md, CONTRIBUTING.md; resolve O4–O11 before the pilot
+  - Surfaced by: Scope Challenge — S3; Outside voice — O2, O4–O11
+  - Files: `docs/adr/0005-*.md`, `PRODUCT.md`, `AGENTS.md`, `CONTRIBUTING.md`, this plan
+  - Verify: review checklist class 11 on every changed sentence
+
+_No new tasks from Sections 1–4 beyond the conditional frontend plan (R10–R16), which waits for T2._
+
+## Unresolved decisions that may bite you later (re-scope review)
+
+None in this review. The frontend plan (R10–R16) is decided but conditional on the go/no-go; O4–O11 are deferred into that decision by R17. Plan-level owner decisions D8–D10 are carried from the 2026-11-01 review.
+
+## Completion summary (re-scope review)
+
+- Step 0: Scope Challenge — scope reduced per recommendation (coexistence cut, pilot replaced; then the owner held the whole re-scope, R17)
+- Reality rows: 7/7 applicable rows emitted (`PLAN_REALITY: phase=eng rows=7/7 missing=none verdict=complete`), 1 unverified premise (P9 build time)
+- Architecture Review: 3 issues found (A1, A3, A4)
+- Code Quality Review: 2 issues found (C1, C2)
+- Test Review: diagram produced, 21 gaps identified (all proposed paths)
+- Performance Review: 3 issues found (P1, P2, P3)
+- NOT in scope: written
+- What already exists: written
+- TODOS.md updates: 1 item proposed to user (added; DESIGN.md item raised to P2)
+- Failure modes: 0 critical gaps flagged
+- Unresolved decisions: 0 in this review
+- Outside voice: codex unavailable (app-server init blocked by the sandbox); native Claude Plan subagent completed within the timer, 11 findings (3 resolved by R17, 7 deferred to the go/no-go, 1 factual)
+- Parallelization: 2 lanes, 2 parallel / 1 sequential
+- Lake Score: 0/8 (D4–D11 each chose a 9/10 option; D1–D3 differed in kind)
+- Answer provenance: D1–D11 auto-decided by the owner's AskUserQuestion adjudicator hook; R17 (adoption) typed by the owner in chat
+
+## Suppressed findings (appendix, re-scope review)
+
+None.
 
 ## GSTACK REVIEW REPORT
 
