@@ -1350,6 +1350,16 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Priority:** P3
 **Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
 
+### Persist overwrites a roll-call member row when two members of one vote resolve to one mp
+
+**What:** `persist_vote` (`scripts/persist_dip_pulse_store.py`) writes each member with `INSERT … ON CONFLICT(vote_id, mp_id) DO UPDATE`, so when two members of one vote resolve to the same `mps` row the second silently replaces the first: the group loses a Stimme and the surviving row takes the later member's party and vote. Make persist refuse a vote whose members collapse onto one mp, naming the vote and both names, instead of overwriting.
+
+**Why:** This is how the Abstimmung-page fold lost 63 rows in 22 groups of 11 votes before v0.21.0.0 (Completed, "Store loses roll-call member rows in 22 groups of 11 votes") without any error. No input reached it when last measured (2026-11-01, A3 reference store after `--offline --repersist` with that day's main: 425,322 report rows = 425,322 stored rows, 0 duplicate identity or occurrence keys in 619 votes). Paths that still could: two namesakes in one Zusammenschluss with no profile link (`name-party:` identity and occurrence id both collide), or an occurrence that `person_registry.bind` keeps on the record an earlier build bound it to (how the 63 folded rows survived the fix until the store was rebuilt without its registry, review checklist class 3).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Architektur
 
 ### Correct a cached report's XML Drucksache references at the source, not at every reader

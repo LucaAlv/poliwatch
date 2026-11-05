@@ -269,10 +269,18 @@ class PersistReportTests(unittest.TestCase):
             finally:
                 conn.close()
 
-    # Value: protects=two MPs whose member cards link back to the Abstimmung stay two vote_members rows; fails_when=the Abstimmung URL serves as a profile identity and folds them into one mp (63 rows lost on the reference store); why_new=found while keying the Abweichler dedupe on identity (2026-10-22); seam=derive.vote_member_identity
-    def test_members_linked_to_the_abstimmung_page_stay_two_mps(self) -> None:
+    # Value: protects=MPs whose member cards link back to the Abstimmung keep one vote_members row each, so every group's rows add up to its vote_fractions counts;
+    #   fails_when=the Abstimmung URL serves as a profile identity and folds them into one mp, the last row written keeping its party and Stimme (63 rows in 22 groups of 11 votes lost on the 2026-10-20 reference store, 912 fraktionslos 5 Ja of 40);
+    #   why_new=found while keying the Abweichler dedupe on identity (2026-10-22); the per-group check is the symptom of the TODOS entry; seam=derive.vote_member_identity
+    def test_members_linked_to_the_abstimmung_page_stay_one_row_each(self) -> None:
         report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
         vote = report["agenda_items"][0]["votes"][0]
+        vote["members"].append({"name": "Carla Muster", "faction": "fraktionslos", "vote": "yes"})
+        vote["fractions"] = [
+            {"name": "SPD", "counts": {"yes": 1, "no": 0, "abstain": 0, "absent": 0}, "total": 1},
+            {"name": "CDU/CSU", "counts": {"yes": 0, "no": 1, "abstain": 0, "absent": 0}, "total": 1},
+            {"name": "fraktionslos", "counts": {"yes": 1, "no": 0, "abstain": 0, "absent": 0}, "total": 1},
+        ]
         for member in vote["members"]:
             member["profile_url"] = vote["detail_url"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -282,7 +290,24 @@ class PersistReportTests(unittest.TestCase):
                 rows = conn.execute(
                     "SELECT m.display_name, m.profile_url FROM vote_members vm JOIN mps m ON vm.mp_id = m.id ORDER BY 1"
                 ).fetchall()
-                self.assertEqual([tuple(row) for row in rows], [("Ada Lovelace", None), ("Bruno Beispiel", None)])
+                self.assertEqual(
+                    [tuple(row) for row in rows],
+                    [("Ada Lovelace", None), ("Bruno Beispiel", None), ("Carla Muster", None)],
+                )
+                short_groups = conn.execute(
+                    """
+                    SELECT p.name, f.yes_count, f.no_count, COUNT(vm.mp_id),
+                           SUM(vm.vote = 'yes'), SUM(vm.vote = 'no')
+                    FROM vote_fractions f
+                    JOIN parties p ON p.id = f.party_id
+                    LEFT JOIN vote_members vm ON vm.vote_id = f.vote_id AND vm.party_id = f.party_id
+                    GROUP BY f.vote_id, f.party_id
+                    HAVING COUNT(vm.mp_id) != f.total_count
+                        OR IFNULL(SUM(vm.vote = 'yes'), 0) != f.yes_count
+                        OR IFNULL(SUM(vm.vote = 'no'), 0) != f.no_count
+                    """
+                ).fetchall()
+                self.assertEqual([tuple(row) for row in short_groups], [])
             finally:
                 conn.close()
 
