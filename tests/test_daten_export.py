@@ -234,7 +234,7 @@ class ExportHelpersTests(unittest.TestCase):
                     # Value: protects=a token in a query or fragment, or credentials behind a full-width at-sign (no
                     # ASCII "@" and urlsplit quotes the netloc), stays out of the refusal; fails_when=the guard keys on
                     # "@" alone again; why_new=every row above has an ASCII "@"; seam=none
-                    "https://dl.example.org/x/?token=u:p", "https://dl.example.org/x/#u:p", "https://u:p＠dl.example.org/x/"):
+                    "https://dl.example.org/x/?token=u:p", "https://dl.example.org/x/#u:p", "https://u:p" + "＠dl.example.org/x/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError) as caught:
                     b.resolve_data_base_url(bad)
