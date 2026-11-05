@@ -1356,6 +1356,8 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 
 **Why:** The Abstimmung-page fold lost 63 rows in 22 groups of 11 votes this way without any error (Completed, "Store loses roll-call member rows in 22 groups of 11 votes"). v0.21.0.0 stopped new folds; the rows already folded stayed on their records until the store was rebuilt without its registry (review checklist class 3). No input reached it when last measured (2026-11-01, A3 reference store after `--offline --repersist` with that day's main: 425,322 report rows = 425,322 stored rows, 0 duplicate identity or occurrence keys in 619 votes). A real pair of namesakes in one vote would lose a Stimme silently.
 
+**Context:** The same collision is named under "A.2 registry follow-ups from the third review pass" (the `name-party:` clause); close both together. The per-group check in `test_members_linked_to_the_abstimmung_page_stay_one_row_each` compares yes, no and total only, and no group in its fixture has an abstain or absent member; its Value comment cites Completed for the 63 rows, which are in the CHANGELOG for v0.21.0.0.
+
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
