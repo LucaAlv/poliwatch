@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.1.0] - 2026-11-05
+
+Documents only: no page, figure or export changes in this release.
+
+### Added
+
+- **`DESIGN.md` is the site's design system, "Stimmkarte":** colours, type, layout and components, with their measured contrast limits. Fraktion colours stay, tuned for the new surfaces. No page uses it yet.
+- **`docs/plans/frontend-go-no-go.md` records why the site stays Python-generated HTML.** The same chart was built in plain Python, in Python with a chart library, and in Astro. Across two change tasks Astro needed 27 changed lines against plain Python's 30, short of the third fewer the criteria required, so the owner accepted a no-go on 2026-11-04. Charts will be small Python modules drawing SVG.
+
+### Changed
+
+- **`PRODUCT.md` names the design direction and the rejected generator.** `docs/plans/a4-site-from-release.md` gains the dated review of the re-scope that led to the prototype, marked as not applied.
+
 ## [0.32.0.0] - 2026-11-04
 
 ### Changed

@@ -50,3 +50,8 @@ Rules:
 - After modifying code, run `graphify update .` only when the CLI is available and the graph is initialized: `if command -v graphify >/dev/null 2>&1 && [ -f graphify-out/graph.json ]; then graphify update .; fi` (AST-only, no API cost). Otherwise skip graph maintenance.
 
 To initialize on another machine, install the CLI with `uv tool install graphifyy` (or `pipx install graphifyy`; Python 3.10+ required), ensure `graphify` is on PATH, then run `graphify extract . --code-only` from the repository root. This creates graphify-out/graph.json using local AST extraction without an API key. For a full graph including documentation and semantic relationships, follow the [graphify setup guide](https://github.com/Graphify-Labs/graphify#install) and run `/graphify .` in your configured AI assistant.
+
+## Design System
+Read DESIGN.md before visual or UI work: it defines the fonts, colors, spacing, and
+aesthetic direction. Ask the user before departing from it. When reviewing or QA-ing
+UI, flag code that doesn't match DESIGN.md.

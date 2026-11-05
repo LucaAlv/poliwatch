@@ -33,7 +33,7 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 2. The rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". The AI sentence is deferred.
 3. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
-**Frontend:** "Decide the frontend stack" (owner decision 2026-11-02: hold, prototype first). First "DESIGN.md, tokens and a typeface decision via /design-consultation", then a chart prototype, then a written go/no-go.
+**Frontend:** decided 2026-11-04: the site stays Python-generated HTML ([go/no-go](docs/plans/frontend-go-no-go.md)). DESIGN.md is written; next is "Apply DESIGN.md to the site".
 
 **C. Analysen (long-term view)**
 
@@ -679,43 +679,57 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 ## Design
 
-### DESIGN.md, tokens and a typeface decision via /design-consultation
+### Apply DESIGN.md to the site
 
-**What:** Write a DESIGN.md (tokens, type scale, spacing, component vocabulary, focus/visited/selection rules) and decide the site's typeface. Name once the tokens individual pages had to invent, including the Daten page's light `--surface-2`/`--surface-3`.
+**What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04. No site page uses it yet. Apply it in the current Python renderer:
+1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
+2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
+3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values fail on the grey ground.
+4. **Components.** Vote wall and strip, tally, source line, gap, slip versus ground, navigation. Votes pages first: the archive now renders from the store (#133).
 
-**Why:** Every page carries its own `:root` token block and the only typeface is Inter / ui-sans-serif / system-ui; every design review re-derives the tokens and flags the default font stack. The Daten page (after the dossier) was the second page to have to invent tokens a shared system would already provide. No `DESIGN.md` exists as of 2026-09-19 (`docs/design/bundestag-pulse-design.md` is the product design doc, not a design system).
+**Why:** the owner finds the site unattractive, and the design system does nothing until pages use it. Every page has to carry the token blocks and the font stack today.
 
-**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass.
+**Context:**
+- Preview on real data: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte.html`. It also holds the generator, for values and markup.
+- Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
+- Nobody outside this project has seen the design. Test the grey ground and the vote wall with real readers.
+- The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so every link `:visited` rule goes (`render_dip_pulse_html.py`, `build_dip_pulse_site.py`).
+- Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks).
+- The preview and the chart prototype exist only on the owner's machine, under `~/.gstack`. Copy into the repository whatever the pages need.
 
-**Raised to P2 (owner decision, 2026-11-02):** this is step 1 of "Decide the frontend stack" below. Do it as plain CSS with one shared stylesheet, in the current Python renderer.
+**Settle while applying** (found by the v0.32.1.0 reviews; `DESIGN.md` does not answer these yet):
+- **Inverted votes.** On a vote with `inverted` set, a Ja means "gegen den Antrag" (`derive.fraction_position`), so a blue Ja card reads as approval when it means the opposite. The key and the rows must say what Ja means on such a vote. Put an inverted vote in the tests.
+- **Touch targets.** `DESIGN.md` sets controls at 36px, but the site ships 44px touch targets (`min-height:44px` in `render_dip_pulse_html.py`, CHANGELOG entries on the filter buttons and the Wochenübersicht). Do not regress them: ask the owner to change `DESIGN.md`.
+- **Where computed figures sit.** "No computed figures on a slip" collides with "the vote wall sits on a slip": the preview prints each row's counts inside the slip. The list strip is computed too, and its vote colours fail on the ground (Nein 2.08:1). Decide, and write the answer into `DESIGN.md`.
+- **The wall as text.** A card's `title` does not show on touch or reliably reach a screen reader. Give the member votes as text too, such as a `<details>` list or table per Fraktion.
+- **Dark mode.** `theme_bootstrap_script` follows the saved choice, then `prefers-color-scheme`, and the Datenschutz page names the `bundestag-pulse-theme` key. Keep the toggle and the key. "Light by default" applies only when neither says dark.
+- **Fraktion colours in both modes.** `PARTY_COLORS` writes one hex value into inline styles; only CDU/CSU is a variable. `DESIGN.md` has a light and a dark value per Fraktion, so emit a variable for each.
+- **Fonts without a package manager.** The `@fontsource` packages are a one-time download source. Commit the five WOFF2 files (D-DIN Condensed Bold; Atkinson Next variable, latin and latin-ext; Atkinson Mono 400 and 700) and the licence texts, with no `package.json`.
+- **Stale stylesheet.** Put a content hash or version in the stylesheet's URL, so new HTML never pairs with a cached old file.
+- **Long compounds.** Bill titles come from DIP, so nobody inserts the soft hyphens `DESIGN.md` asks for. Add an overflow fallback and check long titles at 375 px.
+- **Enthaltung and provenance.** There is no outline token for the Enthaltung card. Slip against ground is only 1.59:1 in light mode and 1.40:1 in dark mode, so the surface alone may not carry provenance for a low-vision reader.
+- **Reviews until this lands.** The `CLAUDE.md` rule to flag UI that does not match `DESIGN.md` means new or changed UI. Existing pages are this entry, not findings.
 
-**Effort:** M
+**Effort:** L
 **Priority:** P2
 **Depends on:** None
 
-### Decide the frontend stack
+### Design hand-over leftovers
 
-**What:** Decide whether the site stays Python-generated HTML (PRODUCT.md:58) or moves to a static site generator with islands (Astro-class), under the rule "the frontend computes no figure". A single-page app and a hybrid were rejected. The owner chose "Hold, prototype first" (R17). The order:
-1. "DESIGN.md, tokens and a typeface decision via /design-consultation" above, as plain CSS with one shared stylesheet.
-2. A chart prototype in a candidate generator, most likely the Diskursanalyse throwaway.
-3. A written go/no-go against the stdlib option (SVG charts drawn from Python). Write the criteria down before the prototype.
+**What:**
+- `PRODUCT.md:58` says the votes archive renders from report JSON and only the Abgeordnete, Fakten and Daten pages read the store. The archive has rendered from the store since #133.
+- The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.
+- `docs/designs/gesetzesvorhaben.md:300` names the removed TODO "DESIGN.md, tokens and a typeface decision".
+- `README.md:494` and `docs/project-documentation.md:21,313` link to `docs/design/bundestag-pulse-design.md`, deleted in ad389bf. Remove the links or point them at `PRODUCT.md` and `DESIGN.md`.
+- `DESIGN.md` has not been checked against two outside sources in the v0.32.1.0 reviews: the colour-blind ΔE figures (validator not re-run) and the bundestag.de ballot-card link (not reachable from the sandbox).
 
-If the answer is go:
-- Resolve outside-voice findings O4–O11 first.
-- Write ADR 0005 before building.
+**Why:** none of these moves a figure or misleads a site reader, but each can send a later reader the wrong way.
 
-**Why:**
-- The look is a design problem, and either stack has to solve it.
-- The case for a generator rests on interactive long-term charts, and only a chart prototype can show whether that case holds.
-- The pilot the eng review planned (the votes archive) tested neither goal: it had no chart and left design out of scope.
+**Context:** found by the v0.32.1.0 reviews and deferred under CLAUDE.md "Review findings". The `PRODUCT.md` sentence predates that release.
 
-**Context:**
-- The eng review of 2026-11-02 settled ledger entries R10–R16 and a scope record for the frontend plan: pilot votes archive, parallel build, state codes, payload-diff oracle, strict npm policy, raw-HTML ban, 50 KB island budget. They were meant to go into `docs/plans/a4-site-from-release.md`, but that text never reached main. Redo it from the review if the answer is go.
-- PRODUCT.md:58 stays in force until the decision.
-
-**Effort:** M (design pass and prototype); L if the answer is go
-**Priority:** P2
-**Depends on:** "DESIGN.md, tokens and a typeface decision via /design-consultation"
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ## Publication
 
@@ -1120,6 +1134,8 @@ The long-term angle of the site (PRODUCT.md, 2026-09-30). None of it exists yet.
 Done when the chart and the recipe give the same numbers on the same release, and a test pins the matching rule on a handful of compounds.
 
 **Why:** Decided 2026-09-30: precomputed series instead of free search on a static site, with free search delegated to the SQLite download. Term lists instead of a topic model are confirmed only provisionally. The user wants to see a preview before deciding, so the first step is a throwaway prototype: three topics, run over the reference store, drawn as a static chart, shown to the user. Build the page only after that decision. Open Discourse's Diskursanalyse, the named reference, uses 73 LDA topics with yearly granularity from 1949 to 2020. Published term lists are weaker at catching synonyms, but anyone can check and recount them, which fits a neutral, research-grade dataset.
+
+**How to draw it (2026-11-04):** as SVG from a small Python module with a small tooltip script, per the frontend go/no-go. A working version of this page, on the full store with provisional terms, is in `~/.gstack/projects/LucaAlv-poliwatch/designs/chart-prototype-20261104/arm-a/build.py`. It covers topic and period links, touch tooltips, point-to-Reden pages and a table. It is not the term-list decision, which is still open.
 
 **Context:** Start with a small set of topics (Klimaschutz, Migration, and a few more) and a neutrality review of the term lists before publishing. A term list that uses one side's vocabulary ("Klimakrise" vs. "Klimawandel") frames the result. Also consider filters that Open Discourse offers and the store can support: gender and age group from the abgeordnetenwatch columns.
 
@@ -1556,6 +1572,7 @@ One line per finished item, giving the version and PR that shipped it, or the da
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone
 - "Validate a data correction" copies no private directory, so `after` loses the seat tables: `fix/todo-round-2026-11`, 2026-11-05
 - Textanteil for the r2 Daten recipe, the rest of the ADR 0001 UI half: `fix/todo-round-2026-11`, 2026-11-05: `r2-textanteil-fraktion`, ordered by characters; export format 15; the published rows do not change
+- Decide the frontend stack: no-go, the site stays Python-generated HTML; owner, 2026-11-04 ([criteria and measurements](docs/plans/frontend-go-no-go.md); revisit when a real chart cannot reasonably be hand-drawn)
 - Stale cached-report error lines: polish: #134, 2026-11-04
 - A malformed coverage-exclusions.json ends a build with a traceback: #132, 2026-11-03
 - Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am": #132, 2026-11-03
