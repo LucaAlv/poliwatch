@@ -94,7 +94,6 @@ def document_source_chambers(item: dict[str, Any]) -> dict[str, str]:
     return chambers
 
 
-
 def render_document_links(
     document_numbers: list[str], links: dict[str, tuple[str, str]], chambers: dict[str, str] | None = None,
 ) -> str:
@@ -663,7 +662,7 @@ def stored_votes(conn: Any) -> list[StoredVote]:
     """Every vote in the store as a ``StoredVote``, in no particular order.
 
     One query per table, grouped by vote id in Python, never a query per vote:
-    the reference store holds 556 votes and 382,441 vote_members rows."""
+    vote_members alone runs into the hundreds of thousands of rows."""
     fractions: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
         "SELECT vf.vote_id, pa.name, vf.yes_count, vf.no_count, vf.abstain_count, vf.absent_count, vf.total_count "
@@ -781,7 +780,6 @@ class VotesComponent(BaseComponent):
             site_prefix=ctx.get("site_prefix", "../"),
         )
         return [render_vote_summary(ctx["item"], acquisition, panel)]
-
 
 
 COMPONENT = VotesComponent(REGISTRY["votes"])

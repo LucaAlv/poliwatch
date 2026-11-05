@@ -921,9 +921,11 @@ def _mandate_stretches(mdb_id: str, names: list[Mapping[str, Any]], wahlperiode:
         for item in period.get("INSTITUTIONEN") or []
         if _clean(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART
     }
+    # Sorted by start date, then by record: a set has no order, and two
+    # memberships starting on one day would otherwise come out in hash order.
     memberships = sorted(
         ((record, _stammdaten_date(record[1], where, required=True), _stammdaten_date(record[2], where)) for record in records),
-        key=lambda membership: membership[1],
+        key=lambda membership: (membership[1], membership[0]),
     )
     stretches = []
     for record, von, bis in memberships:
@@ -935,6 +937,13 @@ def _mandate_stretches(mdb_id: str, names: list[Mapping[str, Any]], wahlperiode:
         von = max(von, mandate_from)
         if mandate_until and (until is None or until > mandate_until):
             until = mandate_until
+        # A membership with no day left after the clip lies outside its Mandat
+        # or is a one-day entry on a handover day; neither is a Zugehörigkeit.
+        if until is not None and until <= von:
+            raise StammdatenError(
+                f"{where}: membership {record[0]} {record[1]}-{record[2]} covers no day of its Mandat "
+                f"({von.isoformat()} to {until.isoformat()} after clipping)"
+            )
         stretches.append((record, von, until))
 
     covered: list[tuple[str, date, date | None]] = []
@@ -993,8 +1002,9 @@ def mdb_zugehoerigkeiten(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode
     first day it no longer covers, None while the Mandat is open. Wahlperioden
     before ``since_wahlperiode`` are skipped unread (rule 7).
 
-    Raises StammdatenError on two memberships on one day or a Fraktion/Gruppe
-    name outside STAMMDATEN_ZUSAMMENSCHLUESSE.
+    Raises StammdatenError on two memberships on one day, a membership that
+    covers no day of its Mandat or a Fraktion/Gruppe name outside
+    STAMMDATEN_ZUSAMMENSCHLUESSE.
     """
     mandates = []
     for mdb in mdbs:
@@ -1026,7 +1036,8 @@ def party_seats(zugehoerigkeiten: Iterable[Mapping[str, Any]]) -> list[dict[str,
     """One row per Zusammenschluss (or fraktionslos), Wahlperiode and unbroken
     seat count, from ``mdb_zugehoerigkeiten`` rows: the seats of a group on a
     day are the rows of its party that cover the day. Days with no seat get no
-    row. Ordered by Wahlperiode, party and first day."""
+    row. Ordered by Wahlperiode, party and first day. Raises StammdatenError
+    when a row ends before it starts, which would count a negative seat."""
     changes: dict[tuple[int, str], Counter] = {}
     for row in zugehoerigkeiten:
         steps = changes.setdefault((row["wahlperiode"], row["party"]), Counter())
@@ -1038,6 +1049,8 @@ def party_seats(zugehoerigkeiten: Iterable[Mapping[str, Any]]) -> list[dict[str,
         count, open_row = 0, None
         for day in sorted(steps):
             count += steps[day]
+            if count < 0:
+                raise StammdatenError(f"WP {wahlperiode} {party}: {count} seats on {day}; a Zugehörigkeit ends before it starts")
             if open_row and open_row["seats"] == count:
                 continue
             if open_row:

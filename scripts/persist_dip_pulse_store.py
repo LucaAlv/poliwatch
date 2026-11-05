@@ -1510,8 +1510,10 @@ def persist_vote(
     conn.execute("DELETE FROM vote_members WHERE vote_id = ?", (vote_id,))
     conn.execute("DELETE FROM vote_documents WHERE vote_id = ?", (vote_id,))
 
-    # rank is the place of the number's first occurrence in the vote's list:
-    # the archive shows the links and picks the Drucksachetyp in that order.
+    # rank counts the vote's Drucksachen from 1 without gaps, in the order of its
+    # number list (the parser sorts it): a number that repeats or resolves to no
+    # document takes no rank. The archive shows the links and picks the
+    # Drucksachetyp in that order.
     document_rank = 0
     for number in vote.get("document_numbers") or []:
         document_id = upsert_document(conn, now=now, document_number=number)

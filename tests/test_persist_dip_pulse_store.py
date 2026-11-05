@@ -721,7 +721,8 @@ class ArchiveColumnsTests(unittest.TestCase):
         report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
         item = report["agenda_items"][0]
         vote = item["votes"][0]
-        vote["document_numbers"] = ["21/2", "21/1", "21/2"]
+        # Value: protects=vote_documents.rank is gapless from 1 although a number repeats in the middle of the list (21/02 is the document 21/2 written with a zero, as the roll-call text can print it): the DATA.md meaning of rank says "lückenlos ab 1"; fails_when=rank follows the position in the number list, so 21/1 gets 3; why_new=the repeat at the end of this list cannot show a gap, only one before a later number can; seam=none; no_claim=text order of the list (the parser's job)
+        vote["document_numbers"] = ["21/2", "21/02", "21/1", "21/2"]
         vote["total"] = {"yes": 3, "no": 0}
         vote["fractions"] = [
             {"name": "SPD", "counts": {"yes": 3}},

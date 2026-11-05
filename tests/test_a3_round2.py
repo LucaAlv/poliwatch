@@ -323,10 +323,6 @@ class ZwischenfragePerExchangeTests(unittest.TestCase):
         self.assertEqual([k for k, _t in contributions], ['zwischenfrage', 'zwischenfrage'])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 def presidium(rid, last, role, fraktion=None):
     fr = f'<fraktion>{fraktion}</fraktion>' if fraktion else ''
     return (f'<p klasse="redner"><redner id="{rid}"><name><nachname>{last}</nachname>{fr}'
@@ -373,3 +369,7 @@ class PresidiumFraktionsredeTests(unittest.TestCase):
         top, _contributions = parse(
             '<rede id="R">' + presidium('L', 'Lammert', 'Präsident', 'CDU/CSU') + '<p>Ansprache.</p></rede>')
         self.assertEqual(top['speeches'][0]['speaker']['role'], 'Präsident')
+
+
+if __name__ == '__main__':
+    unittest.main()

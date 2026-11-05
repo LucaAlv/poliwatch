@@ -12,6 +12,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import traceback
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -32,7 +33,7 @@ READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready
 
 
 def _r2_limited_to_4() -> tuple[dict, ...]:
-    return tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+    return tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-textanteil-fraktion" else r for r in b.RECIPES)
 
 
 def authored(field: str) -> Path:
@@ -195,18 +196,54 @@ class ExportHelpersTests(unittest.TestCase):
         self.assertEqual(b.resolve_data_base_url("http://example.org/x/"), "http://example.org/x/")
         self.assertEqual(b.resolve_data_base_url("/data/"), "/data/")
         self.assertEqual(b.resolve_data_base_url("//cdn.example.org/x"), "//cdn.example.org/x/")
+        # What a browser reads correctly stays accepted: relative steps, a scheme in
+        # capitals, a real or empty port, an IPv6 host, a colon after a path segment.
+        for good in ("./data", "../exports/", "https://example.org", "HTTPS://Example.org/x", "https://example.org:8443/x",
+                     "https://example.org:/x", "https://[::1]:8443/x", "//cdn.example.org:80/x", "data/exports:v2"):
+            with self.subTest(good=good):
+                self.assertEqual(b.resolve_data_base_url(good), good if good.endswith("/") else good + "/")
 
     # A host the Datenschutz page cannot parse ended the build in a traceback
     # after every other page was written; it is refused up front instead.
     def test_resolve_data_base_url_rejects_other_schemes_and_malformed_hosts(self) -> None:
         # /ship review 2026-11-01: a backslash-led base left the site with no
-        # host named on datenschutz.html, and credentials reached every href
-        # (the credential URL is split so the pre-push scanner skips the fake).
+        # host named on datenschutz.html.
         for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/",
-                    "/\\evil.example/x/", "data\\exports/", "https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/"):
+                    "/\\evil.example/x/", "data\\exports/"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     b.resolve_data_base_url(bad)
+
+    # Value: protects=a base a browser reads as another URL than the one named (a scheme without "//", a port that is no number, whitespace a browser strips, a query or fragment the download paths would land inside) stops the build at the flag; fails_when=any of these is returned as the prefix of every download href, or the checks run only on the "https://" branch so a leading space skips the host checks; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 11; seam=none; no_claim=the host exists
+    def test_resolve_data_base_url_rejects_what_a_browser_reads_differently(self) -> None:
+        for bad in ("javascript:x", "data:text/plain,x", "mailto:x@example.org", "https:/example.org/", "https:example.org",
+                    "http:/example.org/", "JavaScript:x", "https://h:abc/", "https://h:99999/", "https://h:-1/",
+                    "https://h x/", " //host/x", "\t//host/x", "//host/x\n", "https://h/\x00", "https://h/\u2028x", "https://h/\u00a0x",
+                    "https://h/?x", "https://h/#f", "data/exports?x", "/data/#f", "//host/x?y"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    b.resolve_data_base_url(bad)
+
+    # Value: protects=the credential refusal's promise not to echo the value, in every branch that can see one; fails_when=a message prints the userinfo or host of a refused URL (also when the URL is refused for another reason, such as a query), which would reach CI logs; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 12; seam=none; no_claim=other rows, which echo the value on purpose
+    def test_resolve_data_base_url_never_echoes_credentials(self) -> None:
+        # The credential URLs are split so the pre-push scanner skips the fakes.
+        for bad in ("https://u:p" + "@dl.example.org/x/", "//u" + "@dl.example.org/x/", "https://u:p" + "@dl.example.org/x/?y",
+                    "https://u:p" + "@dl.example.org:abc/x/", "javascript://u:p" + "@dl.example.org/x/",
+                    # urlsplit's own error quotes the whole netloc for a character whose NFKC form is a separator.
+                    "https://u:p" + "@dl.example.org／/",
+                    # Value: protects=a token in a query or fragment, or credentials behind a full-width at-sign (no
+                    # ASCII "@" and urlsplit quotes the netloc), stays out of the refusal; fails_when=the guard keys on
+                    # "@" alone again; why_new=every row above has an ASCII "@"; seam=none
+                    "https://dl.example.org/x/?token=u:p", "https://dl.example.org/x/#u:p", "https://u:p" + "＠dl.example.org/x/"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError) as caught:
+                    b.resolve_data_base_url(bad)
+                message = str(caught.exception)
+                # Value: protects=the refusal drops urlsplit's own error, which quotes the netloc with its credentials, from the exception chain too, so a traceback in a CI log carries none; fails_when=`from None` becomes `from exc` (the full-width slash row then leaks u:p in the chained error); why_new=the loop checked str(exception) only, which the chain does not appear in; seam=none; no_claim=other rows, which echo the value on purpose
+                chain = "".join(traceback.format_exception(caught.exception))
+                for secret in ("u:p", "dl.example.org"):
+                    self.assertNotIn(secret, message)
+                    self.assertNotIn(secret, chain)
 
     def test_is_url(self) -> None:
         self.assertTrue(b.is_url("https://example.org/datenstand.json"))
@@ -845,7 +882,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         # must not rewrite history). Without the switch, CDU/CSU would read 4
         # Reden and SPD 2; with it, both read 3.
         manifest = self.export()
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         spd_row = next(row for row in r2["rows"] if row["fraktion"] == "SPD")
         cdu_row = next(row for row in r2["rows"] if row["fraktion"] == "CDU/CSU")
         self.assertEqual(spd_row["reden"], 3)
@@ -863,7 +900,7 @@ class ExportDistributionDataTests(unittest.TestCase):
 
     def _r2_seat_shares(self) -> dict:
         manifest = self.export()
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         return {(row["wahlperiode"], row["fraktion"]): row["sitzanteil_prozent"] for row in r2["rows"]}
 
     # Value: protects=R2's sitzanteil_prozent is the group's seats summed over the WP's sitting dates over
@@ -946,7 +983,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                     finally:
                         conn.close()
                 manifest = self.export()
-                caveat = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")["caveat"]
+                caveat = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")["caveat"]
                 if loaded:
                     self.assertIn("MdB-Stammdaten, Stand 30.06.2024", caveat)
                     self.assertIn("gilt für spätere Sitzungstage die Zusammensetzung am Stand", caveat)
@@ -982,7 +1019,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(recipe=recipe["id"]):
                 self.assertIn("wahlperiode", recipe["columns"])
                 self.assertTrue(all(isinstance(row["wahlperiode"], int) for row in recipe["rows"]), recipe["rows"])
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         spd = {row["wahlperiode"]: row for row in r2["rows"] if row["fraktion"] == "SPD"}
         self.assertEqual((spd[18]["reden"], spd[18]["anteil_prozent"]), (1, 100.0))
         self.assertEqual(spd[20]["reden"], 3)
@@ -1027,17 +1064,28 @@ class ExportDistributionDataTests(unittest.TestCase):
         html = b.render_daten_datenstand(self.export(force=True))
         self.assertIn(f"ab der {b.V1_FIRST_WAHLPERIODE}. Wahlperiode", html)
         self.assertIn('class="scope-line"', html)
+        self.assertNotIn("bis auf die ausgeschlossenen", html)
+
+    # Value (A3): protects=the scope line stays true when sittings are excluded,
+    # by pointing at the exclusion list that renders below it; fails_when=the line
+    # claims every sitting or the pointer shows with nothing excluded;
+    # seam=render_daten_datenstand.
+    def test_datenstand_scope_line_names_the_exclusions(self) -> None:
+        html = b.render_daten_datenstand(self.export(excluded_sittings=["18/84"]))
+        scope = html.index('class="scope-line"')
+        self.assertIn("XML-Protokoll f&uuml;hrt, bis auf die ausgeschlossenen Sitzungen (unten).", html[scope:])
+        self.assertGreater(html.index("nicht erfasst (ausgeschlossen)"), scope)
 
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
             {**recipe, "sql": "SELECT * FROM speeches_does_not_exist LIMIT 5;"}
-            if recipe["id"] == "r2-redeanteil-fraktion"
+            if recipe["id"] == "r2-textanteil-fraktion"
             else recipe
             for recipe in b.RECIPES
         )
         with self.assertRaises(RuntimeError) as ctx:
             self.export(recipes=broken)
-        self.assertIn("r2-redeanteil-fraktion", str(ctx.exception))
+        self.assertIn("r2-textanteil-fraktion", str(ctx.exception))
 
     def test_recipe_on_empty_votes_table_yields_empty_reason_not_a_failure(self) -> None:
         # A separate, narrower store: dossiers exist (so R1/R2/R5 have rows)
@@ -1193,7 +1241,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 15)
+        self.assertEqual(manifest["export_format"], 16)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1424,7 +1472,7 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_skip_rule_reexports_when_recipes_change(self) -> None:
         first = self.export()
         changed = tuple(
-            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r
+            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-textanteil-fraktion" else r
             for r in b.RECIPES
         )
         second = self.export(recipes=changed)
@@ -1465,7 +1513,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                 raise OSError("disk full")
             return real_write(*args, **kwargs)
 
-        changed = tuple({**r, "sql": r["sql"] + " "} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        changed = tuple({**r, "sql": r["sql"] + " "} if r["id"] == "r2-textanteil-fraktion" else r for r in b.RECIPES)
         for label, kwargs in (("new generation", {"recipes": changed}), ("forced re-export", {"force": True})):
             with self.subTest(label), mock.patch.object(b, "_write_csv", side_effect=failing_write):
                 calls.clear()
@@ -1558,7 +1606,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         first_gen_dir = self.exports_dir / first["generation"]
         self.assertTrue(first_gen_dir.exists())
         changed = tuple(
-            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r
+            {**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-textanteil-fraktion" else r
             for r in b.RECIPES
         )
         self.export(recipes=changed)

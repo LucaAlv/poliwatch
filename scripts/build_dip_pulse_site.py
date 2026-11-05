@@ -722,13 +722,13 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
 # store already holds. Matched on the protocol id, the key persist and the
 # rebuild's missing-evidence check use.
 # What the offline render adds to a coverage refusal (A4 slice 0 review, d): an
-# online update into the same directory writes its reports and its exclusion
-# record before its staged rebuild swaps the store, so a render in between sees
-# a gap the update is about to close. The writer lock covers only the rebuild,
+# online update into the same directory writes its reports before its staged
+# rebuild swaps the store, and its exclusion record right after, so a render in
+# between sees a gap the update is about to close. The writer lock covers only the rebuild,
 # not the fetch before it, so a lock probe would miss most of that window.
 CONCURRENT_UPDATE_NOTE = (
     "If an online update into this directory is still running, wait for it to finish, then re-run: "
-    "it writes its reports and exclusions before it replaces the store."
+    "it writes its reports before it replaces the store and its exclusions right after."
 )
 
 
@@ -738,8 +738,9 @@ def store_coverage_gap(
     """None when ``entries`` (the cached reports minus the ``excluded`` document
     numbers, the recorded exclusions) and the store's ``protocols`` name the same
     sittings; otherwise the refusal, naming up to ``limit`` sittings per case and
-    the repair. A stored sitting that is excluded is its own case: its exclusion
-    was recorded by a run whose rebuild then failed, and a repersist drops it."""
+    the repair. A stored sitting that is excluded is its own case: the record was
+    edited by hand (an online run writes it only after its rebuild), and a
+    repersist drops the sitting."""
     reported: dict[str, str] = {}
     for entry in entries:
         protocol = entry["report"].get("protocol") or {}
@@ -2297,6 +2298,24 @@ def _roll_calls(count: int) -> str:
     return f"{count} roll-call" + ("" if count == 1 else "s")
 
 
+def write_crosscheck_report(path: Path, text: str | None) -> bool:
+    """Write ``text`` as the cross-check report at ``path``, or remove the
+    report for None, in the private directory ``registry.ensure_private_dir``
+    accepts. An OSError (a symlinked or foreign directory, a full disk) is one
+    note on stderr, not a failure: False then, True when done."""
+    try:
+        registry.ensure_private_dir(path.parent)
+        if text is None:
+            path.unlink(missing_ok=True)
+        else:
+            dip.write_text_atomic(path, text)
+    except OSError as exc:
+        print(f"note: [stammdaten] the cross-check report could not be {'removed' if text is None else 'written'}: {exc}",
+              file=sys.stderr)
+        return False
+    return True
+
+
 def log_seat_crosscheck(database_path: Path) -> None:
     """C1 step 5: the store's seat counts against its roll-call totals. Writes
     every disagreement to ``stammdaten.crosscheck_path`` (private, D9), prints
@@ -2315,7 +2334,7 @@ def log_seat_crosscheck(database_path: Path) -> None:
         return
     if result is None:
         # A report left from an earlier build would describe seat counts the store no longer holds.
-        path.unlink(missing_ok=True)
+        write_crosscheck_report(path, None)
         print("stammdaten: no cross-check, MdB-Stammdaten nicht geladen", file=sys.stderr)
         return
     by_cause: dict[str, list[str]] = {cause: [] for cause in stammdaten.CAUSES}
@@ -2331,13 +2350,12 @@ def log_seat_crosscheck(database_path: Path) -> None:
         "roll_calls_by_cause": by_cause, "not_compared": not_compared,
         "disagreements": result.disagreements,
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    dip.write_text_atomic(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    causes = ", ".join(f"{len(ids)} {_CROSSCHECK_CAUSE_LABELS[cause]}" for cause, ids in by_cause.items() if ids)
+    written = write_crosscheck_report(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    causes =", ".join(f"{len(ids)} {_CROSSCHECK_CAUSE_LABELS[cause]}" for cause, ids in by_cause.items() if ids)
     skipped = sum(map(len, not_compared.values()))
     print(f"stammdaten: cross-check of {_roll_calls(result.compared)} against the seat counts: "
           f"{report['agree']} agree, {disagreeing} disagree" + (f" ({causes})" if causes else "")
-          + (f"; {skipped} not compared" if skipped else "") + f"; report: {path}", file=sys.stderr)
+          + (f"; {skipped} not compared" if skipped else "") + (f"; report: {path}" if written else ""), file=sys.stderr)
     stand_day = datetime.fromisoformat(result.stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
     for ids, message in (
         (by_cause["unexplained"], "disagreement with the seat counts in no known shape"),
@@ -3335,7 +3353,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 15
+EXPORT_FORMAT = 16
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3398,19 +3416,26 @@ def _wahlperiode_sql(alias: str) -> str:
     return f"CAST(substr({alias}.document_number, 1, instr({alias}.document_number, '/') - 1) AS INTEGER)"
 
 
+# The sitting's number within its Wahlperiode: the part after the slash as a
+# number, so "21/99" comes before "21/100" (as text it comes after).
+def _sitting_number_sql(alias: str) -> str:
+    return f"CAST(substr({alias}.document_number, instr({alias}.document_number, '/') + 1) AS INTEGER)"
+
+
 # The sitting of a vote: its own protocol, else the first sitting whose agenda
-# item claims it.
+# item claims it, by Wahlperiode, then sitting number.
 _VOTE_PROTOCOL_SQL = (
     "COALESCE((SELECT ai.protocol_id FROM agenda_item_votes aiv JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
     "                  JOIN protocols p0 ON p0.id = ai.protocol_id\n"
-    "                  WHERE aiv.vote_id = v.id ORDER BY p0.document_number LIMIT 1), v.protocol_id)"
+    "                  WHERE aiv.vote_id = v.id\n"
+    "                  ORDER BY " + _wahlperiode_sql("p0") + ", " + _sitting_number_sql("p0") + ", p0.document_number LIMIT 1), v.protocol_id)"
 )
 
 # Output definitions of the wahlperiode column, by what the row counts.
 _WP_SPEECH_MEANING = "Wahlperiode der Sitzung der Rede: Präfix der Protokollnummer (protocols.document_number) als Zahl."
 _WP_VOTE_MEANING = (
-    "Wahlperiode der Sitzung der Abstimmung: Präfix der lexikografisch kleinsten Protokollnummer der Sitzungen, "
-    "deren TOP sie zugeordnet ist, ersatzweise von votes.protocol_id, als Zahl."
+    "Wahlperiode der Sitzung der Abstimmung: Präfix der Protokollnummer der ersten Sitzung (nach Wahlperiode, dann "
+    "Sitzungsnummer als Zahl), deren TOP sie zugeordnet ist, ersatzweise von votes.protocol_id, als Zahl."
 )
 # What LIMIT 5 does to a recipe ordered by Wahlperiode first.
 _WP_LIMIT_METHOD = (
@@ -3472,8 +3497,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         ),
     },
     {
-        "id": "r2-redeanteil-fraktion",
-        "title": "Redeanteil je Fraktion nach Zeichen",
+        "id": "r2-textanteil-fraktion",
+        "title": "Textanteil je Fraktion oder Gruppe",
         "sql": (
             "WITH sitting AS (\n"
             "  SELECT DISTINCT " + _wahlperiode_sql("p") + " AS wahlperiode, p.date FROM protocols p\n"
@@ -3499,7 +3524,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "         CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
             "                            WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
             "                            ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END AS fraktion,\n"
-            "         COUNT(*) AS reden,\n"
+            "         COUNT(*) AS reden, SUM(s.char_count) AS zeichen,\n"
             "         ROUND(100.0 * SUM(s.char_count) / SUM(SUM(s.char_count)) OVER (PARTITION BY "
             + _wahlperiode_sql("p") + "), 1) AS anteil_prozent\n"
             "  FROM speeches s\n"
@@ -3513,14 +3538,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "            THEN ROUND(ss.sitzanteil, 1) END AS sitzanteil_prozent\n"
             "FROM speech_share r\n"
             "LEFT JOIN seat_share ss ON ss.seat_wahlperiode = r.wahlperiode AND ss.seat_fraktion = r.fraktion\n"
-            "ORDER BY wahlperiode DESC, reden DESC, fraktion\n"
+            "ORDER BY r.wahlperiode DESC, r.zeichen DESC, r.fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
             {"name": "wahlperiode", "meaning": _WP_SPEECH_MEANING, "align": "num"},
             {"name": "fraktion", "meaning": "Gruppe der Rede: Bundesregierung, Bundesrat oder weitere Sprechrolle nach speeches.sprechrolle, sonst speeches.fraktion, ersatzweise die Partei der Redneraufzeichnung.", "align": "text"},
             {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe in dieser Wahlperiode mit Redneraufzeichnung.", "align": "num"},
-            {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an den Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle.", "align": "num"},
+            {"name": "anteil_prozent", "meaning": "Textanteil: Anteil der Gruppe an den Zeichen der Reden mit Redneraufzeichnung derselben Wahlperiode, Prozent mit einer Nachkommastelle; Zeichen sind keine Redezeit.", "align": "num"},
             {"name": "sitzanteil_prozent", "meaning": (
                 "Mittlerer Sitzanteil des Zusammenschlusses (oder der Fraktionslosen) über die Sitzungstage der "
                 "Wahlperiode im Store: Summe seiner Sitze an diesen Tagen (party_seats) geteilt durch die Summe aller "
@@ -3546,7 +3571,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "Sitzanteile zusammen weniger als 100 % ergeben können. Ein Zusammenschluss, den es nur einen Teil der "
             "Wahlperiode gab, zählt an den übrigen Tagen 0: Sein Wert ist der Mittelwert über die ganze Wahlperiode, "
             "nicht sein Anteil, solange er bestand. Die Gruppe wird über den Namen zugeordnet (parties.name). "
-            "Reihenfolge: Wahlperiode absteigend, dann Reden absteigend, dann Gruppenname. " + _WP_LIMIT_METHOD
+            "Reihenfolge: Wahlperiode absteigend, dann Zeichen (SUM(char_count)) absteigend, dann Gruppenname; die Zahl der "
+            "Reden bestimmt die Reihenfolge nicht. " + _WP_LIMIT_METHOD
         ),
     },
     {
@@ -3603,7 +3629,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "document_number", "meaning": "Lexikografisch kleinste Protokollnummer der Sitzungen, deren TOP die Abstimmung zugeordnet ist, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "document_number", "meaning": "Protokollnummer der ersten Sitzung (nach Wahlperiode, dann Sitzungsnummer als Zahl), deren TOP die Abstimmung zugeordnet ist, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
             {"name": "wahlperiode", "meaning": _WP_VOTE_MEANING, "align": "num"},
             {"name": "date", "meaning": "Datum der Abstimmung als ISO-Kalendertag YYYY-MM-DD, ohne Uhrzeit/Zeitzone.", "align": "text"},
             {"name": "title", "meaning": "Titel der Abstimmung laut Quelle (votes.title).", "align": "text", "link": "document", "truncate": 90},
@@ -3615,8 +3641,9 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
-            "Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine Ja- oder Nein-Gesamtzahl nennt "
-            "(votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
+            "Gehört eine Abstimmung zu TOPs mehrerer Sitzungen, zählt die erste nach Wahlperiode, dann Sitzungsnummer als "
+            "Zahl (21/99 vor 21/100). Eine Abstimmung ganz ohne Protokoll fehlt, ebenso eine, für die die Quelle keine "
+            "Ja- oder Nein-Gesamtzahl nennt (votes.yes_count oder no_count NULL). Über alle Wahlperioden gereiht, nicht je Wahlperiode. "
             "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
         ),
     },
@@ -3627,7 +3654,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "SELECT pr.id AS proceeding_id, " + _wahlperiode_sql("p") + " AS wahlperiode,\n"
             "       pr.title, pr.proceeding_type AS typ,\n"
             "       COUNT(DISTINCT s.id) AS reden, COUNT(DISTINCT ai.protocol_id) AS sitzungen,\n"
-            "       MIN(p.document_number) AS erste_drucksache\n"
+            "       substr(MIN(printf('%09d', " + _sitting_number_sql("p") + ") || p.document_number), 10) AS erste_drucksache\n"
             "FROM proceedings pr\n"
             "JOIN proceeding_positions pp ON pp.proceeding_id = pr.id\n"
             "JOIN agenda_items ai ON ai.id = pp.agenda_item_id\n"
@@ -3642,7 +3669,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "wahlperiode", "meaning": "Wahlperiode der Sitzungen mit verknüpftem TOP: Präfix der Protokollnummer (protocols.document_number) als Zahl.", "align": "num"},
             {"name": "title", "meaning": "Titel des Vorgangs laut DIP (proceedings.title).", "align": "text", "link": "proceeding", "truncate": 90},
             {"name": "typ", "meaning": "Vorgangstyp gemäß DIP.", "align": "text"},
-            {"name": "erste_drucksache", "meaning": "Trotz des Namens: lexikografisch kleinste Plenarprotokollnummer der verknüpften Sitzungen dieser Wahlperiode, keine Drucksache.", "align": "text"},
+            {"name": "erste_drucksache", "meaning": "Trotz des Namens: Plenarprotokollnummer der ersten der verknüpften Sitzungen dieser Wahlperiode (kleinste Sitzungsnummer als Zahl), keine Drucksache.", "align": "text"},
             {"name": "reden", "meaning": "Anzahl unterschiedlicher Reden (speeches.id) zu Tagesordnungspunkten dieses Vorgangs in dieser Wahlperiode.", "align": "num"},
             {"name": "sitzungen", "meaning": "Anzahl unterschiedlicher Sitzungen dieser Wahlperiode mit verknüpftem TOP und mindestens einer Rede zu diesem Vorgang.", "align": "num"},
         ),
@@ -3650,7 +3677,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": "Je Wahlperiode gezählt, die jüngste zuerst.",
         "method": (
             "Nur Verknüpfungen über proceeding_positions und agenda_items zählen; ein Vorgang mit Sitzungen in zwei "
-            "Wahlperioden erscheint mit einer Zeile je Wahlperiode. Reihenfolge: Wahlperiode absteigend, dann Reden, dann "
+            "Wahlperioden erscheint mit einer Zeile je Wahlperiode. Die erste Sitzung ist die mit der kleinsten "
+            "Sitzungsnummer als Zahl (21/99 vor 21/100). Reihenfolge: Wahlperiode absteigend, dann Reden, dann "
             "Sitzungen absteigend, dann Kennung. " + _WP_LIMIT_METHOD + " Die CSV folgt der SQL-Projektion; das HTML "
             "zeigt erste_drucksache vor reden und sitzungen."
         ),
@@ -5030,6 +5058,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
             f" &middot; {pulse_html.format_int(len(excluded))} nicht erfasst (ausgeschlossen): "
             + pulse_html.esc(", ".join(excluded))
         )
+    scope_exceptions = ", bis auf die ausgeschlossenen Sitzungen (unten)" if excluded else ""
     bausteine_line = " &middot; ".join(
         f"{pulse_html.esc(BAUSTEINE_LABELS[key])}: {pulse_html.esc(value)}" for key, value in coverage["bausteine"].items()
     )
@@ -5052,7 +5081,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
       <div><span class="eyebrow">Zeilen</span><strong>{pulse_html.format_int(manifest['total_rows'])}</strong><p class="tile-sub">{pulse_html.format_int(len(manifest['tables']))} Tabellen &middot; {pulse_html.format_int(manifest['relationships'])} Beziehungen</p></div>
       <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
     </section>
-    <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
+    <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt{scope_exceptions}. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
     <p class="stammdaten-line">{stammdaten_line}</p>
     <p class="coverage-line">{coverage_line}</p>
     <p class="bausteine-line">{bausteine_line}</p>
@@ -13285,35 +13314,53 @@ def print_effective_config(selection: EnrichmentSelection, args: argparse.Namesp
 # ---------------------------------------------------------------------------
 
 
-_ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
+# A leading "scheme:" as a browser reads it: a letter, then letters, digits, "+",
+# "-" or "." up to the first colon. A "/" before the colon makes it a path.
+_LEADING_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 
 
 # --data-base-url only decides where download links point. Absolute only for
-# https://, http:// or a leading /; any other scheme:// is a build-time error
-# (F3.1) rather than a silently broken or unsafe href.
+# https://, http:// or a leading /; any other scheme: is a build-time error
+# (F3.1) rather than a silently broken or unsafe href, and so is anything a
+# browser would read as a different URL than the one named here: a backslash,
+# whitespace or control characters (browsers strip or drop them), a query or a
+# fragment (the links append a path to the base) and a port that is no number.
 def resolve_data_base_url(value: str) -> str:
+    # A value with an "@", a query, a fragment or a non-ASCII character (urlsplit
+    # quotes the netloc for a full-width at-sign, which is no separator) may hold
+    # credentials or a token, which no message may print.
+    private = not value.isascii() or any(char in value for char in "@?#")
+    shown = "(shown without the value: it may hold credentials or a token)" if private else repr(value)
     # Browsers read a backslash as "/", so "/\host/" leaves the site while
     # urlsplit sees no host and datenschutz.html would name none.
     if "\\" in value:
-        raise ValueError(f"--data-base-url {value!r} contains a backslash")
-    if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
+        raise ValueError(f"--data-base-url {shown} contains a backslash")
+    if any(char.isspace() or unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
+        raise ValueError(f"--data-base-url {shown} contains whitespace or a control character")
+    if "?" in value or "#" in value:
+        raise ValueError(f"--data-base-url {shown} contains a query or fragment; the download links append a path to the base")
+    scheme = _LEADING_SCHEME_RE.match(value)
+    if scheme and not (scheme.group(1).lower() in ("https", "http") and value[scheme.end():].startswith("//")):
+        raise ValueError(
+            f"--data-base-url {shown} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
+        )
+    if scheme or value.startswith("/"):
         # A host part (also a protocol-relative "//host/") must parse and be
         # non-empty: datenschutz.html names it as the download host.
         try:
             parsed = urllib.parse.urlsplit(value)
             host = parsed.hostname
+            parsed.port  # a port that is no number or past 65535 raises here
         except ValueError as exc:
-            raise ValueError(f"--data-base-url {value!r} is not a valid URL: {exc}") from exc
+            # urlsplit's text can quote the whole netloc, credentials included, so
+            # it goes only where the value may show, and the chain drops it too.
+            reason = f": {exc}" if not private else ""
+            raise ValueError(f"--data-base-url {shown} is not a valid URL{reason}") from None
         if host is None and (value.startswith("//") or not value.startswith("/")):
-            raise ValueError(f"--data-base-url {value!r} names no host")
+            raise ValueError(f"--data-base-url {shown} names no host")
         # Every download href would carry them; the value is not echoed.
         if parsed.username is not None or parsed.password is not None:
             raise ValueError("--data-base-url contains credentials (user:password@); remove them")
-        return value if value.endswith("/") else value + "/"
-    if _ABSOLUTE_SCHEME_RE.match(value):
-        raise ValueError(
-            f"--data-base-url {value!r} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
-        )
     return value if value.endswith("/") else value + "/"
 
 
@@ -13648,7 +13695,8 @@ def parse_args() -> argparse.Namespace:
             "reported or stored. Add a number only after a review of its source: the sitting is recorded in "
             "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (ausgeschlossen). "
             "Every later run, online or offline, keeps a recorded sitting out without the flag. "
-            "Any source refusal of an unlisted sitting still stops the build before the store is replaced."
+            "Any source refusal of an unlisted sitting still stops the build before the store is replaced. "
+            "Needs an online run; a number DIP does not list is refused."
         ),
     )
     parser.add_argument(
@@ -13792,7 +13840,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Base URL the Daten page's download links are built from. Defaults to "
             "data/exports/ (or $BUNDESTAG_PULSE_DATA_BASE_URL); absolute only for "
-            "https://, http:// or a leading /."
+            "https://, http:// or a leading /. No credentials, query, fragment or whitespace."
         ),
     )
     parser.add_argument(
@@ -13829,7 +13877,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Local JSON file with the operator's name, address, e-mail, hosting and supervisory authority for "
             "impressum.html and datenschutz.html (or $BUNDESTAG_PULSE_OPERATOR_FILE). Keep it outside git; "
-            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders."
+            "docs/project-documentation.md shows its shape. Without it those values render as marked placeholders; "
+            "an empty value is an error, not 'without it'."
         ),
     )
     parser.add_argument(
@@ -13861,6 +13910,11 @@ def parse_args() -> argparse.Namespace:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.include_document_number and (args.offline or args.fetch_xml):
         parser.error("--include-document-number takes a sitting back into an online build; it cannot be combined with --offline or --fetch-xml")
+    if args.exclude_document_number and (args.offline or args.fetch_xml):
+        parser.error(
+            "--exclude-document-number records a sitting in the exclusion list from an online build; "
+            "it cannot be combined with --offline or --fetch-xml, which read the list but never write it"
+        )
     both = {normalized_document_number(n) for n in args.include_document_number} & {
         normalized_document_number(n) for n in args.exclude_document_number
     }
@@ -13901,6 +13955,9 @@ OPERATOR_OBJECTS = {
 }
 OPERATOR_URL_FIELDS = ("hosting.privacy_url", "supervisory_authority.url")
 OPERATOR_MAX_LENGTH = 300
+# A real operator file is under 1 KiB; the cap keeps a wrong path (a log, a
+# database, /dev/zero) from filling memory.
+OPERATOR_FILE_MAX_BYTES = 64 * 1024
 _OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
 
 
@@ -13919,9 +13976,29 @@ def _operator_url(value: str) -> bool:
 
 def load_operator(path: Path) -> dict[str, str]:
     """The operator's values, flattened (``hosting.provider``); absent fields
-    are left out and render as placeholders. Raises OperatorFileError."""
+    are left out and render as placeholders. Raises OperatorFileError. No
+    message echoes a value from the file."""
+
+    def no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        # The last of two equal keys would silently win (a pasted-twice email).
+        seen: set[str] = set()
+        for key, _value in pairs:
+            if key in seen:
+                raise OperatorFileError(f"--operator-file {path}: the field {key!r} appears twice")
+            seen.add(key)
+        return dict(pairs)
+
     try:
-        raw = json.loads(path.read_bytes().decode("utf-8"))
+        # stat first: opening a FIFO would block, and /dev/zero never ends.
+        if not stat_module.S_ISREG(path.stat().st_mode):
+            raise OperatorFileError(f"--operator-file {path} is not a regular file")
+        with path.open("rb") as handle:
+            data = handle.read(OPERATOR_FILE_MAX_BYTES + 1)
+        if len(data) > OPERATOR_FILE_MAX_BYTES:
+            raise OperatorFileError(f"--operator-file {path} is larger than {OPERATOR_FILE_MAX_BYTES // 1024} KiB")
+        raw = json.loads(data.decode("utf-8"), object_pairs_hook=no_duplicates)
+    except OperatorFileError:
+        raise
     except OSError as exc:
         raise OperatorFileError(f"--operator-file {path} cannot be read: {exc.strerror or exc}") from exc
     except UnicodeDecodeError as exc:
@@ -13961,7 +14038,7 @@ def load_operator(path: Path) -> dict[str, str]:
         if any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
             raise OperatorFileError(f"--operator-file {path}: {field} contains a control character")
         if field == "email" and not _OPERATOR_EMAIL_RE.fullmatch(value):
-            raise OperatorFileError(f"--operator-file {path}: email {value!r} is not an e-mail address")
+            raise OperatorFileError(f"--operator-file {path}: email is not an e-mail address")
         if field in OPERATOR_URL_FIELDS and not _operator_url(value):
             raise OperatorFileError(f"--operator-file {path}: {field} must be an https:// URL without credentials")
         operator[field] = value
@@ -13970,11 +14047,22 @@ def load_operator(path: Path) -> dict[str, str]:
 
 # CLI > env; neither set means no operator data (placeholders). A path that
 # is set but cannot be read stops the build (D3 A): a typo must not publish an
-# Impressum without its address.
+# Impressum without its address. Set to an empty value stops it too: an unset CI
+# secret expands to "", and "not set" would build placeholder legal pages with
+# exit 0, so only None counts as not set.
 def resolve_operator(args: argparse.Namespace) -> dict[str, str] | None:
-    raw = getattr(args, "operator_file", None) or os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
-    if not raw:
+    raw = getattr(args, "operator_file", None)
+    source = "--operator-file"
+    if raw is None:
+        raw = os.environ.get("BUNDESTAG_PULSE_OPERATOR_FILE")
+        source = "$BUNDESTAG_PULSE_OPERATOR_FILE"
+    if raw is None:
         return None
+    if not str(raw).strip():
+        raise OperatorFileError(
+            f"{source} is set but empty (an unset CI secret expands to nothing). "
+            "Fix: name the operator file, or unset it for placeholder pages"
+        )
     return load_operator(Path(raw))
 
 
@@ -14009,6 +14097,24 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     if issues_url and safe_issues_url(issues_url) is None:
         raise ValueError(f"--data-issues-url {issues_url!r} must start with https://, http://, mailto: or /")
     return base_url_raw, manifest_raw, license_text, issues_url
+
+
+# A release tag means "export this release": a manifest override skips the export,
+# so nothing would carry the tag. (--data-manifest with a tag is refused by
+# parse_args; the variable is only read here.)
+def refuse_release_beside_manifest_override(tag: str, manifest_raw: str | None) -> None:
+    if tag != "local" and manifest_raw:
+        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
+
+
+# What run_data_pipeline would refuse about the data options, asked at the head of
+# main() so a typo in --data-base-url, --data-issues-url or the tag ends the run
+# before a whole online update is spent. getattr() throughout, as in
+# resolve_data_export_options.
+def validate_data_export_options(args: argparse.Namespace) -> None:
+    base_url_raw, manifest_raw, _license_text, _issues_url = resolve_data_export_options(args)
+    resolve_data_base_url(base_url_raw)
+    refuse_release_beside_manifest_override(getattr(args, "data_tag", None) or "local", manifest_raw)
 
 
 # The cited build revision of this checkout (scripts/build_revision.py): a
@@ -14096,6 +14202,9 @@ def run_data_pipeline(
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
+    tag = getattr(args, "data_tag", None) or "local"
+    # Before the facts engine writes its tables: a refusal here wastes nothing.
+    refuse_release_beside_manifest_override(tag, manifest_raw)
     bills = collect_bill_pages(entries, mp_lookup)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
@@ -14123,9 +14232,6 @@ def run_data_pipeline(
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
     force_export = bool(getattr(args, "force_export", False))
-    tag = getattr(args, "data_tag", None) or "local"
-    if tag != "local" and manifest_raw:
-        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
     # A --data-manifest override replaces whatever this build would export, so
     # the export only runs when its result is used or explicitly forced.
     if manifest_raw and not force_export:
@@ -14187,12 +14293,6 @@ def main() -> int:
         print(f"validated: {args.validate_publication}")
         return 0
 
-    # Before any work: a mistyped operator path stops here, naming the path.
-    try:
-        operator = resolve_operator(args)
-    except OperatorFileError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
     if getattr(args, "fetch_xml", False):
         if not coverage_exclusions_readable(args.output_dir):
             return 1
@@ -14230,6 +14330,20 @@ def main() -> int:
     # it stops here, naming the file and its shape. The listing and
     # --explain-config modes above do not read it, so it does not block them.
     if not coverage_exclusions_readable(args.output_dir):
+        return 1
+    # Everything below renders pages: --validate-publication, the listing modes
+    # and --fetch-xml have returned, so a stale $BUNDESTAG_PULSE_OPERATOR_FILE
+    # does not block them. A mistyped operator path stops here, naming the path,
+    # and so does a bad data option, not after the fetch and the persist.
+    try:
+        operator = resolve_operator(args)
+    except OperatorFileError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    try:
+        validate_data_export_options(args)
+    except (ValueError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
@@ -14581,6 +14695,20 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
+        # The catalog is complete by now (--dossier-document-number may have added
+        # a sitting to it): a number no sitting carries is a typo, and recording
+        # nothing for it would let the run pass as if the sitting were excluded.
+        listed_in_catalog = {normalized_document_number(p.get("dokumentnummer")) for p in protocols}
+        unknown_flags = sorted(
+            {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])} - listed_in_catalog
+        )
+        if unknown_flags:
+            print(
+                f"error: --exclude-document-number names no sitting DIP lists: {', '.join(repr(n) for n in unknown_flags)}. "
+                "Fix: use the document number as the catalog prints it (for example 21/7); no dossier or store was written.",
+                file=sys.stderr,
+            )
+            return 2
         excluded_protocols = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) in listed]
         for protocol in excluded_protocols:
             protocol["dossier_failure_reasons"] = ["excluded"]
@@ -14646,9 +14774,6 @@ def main() -> int:
                     dip_breaker=dip_breaker,
                 ),
             )
-            update_coverage_exclusions(
-                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
-            )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
             # then read it back for the MP pages. The dossier pages are written
             # a second time afterwards because mp_lookup only exists now, and it
@@ -14712,6 +14837,13 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            # Only now, with the store swapped: a run that stops before this leaves
+            # the record naming what the store still holds, so no render sees an
+            # excluded sitting beside counts that include it. The Daten export,
+            # its only later reader, runs after the swap.
+            update_coverage_exclusions(
+                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
+            )
             # Read only: the published store is written by a staged rebuild alone.
             store = facts.open_readonly(database_path)
             try:

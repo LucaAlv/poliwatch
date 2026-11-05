@@ -159,11 +159,45 @@ def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple
     """The ``mdb_zugehoerigkeiten`` and ``party_seats`` rows of ``records``,
     after the size check: what the rebuild stores and what a fetched file must
     pass before it replaces the cache. Raises StammdatenError on a broken rule,
-    and on records with no Mandat from ``since_wahlperiode`` on, which the size
-    check, checking only the Wahlperioden present, would let through empty."""
+    on records with no Mandat from ``since_wahlperiode`` on, which the size
+    check, checking only the Wahlperioden present, would let through empty,
+    and on rows the store's tables would refuse (``persist_seat_counts``: a
+    Zugehörigkeit or seat row that ends no later than it starts, seats of zero
+    or less, a repeated primary key), which would otherwise be cached and then
+    fail every later rebuild, and on a Wahlperiode whose Mandate are all
+    fraktionslos."""
     zugehoerigkeiten = derive.mdb_zugehoerigkeiten(records, since_wahlperiode=since_wahlperiode)
+    keys: set[tuple[str, int, str]] = set()
+    for row in zugehoerigkeiten:
+        key = (row["mdb_id"], row["wahlperiode"], row["valid_from"])
+        if row["valid_until"] is not None and row["valid_until"] <= row["valid_from"]:
+            raise StammdatenError(f"MdB {key[0]}, WP {key[1]}: a Zugehörigkeit from {key[2]} ends on {row['valid_until']}")
+        if key in keys:
+            raise StammdatenError(f"MdB {key[0]}, WP {key[1]}: the Zugehörigkeit from {key[2]} is listed twice")
+        keys.add(key)
+    # A renamed INSART_LANG label would match no membership, file every Mandat
+    # as fraktionslos and still total the legal size.
+    groups: dict[int, set[str]] = {}
+    for row in zugehoerigkeiten:
+        groups.setdefault(row["wahlperiode"], set()).add(row["party"])
+    for wahlperiode, parties in sorted(groups.items()):
+        if parties == {"fraktionslos"}:
+            raise StammdatenError(
+                f"WP {wahlperiode}: every Mandat is fraktionslos, no INSART_LANG {derive.STAMMDATEN_FRAKTION_ART!r} "
+                "membership was read; the file's labels may have changed"
+            )
     seats = derive.party_seats(zugehoerigkeiten)
     derive.check_seat_totals(seats)
+    keys = set()
+    for row in seats:
+        key = (row["party"], row["wahlperiode"], row["valid_from"])
+        if row["seats"] <= 0:
+            raise StammdatenError(f"WP {key[1]} {key[0]}: {row['seats']} seats from {key[2]}")
+        if row["valid_until"] is not None and row["valid_until"] <= row["valid_from"]:
+            raise StammdatenError(f"WP {key[1]} {key[0]}: a seat count from {key[2]} ends on {row['valid_until']}")
+        if key in keys:
+            raise StammdatenError(f"WP {key[1]} {key[0]}: the seat count from {key[2]} is listed twice")
+        keys.add(key)
     if not seats:
         raise StammdatenError(f"no Mandat from Wahlperiode {since_wahlperiode} on")
     return zugehoerigkeiten, seats
@@ -315,18 +349,33 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
     seat tables. Every outcome is one stderr line."""
     path = cache_path(database_path)
     sidecar = etag_path(database_path)
-    previous = None
+    # Before anything is read, swept or written there: a symlink, a foreign
+    # owner or a group-writable directory is refused here, not by the writer
+    # lock after the zip and the ETag sidecar were written through it.
+    try:
+        registry.ensure_private_dir(path.parent)
+    except OSError as exc:
+        print(f"warning: [stammdaten] not fetching, the private directory cannot be used ({exc}); "
+              "the cached file, if any, stays as it is", file=sys.stderr)
+        return
+    previous = unreadable = None
     if path.is_file():
         try:
             previous = read_zip(path)
-        except StammdatenError:
-            previous = None  # an unreadable cache is replaced, never offered for a 304
+        except StammdatenError as exc:
+            unreadable = exc  # replaced by a good download, never offered for a 304
     try:
         etag = json.loads(sidecar.read_text(encoding="utf-8")).get("etag") if previous else None
     except (OSError, ValueError, AttributeError):
         etag = None
-    kept = (f"keeping the cached file (Stand {_stand_day(previous.stand)})" if previous
-            else "no cached file: keine Sitzzahlen until a fetch succeeds")
+    if previous:
+        kept = f"keeping the cached file (Stand {_stand_day(previous.stand)})"
+    elif unreadable:
+        # rebuild_seat_counts raises on this file, so the build stops, not runs without seat counts.
+        kept = (f"the cached file {path.name} is unreadable ({unreadable}); "
+                "the next rebuild stops until a fetch succeeds or the file is removed")
+    else:
+        kept = "no cached file: keine Sitzzahlen until a fetch succeeds"
     try:
         answer = _download(etag if isinstance(etag, str) else None)
     except (StammdatenError, urllib.error.URLError, OSError, http.client.HTTPException) as exc:
@@ -341,7 +390,6 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
     body, new_etag = answer
     temp: Path | None = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         # A refresh killed while writing leaves its temp file; refreshes run one
         # per build, before the staged rebuild, so any still here is stale.
         for stale in path.parent.glob(".mdb-stammdaten.*.tmp"):
@@ -359,8 +407,12 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
         os.replace(temp, path)
         # Written after the file: a crash in between leaves the new file with the
         # old ETag, which costs one full download next time, never a stale 304.
-        sidecar.write_text(json.dumps({"etag": new_etag, "fetched_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()}),
-                           encoding="utf-8")
+        try:
+            sidecar.write_text(json.dumps({"etag": new_etag, "fetched_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()}),
+                               encoding="utf-8")
+        except OSError as exc:
+            print(f"warning: [stammdaten] the file is cached, but its ETag could not be saved ({exc}); "
+                  "the next run downloads it in full", file=sys.stderr)
     except OSError as exc:
         print(f"warning: [stammdaten] the downloaded file could not be cached ({exc}); {kept}", file=sys.stderr)
         return

@@ -556,6 +556,20 @@ class FollowUpReleaseTests(ReleaseTestCase):
         self.assertIn("Endergebnis", (release / "CHANGES.md").read_text(encoding="utf-8"))
         self.assert_nothing_dangerous_ran()
 
+    # Value: protects=a follow-up release published through gh is not blocked by the previous release's own tag, which gh lists, and creates exactly one release for the new version; fails_when=the remote check counts any listed release as blocking (the --initial rule leaks into follow-ups) or --publish drops the previous version from changes.json; why_new=every other --publish test passes --initial, so the follow-up x --publish cell had no test; seam=main with a recorded gh; no_claim=changelog rules (tested in test_release_changes)
+    def test_a_follow_up_release_is_published_although_gh_lists_the_previous_tag(self) -> None:
+        previous = self.work / "previous.json"
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
+        runner = Runner(gh_tags=[publish.release_version.tag_for("2026.10.01")])
+        code, stdout, stderr = self.run_script("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "Zwei Sitzungen ergänzt."}), "--publish", runner=runner)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(runner.gh("release", "list")), 1)
+        (create,) = runner.gh("release", "create")
+        self.assertEqual(create[:4], ["gh", "release", "create", f"data-{VERSION}"])
+        result = json.loads((self.out / f"data-{VERSION}" / "changes.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["previous_version"], "2026.10.01")
+        self.assertNotIn("dry run", stdout)
+
     # Value: protects=the release that follows an export-format bump accepts the older previous manifest and reports the format change in its changelog, while a previous manifest with unusable counts is refused naming the field; fails_when=previous_manifest_problem demands the current export format (the first release after any bump is refused), lets a boolean or text total_rows through, or lets a votes block without members through; why_new=the shapeless-file row only pins the first message of a manifest that is wrong everywhere; seam=main with a previous datenstand.json file; no_claim=changelog rules (tested in test_release_changes)
     def test_an_older_format_previous_manifest_is_usable_and_unusable_counts_are_named(self) -> None:
         def previous_with(**changes) -> str:

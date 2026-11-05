@@ -660,12 +660,110 @@ class BackfillSelectionTests(unittest.TestCase):
             self.assertEqual([e["document_number"] for e in json.loads(record.read_text(encoding="utf-8"))["exclusions"]],
                              ["21/3"], stderr)
 
+    def run_exclusion_main(self, output_dir: Path, catalog: list[dict], *extra: str, rebuild_effect=None):
+        """main() with the store rebuild mocked; returns the exit code, stderr and what the
+        rebuild saw of the record at the moment it ran (None when the record did not exist)."""
+        record = output_dir / "data" / "coverage-exclusions.json"
+        seen: list[object] = []
+
+        def rebuild(*_args, **_kwargs):
+            seen.append(json.loads(record.read_text(encoding="utf-8")) if record.exists() else None)
+            if rebuild_effect is not None:
+                raise rebuild_effect
+            return SimpleNamespace(facts_report=None)
+
+        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
+                "--backfill-incomplete", "--sleep", "0", *extra]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(build, "fetch_protocols", side_effect=lambda *_a: copy.deepcopy(catalog)),
+            mock.patch.object(build, "write_report_and_page", side_effect=lambda protocol, **_kw: {
+                "report": report_for(int(protocol["dokumentnummer"].split("/")[1]), acquisition=COMPLETE_VOTES)}),
+            mock.patch.object(build, "refresh_vorgang_cache"),
+            mock.patch.object(build, "rebuild_database_from_entries", side_effect=rebuild) as rebuild_mock,
+            mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+            mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
+            mock.patch.object(build, "collect_abgeordnete", return_value=([], {})),
+            mock.patch.object(build.facts, "open_readonly"),
+            mock.patch.object(build.pulse_store, "require_current_schema"),
+            mock.patch.object(build, "store_coverage_gap", return_value=None),  # the store is mocked out
+            mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+        ):
+            code = build.main()
+        return code, stderr.getvalue(), seen, rebuild_mock.called
+
+    def exclusion_site(self, tmp: str) -> tuple[Path, list[dict]]:
+        output_dir = Path(tmp) / "site"
+        for name in ("protocols", "data"):
+            (output_dir / name).mkdir(parents=True)
+        write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
+        catalog = [catalog_protocol("21/2", "pp-2", "2026-06-12"), catalog_protocol("21/1", "pp-1", "2026-06-11")]
+        return output_dir, catalog
+
+    # Value (TODOS "A3 /gstack-ship review", exclusion record (f)): protects=the record lists
+    # only what the store holds: it is written after the staged rebuild, so a run whose rebuild
+    # fails leaves it as it was (and a plain --offline render never meets an excluded sitting
+    # the store still holds); fails_when=update_coverage_exclusions runs before the rebuild
+    # again, in the --exclude or the --include direction; seam=main (argv), rebuild mocked.
+    def test_the_exclusion_record_is_written_after_the_store_rebuild(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir, catalog = self.exclusion_site(tmp)
+            record = output_dir / "data" / "coverage-exclusions.json"
+            code, stderr, seen, _ = self.run_exclusion_main(output_dir, catalog, "--exclude-document-number", "21/2")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(seen, [None])  # not yet there when the rebuild ran
+            self.assertEqual([e["document_number"] for e in json.loads(record.read_text(encoding="utf-8"))["exclusions"]], ["21/2"])
+            record.unlink()
+            for effect in (build.DatabaseRebuildError("roster outage"), build.derive.SprechrolleError("unmapped role")):
+                with self.subTest(effect=type(effect).__name__):
+                    code, stderr, seen, called = self.run_exclusion_main(
+                        output_dir, catalog, "--exclude-document-number", "21/2", rebuild_effect=effect)
+                    self.assertEqual(code, 1, stderr)
+                    self.assertTrue(called)
+                    self.assertFalse(record.exists(), "a failed rebuild must not record the exclusion")
+            # The symmetric direction: an inclusion leaves the record only when the store holds the sitting.
+            before = {"exclusions": [{"document_number": "21/2", "date": "2026-06-12", "reason": "excluded",
+                                      "recorded_at": STAMP}]}
+            record.write_text(json.dumps(before), encoding="utf-8")
+            code, stderr, seen, _ = self.run_exclusion_main(
+                output_dir, catalog, "--include-document-number", "21/2", rebuild_effect=build.DatabaseRebuildError("x"))
+            self.assertEqual(code, 1, stderr)
+            self.assertEqual(json.loads(record.read_text(encoding="utf-8")), before)
+            code, stderr, seen, _ = self.run_exclusion_main(output_dir, catalog, "--include-document-number", "21/2")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(seen, [before])  # still listed while the rebuild ran
+            self.assertEqual(json.loads(record.read_text(encoding="utf-8")), {"exclusions": []})
+
+    # Value (TODOS "A3 pre-landing review", exclusion record (a)): protects=a mistyped
+    # --exclude-document-number ends the run before any dossier or store write instead of
+    # passing as an exclusion that recorded nothing; fails_when=an unknown number is dropped
+    # silently, or a known one (spelled with blanks) is refused; seam=main (argv).
+    def test_an_exclusion_flag_naming_no_sitting_is_refused_before_any_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir, catalog = self.exclusion_site(tmp)
+            record = output_dir / "data" / "coverage-exclusions.json"
+            code, stderr, _, called = self.run_exclusion_main(
+                output_dir, catalog, "--exclude-document-number", "21/2", "--exclude-document-number", "21/99")
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("names no sitting DIP lists: '21/99'", stderr)
+            self.assertNotIn("'21/2'", stderr)
+            self.assertFalse(called)
+            self.assertFalse(record.exists())
+            self.assertFalse((output_dir / "data" / "plenarprotokoll-21-2.json").exists())
+            code, stderr, _, _ = self.run_exclusion_main(output_dir, catalog, "--exclude-document-number", " 21/2 ")
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(record.exists())
+
     # Value (D2 option A): protects=a number cannot be both excluded and included, and an
-    # inclusion needs an online run that can acquire it; fails_when=the conflict is resolved
-    # silently one way; seam=parse_args.
+    # inclusion needs an online run that can acquire it; an exclusion needs one that can
+    # record it; fails_when=the conflict is resolved silently one way, or --offline or
+    # --fetch-xml ignores --exclude-document-number without a word; seam=parse_args.
     def test_include_document_number_conflicts_are_refused(self) -> None:
         for argv in (["build", "--exclude-document-number", "21/2", "--include-document-number", "21/2"],
-                     ["build", "--offline", "--include-document-number", "21/2"]):
+                     ["build", "--offline", "--include-document-number", "21/2"],
+                     ["build", "--offline", "--exclude-document-number", "21/2"],
+                     ["build", "--fetch-xml", "--exclude-document-number", "21/2"]):
             with self.subTest(argv=argv), mock.patch.object(sys, "argv", argv), \
                     mock.patch.object(sys, "stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
                 build.parse_args()

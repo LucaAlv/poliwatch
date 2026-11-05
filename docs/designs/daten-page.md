@@ -196,7 +196,7 @@ Anatomy top to bottom (wireframe approved as-is, D10):
    The five recipes (exact SQL in the appendix), all verified against the current schema
    in session:
    - R1 Wer hielt die meisten Reden? (`speeches` × `mps` × `parties`, ORDER BY count)
-   - R2 Redeanteil je Fraktion nach Zeichen (`SUM(char_count)` share)
+   - R2 Textanteil je Fraktion oder Gruppe (`SUM(char_count)` share)
    - R3 Abweichler: `vote_members.vote <> vote_fractions.leading_vote`, yes/no only
    - R4 Die knappsten namentlichen Abstimmungen (`ABS(yes_count - no_count)`)
    - R5 Vorgänge mit den meisten Reden (`proceedings` → `proceeding_positions` →
@@ -499,14 +499,14 @@ GROUP BY m.id
 ORDER BY reden DESC, zeichen DESC, m.id
 LIMIT 5;
 
--- r2-redeanteil-fraktion · link_key: none
+-- r2-textanteil-fraktion · link_key: none
 SELECT p.name AS fraktion, COUNT(*) AS reden,
        ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent
 FROM speeches s
 JOIN mps m ON m.id = s.mp_id
 JOIN parties p ON p.id = m.party_id
 GROUP BY p.id
-ORDER BY reden DESC, p.name
+ORDER BY SUM(s.char_count) DESC, p.name
 LIMIT 5;
 
 -- r3-abweichler · link_key: mp_id

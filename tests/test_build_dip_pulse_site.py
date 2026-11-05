@@ -4072,7 +4072,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             self.assertFalse((output_dir / "puls.html").exists())
             self.assertEqual(list((output_dir / "protocols").iterdir()), [])
 
-    # Value: protects=R2 (A4): a sitting whose exclusion an online run recorded before its rebuild failed is still in the store; the offline render names that case and the repersist that drops it, not a restore; fails_when=the check reports the excluded sitting as a missing report and sends the operator to restore a file that is there; why_new=update_coverage_exclusions writes the record before the staged rebuild; seam=none
+    # Value: protects=R2 (A4): a sitting the exclusion record lists (edited by hand) is still in the store; the offline render names that case and the repersist that drops it, not a restore; fails_when=the check reports the excluded sitting as a missing report and sends the operator to restore a file that is there; why_new=the record is written only after the staged rebuild, so only a hand edit reaches this state; seam=none
     def test_offline_render_names_a_recorded_exclusion_the_store_still_holds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._seed(tmp)
