@@ -60,7 +60,7 @@ class Wp18And19PipelineTests(unittest.TestCase):
         self.assertEqual(sorted(roles.values()), ["bundesregierung", "bundesregierung"])
         self.assertIn("BÜNDNIS 90/DIE GRÜNEN", fraktionen)
         self.assertFalse(any("GRÜNE N" in name or "90/ DIE" in name for name in fraktionen))
-        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-textanteil-fraktion")
         self.assertTrue({row["wahlperiode"] for row in r2["rows"]} <= {18, 19})
         self.assertEqual(manifest["protocols"]["first"], "18/150")
 

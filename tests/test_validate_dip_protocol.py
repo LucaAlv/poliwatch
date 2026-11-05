@@ -359,6 +359,14 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         )
         self.assertEqual(dip.parse_roll_call_list_page(html)[0]["document_numbers"], ["20/123", "20/456"])
 
+    # Value: protects=a vote's document_numbers come out as the distinct numbers in ascending text order ("20/10000" before "20/9999"), the order DATA.md gives for vote_documents.rank; fails_when=the list is sorted numerically, left in page order, or keeps a number the teaser prints twice; why_new=the other list tests use numbers of equal length, where text and numeric order agree; seam=none; no_claim=that text order is the right display order (it pins the documented one)
+    def test_document_numbers_of_a_vote_are_distinct_and_sorted_as_text(self) -> None:
+        # The fixture's heading also names 20/123, so it takes part in the order.
+        html = (FIXTURES / "roll_call_list.html").read_text(encoding="utf-8").replace(
+            "20/123 und 20/456.", "20/9999, 20/10000 und 20/9999."
+        )
+        self.assertEqual(dip.parse_roll_call_list_page(html)[0]["document_numbers"], ["20/10000", "20/123", "20/9999"])
+
     def test_parse_roll_call_list_page(self) -> None:
         entries = dip.parse_roll_call_list_page((FIXTURES / "roll_call_list.html").read_text(encoding="utf-8"))
 
@@ -439,10 +447,6 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         self.assertIsNone(dip.parse_member_votes(card)[0]["profile_url"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PersonCacheTests(unittest.TestCase):
     # Value (D5): protects=a backfill pays one /person request per person, not one per sitting,
     # and never keeps a failed lookup; fails_when=a repeat person is fetched again or a failure
@@ -498,3 +502,7 @@ class PersonCacheTests(unittest.TestCase):
                                          parsed, person_limit=0, vote_scan_pages=0, person_cache={})
         self.assertEqual(requests, ["/person/p0", "/person/p1", "/person/p2", "/person/p3"])
         self.assertEqual(result["api_totals"]["person_record_fetch_error_count"], 5)
+
+
+if __name__ == "__main__":
+    unittest.main()
