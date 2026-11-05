@@ -412,6 +412,8 @@ class SeatRowsGateTests(unittest.TestCase):
             ("negative seats", (good, [seat("CDU/CSU", "2025-03-25", None, -1)]), "seats"),
             ("repeated Zugehörigkeit key", (good + good, []), "twice"),
             ("repeated seat key", (good, [seat("CDU/CSU", "2025-03-25", None, 1), seat("CDU/CSU", "2025-03-25", "2025-04-01", 2)]), "twice"),
+            # Value: protects=a seat count that ends on or before its first day is refused by the seat-row check (the table's valid_until > valid_from rule), not only the Zugehörigkeit one; fails_when=the seat-row valid_until check is dropped; why_new=the six rows above reach the Zugehörigkeit and seats <= 0 checks, none the seat-row end check; seam=none; no_claim=a derivation that produces such a row (party_seats is patched)
+            ("empty seat count", (good, [seat("CDU/CSU", "2025-03-25", "2025-03-25", 1)]), "a seat count from .* ends on"),
         ):
             with self.subTest(label), \
                     mock.patch.object(derive, "mdb_zugehoerigkeiten", return_value=patched[0]), \

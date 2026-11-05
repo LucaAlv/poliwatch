@@ -636,10 +636,14 @@ class RunDataPipelineTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: SQLite too old"):
                     self._run(data_tag="2026.11.01")
         override_path = self._override_manifest()
-        with mock.patch.dict(os.environ, {"BUNDESTAG_PULSE_DATA_MANIFEST": str(override_path)}), mock.patch.object(b, "export_distribution_data") as export_mock:
+        # Value: protects=a release tag beside a manifest override is refused before the facts engine writes its tables into the store; fails_when=the refusal moves back after run_facts_engine, which would pass every other assertion here; why_new=the store exists in this class, so only a call check on the engine tells the two orders apart; seam=none; no_claim=what the engine writes
+        with mock.patch.dict(os.environ, {"BUNDESTAG_PULSE_DATA_MANIFEST": str(override_path)}), \
+                mock.patch.object(b, "export_distribution_data") as export_mock, \
+                mock.patch.object(b, "run_facts_engine") as engine_mock:
             with self.assertRaisesRegex(RuntimeError, "BUNDESTAG_PULSE_DATA_MANIFEST"):
                 self._run(data_tag="2026.11.01")
         export_mock.assert_not_called()
+        engine_mock.assert_not_called()
 
     def test_force_export_still_exports_under_a_data_manifest_override(self) -> None:
         override_path = self._override_manifest()
