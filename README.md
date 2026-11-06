@@ -255,7 +255,7 @@ for d in dip-pulse-site scratch; do
 done
 ```
 
-The copy has its own `data/` (cached reports, catalog, store, abgeordnetenwatch cache) and its own private directory `.context/.scratch.private/` (writer lock, staged stores, export work files, the MdB-Stammdaten cache), so the run reads and writes nothing else. Step 1 copies the Stammdaten cache because every rebuild reads the seat tables from it: without it the copy's `mdb_zugehoerigkeiten` and `party_seats` stay empty and the build warns. Delete it with `rm -rf .context/scratch`, or swap it in with `mv` once the numbers are right. The build prints its incomplete-sittings report (above) for the copy too, so the run shows which weeks and months it fixed.
+The copy has its own `data/` (cached reports, catalog, store, abgeordnetenwatch cache) and its own private directory `.context/.scratch.private/` (writer lock, staged stores, export work files, the MdB-Stammdaten cache), so the run reads and writes nothing else. Step 1 copies the Stammdaten cache because every rebuild reads the seat tables from it: without it the copy's `mdb_zugehoerigkeiten` and `party_seats` stay empty, every Stimme counts for the group its page lists, and the build warns. Delete it with `rm -rf .context/scratch`, or swap it in with `mv` once the numbers are right. The build prints its incomplete-sittings report (above) for the copy too, so the run shows which weeks and months it fixed.
 
 ### 4c. After pulling code changes — refresh the site
 
