@@ -21,7 +21,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament".
-5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution", the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check, `openparlament.de` if wanted.
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution", the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
 6. The first release: items 1–5 of "Release pipeline: deferred /ship review findings", the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only).
 7. "Public repository: follow-ups".
 
@@ -91,9 +91,9 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 
 ### Public repository: follow-ups
 
-**What:** The repository is public, though `SECURITY.md:8`, the "Community" entry and the "Impressum/licence" item 8 say it is not. Fix them. Check that GitHub private vulnerability reporting is on (owner). Add `repository-code` and `url` to `CITATION.cff`. Scan the full history for secrets, and look through plans and docs for anything that should not be public.
+**What:** The repository is public, though `SECURITY.md:8`, the "Community" entry and the "Impressum/licence" item 8 say it is not. Fix them; the owner turned on GitHub private vulnerability reporting on 2026-11-06, so `SECURITY.md` can say it is available. Add `repository-code` and `url` to `CITATION.cff`. Scan the full history for secrets, and look through plans and docs for anything that should not be public.
 
-**Why:** Found by the v1 scope review. `SECURITY.md` sends reporters to a channel that may be off.
+**Why:** Found by the v1 scope review. `SECURITY.md` wrongly says the repository is not public.
 
 **Effort:** S
 **Priority:** P1
