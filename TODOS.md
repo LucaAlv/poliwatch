@@ -20,13 +20,12 @@ The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the 
 
 **A. Counts and coverage: fix what A3 and C1 surfaced, then finish the split**
 1. Correctness P1s. Each one moves published figures:
-   - "Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten".
    - "The carried-forward registry diverges from a fresh build after A3", part 2: 289 pages of persons who hold only retired bindings. Fix it together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs". The MdB-Stammdaten from C1 can be the membership source.
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". This needs an owner decision on the kinds first. 18/1 and 19/1 stay excluded until then.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings": measure the abgeordnetenwatch match share of the WP 18/19 Redner.
 2. "Split the dataset from the site: the site builds from a release alone" (A4).
    - Slices 0 and 1 are done. The later slices are in `docs/plans/a4-site-from-release.md`.
-   - Main is at schema 10 and export format 14, so the next slice takes the numbers after those.
+   - Main is at schema 11 and export format 16, so the next slice takes the numbers after those.
 
 **B. Abstimmungen (daily view)**
 1. "B4 extractive fallback: finish validation locally": no population reaches the 90% coverage gate yet. Add one extractor rule at a time. The entry's P1 gate applies before the fallback runs on a larger Drucksache cache.
@@ -582,6 +581,18 @@ Done when:
 **Priority:** P3
 **Depends on:** None
 
+### Placeholder Redner ids put one speaker on two Personenseiten
+
+**What:** 98 `mps` records have an `xml:99999…` key, a placeholder-looking Redner id in the Bundestag XML. 86 of them are a person of their own although the same name also has another person, holding 463 Reden and 1,423 other Beiträge. Examples: Svenja Schulze (48 Reden, 262 Beiträge), Dr. Franziska Giffey (34, 119), Klara Geywitz (27, 157), Dr. Janosch Dahmen (7 Reden under `999990105`, 37 on his main page). Measured 2026-11-05 on e7b06f3: the same in a store-less build and an upgraded store, and E4 does not touch it.
+
+**Why:** A reader sees part of a person's Reden on each page, so a page's Reden count is short. This has not been checked against the intent: a comment in `derive.py` reads one such id (`999990013`) as an explicit government role, so the split may be deliberate for some of them, though not obviously for Dahmen, who held no government post. Decide that first, then report the moved person counts and pages old/new.
+
+**Context:** The name matching behind these counts ignores titles and anything after the first comma. Registry territory: needs a registry reviewer.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### The carried-forward registry diverges from a fresh build after A3
 
 **What:** The A3 Phase 4 gate failed `replayed_store_groups_like_fresh` on a clone of `~/agent-runs/a3/full` (4,168 vs. 4,165 groups on the fresh store's bindings). Details are in [the Phase 4 record](docs/plans/a3-phase4.md), Step 1. There are two parts:
@@ -600,6 +611,8 @@ Done when:
 - The replayed store has 2,244 persons.
 - 302 persons are retired-only, 289 of them with a page, 8 of those linked from the index.
 - 494 retired bindings (307 roster / 187 contribution).
+
+**Re-measured on e7b06f3, 2026-11-05** (E4 plus main v0.33.0.0; complete gate, `all_passed`): unchanged, the same 1,942 = 1,942, 2,244, 302, 289 and 494. A store-less `--offline --repersist` of the same reports has 1,577 Personenseiten against the upgraded store's 2,005. The +428 are the 289 retired-only pages plus 139 on live persons: 68 roster MdBs who have a page only because the roster exists, and 71 persons holding only a roster binding, all with `ever_mdb` evidence, many of them Bundesrat or Land office holders. So those 71 belong with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
 Decide whether retired-only persons render a page. Report persons and pages old/new.
 
@@ -967,6 +980,8 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 
 Also: DATA.md's sources paragraph (`_codebook_sources_and_citation`) names the open redistribution question for the roll-call data only; name the MdB-Stammdaten there too until the terms are settled (ship adversarial pass 3).
 
+The answer also reaches two tables outside this layer. Since E4 (2026-11-05), 100 rows of `vote_members.party_id` and 146 rows of `vote_fractions` counts rest partly on the Stammdaten, while the dictionary still tags those columns `bundestag-abstimmungen` alone. If the file can't be redistributed, dropping the seat tables does not remove these rows: decide then whether a correction may stay, and tag the columns to match.
+
 Done when the layer has written terms and DATA.md's attribution names the file.
 
 **Why:** It is a release blocker under track D, not an implementation blocker. The zip itself stays in the private directory, never in OUTPUT (D9).
@@ -1162,26 +1177,40 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 ## Abstimmungen
 
-### Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten
+### E4 /gstack-review: deferred findings (2026-11-05)
 
-**What:** On 55 roll-calls in WP 19 and WP 20 (rebuilt store, 2026-11-02; 47 in the older store file), bundestag.de files six MdBs under the wrong group: Kamann, Bülow, Pasemann, Witt, Huber and Heßenkemper (`docs/source-errors.md` E4). `vote_members.party_id` and `vote_fractions` copy the pages, so these members' Stimmen count for the wrong group. That affects the vote panel's group blocks, the Mehrheitsvotum and Abweichler (R3, Fakten). Re-file each member's Stimme under their Zugehörigkeit on the vote's date from `mdb_zugehoerigkeiten`, recompute the affected `vote_fractions` rows and Mehrheitsvoten, and report old and new values per vote.
-
-Done when:
-- the C1 cross-check (`seat-crosscheck.json`) shows no `shift_between_groups` roll-call;
-- the page's totals stay available as the source's own figures;
-- the fix runs on every rebuild, not as a one-off patch.
-
-**Why:** The C1 cross-check measured it on 2026-11-01. The Textarchiv backs the Stammdaten in every case. Until this is fixed, the published group counts of those 55 votes are wrong.
-
-**Context:**
-- **Vote ids:** `docs/plans/c1-seat-counts.md` "Step 9 result" lists them: 38 from 487 to 571, 10 from 696 to 706, 750–754 and 756–757.
-- **Where the rule goes:** at persist time, after the C1 tables exist in the staged store. The rebuild order puts `rebuild_seat_counts` after the reports are persisted, so the rule needs a pass after it, or the seat tables must move earlier.
-- **Votes from before WP 18** have no Stammdaten rows and stay as the source has them.
-- **Decide** whether a Stimme keeps the page's group as a second column, the page being the source.
+Pre-landing review of 23629a5 (specialists, red team, Claude adversarial; Codex gpt-6.1-sol on the tree with the first round of doc fixes: gate PASS, one P2, item 3). No figure moves on today's data: the tip's filing equals the replayed store on all 619 votes. These matter when the Stammdaten file changes or goes missing:
+1. **Outside a release, no file still means the correction disappears, with only a warning.** A rebuild without `mdb-stammdaten.*` in the private directory puts all 100 Stimmen back under the page's groups. `data-methods.md`, the warning and the Datenstand line say so. A tagged export and `publish_dip_pulse_data.py` refuse this state since the owner's decision of 2026-11-05, so it can't be released, but a local build and its pages stay uncorrected. The file (Stand 2026-04-29) has been in `.context/.dip-pulse-site.private` since 2026-11-05, but the store beside it is still schema 8 with 217 votes, so it needs `--offline --repersist` before its first release build. `~/agent-runs/a3/.full.private`, beside the 716-sitting store, has no file. Both refusals ran on real files on e7b06f3: a tagged export of a clone without the Stand row refuses, `publish_dip_pulse_data.py` refuses a manifest whose `stammdaten` is null, and a tagged export with the file passes its dry run.
+2. **A gap in the file counts as proof of fraktionslos.** `_mandate_stretches` makes each Mandat day without a Fraktion or Gruppe record fraktionslos, and `_proved_group` treats that row as proof. An MdB whose Mandat is entered before their Fraktion would be re-filed from a correct page row into fraktionslos (synthetic check: page SPD, no INSTITUTIONEN, moved). Today's six MdBs are backed by the Textarchiv; a refreshed file is not. Require a Fraktion or Gruppe record in that Wahlperiode before a move into fraktionslos. A lag in the file is a second route to the same wrong move: `_proved_group`'s only freshness guard is `day > stand_day`, so a group change the file has not recorded yet, or one made on the Stand day after the Stand instant, re-files a correct page row to the old group (0 votes fall on the Stand day today). Treat a window before the Stand as unproven; `stammdaten.py`'s `after_stand` cause uses the same boundary.
+3. **An offline render files from the file on disk, the store from the file it was built with.** `refresh` swaps the cache before the rebuild, so a rebuild that then fails (a roster outage) leaves a new file beside the old store; `--offline` then gives panels and store different moves wherever the two Stands differ. Compare the cache's sha256 with `mdb_stammdaten_stand`, or take the marks from `vote_members.listed_party_id`. A second read of the zip in `rebuild_seat_counts` has the same gap inside one rebuild: read it once and pass it on. Codex found this independently (P2) and says it reproduced the mismatch in memory for a missing cache. The refusal in `main` for an unreadable file says "or remove it, then re-run", which on a plain `--offline` leads straight here: it should say `--offline --repersist`.
+4. **The seat cross-check can't see a wrong Stammdaten row any more.** It compares `vote_fractions.total_count` with seats from the same file the moves came from, so `shift_between_groups` 0 is no independent proof of the moves. It still catches misfilings among the unmatched names. Comparing the page's own counts (read back through `listed_party_id`) would restore the check.
+5. **Tests.** `test_hostile_names_end_in_no_key_quickly` asserts a wall-clock bound. `validate_store_gate._data_clone` copies no Stammdaten, so the gate never sees a re-filed Stimme (it compares person grouping, which E4 leaves alone). The success path of `main`'s offline branch has no test: a readable file marks the entries before the render. The v0.34.0.0 ship covered the other gaps this item listed; reverting `vote_groups_cover_total` is an equivalent mutant, since a move keeps every count's sum.
+6. **Small.** `person_name_key` runs three times per member and the zip is parsed per run (measured: 6.3 s and 1.1 s on 425,322 rows). A refused vote shows only on stderr (none today). `filed_fractions` could store a negative `total_count` for a page row whose `total` is under its counts (`parse_fraction_votes` never writes one). The panel note prints "dort None" for a member with no faction (none moved today). `zusammenschluss(faction) or "Unbekannt"` is written out four times; a `listed_group` helper would name it. `refile_entry_votes` loops again only to count what `refile_report_votes` could return. The comment on `vote_fractions.rank` in `persist_dip_pulse_store.py` and the dictionary's `rank` meaning say the source's order, but `filed_fractions` appends a group the page has no row for (none today: every destination row in the TSV already existed).
+7. **The online fresh vs incremental comparison is still owed.** It needs a DIP key, and only an online build fetches the roster. The offline half ran on e7b06f3 (2026-11-05): a store-less `--offline --repersist` against the gate's upgraded clone of `~/agent-runs/a3/full`. Votes, `vote_members`, `vote_fractions`, Reden, Fakten, Abweichungen (3,720) and all r2, r4, r5 and r6 rows are equal. The differences are timestamps; 17,913 Reden keyed `xml:` on one side and `aw:` on the other, and person keys issued anew (84,301 of 523,968 shared bindings have the same key), with the same grouping (1,942 persons on each side over those bindings, 0 split, 0 merged); the retired-only records; the upgraded store's 1,077 extra `mps` rows, which were already in its input (7,457 before the replay), so E4 did not create them; and everything the roster decides: 0 against 589 listed Abgeordnete, 1,577 against 2,005 Personenseiten, the eyebrow on a Personenseite, the display name in r1 and r3, and in 174 protocol pages whether a member's name links to the Personenseite or to bundestag.de. A store-less offline build has no roster by design, so `docs/agents/review-checklist.md`'s "identical CSVs and pages" can't hold for it. That line should say which comparison it means.
+8. **Found by the v0.34.0.0 ship reviews (2026-11-06), none reached by today's data.**
+   - `refile_entry_votes` only warns about a refused vote, and the release guards check only that the file was loaded. A tagged release could carry a refused vote under the page's group while the Datenstand line and `data-methods.md` describe the correction. Today: 0 refused. Fix: return the refused list and let a tagged export refuse on it.
+   - `refile_vote_members` checks that the page's row has a Stimme to give, not that the page's list and chart agreed for that group. If the chart already counted a member in the proved group and only the list misfiled them, the move double-counts. Today: `vote_members` per group equals `vote_fractions` on all 619 votes.
+   - `_member_sections_html` (`features/votes.py`) builds its group key from `refiled_to` or the raw `faction`, not `derive.member_group`. A page spelling a group in a variant form would get two headings once a member moves there. All 100 moves land on AfD, SPD or fraktionslos today.
+   - `scripts/compare_store_values.py` reads no `vote_members.party_id`, `listed_party_id` or `vote_fractions` counts, only `leading_vote` and r3. A re-filing that flips no Mehrheitsvotum and no Abweichler is invisible to the README's "Validate a data correction" replay. Add a per-(vote, group) count comparison.
+   - `filed_fractions` trusts a `refiled_to` mark in a cached report; only `refile_vote_members` checks the Stimme is a count. Every loader that feeds persist or render clears and recomputes the marks today, so only a new reader would hit this.
+   - `filed_fractions` iterates every member entry, while `vote_abweichler` and `vote_members` dedupe by identity. Two entries with different name text and one identity could both move. Close it with "Persist overwrites a roll-call member row when two members of one vote resolve to one mp".
+   - `vote_members.listed_party_id` is `ON DELETE SET NULL`: a party-dedupe path other than `_repoint_party` would make a moved Stimme read as not moved.
 
 **Effort:** M
-**Priority:** P1 (a wrong published figure)
-**Depends on:** Fraktion seat counts in the store (done)
+**Priority:** P2 (items 1 to 4 and 7 before the first release)
+**Depends on:** None
+
+### E4 re-filing: what it leaves open
+
+The rule in `derive.refile_vote_members` moved 100 Stimmen in 55 roll-calls (2026-11-05, `docs/plans/e4-refiled-votes-old-new.tsv`). Nothing here moves a known figure:
+1. **`data/bills.json` and a bill page's raw block show the page's `fractions`.** They dump the report's vote as it is, with the `refiled_to` marks beside the counts, so a reader summing `fractions` there gets the Bundestag page's figures, not the store's. No bill page renders group counts. Either give the dump `derive.filed_fractions` or say so in the data docs.
+2. **27 member names (3,073 rows) find no Stammdaten name, and 10 (927 rows) match a name only in another Wahlperiode** (measured 2026-11-05 on the E4 replay, 425,322 rows). Examples: Dagdelen/Dağdelen, Özoguz/Özoğuz, Merkel "Angela Dorothea"; Wadephul and Kemmer in the second group, with Breilmann and Zschau, who joined after the Stand. They keep the page's group. The cross-check would show a misfiling among them as `shift_between_groups`, and shows none today. A stored link from a vote member to the MdB id (via the registry) would replace the name match.
+3. **`mps.party_id` keeps the page's group on purpose,** because the registry reads it as name-and-party evidence. Passing the corrected group split Pasemann's Reden from his Stimmen and moved Heßenkemper's page in the first replay. So "Fraktion" on a Personenseite can still rest on a misfiled vote row (Kamann, Bülow). Those pages need the Zugehörigkeit from the Stammdaten, which "Link `mdb_zugehoerigkeiten` to the MP pages" covers.
+4. **The panel note is plain body text.** Its look belongs to "Apply DESIGN.md to the site".
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
@@ -1587,6 +1616,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone
 - "Validate a data correction" copies no private directory, so `after` loses the seat tables: v0.33.0.0, 2026-11-05

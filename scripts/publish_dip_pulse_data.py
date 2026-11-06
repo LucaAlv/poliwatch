@@ -16,9 +16,9 @@ or uploads by itself; the only remote command is the one printed.
 
 The release is refused unless its export was built with a release tag, from a
 clean commit that exists in this repository (the manifest's, not HEAD), from the
-authored inputs that commit holds, and every file matches the manifest. The
-export's LICENSE-DATA.md is one of those files: non-empty and equal to the one
-that commit holds.
+authored inputs that commit holds, with the MdB-Stammdaten loaded, and every
+file matches the manifest. The export's LICENSE-DATA.md is one of those files:
+non-empty and equal to the one that commit holds.
 """
 
 from __future__ import annotations
@@ -129,6 +129,8 @@ def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], s
     full = build_revision.full_commit(repo_root, commit)
     if full is None:
         raise ReleaseError(f"the export's commit {commit} is not a commit of this repository")
+    if not manifest.get("stammdaten"):
+        raise ReleaseError(f"release {version} needs the MdB-Stammdaten (the manifest's stammdaten is null): rebuild the store with them, then export again")
     inputs = manifest.get("codebook_inputs")
     if not isinstance(inputs, dict) or set(inputs) != set(site.CODEBOOK_INPUT_FILES.values()):
         raise ReleaseError("the manifest does not name the authored codebook inputs")

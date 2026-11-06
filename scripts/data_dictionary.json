@@ -676,7 +676,7 @@
       }
     },
     "mdb_stammdaten_stand": {
-      "meaning": "Die MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats in diesem Build gebildet sind: eine Zeile mit ihrem Stand und ihrer Prüfsumme, keine Zeile, wenn keine Datei geladen war (dann sind beide Tabellen leer).",
+      "meaning": "Die MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats in diesem Build gebildet und Stimmen in vote_members und vote_fractions umgebucht sind: eine Zeile mit ihrem Stand und ihrer Prüfsumme, keine Zeile, wenn keine Datei geladen war (dann sind beide Tabellen leer und jede Stimme zählt, wo die Abstimmungsquelle das Mitglied führt).",
       "columns": {
         "sha256": {
           "meaning": "SHA-256-Prüfsumme der zwischengespeicherten Zip-Datei, wie sie von bundestag.de geladen wurde.",
@@ -1439,60 +1439,60 @@
       }
     },
     "vote_fractions": {
-      "meaning": "Abstimmungssummen und führendes Votum je Zusammenschluss.",
+      "meaning": "Abstimmungssummen und führendes Votum je Zusammenschluss; Stimmen, die die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen als die Quelle, zählen dort (vote_members.listed_party_id).",
       "columns": {
         "vote_id": {
           "meaning": "Kennung der namentlichen Abstimmung, deren Stimmen je Zusammenschluss aggregiert werden.",
           "unit": "Kennung der Abstimmung als Text.",
-          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
           "meaning": "Kennung des Zusammenschlusses, dessen Stimmen summiert sind.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
-          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "yes_count": {
-          "meaning": "Ja-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Ja-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "no_count": {
-          "meaning": "Nein-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Nein-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "abstain_count": {
-          "meaning": "Enthaltungen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Enthaltungen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "absent_count": {
-          "meaning": "Nicht abgegebene Stimmen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Nicht abgegebene Stimmen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "total_count": {
-          "meaning": "Gesamtzahl der Mitgliederstimmen je Zusammenschluss, einschließlich nicht abgegebener Stimmen, sofern im Bericht enthalten.",
+          "meaning": "Gesamtzahl der Mitgliederstimmen je Zusammenschluss, einschließlich nicht abgegebener Stimmen, sofern im Bericht enthalten, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "leading_vote": {
           "meaning": "Eindeutig häufigstes Votum unter Ja, Nein und Enthaltung (relative Mehrheit); bei Gleichstand an der Spitze oder ohne abgegebene Stimmen NULL.",
           "unit": "Textcode yes, no, abstain oder NULL; Abwesenheiten bleiben bei der Mehrheitswahl außer Betracht.",
-          "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen berechnet; Gleichstand/keine Stimmen ergibt NULL.",
+          "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen nach der Umbuchung aus den MdB-Stammdaten berechnet; Gleichstand/keine Stimmen ergibt NULL.",
           "license": "eigene-auswertung"
         },
         "rank": {
           "meaning": "Reihenfolge, in der die Abstimmungsquelle die Zusammenschlüsse nennt (erste Nennung nach Zusammenführung gleichnamiger Schreibweisen).",
           "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
-          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         }
       }
@@ -1513,9 +1513,15 @@
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
-          "meaning": "Zusammenschluss, dem das Mitglied in der Abstimmungsquelle zugeordnet ist; immer gesetzt: ohne erkennbaren Zusammenschluss steht die Partei „Unbekannt“.",
+          "meaning": "Zusammenschluss, für den die Stimme zählt: wie in der Abstimmungsquelle, außer wo die MdB-Stammdaten am Abstimmungstag einen anderen belegen (dann steht der Quellenwert in listed_party_id); immer gesetzt: ohne erkennbaren Zusammenschluss steht die Partei „Unbekannt“.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
-          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe; wo sie abweichen, die MdB-Stammdaten (scripts/derive.py, refile_vote_members).",
+          "license": "bundestag-abstimmungen"
+        },
+        "listed_party_id": {
+          "meaning": "Zusammenschluss, unter dem die Abstimmungsquelle das Mitglied führt, nur wo die MdB-Stammdaten am Abstimmungstag einen anderen belegen; sonst leer, dann gilt party_id auch für die Quelle. Die Summen der Quelle je Zusammenschluss: vote_fractions abzüglich der hierher umgebuchten und zuzüglich der von hier fortgebuchten Stimmen.",
+          "unit": "Projektkennung des Zusammenschlusses als Text oder leer.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichte Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
         },
         "vote": {
