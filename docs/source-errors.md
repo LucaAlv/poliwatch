@@ -97,6 +97,16 @@ A list of places where an official source file says something wrong or files con
   - **Vote 440:** its absent count is two short for CDU/CSU.
   - **Seat counts:** not affected. The seat tables come from the MdB-Stammdaten; the seat cross-check files vote 440 as `roll_call_short`.
 
+### E6. Two speaker ids are given to more than one person
+
+- **Status:** verified 2026-11-06, on the 716 cached XML files of the A3 store. The 85 excluded sittings were not scanned.
+- **Source:** `https://dserver.bundestag.de/btp/19/`, files 19016, 19049, 19057 and 19060; `https://dserver.bundestag.de/btp/20/`, files 20121, 20144 and 20194.
+- **What is wrong:** `<redner id>` is meant to identify one person.
+  - `id="10000"`: "Marja-Liisa Völlers (SPD)" in 19/49 and 19/57; "Olaf in der Beek (FDP)" in 19/16; "Dr. Carsten Sieling, Bürgermeister (Bremen)" in 19/60. The Sieling entry also prints "Carsten Sieling," as `<vorname>` and "Bürgermeister" as `<nachname>`.
+  - `id="999990141"`: Dr. Mehmet Daimagüler in 20/144; Judith Gerlach, Staatsministerin (Bayern), in 20/194.
+- **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
+- **Our side:** TODOS.md, "Speaker ids the Bundestag gives to more than one person".
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)

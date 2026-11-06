@@ -226,13 +226,84 @@ Depth was strategy-only, HOLD SCOPE. This is a documentation review, so sections
 
 Open: the host provider; the reader test's pass rule; the researcher check of the data release.
 
+## Second pass: research datasets (2026-11-06)
+
+The owner asked for `/gstack-plan-ceo-review` on the committed scope, plus a thorough look at GermaParl. Full comparison and sources: [bundestag-corpora-landscape-2026-11.md](../research/bundestag-corpora-landscape-2026-11.md). Depth stays strategy-only. Nothing below changes `PRODUCT.md` or the roadmap until the owner answers. The one exception is the shared-id defect, filed in `TODOS.md` and `docs/source-errors.md`, because a wrong person on a record is a defect whatever the scope.
+
+### Step 0A: premises
+
+The first pass tested the plan against the project. It never tested it against other datasets, though researchers are one of the two audiences.
+
+Real problem: researchers need a Bundestag record they can build on, and citizens need a way into it. Do-nothing cost: the first release is judged next to CPP-BT, on a claim CPP-BT already meets, with fewer sittings.
+
+| Premise | Claim | Receipt | Verdict |
+| --- | --- | --- | --- |
+| P1 | The differentiator is the connection | `PRODUCT.md:40` | **Holds, narrower.** No current join was found (negative search). ParlLawSpeech links speech, bill and law for 2009 to 2021, so the claim is "current", not "only" |
+| P2 | Researchers want a tidy, citable record, and that is what we offer | `PRODUCT.md:15` | **Partly false as a difference.** CPP-BT is tidy and citable, CC0, to 2026-09-19 |
+| P3 | Comparable products are sites | `PRODUCT.md:42-46` | **Finding.** No research dataset is named. The positioning that did name them is in the design of the feature now cut, `docs/designs/fakt-der-woche.md:36-41` |
+| P4 | Excluding a sitting costs its Reden | `a3-wp18-19-round2-result.md:165-172` | **Finding.** The cost table counted Reden. Decision 0 there skips a listed sitting before acquisition, so its TOPs, links and votes go too. The store holds 0 of 556 votes on the 85 dates [measured] |
+| P5 | A refused unit means the sitting must go | `round2-result.md:165,174,189` | **Unexamined.** No per-unit alternative appears in the A3 plans or `TODOS.md` [`git grep`]. 19/25 was excluded to keep out 2 units, at a cost of 15 Reden and about 200 other units |
+| P6 | One `redner_id` is one person | store | **False.** Two ids cover 5 people; 5 units are under the wrong person [measured: XML scan, store] |
+| P7 | "open-parlament" is clear of neighbours | Q11 | **Weak spot.** The owner confirmed OffenesParlament is unmaintained, but CPP-BT's September 2026 record still lists it as an alternative, so researchers will still meet the name |
+
+`unverified=0`.
+
+### Step 0B: what already exists
+
+| Need | Reuse |
+| --- | --- |
+| Keep a sitting while withholding refused units | `scripts/audit_offline_turns.py` already blanks refused turns to measure what remains. `contributions.kind` already holds non-Rede kinds. `coverage-exclusions.json` already records reasons |
+| Check against an outside source | `rede_id` is the same Bundestag id in both datasets, format `ID19200100` [measured against the codebook] |
+| Show coverage honestly | `datenstand` and per-year coverage from Q1 and Q10 |
+
+### Reality rows
+
+```
+REALITY: premise-table finding 7 premises, unverified=0, findings on P3 to P6 PRODUCT.md:42
+REALITY: already-done pass origin/main has no commit on PRODUCT.md, TODOS.md or these plans since 614dda2; nothing here is built TODOS.md:5
+REALITY: surface-check pass the only named flag, --exclude-document-number, exists README.md:169
+REALITY: binding-decisions finding branch search empty; Q1 and the 2026-10-22 decision 0 are binding, and N1 reopens them only on new evidence, by asking docs/plans/a3-wp18-19-round2-result.md:174
+REALITY: numbers finding store figures are from the A3 build, re-measure before any gate; items marked [estimated] are subtractions or rates docs/plans/v1-scope-review.md:13
+REALITY: deferred-asks pass no linked issue docs/plans/v1-scope-review.md:1
+REALITY: pr-count pass docs only, one branch, default one PR per wave TODOS.md:5
+```
+
+### Step 0C: where this goes
+
+```
+  TODAY                          THIS PLAN                       12-MONTH IDEAL
+  716 of 801 sittings;    --->   first release, joined and  ---> the citation for "how did this
+  joins exist, nobody            current, weekly; site with      debate relate to the bill and the
+  outside has seen them          one analysis                    vote", checked against CPP-BT and
+                                                                 GermaParl on every stable release
+```
+
+The plan moves toward this, if the release keeps every join it can keep.
+
+### New decisions
+
+Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
+
+**Figures for N1.** Lost in the 85 excluded sittings: about 9,300 `rede_id`s (CPP-BT minus ours, WP 18 to 20) [estimated], about 850 TOPs and 4,000 Drucksache links [estimated: store rates], about 70 votes [estimated: 0.78 to 0.86 per sitting]. Refused markers in the WP 18/19 audit, before any rules: 205 in 112 sittings, about 2 per sitting [measured: `a3-wp18-19-audit.md:24-28`]. Cascades stayed in the same Rede (`audit:91`). What the 85 hold today has not been re-counted.
+
+| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
+| --- | --- | --- | --- | --- | --- |
+| N1 owner | Q1 gate step 1; `round2-result.md:174`; P4, P5 | Whole sittings stay out until parser rounds clear them | Keep each sitting and its joins; withhold only refused `<rede>` units, flagged with a reason, outside all Reden counts | unresolved | none yet |
+| N2 owner | `PRODUCT.md:15,40,42-46`; P1 to P3 | Comparables are sites | Name the research datasets; state the claim as the joined, current record | unresolved | none yet |
+| N3 owner | Q1 gate step 3; download rule | Excluded sittings not compared | Fetch `CPP-BT_2026-09-19_DE_CSV_Reden_Metadaten.zip` (Zenodo 22844952, 10.7 MB, CC0) for a per-sitting `rede_id` comparison; repeat before each stable release, outside the build | unresolved | none yet |
+| N4 owner | `PRODUCT.md:58`; landscape | `DATA.md` has no comparison | A "Vergleich" table and joinable ids (`rede_id`, `xml_redner_id`) in `DATA.md` | unresolved | none yet |
+| N5 owner | Q16 open item | No researcher named | Name Fobbe and the PolMine authors as candidates; the owner decides whether and when to write | unresolved | none yet |
+| Mode owner | Skill Step 0E | none | HOLD SCOPE | unresolved | none yet |
+
 ## GSTACK REVIEW REPORT
 
 | Runs | Status | Findings |
 | --- | --- | --- |
 | 1 | issues_open | 17 questions: 16 answered, 1 closed by correction. Coverage gap of 85 sittings raised by the owner's challenge; no AI summaries exist; "today" has no source |
+| 2 | in progress | Step 0 only, sections not run. Research datasets were never in the positioning; excluding a sitting also drops its joins; 2 shared speaker ids put 5 units under the wrong person (filed) |
 
-VERDICT: scope decided by the owner. No outside coverage.
+VERDICT: first pass decided by the owner. Second pass waits on the mode and N1 to N5. No outside coverage yet.
 
 **UNRESOLVED DECISIONS:**
 - Host provider, reader test pass rule, researcher check of the data release (all recorded in TODOS.md).
+- Review mode and N1 to N5 (second pass).

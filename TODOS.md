@@ -19,6 +19,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
+   - "Speaker ids the Bundestag gives to more than one person".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament".
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution", the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
@@ -58,6 +59,20 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 **Effort:** L
 **Priority:** P1
 **Depends on:** The correctness P1s of stage 1
+
+### Speaker ids the Bundestag gives to more than one person
+
+**What:** The protocol XML reuses two speaker ids for different people, and the store files all of them under one person. Measured on the A3 store (2026-10-28, 716 XML files), not re-measured on main's tip:
+- `redner id="10000"`: Marja-Liisa Völlers (19/49, 19/57), Olaf in der Beek (19/16), Carsten Sieling, Bürgermeister of Bremen (19/60). The store has one `mps` row, Völlers, so Sieling's Rede `ID196001500` and in der Beek's `befragung_frage` `ID191604600` sit under her.
+- `redner id="999990141"`: Dr. Mehmet Daimagüler (20/144) and Judith Gerlach, Staatsministerin Bayern (20/121, 20/194). The store has one row, Daimagüler, so Gerlach's two Reden and one `erwiderung` sit under him.
+
+That is 5 units under the wrong person. The Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: compare the printed name with the name already bound to an id, treat a known shared id as no id, and resolve those people by name and role. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures.
+
+**Why:** A wrong person on a citable record. CPP-BT's codebook documents id 10000 as shared; the rest was found by scanning our XML for ids used with different surnames. 15 of 1,539 ids have more than one surname; the other 13 are name changes, spelling variants or a blank surname.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
 
 ### Main and stable releases
 
