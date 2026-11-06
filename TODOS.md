@@ -691,14 +691,14 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 **What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04. No site page uses it yet. Apply it in the current Python renderer:
 1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
 2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
-3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values fail on the grey ground.
+3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values were not tuned against the design's grounds.
 4. **Components.** Vote wall and strip, tally, source line, gap, slip versus ground, navigation, Stand line, home doors, Daten's release blocks. Votes pages first: the archive now renders from the store (#133). Do not convert `api-sitzungen.html`, `settings.html`, Fakt der Woche or the AI summary: all are out of v1 (`docs/plans/v1-scope-review.md`).
 
 **Why:** the owner finds the site unattractive, and the design system does nothing until pages use it. Every page has to carry the token blocks and the font stack today.
 
 **Context:**
 - `DESIGN.md` holds the rules and a component inventory with tokens for the stylesheet.
-- Preview on real data, every surface at 375 px and in dark mode, with a page comparing grounds: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte-v2.html`, generator `build_preview_v2.py` beside it, for values and markup.
+- Preview on real data, every surface at 375 px and in dark mode, with a switch back to the earlier look and a page comparing grounds: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte-v2.html`, generator `build_preview_v2.py` beside it, for values and markup.
 - Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
 - Nobody outside this project has seen the design. The five-reader test runs after this rollout, just before launch (decision Q16), so keep to `DESIGN.md` "Held Open Until the Reader Test": the ground and the vote wall stay token-only. Beside its tasks, ask what white and grey mean and what a Ja on the BAföG vote means.
 - Age and overdue are worked out in the browser (`DESIGN.md`, Stand line), which retires `STALE_AFTER_WEEKS`, "Auswertung vom" and the "Woche läuft" state in `build_dip_pulse_site.py`. The due date needs the scheduled workflow's rule; the identifier format needs the release work.
@@ -714,7 +714,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Effort:** L
 **Priority:** P2
-**Depends on:** the owner's answer on the three "Awaiting owner" rows in `DESIGN.md`
+**Depends on:** the owner's look at the open direction, and their answer on the two "Awaiting owner" rows in `DESIGN.md`
 
 ### Design hand-over leftovers
 
