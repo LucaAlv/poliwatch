@@ -165,7 +165,7 @@ components:
 
 # Stimmkarte
 
-**Not ready to apply: three values below await the owner.** They are written as proposed and depart from what was approved on 2026-11-04: controls at 44px (approved 36px), ground #E6E6E1 with a slip edge (approved #C9CAC4, no edge), and source-printed counts on the slip (approved list named counts as ground). See the Decisions Log. Remove this note once they are answered.
+**Not ready to apply: three values below await the owner.** They are written as proposed and depart from what was approved on 2026-11-04: controls at 44px (approved 36px), ground #E6E6E1 with a slip edge (approved #C9CAC4, no edge), and source-printed counts on the slip (approved list named counts as ground). See the Decisions Log. Remove this note once they are answered. The v1 surfaces, navigation and name here follow the owner's decisions of 2026-11-06 (`docs/plans/v1-scope-review.md`, commit cc0b0f7).
 
 ## Overview
 
@@ -173,20 +173,23 @@ components:
 
 **The one thing to remember:** every figure here traces back to the official record. Every decision below serves that sentence.
 
-**Product context:** a nonpartisan German site and citable dataset built from the Bundestag's official record. Citizens want to know what the Bundestag is doing now, often on a phone. Researchers and journalists need figures they can check. Peers are abgeordnetenwatch.de (campaign feel, photo cards, donuts), bundestag.de (institutional card grid, donuts), plenarwatch.de (quiet minimal lists) and opendiscourse.de (template look).
+**Product context:** open-parlament is a nonpartisan German site and citable dataset built from the Bundestag's official record. "Stimmkarte" names this design system, never the product. Citizens want to know what the Bundestag is doing now, often on a phone. Researchers and journalists need figures they can check. Peers are abgeordnetenwatch.de (campaign feel, photo cards, donuts), bundestag.de (institutional card grid, donuts), plenarwatch.de (quiet minimal lists) and opendiscourse.de (template look).
 
 **Mode per surface:**
-- Return: start page, Wochenübersicht. The visitor comes back to see what happened and leaves again.
-- Operate: votes archive, Gesetzesvorhaben, roster, filters, Daten.
-- Read: dossiers, speeches, methods.
+- Door: the home page. It sends the visitor to one of the two angles.
+- Return: Aktuell. The visitor comes back to see what happened and leaves again.
+- Operate: Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, filters, Daten.
+- Read: dossiers, speeches, Analysen, Quellen und Methode, So arbeitet der Bundestag.
 - No Persuade or Experience surfaces exist.
 
 **Return mode rules.** A person page or a dossier can wait; a return visit takes seconds.
-- The first screen at 375 px answers three things: how fresh the record is (a Stand line), whether it is current (a thin gap in the same place if not), and the largest item of the latest week, Sitzung and vote.
+- The first screen of Aktuell at 375 px answers four things: how old the record is (the Stand line), whether an update is overdue (a thin gap in the same place if so), the next planned Sitzungswoche, and the largest item of the latest Sitzungswoche, Sitzung and vote.
 - Same order and same places on every visit, so memory of the page works. Newest first, with the date at the front of the row.
 - Lead figures in `figure-lead`, with their label on the same line or directly below.
 - The site stores nothing about a visit, so there is no "neu" badge. The date does that work.
 - No disclosure hides a first-screen answer. A source line may stay folded.
+
+**Aktuell never promises today.** A sitting appears once its Sitzungswoche is complete and its protocol is out, up to 6 days later (a Wednesday sitting shows the next Tuesday). No source gives anything newer. "Aktuell" is only the link's name. The page's heading names the period ("Letzte Sitzungswoche: KW 37/2026"), and no visitor-facing line about the data uses "heute", "gerade", "jetzt", "läuft" or "bisher". One sentence on the page gives the delay: "Eine Sitzung erscheint hier, wenn ihre Sitzungswoche abgeschlossen und das Protokoll veröffentlicht ist, üblicherweise bis zu 6 Tage danach." "Üblicherweise", because 6 days assumes the release ran on time.
 
 **Reference sites:** https://www.abgeordnetenwatch.de/bundestag/abstimmungen, https://plenarwatch.de, https://opendiscourse.de, https://www.bundestag.de/parlament/plenum/abstimmung
 
@@ -215,7 +218,7 @@ components:
 
 **Surfaces carry provenance.**
 - `slip`: what the source prints: speech text, member votes, document references, the totals and per-Fraktion counts on the Bundestag's roll-call page, the MdB-Stammdaten, a verbatim sentence.
-- `ground`: what this site worked out or generated: the derived "angenommen", shares and percentages, Rede counts, Mehrheitsvotum and Abweichungen, "für" and "gegen" on an inverted vote, rankings, and AI summaries. AI summaries never sit on a slip, whatever their quality.
+- `ground`: what this site worked out: the derived "angenommen", shares and percentages, Rede counts, Mehrheitsvotum and Abweichungen, "für" and "gegen" on an inverted vote, and rankings.
 - A list or table is the site's arrangement, so it sits on the ground. A cell that repeats a source figure there is still ground, except the strip with its counts, which is a small slip.
 - A figure the site corrected is no longer as printed. A count re-filed from the MdB-Stammdaten stays in its row and says so in words, with both numbers and the source.
 - Headings and navigation carry no provenance. A heading sits with the content it introduces.
@@ -260,10 +263,22 @@ Grouping comes from whitespace and rules, not boxes. A 2px ink rule separates ma
 
 Fraktionen always appear in the same order within a view, by size in that Wahlperiode, never by a rank that changes per row unless the row is itself a ranking.
 
-**Page head.** Back link if there is a parent, then `heading-1`, then the Stand line (`note`, mono: protocol, date distributed, date of the evaluation), then a thin gap if the data is stale. A back link is navigation, not a kicker, and nothing else stands above the heading.
+**Page head.** Back link if there is a parent, then `heading-1`, then the Stand line, then a thin gap if a release is overdue. A back link is navigation, not a kicker, and nothing else stands above the heading.
+
+**Stand line.** On every page that shows a figure from the dataset, in `note` size and mono. It holds three things in this order: the page's main release, linked to its entry on Daten; the newest Sitzung in that release with its date; and the data's age ("Release 2026-09-15 · neueste Sitzung 21/94 vom 11.09.2026 (vor 56 Tagen)"). The identifier format is not decided, so that is only an example. Nothing else goes in this line, because a fourth item takes it to four lines on a phone. A dossier or vote names its release, and its protocol's own date stands with the protocol.
+
+**Age and overdue are worked out in the browser.** Pages are rebuilt only with a release, so an age written at build time freezes exactly when an update fails. The HTML carries the Sitzung's date in `<time datetime>` and the date the next release is due; a few lines of script add the age and reveal the gap. Without script the date still stands.
+
+| Situation | What the reader sees |
+|-----------|----------------------|
+| Sitting within the usual delay | No gap; the one sentence on Aktuell explains it |
+| Recess, no sitting for weeks | No gap; "Nächste geplante Sitzungswoche" with its dates |
+| Release past its due date | Thin gap "Nicht aktuell", saying which release is missing and since when |
+
+Age alone never says "Nicht aktuell", since a summer recess is not a fault.
 
 **Below 760px** the layout changes rather than stacks:
-- Navigation drops to four items (see Navigation).
+- Navigation wraps to two rows (see Navigation).
 - Vote rows stack with the name above the cards, and cards shrink to 5 by 10 px, so a 630-seat vote stays on a phone screen.
 - List rows put the strip below the title, at full width.
 - A table with a column it can spare moves it under the row's name (Fraktion on the roster), and a table that cannot spare one scrolls inside its own focusable region.
@@ -281,11 +296,13 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 
 ## Components
 
-**Header.** The product name as plain condensed text on the left, since no name or logo is committed, the theme control on the right, the navigation below, and a 2px ink rule beneath. It does not stick. A skip link is the first focusable element on every page.
+**Header.** The product name, `open-parlament`, as plain condensed text on the left, linked to the home page, the theme control on the right, the navigation below, and a 2px ink rule beneath. The name is always lower case, also at the start of a sentence, and never breaks at its hyphen. No logo yet. The header does not stick. A skip link is the first focusable element on every page.
 
-**Navigation.** Condensed text links, each a full target; the current page has a 3px underline. No pills or boxes. Wide: every destination in one row (Wochenübersicht, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Fakten, Daten, Quellen). Below 760px: Woche, Sitzungen, Abstimmungen and a "Mehr" `<details>` holding the rest in two columns, which needs no script. "Mehr" takes the underline when the current page is inside it. No hamburger.
+**Navigation.** Seven condensed text links, in this order at every width: Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen, Daten. Analysen appears once the first analysis exists. Each link is a full target; the current page has a 3px underline. No pills or boxes. Nothing is hidden behind a menu, because Analysen is one of the two equal angles and hidden destinations are what today's nav gets wrong. The row simply wraps. Below 760px the links take `1.125rem` with an 8px gap, which measures two rows at 375 and 360 px and three at 320 px, with no overflow. From 761 px they fit one row. No hamburger, no "Mehr".
 
-**Footer.** A 2px ink rule, the provenance key in words ("Weißes Blatt: steht so in der Quelle. Grund: von dieser Website berechnet oder erzeugt."), then the data note and links to Quellen, Daten, Impressum and Datenschutz.
+**Footer.** A 2px ink rule, the provenance key in words ("Weißes Blatt: steht so in der Quelle. Grund: von dieser Website berechnet oder zusammengestellt."), then the data note and four links, each a full target: Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz.
+
+**Home.** The door to both angles, which are weighted equally. `heading-1`, the Stand line, then two doors of the same form, Aktuell and then Analysen: a 2px rule, a condensed heading link, one sentence, one lead line. Two columns from 761 px, stacked below. At 375 by 667 px both doors end on the first screen (the second ends at 620 px); only the overdue gap may push it lower. Below them "Zuletzt": the latest Sitzung and vote as date-first rows, then the next planned Sitzungswoche, then a link to the dataset. No third door and no list of all areas, since the navigation already is that list.
 
 **Verdict.** On a vote's page: `display` for the outcome word, then the official title, the date and Sitzung, and a note saying the outcome is computed where it is. All of this is ground. The source line leads from here to the slip, which opens with the totals in `figure-row`. On an inverted vote the verdict names the Antrag ("Antrag abgelehnt", from `derive.vote_outcome`), never the bare result of the recommendation.
 
@@ -309,14 +326,14 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 | Data not fetched | Gap: "Nicht verfügbar" and the reason |
 | Period has none | Gap: "Keine in dieser Woche" and what was covered |
 | Filter matches nothing | Gap with a link that clears the filter; the result count says 0 |
-| Week is old | Thin gap in the page head: "Nicht aktuell" |
+| Release overdue | Thin gap in the page head: "Nicht aktuell" (see Stand line) |
 | Member rows missing | Totals on the slip, a gap instead of the wall |
 | Search without script | Full list and a note pointing to browser search |
 | Pages are static | No loading state, except the result count after a filter, which is `aria-live` |
 
-**AI summary.** On the ground, never on a slip, under the permanent mono label "KI-generiert · nicht redaktionell geprüft", with its citations as source lines. No generated page has one yet, so this form has only been seen empty: check it against a real summary before it ships.
+**Not in v1.** AI summaries and their collapse control. When they return they sit on the ground, never on a slip, under the permanent mono label "KI-generiert · nicht redaktionell geprüft", and need checking against a real summary, since this form has only been seen empty. Fakt der Woche is also off the v1 site and gets its design when it is rebuilt.
 
-**Lists.** Rows on the ground, separated by hairlines, under a 2px rule. Date first, in mono. A list over about 50 rows groups by period, with the period as `heading-2`. Long lists rely on filters, not paging.
+**Lists.** Rows on the ground, separated by hairlines, under a 2px rule. Date first, in mono. A list over about 50 rows groups by period, with the period as `heading-2`. Long lists rely on filters, not paging. Sitzungen also lists the Sitzungen left out of the record, with number, date and reason, inside a `<details>`.
 
 **Tables.** Rows on the ground (or on a slip when every cell stands in the source), hairlines between rows, a 2px ink rule under a sticky solid-background header. Numbers right-aligned in mono, text left-aligned, row headers marked `scope="row"`. A wide table scrolls inside a focusable region, never the page.
 
@@ -325,10 +342,18 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 **Reading a speech.** One slip per Rede, hugging the measure: name in `name-large` with the Fraktion bar, the reference to the right (below on a phone), paragraphs in `body`. A Zwischenfrage or Kurzintervention stays inside the Rede, indented between hairlines under a condensed heading saying what it is and who asked, with a note that it is not counted as a Rede. Above the slips, a list of the speakers in order, each a full target with Fraktion and page. Never a box inside the slip.
 
 **Controls.** 44px minimum height at every width, 1px ink outline, no fill, no colour, pressed state inverted. Every control has hover, focus-visible, pressed and disabled states; disabled uses the muted colour with a dashed outline and is never low-contrast text carrying needed information. One primary form exists, filled ink, for the single main action of a page such as a download.
-- **Targets.** A link alone on its line is a 44px target at phone width: nav links, source lists, list actions. A link inside a sentence is not.
+- **Targets.** A link alone on its line is a 44px target at phone width: nav links, source lists, list actions, a row's title, a reference on a slip. Where the row must not grow, the link takes 11px of padding and the same negative margin. A link inside a sentence is not a target.
 - **Filters.** Up to six options are a row of buttons, seven or more a native `<select>`, at every width, so 23 buttons never stack above a list. Every field has a visible label, never a placeholder alone. A field is a control, not a slip, so it has no white fill.
 
 **Code and downloads.** SQL sits on the ground between 1px ink rules, in mono at note size, and scrolls inside a focusable region. A checksum is mono and wraps anywhere. A file's size and format stand beside its link.
+
+**Daten.** On the ground, since this is the site's own product, in this order: the Stand line, one sentence, the two releases, why they differ, citation, coverage per year, changes, recipes, and a link to `DATA.md`, which holds schema and codebook.
+- **Two releases.** Side by side from 761 px, stacked below, in the same form: heading, identifier in mono, one sentence, download, CSV link, checksum. "Geprüfter Stand" with `stable` beside it comes first and takes the page's one primary control, because citations should name it, and its sentence gives the last review date. "Laufender Stand" with `main` beside it takes the outline control, and its sentence says the site always shows it. Where the latest main release is itself the stable one, the sentence says so.
+- **Why they differ.** One visible sentence directly below both: main holds newer Sitzungen and corrections nobody has reviewed yet, and stable stays frozen so a cited figure can be checked.
+- **Citation.** The code form, but it wraps instead of scrolling, because it is copied whole. It names the stable release and its DOI.
+- **Coverage per year.** A table, newest year first: year, Sitzungen in the record, Sitzungen left out, with a link to Sitzungen for the reasons. No chart: nobody compares these values by eye.
+- **Changes.** A list with the date first, then `main` or `stable`, then one line. A moved figure gives its old and new value.
+- **Recipes.** One `<details>` each, holding the SQL and its result table.
 
 ## Accessibility
 
@@ -356,6 +381,19 @@ Landmarks on every page (`header`, `nav` with a label, `main`, `footer`) and a s
 - **Easing:** enter(ease-out) exit(ease-in) move(ease-in-out)
 - **Duration:** micro(50-100ms) short(150ms for a slip unfolding)
 - **The one authored moment:** a source slip unfolding in place. It is off under `prefers-reduced-motion`.
+
+## Held Open Until the Reader Test
+
+Five outside readers test the finished site just before launch (decision Q16), and the ground and the vote wall may change then. Build so that this costs little:
+- **Ground.** The value lives only in `--ground`, and likewise `--slip` and `--edge`. No hex in renderers, inline styles or SVG, and no test pins a value. If it moves, re-measure Measured limits. On the light ground, the values to expect are:
+
+| Ground | Slip step | Edge | Nein | Lowest Fraktion |
+|--------|-----------|------|------|-----------------|
+| #C9CAC4 | 1.59 | 3.01 | 2.08 | 3.12 |
+| #DADAD5 | 1.35 | 3.54 | 2.45 | 3.67 |
+| #E6E6E1 | 1.21 | 3.96 | 2.74 | 4.12 |
+
+- **Vote wall.** One render function, with card geometry only in `--cw`, `--ch`, `--cg` and `--enth-w` and fills only in `--v-*`. Tests assert the counts and the text lists, not card sizes. A vote page must stay complete without the cards: the printed counts and the text per Fraktion already carry it, so replacing the wall changes one function.
 
 ## Component Inventory
 
@@ -393,8 +431,9 @@ For the one shared stylesheet. Values come from the front matter; the classes ar
 | Component | Class | Surface | Tokens | Notes |
 |-----------|-------|---------|--------|-------|
 | Header | `.site`, `.brand`, `.skip` | ground | `name`, 2px `--ink` rule | Not sticky; skip link first |
-| Navigation | `.site-nav`, `.nav-more` | ground | `name`, `--target`, 3px current underline | `<details>` below 760px |
-| Footer | `.site-foot`, `.prov` | ground | `note`, 2px `--ink` rule | Carries the provenance key |
+| Navigation | `.site-nav` | ground | `name`, `--target`, 3px current underline | Wraps; `1.125rem` and `--s2` gap below 760px |
+| Footer | `.site-foot`, `.prov`, `.foot-nav` | ground | `note`, `--target`, 2px `--ink` rule | Carries the provenance key |
+| Door | `.doors`, `.door`, `.door-what`, `.door-lead` | ground | `heading-2`, `body`, `name`, 2px `--ink` rule | Home only; one column below 760px |
 | Slip | `.slip`, `.slip.tight` | slip | `--slip`, `--edge`, `--offset`, `--s4`; tight `--s2 --s3`; `--s3` below 760px | `box-shadow: 0 1px 0 var(--offset), 0 0 0 1px var(--edge)` |
 | Source line | `.faden`, `details.beleg` | ground to slip | 2px by `--s5`, `--ink` | Summary keeps a marker |
 | Verdict | `.verdict`, `.what`, `.meaning` | ground | `display`, `title`, `body` | Then `.faden` and the slip |
@@ -407,7 +446,11 @@ For the one shared stylesheet. Values come from the front matter; the classes ar
 | Share line | `.share`, `.shares` | ground | 4px, `--ink` or `--c` | Length is the value |
 | List row | `.vrow`, `.brow`, `.rrow` | ground | `heading-3`, `figure`, `--hair` | Title may clamp to 4 lines; radar rows set their title at 1.5rem to 1.875rem |
 | Lead figure | `.huge`, `.figs .big` | ground | `figure-lead`, `figure-row` | Label on the same line below 760px |
-| Stand line | `.stand` | ground | mono `note`, `--ink-2` | Under the page heading |
+| Stand line | `.stand`, `time[data-age]`, `[data-due]` | ground | mono `note`, `--ink-2` | Under the page heading; age and overdue come from script |
+| Sitzung row | `.srow` | ground | mono `figure`, `--target`, `--hair` | Date on its own line below 760px |
+| Release | `.releases`, `.release`, `.rel-id`, `.rel-kind`, `.why` | ground | `heading-2`, mono, `--target` | Stable first and primary |
+| Citation | `.code.cite-text` | ground | mono `note`, 1px `--ink` rules | Wraps, never scrolls |
+| Changes | `.relog` | ground | mono `figure`, `--hair` | Date first |
 | Gap | `.gap`, `.gap.thin` | ground | 2px dashed `--ink-2`, `heading-3` | Thin form in the page head |
 | Control | `.ctl`, `.ctl.primary`, `.btn-row` | ground | `--target`, 1px `--ink`, 2px radius | `aria-pressed`, `:disabled` dashed |
 | Field | `.field`, `.filters` | ground | `--target`, 1px `--ink`, `note` label | No fill |
@@ -444,4 +487,14 @@ Name to slug: CDU/CSU `cdu`; AfD `afd`; SPD `spd`; BÜNDNIS 90/DIE GRÜNEN `grue
 | 2026-11-06 | Up to six filter options are buttons, seven or more a select | The archive has 14 Politikfelder and 9 Fraktionen: 23 targets of 44px would stack more than 500px above the list on a phone |
 | 2026-11-06 | Header, footer, page head, lists, tables, share line, reading, code and accessibility rules added | The extended preview met each on real content and found no answer here. "Mehr" keeps `<details>` from today's site, without a hamburger |
 | 2026-11-06 | DIP titles use automatic hyphenation with `overflow-wrap: anywhere`, over 140 characters in `body`, clamped only on lists | Nobody inserts soft hyphens into source text. The longest title has 642 characters; at 375 px nothing overflowed |
+| 2026-11-06 | v1 surfaces: home is a door, Aktuell is Return, the AI summary and Fakt der Woche are not v1 components | Owner's scope decisions Q4 to Q6 (`docs/plans/v1-scope-review.md`, commit cc0b0f7 on `claude/strange-germain-01ea7e`). `api-sitzungen.html` and `settings.html` are cut, so they get no design |
+| 2026-11-06 | The product name is open-parlament, lower case, plain text, no logo | Owner's decision Q11 |
+| 2026-11-06 | All seven links stay visible and wrap to two rows on a phone; "Mehr" goes | Q6 left this to design. A menu saves one 44px row but would hide Analysen, one of two equal angles, and Abstimmungen was promoted because of that fault. Measured at `1.125rem` with an 8px gap: two rows at 375 and 360 px, three at 320 px, one from 761 px. This replaces the "Mehr" in the header row above |
+| 2026-11-06 | Home has two equal doors, both on the first screen at 375 by 667 px | PRODUCT.md weights the angles equally. The earlier start page answered only the daily angle. Cutting each door to heading, sentence and lead line, with the latest rows below both, brought the second onto the first screen |
+| 2026-11-06 | The Stand line names the main release and the data's age, worked out in the browser | Q3. Pages rebuild only with a release, so a build-time age freezes when an update fails. This retires the build clock's "Auswertung vom" and "Woche läuft" and `STALE_AFTER_WEEKS` |
+| 2026-11-06 | "Nicht aktuell" means only an overdue release | Today's rule flags age over 4 weeks, which a recess reaches without any fault. A 6-day delay is normal under Q3, so it gets a sentence, not a gap |
+| 2026-11-06 | "Aktuell" is only a link name; no line says "heute", "gerade", "jetzt", "läuft" or "bisher" | The owner's constraint: a sitting can be up to 6 days old when it appears. "Was der Bundestag gerade verhandelt" on the earlier start page broke it |
+| 2026-11-06 | Stable takes the primary control on Daten, main the outline; German labels with the technical name beside them | One primary control per page stays true, and citations should name stable (Q3). "Geprüfter Stand" and "Laufender Stand" are this design's wording, since citizens do not know "main" |
+| 2026-11-06 | Ground and vote wall stay token-only until the reader test | Q16 puts the test after the rollout, and the owner asked that both stay easy to change |
+| 2026-11-06 | A row's title and a slip's reference are 44px targets | The earlier check let them pass as inline links at 20 to 22px, which the Targets rule did not intend. Padding with a matching negative margin keeps the row height |
 | 2026-11-06 | Outside sources re-checked | Validator re-run: ΔE figures confirmed, tritanopia added, three dark Fraktion values found just above the band. bundestag.de glossary read in a browser: blue Ja, red Nein, white Stimmenthaltung |

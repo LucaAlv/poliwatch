@@ -692,7 +692,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
 2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
 3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values fail on the grey ground.
-4. **Components.** Vote wall and strip, tally, source line, gap, slip versus ground, navigation. Votes pages first: the archive now renders from the store (#133).
+4. **Components.** Vote wall and strip, tally, source line, gap, slip versus ground, navigation, Stand line, home doors, Daten's release blocks. Votes pages first: the archive now renders from the store (#133). Do not convert `api-sitzungen.html`, `settings.html`, Fakt der Woche or the AI summary: all are out of v1 (`docs/plans/v1-scope-review.md`).
 
 **Why:** the owner finds the site unattractive, and the design system does nothing until pages use it. Every page has to carry the token blocks and the font stack today.
 
@@ -700,11 +700,12 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 - `DESIGN.md` holds the rules and a component inventory with tokens for the stylesheet.
 - Preview on real data, every surface at 375 px and in dark mode, with a page comparing grounds: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte-v2.html`, generator `build_preview_v2.py` beside it, for values and markup.
 - Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
-- Nobody outside this project has seen the design. Test the ground and the vote wall with real readers, before most pages change: give three or four people the preview on their own phone and the four tasks under "A release succeeds" in `PRODUCT.md`, then ask what white and grey mean and what a Ja on the BAföG vote means.
+- Nobody outside this project has seen the design. The five-reader test runs after this rollout, just before launch (decision Q16), so keep to `DESIGN.md` "Held Open Until the Reader Test": the ground and the vote wall stay token-only. Beside its tasks, ask what white and grey mean and what a Ja on the BAföG vote means.
+- Age and overdue are worked out in the browser (`DESIGN.md`, Stand line), which retires `STALE_AFTER_WEEKS`, "Auswertung vom" and the "Woche läuft" state in `build_dip_pulse_site.py`. The due date needs the scheduled workflow's rule; the identifier format needs the release work.
 - The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so every link `:visited` rule goes (`render_dip_pulse_html.py`, `build_dip_pulse_site.py`).
 - Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks). Put an inverted vote in the tests.
 - The preview and the chart prototype exist only on the owner's machine, under `~/.gstack`. Copy into the repository whatever the pages need.
-- The preview predates E4 and has no AI summary, because no generated page holds one. Check the re-filed count note and the AI summary on real content when they land.
+- The preview predates E4. Check the re-filed count note on real content when it lands. Release identifiers, dates, sizes and the citation in the preview are examples.
 
 **Settle while applying:**
 - **Fonts without a package manager.** The `@fontsource` packages are a one-time download source. Commit the five WOFF2 files (D-DIN Condensed Bold; Atkinson Next variable, latin and latin-ext; Atkinson Mono 400 and 700) and the licence texts, with no `package.json`.
