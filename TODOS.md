@@ -1,62 +1,123 @@
 # TODOS
 
-Open work, grouped by area. The roadmap orders the items that lead to v1. Every other item keeps its own priority. Finished items get one line each under Completed. This file was last cleaned up on 2026-11-02, against main v0.31.0.0, and brought up to date on 2026-11-04, against v0.32.0.0.
+Open work, grouped by area. The roadmap orders the items that lead to v1. Every other item keeps its own priority. Finished items get one line each under Completed. This file was last cleaned up on 2026-11-02, against main v0.31.0.0, and brought up to date on 2026-11-04, against v0.32.0.0. The roadmap was rewritten on 2026-11-06 from the owner's answers in `docs/plans/v1-scope-review.md`.
 
-## Roadmap to v1 (updated 2026-11-04)
+## Roadmap to v1 (updated 2026-11-06)
 
-The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the present, and a site with two equal angles, the daily view and long-term analysis. Items are named by their headings below. Track D has to be finished before anything goes public.
+The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and one site with two equal angles, the daily view and long-term analysis. Scope decisions: `docs/plans/v1-scope-review.md`. Items are named by their headings below. There are three stages, and the data comes first.
 
 **Done so far** (see Completed):
-- A1: what counts as a Rede (v0.13.0.0 to v0.15.0.0).
-- A2: stable ids (v0.12.0.0 onward).
-- A3: v1 coverage (v0.27.0.0). 716 Sitzungen of WP 18–21, 85 on the reviewed exclusion list.
-- A4: slice 0, every page renders from the store (v0.29.0.0); slice 1, the votes archive from the store (v0.32.0.0).
-- B1–B4, the daily vote panel: inverted votes, majority rule, TOP matching, external member links, Politikfelder, and the B4 panel with "Vote reading misses half the inverted votes and never stores it".
-- C1: Fraktion seat counts from the MdB-Stammdaten (v0.31.0.0).
-- D, the code half:
-  - the licence files, Impressum and Datenschutz pages (v0.30.0.0)
-  - the release script, data changelog and CITATION.cff (v0.26.0.0)
-  - the abgeordnetenwatch source tags (v0.20.5.1)
+- A1 what counts as a Rede; A2 stable ids; A3 coverage run (v0.27.0.0).
+- A4 slices 0 and 1 (v0.29.0.0, v0.32.0.0).
+- B1–B4, the daily vote panel. C1, Fraktion seat counts (v0.31.0.0).
+- The code half of D: licence files, Impressum and Datenschutz pages (v0.30.0.0), release script, data changelog, CITATION.cff (v0.26.0.0), abgeordnetenwatch source tags (v0.20.5.1).
 
-**A. Counts and coverage: fix what A3 and C1 surfaced, then finish the split**
-1. Correctness P1s. Each one moves published figures:
-   - "Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten".
-   - "The carried-forward registry diverges from a fresh build after A3", part 2: 289 pages of persons who hold only retired bindings. Fix it together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs". The MdB-Stammdaten from C1 can be the membership source.
-   - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". This needs an owner decision on the kinds first. 18/1 and 19/1 stay excluded until then.
-   - Plan item 1.5 of "A3 /gstack-ship review: deferred findings": measure the abgeordnetenwatch match share of the WP 18/19 Redner.
-2. "Split the dataset from the site: the site builds from a release alone" (A4).
-   - Slices 0 and 1 are done. The later slices are in `docs/plans/a4-site-from-release.md`.
-   - Main is at schema 10 and export format 14, so the next slice takes the numbers after those.
+**Stage 1: the data release.** Needs no redesign, no site host and no A4 slice.
+1. "Coverage gate before the first data release". Today 716 of 801 sittings: WP 18 79%, WP 19 86%.
+2. Correctness P1s:
+   - "Correct the WP 19/20 roll-call group misattributions (E4)", in PR #138.
+   - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+   - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
+   - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
+3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
+4. "Rename the project to open-parlament".
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution", the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check, `openparlament.de` if wanted.
+6. The first release: items 1–5 of "Release pipeline: deferred /ship review findings", the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only).
+7. "Public repository: follow-ups".
 
-**B. Abstimmungen (daily view)**
-1. "B4 extractive fallback: finish validation locally": no population reaches the 90% coverage gate yet. Add one extractor rule at a time. The entry's P1 gate applies before the fallback runs on a larger Drucksache cache.
-2. The rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". The AI sentence is deferred.
-3. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
+**Stage 2: the public site.** Daily view plus one analysis.
+1. "Split the dataset from the site" (A4): slices 2 to 11, all before going public. Later slices are in `docs/plans/a4-site-from-release.md`. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
+2. "Apply DESIGN.md to the site" and "Apply the v1 surface list". Order against A4 is for the architecture session.
+3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 59.7%: check it before calling the analysis good enough.
+4. Abstimmungen: "B4 extractive fallback: finish validation locally" and the rest of "Abstimmungen for the daily view".
+5. "Site hosting plan": a German host with SSH, provider to pick; `generation_file_href` changes; `data/` is not deployed wholesale; the deploy gate. Then the Impressum inputs and Datenschutz values.
+6. Automatic main releases: "Scheduled data-release workflow", with an alert when an update fails.
+7. "Reader test before launch".
 
-**Frontend:** decided 2026-11-04: the site stays Python-generated HTML ([go/no-go](docs/plans/frontend-go-no-go.md)). DESIGN.md is written; next is "Apply DESIGN.md to the site".
+**Stage 3: further analyses,** each when ready.
+1. "Diskursanalyse: precomputed term series per Zusammenschluss and month". Term lists are confirmed; the neutrality review gates publication.
+2. "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion".
+3. "Muster" and "Präsenz".
 
-**C. Analysen (long-term view)**
+**Later:** AI summaries and the LLM-content items, "Rebuild Fakt der Woche", the XLSX roll-call source, Puls and copy fixes. WP 1–17 come after v1, because the DIP catalog has no structured XML for them.
 
-A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as their denominator. A count fix in track A still moves every series C draws.
-1. "Diskursanalyse: precomputed term series per Zusammenschluss and month".
-2. "Politikfelder over time: which Zusammenschluss emphasises what".
-3. "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion", which answers "who interrupts most".
-4. Then "Muster" and "Präsenz".
+## v1 scope items (2026-11-06)
 
-**D. Before anything goes public** (items under Recht und Lizenz, Publication and Zitierfähiger Datensatz)
-- **Owner inputs and outside answers (no code):**
-  - For "Impressum, Datenschutz and licence files before the site goes public": the Impressum address (after question 1 to the lawyer, ADR 0003), a dedicated e-mail address, the host and its log retention, and the supervisory authority. Until then both pages render `data-operator-missing`.
-  - The e-mail to parlamentsdokumentation@bundestag.de for "Settle the roll-call source for redistribution".
-  - The terms in "Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)".
-  - A Zenodo account for "A DOI per release and a citation file".
-- **Hosting:** "Site hosting plan for the 2.5 GB generated site" (P1). After A3 the site is 5.4 GB, and still 1.35 GB without `data/` (2026-10-29). The plan also settles the link layout the first real release needs (owner decision (b) in "Write the release script").
-- **The first release:**
-  - items 1–5 of "Release pipeline: deferred /ship review findings"
-  - the first real `--publish` of "Write the release script"
-  - CHANGES.md on the Daten page ("Public data changelog per release")
-  - the DOI
+### Coverage gate before the first data release
 
-**Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B and C, and the Puls and copy fixes. These stay at their own priorities. WP 1–17 come after v1, because the DIP catalog has no structured XML for them.
+**What:** The store holds 716 of 801 catalog sittings. Before the first release:
+1. Another parser round on the 85 excluded sittings.
+2. A written bar: a sitting may stay out only with a named source defect, listed with its reason. Coverage is published per year.
+3. Measure: votes in the excluded sittings, whether those sittings differ systematically from the included ones, the abgeordnetenwatch match share of WP 18/19 Redner.
+4. Rebuild the store on current main and run the gate on it.
+
+**Why:** 2014–2018 are at 73–83% of sittings, and 2022–2026 at nearly 100%, so a trend across those years compares unlike coverage. The owner's bar is that researchers can base their work on it.
+
+**Context:** Fallback, decided only after a first attempt shows the cost: release WP 20 and 21 first as a complete set.
+
+**Effort:** L
+**Priority:** P1
+**Depends on:** The correctness P1s of stage 1
+
+### Main and stable releases
+
+**What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
+
+**Why:** The owner cannot review every release once the project is live. Decision Q3.
+
+**Effort:** M
+**Priority:** P1 (checklist and policy for the first release; the rest for the site)
+**Depends on:** The release script
+
+### Rename the project to open-parlament
+
+**What:** Replace "Bundestag-Puls" and "poliwatch" in the site, code (43 lines in `scripts/` name Bundestag-Puls), README, `CITATION.cff`, the CC BY attribution string and `CONTEXT.md`. Check whether storage keys and file names such as `bundestag-pulse.sqlite` follow.
+
+**Why:** Decision Q11. Citations copy whatever the first release says.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Apply the v1 surface list
+
+**What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, and its `facts` tables out of the release. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
+
+**Why:** Decisions Q5, Q6, Q7, Q10.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Fits with A4 slices 2 and 7 and "Apply DESIGN.md to the site"
+
+### Public repository: follow-ups
+
+**What:** The repository is public, though `SECURITY.md:8`, the "Community" entry and the "Impressum/licence" item 8 say it is not. Fix them. Check that GitHub private vulnerability reporting is on (owner). Add `repository-code` and `url` to `CITATION.cff`. Scan the full history for secrets, and look through plans and docs for anything that should not be public.
+
+**Why:** Found by the v1 scope review. `SECURITY.md` sends reporters to a channel that may be off.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
+### Reader test before launch
+
+**What:** Five outside readers on a frozen build of the finished site, with tasks from PRODUCT.md criteria 1 to 3 on desktop and mobile; measure correct answers and time. Covers the grey ground and vote wall that `DESIGN.md` leaves open. Open: a pass rule (proposed: fix any task fewer than four of five complete correctly), and whether one researcher or journalist also tries the data release at stage 1 (proposed).
+
+**Why:** Nobody outside the project has seen the site. Decision Q16 puts it after the rollout, so `DESIGN.md` choices stay easy to change until then. Replaces the five-reader week radar test.
+
+**Effort:** M; the owner recruits, about 45 minutes per reader
+**Priority:** P1 for launch
+**Depends on:** "Apply DESIGN.md to the site"
+
+### Rebuild Fakt der Woche
+
+**What:** Rethink it before it returns. Start from "what happened this week that a citizen should know, and what does the record show that a headline would not?", not "what number was unusual?". Test on outside readers before building.
+
+**Why:** The last three weekly cards in the A3 build all won on the longest sitting. The owner would not subscribe to it. Improving it is required, but not for v1. "Fakt der Woche, rasterize and post one card", the ledger, Approach B and Approach C wait for this rethink.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** v1
 
 ## Daten
 
@@ -113,16 +174,6 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
-
-### Pilot gate: decide keep/remove for the Daten page
-
-**What:** 8 weeks after the first public data release, decide keep/remove using `gh release view --json assets` download counts, any inbound question or citation, and whether the builder himself used the downloaded file for anything.
-
-**Why:** The user's own go/no-go framing ("if it doesn't work for v1, that is not a deal breaker"); the audience ("developers and researchers") is chosen, not demand-tested, so this is the cheap way to find out without a demand study.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
 
 ### Export robustness gaps found by the codebook review
 
@@ -471,18 +522,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** summary data available
 
-### Five-reader comprehension test of the week radar
-
-**What:** Sit five intended readers in front of the week radar and a plain weekly index of the same week; ask what happened, what changed, where they would verify it; measure correct answers and time.
-
-**Why:** The plan verifies rendering and numbers, not whether a citizen understands the week better (Codex CEO-review challenge). The June design doc's "honest test" is the builder's own use.
-
-**Context:** No code. Use a frozen build (`--today`/`--week`) so every reader sees the same page. Record answers per section (header, rows, Außerdem, Wochenvergleich).
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
-
 ### Puls outward (batch 7): deferred review findings
 
 **What:** The /gstack-review of `fix/todo-batch-7-puls-outward` and the v0.28.0.0 /ship (2026-11-01) left these:
@@ -724,7 +763,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 ### Design hand-over leftovers
 
 **What:**
-- `PRODUCT.md:58` says the votes archive renders from report JSON and only the Abgeordnete, Fakten and Daten pages read the store. The archive has rendered from the store since #133.
 - The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.
 - `docs/designs/gesetzesvorhaben.md:300` names the removed TODO "DESIGN.md, tokens and a typeface decision".
 - `README.md:494` and `docs/project-documentation.md:21,313` link to `docs/design/bundestag-pulse-design.md`, deleted in ad389bf. Remove the links or point them at `PRODUCT.md` and `DESIGN.md`.
