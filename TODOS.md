@@ -688,7 +688,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 ### Apply DESIGN.md to the site
 
-**What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04. No site page uses it yet. Apply it in the current Python renderer:
+**What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04, and revised with the owner on 2026-11-06. No site page uses it yet. Apply it in the current Python renderer:
 1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
 2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
 3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values were not tuned against the design's grounds.
@@ -714,7 +714,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Effort:** L
 **Priority:** P2
-**Depends on:** the owner's answer on the two "Awaiting owner" rows in `DESIGN.md`
+**Depends on:** None
 
 ### Design hand-over leftovers
 
