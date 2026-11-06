@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0.1] - 2026-11-06
+
+A stronger test for roll-call member rows. Only a test changes, so no figure moves.
+
+### Changed
+
+- **The store test for members whose card links back to the Abstimmung now checks every group's rows against its counts.** It already caught those members folding into one person. It now also fails when a Stimme is stored with the wrong vote or under the wrong group, or when a group's `vote_fractions` row is missing.
+
 ## [0.33.0.0] - 2026-11-05
 
 Twenty small backlog items. No row of the store moved, and every recipe publishes the same rows as before (measured on a 716-sitting store, main's code against this one).
