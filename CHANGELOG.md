@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.0.0] - 2026-11-06
+
+A roll-call Stimme now counts for the group its member belonged to on the day, where the Bundestag's own page files it under another. A data user can read both: the corrected group and the one the page lists.
+
+### Fixed
+
+- **100 Stimmen in 55 roll-calls of WP 19 and 20 count for the group the MdB-Stammdaten prove.** The vote pages list six MdBs (Kamann, Bülow, Pasemann, Witt, Huber, Heßenkemper) under the wrong group on those days; the Bundestag's Textarchiv agrees with the Stammdaten in every case. Old and new values, measured on the same store against the code before this change:
+  - `vote_fractions`: 146 rows change, and no vote's total.
+  - Mehrheitsvotum: 9 fraktionslos rows change.
+  - Abweichungen: 3,711 → 3,720, all Bülow under the SPD. Recipe r3: 1,389 → 1,390 rows.
+  - Seat cross-check: `shift_between_groups` 55 → 0, agreeing roll-calls 551 → 606.
+  - Fakten: 0 of 1,908 move.
+  - Per vote and group: `docs/plans/e4-refiled-votes-old-new.tsv`.
+- **A Stimme stays where the page has it wherever the Stammdaten prove nothing:** a vote after the file's Stand, a group change on the vote's own day (the 111 Gruppe rows of 2024-02-02), a name without one MdB in that Wahlperiode, or a vote whose rows can't absorb the move.
+
+### Changed
+
+- **Schema 11, export format 16: `vote_members.listed_party_id` holds the group the page lists wherever a Stimme moved,** so the page's counts can be read back from the store. A person's record keeps the page's group, so no one's Reden and Stimmen split. An older store needs `--offline --repersist`.
+- **The dossier panel shows the corrected groups and names each member it moved,** with the group on the Bundestag page. The Quellen card, the Daten page's Datenstand line and the DATA.md dictionary say the file also decides these groups.
+- **A release needs the MdB-Stammdaten.** A tagged export and `publish_dip_pulse_data.py` refuse a store built without them, because all 100 Stimmen would be back under the page's group while DATA.md describes the correction. A local build still runs, and its warning says what is missing.
+- **A plain `--offline` render corrects from the cached file too, and stops with a named error if that file can't be read.**
+
 ## [0.33.0.1] - 2026-11-06
 
 A stronger test for roll-call member rows. Only a test changes, so no figure moves.
