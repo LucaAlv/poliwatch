@@ -18,6 +18,7 @@ from unittest import mock
 
 import _support  # noqa: F401
 import build_dip_pulse_site as build
+import derive
 import facts
 import persist_dip_pulse_store as pulse_store
 import speech_kinds
@@ -885,6 +886,17 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("stammdaten: cross-check of ", err)
         report = json.loads(stammdaten.crosscheck_path(self.database).read_text(encoding="utf-8"))
         self.assertEqual(report["sha256"], "ab" * 32)
+
+    # Value: protects=a plain --offline render with an unreadable cached MdB-Stammdaten file stops with exit 1 and
+    #   names the file before any page is rendered; fails_when=main drops the DatabaseRebuildError handler (a
+    #   traceback) or renders the pages with panels the store disagrees with; why_new=E4 added this branch to main;
+    #   seam=main with read_cached_stammdaten raising
+    def test_an_offline_render_with_an_unreadable_stammdaten_file_stops(self) -> None:
+        with mock.patch.object(build, "read_cached_stammdaten", side_effect=derive.StammdatenError("kaputt")):
+            code, err = self.run_main()
+        self.assertEqual(code, 1, err)
+        self.assertIn("ERROR [cached input]: The cached MdB-Stammdaten cannot be read: kaputt", err)
+        self.render.assert_not_called()
 
     # Value: protects=the Vorgang cache file in the site directory is loaded by main and its Sachgebiete reach the store on --offline --repersist; fails_when=main stops loading or passing the cache, so every tag silently becomes not_fetched; why_new=other tests hand the cache to persist_report directly or have none; seam=none
     def test_an_offline_repersist_reads_the_cache_file_and_stores_sachgebiet_tags(self) -> None:

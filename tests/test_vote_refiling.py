@@ -4,7 +4,9 @@ roll-call group misattributions (E4) from the MdB-Stammdaten")."""
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import sqlite3
 import tempfile
 import time
@@ -153,6 +155,9 @@ class RefileRuleTests(unittest.TestCase):
     # Value: protects=a vote whose counts cannot absorb the moves is left as the page has it, whole, and says so;
     #   fails_when=negative counts, or half a vote re-filed; why_new=the page's rows and member list can disagree;
     #   no_claim=which side of such a page is right; seam=none
+    # Value (extension): protects=a vote whose second move cannot be absorbed has none of its members marked, and
+    #   refile_vote_members says False; fails_when=a member is marked inside the checking loop, before all moves
+    #   fit; why_new=every earlier case failed on its first move; seam=none
     def test_counts_that_cannot_absorb_the_move_leave_the_vote_alone(self) -> None:
         for the_vote in (
             vote(member("Kamann, Uwe", "fraktionslos", "no"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)]),
@@ -161,6 +166,13 @@ class RefileRuleTests(unittest.TestCase):
         ):
             self.assertEqual(filed(the_vote, KAMANN), [], the_vote["members"])
             self.assertEqual(derive.filed_fractions(the_vote), derive.merge_fractions(the_vote["fractions"]))
+        # Two moves out of one group: the first fits, the second cannot, and the vote stays whole, the first member unmarked.
+        the_vote = vote(member("Kamann, Uwe", "fraktionslos", "no"), member("Muster, Max", "fraktionslos", "no"),
+                        fractions=[fraction("AfD", no=2), fraction("fraktionslos", no=1)])
+        two = [*KAMANN, row("Max Muster", "AfD", "2017-10-24", None)]
+        self.assertFalse(derive.refile_vote_members(the_vote, 19, derive.refiling_source(two, STAND)))
+        self.assertEqual([m.get("refiled_to") for m in the_vote["members"]], [None, None])
+        self.assertEqual(derive.filed_fractions(the_vote), derive.merge_fractions(the_vote["fractions"]))
 
     # Value: protects=the correction is worked out from what the page printed on every run: applying it twice
     #   moves nothing twice, and without the Stammdaten or with a file that no longer says so the page returns;
@@ -181,6 +193,9 @@ class RefileRuleTests(unittest.TestCase):
     # Value: protects=the Abweichler read the corrected group: Kamann is counted against the AfD's Mehrheitsvotum,
     #   and the groups still add up to the vote (R3, the panel, the archive); fails_when=vote_abweichler or
     #   vote_groups_cover_total read the page's fields; why_new=E4 names them as affected; seam=none
+    # Value (extension): protects=Kamann (Ja) is the AfD's one Abweichler against three Nein, not a tie in a group;
+    #   fails_when=vote_abweichler reads the page's faction or rows; why_new=the first fixture is a tie, so reverting
+    #   passed; seam=none; no_claim=vote_groups_cover_total, which a move cannot change (sums stay)
     def test_abweichler_and_the_vote_total_read_the_filed_groups(self) -> None:
         the_vote = vote(member("Kamann, Uwe", "fraktionslos", "yes"), member("Müller, Max", "AfD", "no"),
                         fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)])
@@ -191,6 +206,15 @@ class RefileRuleTests(unittest.TestCase):
         self.assertEqual(groups["AfD"]["state"], "complete")
         self.assertTrue(derive.vote_groups_cover_total(the_vote))
         self.assertEqual(derive.vote_abweichler_count(the_vote), 0)
+        # No tie: three AfD Nein and Kamann's Ja. Under the page's group (fraktionslos) he dissents from no one.
+        the_vote = vote(member("Kamann, Uwe", "fraktionslos", "yes"), *(member(f"Müller{i}, Max", "AfD", "no") for i in range(3)),
+                        fractions=[fraction("AfD", no=3), fraction("fraktionslos", yes=1)])
+        the_vote["total"] = {"yes": 1, "no": 3, "abstain": 0, "absent": 0}
+        filed(the_vote, KAMANN)
+        groups = derive.vote_abweichler(the_vote)
+        self.assertEqual([m["name"] for m in groups["AfD"]["members"]], ["Kamann, Uwe"])
+        self.assertEqual(derive.vote_abweichler_count(the_vote), 1)
+        self.assertTrue(derive.vote_groups_cover_total(the_vote))
 
 
 class ReportTests(unittest.TestCase):
@@ -284,6 +308,9 @@ class PanelTests(unittest.TestCase):
     # Value: protects=the dossier panel shows the same groups as the store, Kamann under the AfD, and says where it
     #   differs from the linked Bundestag page; fails_when=the panel reads the page's fields, or a reader checking the
     #   source finds an unexplained difference; why_new=the panel renders from the report; seam=vote_summary
+    # Value (extension): protects=the panel's group rows are the filed ones: the AfD row gains the Ja, an emptied group
+    #   has no row; fails_when=render_vote_summary builds rows with merge_fractions; why_new=the member grid was
+    #   asserted, the tally rows never; seam=vote_summary
     def test_the_panel_shows_the_filed_groups_and_names_the_difference(self) -> None:
         the_vote = vote(member("Kamann, Uwe", "fraktionslos", "yes"), member("Müller, Max", "fraktionslos", "no"),
                         fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1, no=1)])
@@ -293,6 +320,14 @@ class PanelTests(unittest.TestCase):
         self.assertNotIn("Kamann, Uwe", rendered.split("<h4>fraktionslos</h4>")[1])
         self.assertIn("Kamann, Uwe bei AfD (dort fraktionslos)", rendered)
         self.assertIn("MdB-Stammdaten", rendered)
+        # The group rows are the filed ones too: the AfD gains his Ja, and fraktionslos, left with nobody, has no row.
+        sole = vote(member("Kamann, Uwe", "fraktionslos", "yes"), member("Müller, Max", "AfD", "no"),
+                    fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)])
+        filed(sole, KAMANN)
+        rows = vote_summary({"index": 1, "votes": [sole]}, {"acquisition_state": "complete"}).split('<div class="vote-fractions">')[1].split('<p class="vote-state-note">')[0]
+        self.assertIn("<strong>AfD</strong>", rows)
+        self.assertIn('title="ja: 1"', rows)
+        self.assertNotIn("<strong>fraktionslos</strong>", rows)
 
     # Value: protects=a vote with nothing moved has no such line; fails_when=the note renders unconditionally;
     #   why_new=the note is new; seam=vote_summary
@@ -340,6 +375,35 @@ class CachedStammdatenTests(unittest.TestCase):
         with mock.patch.object(build, "read_cached_stammdaten", side_effect=derive.StammdatenError("kaputt")):
             with self.assertRaises(build.DatabaseRebuildError):
                 build.refile_entry_votes([self.entry()], self.database)
+
+    # Value: protects=a rebuild from cached reports files the Stimmen from the cached Stammdaten into the store, a vote
+    #   whose counts cannot absorb the move stays as the page has it, and stderr names it; fails_when=the rebuild
+    #   skips refile_entry_votes, or drops the refused warning; why_new=only refile_entry_votes was called directly;
+    #   seam=rebuild_database_from_entries, read_cached_stammdaten patched and seat counts skipped (one MdB, no legal size)
+    def test_a_rebuild_files_the_votes_and_names_a_refused_one(self) -> None:
+        good = vote(member("Kamann, Uwe", "fraktionslos", "yes"), member("Müller, Max", "AfD", "no"),
+                    fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)], vote_id="501")
+        refused = vote(member("Kamann, Uwe", "fraktionslos", "no"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)],
+                       vote_id="502")
+        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+                  "protocol": {"id": "p19-30", "dokumentnummer": "19/30", "datum": "2018-06-01"},
+                  "agenda_items": [{"index": 1, "heading": "Test", "votes": [good, refused]}]}
+        entries = [{"report": report, "report_path": Path(self._tmp.name) / "plenarprotokoll-19-30.json"}]
+        self.database.parent.mkdir(parents=True)
+        err = io.StringIO()
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=self.records()), \
+                mock.patch.object(build, "rebuild_seat_counts"), contextlib.redirect_stderr(err):
+            build.rebuild_database_from_entries(self.database, entries, preserve_roster=False)
+        conn = sqlite3.connect(self.database)
+        self.addCleanup(conn.close)
+        self.assertEqual(
+            conn.execute("""SELECT substr(v.detail_url, -3), p.name, l.name FROM vote_members vm JOIN votes v ON v.id = vm.vote_id
+                            JOIN mps m ON m.id = vm.mp_id JOIN parties p ON p.id = vm.party_id
+                            LEFT JOIN parties l ON l.id = vm.listed_party_id
+                            WHERE m.display_name = 'Kamann, Uwe' ORDER BY 1""").fetchall(),
+            [("501", "AfD", "fraktionslos"), ("502", "fraktionslos", None)])
+        self.assertIn("refile: 1 Stimmen in 1 Abstimmungen", err.getvalue())
+        self.assertRegex(err.getvalue(), r"warning: \[refile\] the fraction rows of 1 votes cannot absorb the moves.*502")
 
 
 class StoreSchemaTests(unittest.TestCase):
