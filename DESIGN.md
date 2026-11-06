@@ -1,9 +1,9 @@
 ---
 # gstack: design-md-format=spec
 name: Stimmkarte
-description: The room where the votes are counted, with the doors open. A light page, edged sheets from the record, cards you could count by hand.
+description: The room where the votes are counted, with the doors open. A white page, edged sheets from the record, cards you could count by hand.
 colors:
-  ground: "#F7F7F3"
+  ground: "#FFFFFF"
   ground-dark: "#232427"
   slip: "#FFFFFF"
   slip-dark: "#3A3C40"
@@ -170,7 +170,7 @@ components:
 
 # Stimmkarte
 
-**Not ready to apply: two values below await the owner:** controls at 44px (approved 36px) and source-printed counts on the slip (approved list named counts as ground). See the Decisions Log. The open direction (2026-11-06) follows the owner's request for something lighter, and their first look at it is also still open. Remove this note once these are answered. The v1 surfaces, navigation and name here follow the owner's decisions of 2026-11-06 (`docs/plans/v1-scope-review.md`, commit cc0b0f7).
+**Not ready to apply: two values below await the owner:** controls at 44px (approved 36px) and source-printed counts on the slip (approved list named counts as ground). See the Decisions Log. Remove this note once these are answered. The v1 surfaces, navigation and name here follow the owner's decisions of 2026-11-06 (`docs/plans/v1-scope-review.md`, commit cc0b0f7).
 
 ## Overview
 
@@ -202,7 +202,7 @@ components:
 
 **Key characteristics:**
 - A vote is shown as one card per member, so absences are visible.
-- An edged white sheet means the source prints it; the open page means this site worked it out.
+- An edged sheet means the source prints it; the open page means this site worked it out.
 - A short line connects a figure to the slip holding its source.
 - References are set at reading size in full ink, never as grey small print.
 - No photos, donuts, icons in tiles or a box around everything.
@@ -213,7 +213,7 @@ components:
 
 **Votes use the Bundestag's own ballot colours.** [Members vote with blue, red and white cards](https://www.bundestag.de/services/glossar/nam_abst-245502), so this colour has a source. A vote is always a card. Enthaltung is a white card with an outline in `vote-abstain-line`, 1.5px, or 1px at the phone card size so a 5px card keeps its white. "Nicht abgegeben" is a low stub in `vote-absent`, so a missing vote reads as a gap.
 
-**Vote colours need a light surface.** Cards and key swatches on a vote's page sit on the slip, because a member's vote is the record. In a list the strip sits directly on the page, since Nein reaches 3.20:1 on #F7F7F3. It would miss 3:1 below about #F1F1ED, and the strip would then need its slip back.
+**Vote colours need a light surface.** Cards and key swatches on a vote's page sit on the slip, because a member's vote is the record. In a list the strip sits directly on the page, since Nein reaches 3.44:1 on #FFFFFF. It would miss 3:1 below about #F1F1ED, and the strip would then need its slip back.
 
 **A card shows the ballot, never its meaning.** Blue is Ja on every vote. On a vote where a Ja means "gegen den Antrag" (`inverted`), the colours stay and the words change: see Vote wall.
 
@@ -230,17 +230,17 @@ components:
 - A figure the site corrected is no longer as printed. A count re-filed from the MdB-Stammdaten stays in its row and says so in words, with both numbers and the source.
 - Headings and navigation carry no provenance. A heading sits with the content it introduces.
 
-**The surface never carries provenance alone.** Slip against ground is 1.07:1 in light mode and 1.40:1 in dark mode, and no ground value tested reaches 3:1 against white. On the light page the sheet is told apart by its edge, not its white. Three cues are binding on every slip: the `slip-edge` line (3:1 or better against the ground in both modes), the source line leading to it, and a named reference inside it. The footer of every page states the rule in words.
+**The surface never carries provenance alone.** In light mode slip and ground are the same white (1.00:1), and in dark mode they differ by 1.40:1, so on the light page the sheet is told apart by its edge alone. Three cues are binding on every slip: the `slip-edge` line (3:1 or better against the ground in both modes), the source line leading to it, and a named reference inside it. The footer of every page states the rule in words.
 
-**Light or dark:** dark is a chosen pair of values, not an inversion, and the slip stays lighter than the ground in both modes. The site follows the saved choice first (`bundestag-pulse-theme`), then `prefers-color-scheme`, and is light when neither says dark. The toggle stays.
+**Light or dark:** dark is a chosen pair of values, not an inversion, and the slip is never darker than the ground. The site follows the saved choice first (`bundestag-pulse-theme`), then `prefers-color-scheme`, and is light when neither says dark. The toggle stays.
 
 **Interaction has no colour.** Links are ink with a 1px underline in `slip-edge`, which turns ink and 2px on hover. Focus is a 2px ink outline with a 2px offset. Selection inverts ink and ground. Visited links look the same as unvisited ones, which keeps source lists calm.
 
 **Measured limits** (WCAG contrast computed from these values; colour-blind separation from the dataviz validator, all-pairs mode, re-run 2026-11-06):
 - All text pairs reach 4.5:1 or better on ground and slip (lowest: muted text on the dark slip, 6.6:1).
-- All Fraktion colours reach 3:1 on both surfaces in both modes (lowest: FDP 4.80:1 on the light ground, SPD 3.21:1 on the dark slip).
-- Vote colours reach 3:1 on the slip in both modes (lowest: Nein 3.44:1 light, 3.10:1 dark). On the ground Nein reaches 3.20:1 in light mode and 4.36:1 in dark mode, so the list strip can sit on the page in both.
-- `slip-edge` reaches 3.35:1 on the light ground and 3.59:1 on the slip; 4.32:1 and 3.07:1 in dark mode.
+- All Fraktion colours reach 3:1 on both surfaces in both modes (lowest: FDP 5.15:1 on the light page, SPD 3.21:1 on the dark slip).
+- Vote colours reach 3:1 on the slip in both modes (lowest: Nein 3.44:1 light, 3.10:1 dark). On the ground Nein reaches 3.44:1 in light mode and 4.36:1 in dark mode, so the list strip can sit on the page in both.
+- `slip-edge` reaches 3.59:1 on the light page and sheet; 4.32:1 and 3.07:1 in dark mode.
 - Fraktion hues do **not** pass colour-blind separation. The worst pairs are SPD and FDP in light mode and BSW and AfD in dark mode (both ΔE 3.7, deuteranopia; tritanopia worst 2.6 and 2.8). Some pairs also miss the full-vision floor of 15 (Grüne and FDP 13.3 in light mode, BSW and Linke 12.4 in dark mode). Red against green cannot be fixed while keeping the conventional colours.
 - Outside the validator's bands: CDU/CSU on purpose, in both modes, because it is conventionally black (light 0.252, dark 0.836, chroma near zero). Linke, FDP and BSW in dark mode sit just above the lightness band (0.672 to 0.685 against 0.67), and contrast still passes.
 - Ja and Nein differ clearly in hue, with lightness contrast of 1.94:1 in light mode and only 1.14:1 in dark mode. Someone who sees no hue relies on the grouping and the printed counts.
@@ -348,7 +348,7 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 
 **Reading a speech.** One slip per Rede, hugging the measure: name in `name-large` with the Fraktion bar, the reference to the right (below on a phone), paragraphs in `body`. A Zwischenfrage or Kurzintervention stays inside the Rede, indented between hairlines under a small heading saying what it is and who asked, with a note that it is not counted as a Rede. Above the slips, a list of the speakers in order, each a full target with Fraktion and page. Never a box inside the slip.
 
-**Controls.** 44px minimum height at every width, 1px `slip-edge` outline (3.35:1), no fill, no colour, pressed state inverted. Every control has hover, focus-visible, pressed and disabled states; disabled uses the muted colour with a dashed outline and is never low-contrast text carrying needed information. One primary form exists, filled ink, for the single main action of a page such as a download.
+**Controls.** 44px minimum height at every width, 1px `slip-edge` outline (3.59:1), no fill, no colour, pressed state inverted. Every control has hover, focus-visible, pressed and disabled states; disabled uses the muted colour with a dashed outline and is never low-contrast text carrying needed information. One primary form exists, filled ink, for the single main action of a page such as a download.
 - **Targets.** A link alone on its line is a 44px target at phone width: nav links, source lists, list actions, a row's title, a reference on a slip, any link that is the only thing in its paragraph. Where the row must not grow, the link takes 11px of padding and the same negative margin. A link inside a sentence is not a target.
 - **Filters.** Up to six options are a row of buttons, seven or more a native `<select>`, at every width, so 23 buttons never stack above a list. Every field has a visible label, never a placeholder alone. A field is a control, not a slip, so it has no white fill.
 
@@ -413,7 +413,7 @@ For the one shared stylesheet. Values come from the front matter; the classes ar
 ```css
 :root {
   color-scheme: light;
-  --ground: #F7F7F3; --slip: #FFFFFF; --edge: #85878C;
+  --ground: #FFFFFF; --slip: #FFFFFF; --edge: #85878C;
   --ink: #1C1E22; --ink-2: #4A4C52; --hair: #1C1E2226; --ghost: #1C1E2226;
   --v-ja: #2456BE; --v-nein: #E5604D; --v-enth-fill: #FFFFFF; --v-enth-line: #6E7074; --v-abs: #6E7074;
   --f-cdu: #222222; --f-afd: #0B6FA3; --f-spd: #B5121E; --f-gruene: #087A58;
@@ -516,3 +516,4 @@ Name to slug: CDU/CSU `cdu`; AfD `afd`; SPD `spd`; BÜNDNIS 90/DIE GRÜNEN `grue
 | 2026-11-06 | The list strip sits on the page, with no slip around it | At #F7F7F3 Nein reaches 3:1 on the ground, so the box around every row is no longer needed. The Enthaltung outline and the absent stub take #6E7074, so a large Enthaltung no longer reads as a black block |
 | 2026-11-06 | The provenance key says "Blatt mit Rand" and "Offene Fläche" | "Weißes Blatt" and "Grund" no longer describe what a reader sees on a page this light |
 | 2026-11-06 | Navigation below 760px is `0.9375rem` with -0.01em tracking and a 4px gap: two rows at 375 and 360 px, three at 320 px | The wider face needed tightening to keep two rows on a 360 px phone. This replaces the measures in the row above on seven links |
+| 2026-11-06 | Owner accepted the open direction and chose ground #FFFFFF | Owner, after comparing in the preview: "much better", and the lightest background is the one they like most. Replaces #F7F7F3 above. The page and the sheet are now the same white, so only the edge, the source line and the named reference mark a source. Contrast only improves; validator re-run on #FFFFFF gives the same ΔE figures. The reader test can still move it |

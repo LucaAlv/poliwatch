@@ -700,7 +700,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 - `DESIGN.md` holds the rules and a component inventory with tokens for the stylesheet.
 - Preview on real data, every surface at 375 px and in dark mode, with a switch back to the earlier look and a page comparing grounds: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte-v2.html`, generator `build_preview_v2.py` beside it, for values and markup.
 - Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
-- Nobody outside this project has seen the design. The five-reader test runs after this rollout, just before launch (decision Q16), so keep to `DESIGN.md` "Held Open Until the Reader Test": the ground and the vote wall stay token-only. Beside its tasks, ask what white and grey mean and what a Ja on the BAföG vote means.
+- Nobody outside this project has seen the design. The five-reader test runs after this rollout, just before launch (decision Q16), so keep to `DESIGN.md` "Held Open Until the Reader Test": the ground and the vote wall stay token-only. Beside its tasks, ask what the edged sheet means and what a Ja on the BAföG vote means.
 - Age and overdue are worked out in the browser (`DESIGN.md`, Stand line), which retires `STALE_AFTER_WEEKS`, "Auswertung vom" and the "Woche läuft" state in `build_dip_pulse_site.py`. The due date needs the scheduled workflow's rule; the identifier format needs the release work.
 - The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so every link `:visited` rule goes (`render_dip_pulse_html.py`, `build_dip_pulse_site.py`).
 - Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks). Put an inverted vote in the tests.
@@ -714,7 +714,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Effort:** L
 **Priority:** P2
-**Depends on:** the owner's look at the open direction, and their answer on the two "Awaiting owner" rows in `DESIGN.md`
+**Depends on:** the owner's answer on the two "Awaiting owner" rows in `DESIGN.md`
 
 ### Design hand-over leftovers
 
