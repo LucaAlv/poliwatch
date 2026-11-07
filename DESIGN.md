@@ -203,7 +203,7 @@ The v1 surfaces, navigation and name here follow the owner's decisions of 2026-1
 **Key characteristics:**
 - A vote is shown as one card per member, so absences are visible.
 - An edged sheet means the source prints it; the open page means this site worked it out.
-- A short line connects a figure to the slip holding its source.
+- A short line connects a figure to the slip holding its source, and the slip opens by naming that source.
 - References are set at reading size in full ink, never as grey small print.
 - No photos, donuts, icons in tiles or a box around everything.
 
@@ -230,7 +230,7 @@ The v1 surfaces, navigation and name here follow the owner's decisions of 2026-1
 - A figure the site corrected is no longer as printed. A count re-filed from the MdB-Stammdaten stays in its row and says so in words, with both numbers and the source.
 - Headings and navigation carry no provenance. A heading sits with the content it introduces.
 
-**The surface never carries provenance alone.** In light mode slip and ground are the same white (1.00:1), and in dark mode they differ by 1.40:1, so on the light page the sheet is told apart by its edge alone. Three cues are binding on every slip: the `slip-edge` line (3:1 or better against the ground in both modes), the source line leading to it, and a named reference inside it. The footer of every page states the rule in words.
+**The surface never carries provenance alone.** In light mode slip and ground are the same white (1.00:1), and in dark mode they differ by 1.40:1, so on the light page the sheet is told apart by its edge alone. Three cues are binding on every slip: the `slip-edge` line (3:1 or better against the ground in both modes), the source line leading to it, and the named source at its top (see Origin line). The footer of every page states the rule in words.
 
 **Light or dark:** dark is a chosen pair of values, not an inversion, and the slip is never darker than the ground. The site follows the saved choice first (`bundestag-pulse-theme`), then `prefers-color-scheme`, and is light when neither says dark. The toggle stays.
 
@@ -270,7 +270,7 @@ Grouping comes from whitespace first: 72px between sections, 32px at phone width
 
 Fraktionen always appear in the same order within a view, by size in that Wahlperiode, never by a rank that changes per row unless the row is itself a ranking.
 
-**Page head.** Back link if there is a parent, then `heading-1`, then the Stand line, then a thin gap if a release is overdue. A back link is navigation, not a kicker, and nothing else stands above the heading.
+**Page head.** Back link if there is a parent, then `heading-1`, then the Stand line, then the Zitieren line where a page takes it there, then a thin gap if a release is overdue. A back link is navigation, not a kicker, and nothing else stands above the heading.
 
 **Stand line.** On every page that shows a figure from the dataset, in `note` size and the body face, with `text-muted`. It holds three things in this order: the page's main release, linked to its entry on Daten; the newest Sitzung in that release with its date; and the data's age ("Release 2026-09-15 · neueste Sitzung 21/94 vom 11.09.2026 (vor 56 Tagen)"). The identifier format is not decided, so that is only an example. Nothing else goes in this line, because a fourth item takes it to four lines on a phone. A dossier or vote names its release, and its protocol's own date stands with the protocol.
 
@@ -283,6 +283,19 @@ Fraktionen always appear in the same order within a view, by size in that Wahlpe
 | Release past its due date | Thin gap "Nicht aktuell", saying which release is missing and since when |
 
 Age alone never says "Nicht aktuell", since a summer recess is not a fault.
+
+**Zitieren line.** Pages show the main release and citations should name stable, so a page holding citable figures says how the two relate. It stands on vote, Sitzung, person and analysis pages, on the ground, in `note` size and full ink, with "Zitieren:" at weight 600 and a link to the citation on Daten. It is its own line, because the Stand line is full. It follows the Stand line, except on a vote's page, where it stands directly under the slip: the verdict's head must leave the evidence on the first screen, and a reader who wants to cite ends at the sources anyway.
+
+| Situation | The line says |
+|-----------|---------------|
+| The record is in stable and unchanged | "Diese Abstimmung steht unverändert im stabilen Stand 2026-08-04." |
+| The record is in stable and corrected since | "Diese Abstimmung steht im stabilen Stand 2026-08-04, wurde seitdem aber korrigiert." It links to the entry under Changes |
+| The record is not yet in stable | "Diese Abstimmung ist noch nicht im stabilen Stand 2026-08-04. Zitierbar ist der laufende Stand 2026-09-15." |
+| Counts over many Sitzungen (person, analysis) | "Diese Zählungen reichen bis Sitzung 21/94, der stabile Stand 2026-08-04 bis Sitzung 21/90." |
+| The latest main release is itself stable | "Der laufende Stand 2026-09-15 ist zugleich der stabile." |
+
+- "In stable" never stands alone, because a reader takes it to mean the same figure. "Unverändert" may only be printed where the build compared the record with the stable release. A page of counts over many Sitzungen gets no yes or no, only how far each release reaches.
+- The line is written at build time, and marking a release as stable changes it. So marking a release as stable rebuilds the pages, which under principle 6 keeps their release.
 
 **Below 760px** the layout changes rather than stacks:
 - Navigation wraps to two rows (see Navigation).
@@ -307,15 +320,15 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 
 **Navigation.** Seven text links in `nav`, in this order at every width: Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen, Daten. Analysen appears once the first analysis exists. Each link is a full target; the current page has a 2px ink underline. No pills or boxes. Nothing is hidden behind a menu, because Analysen is one of the two equal angles and hidden destinations are what today's nav gets wrong. The row simply wraps. Below 760px the links take `0.9375rem` with -0.01em tracking and a 4px gap, which measures two rows at 375 and 360 px and three at 320 px, with no overflow. From 761 px they fit one row. No hamburger, no "Mehr".
 
-**Footer.** A hairline, the provenance key in words ("Blatt mit Rand: steht so in der Quelle. Offene Fläche: von dieser Website berechnet oder zusammengestellt."), then the data note and four links, each a full target: Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz.
+**Footer.** A hairline, the provenance key in words ("Blatt mit Rand: steht so in der Quelle, die das Blatt oben nennt. Offene Fläche: von dieser Website berechnet oder zusammengestellt."), then the data note and four links, each a full target: Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz.
 
 **Home.** The door to both angles, which are weighted equally. `heading-1`, the Stand line, then two doors of the same form, Aktuell and then Analysen: a hairline, a heading link, one sentence, one lead line. Two columns from 761 px, stacked below. At 375 by 667 and 360 by 640 px both doors end on the first screen (the second ends at 620 px); only the overdue gap may push it lower. The public site ships with its first analysis (stage 2); a build before that shows a Gap in the second door, and no Analysen link. Below them "Zuletzt": the latest Sitzung and vote as date-first rows, then the next planned Sitzungswoche, then a link to the dataset. No third door and no list of all areas, since the navigation already is that list.
 
-**Verdict.** On a vote's page: `display` for the outcome word, then the official title, the date and Sitzung, and a note saying the outcome is computed where it is. All of this is ground. The source line leads from here to the slip, which opens with the totals in `figure-row`. On an inverted vote the verdict names the Antrag ("Antrag abgelehnt", from `derive.vote_outcome`), never the bare result of the recommendation.
+**Verdict.** On a vote's page: `display` for the outcome word, then the official title, the date and Sitzung, and a note saying the outcome is computed where it is. All of this is ground. The source line leads from here to the slip, which opens with its origin line, then the totals in `figure-row`. On an inverted vote the verdict names the Antrag ("Antrag abgelehnt", from `derive.vote_outcome`), never the bare result of the recommendation.
 
 **Vote wall.** One card per member, grouped into rows by Fraktion, sorted within a row by Ja, Nein, Enthaltung, nicht abgegeben. Beside each row are the Fraktion's name and the counts the source prints. A key is always visible, with the ballot-card explanation. Detail pages only; lists use the strip. If member rows are incomplete, say so and show the counts, never a partial wall presented as whole.
 - **As text.** Cards are `aria-hidden` and have no `title`, which neither touch nor screen readers receive reliably. Below the key, each Fraktion has a `<details>` ("CDU/CSU: alle 208 Stimmen als Text") listing its members under Ja, Nein, Enthaltung and nicht abgegeben, with counts. Browser search finds a name.
-- **Inverted vote.** On the ground, directly under the title, a sentence states what was voted on and "Ja heißt hier: gegen den Antrag", and one line names who was for and against. On the slip, the sentence the reading rests on comes first, verbatim (`inversion_excerpt`), with its named source (`inversion_source`); where that is only the title on the roll-call page, it says so. The key reads "Ja (hier: gegen den Antrag)". The source's counts and colours do not change. An inverted vote belongs in the tests.
+- **Inverted vote.** On the ground, directly under the title, a sentence states what was voted on and "Ja heißt hier: gegen den Antrag", and one line names who was for and against. On the slip, the sentence the reading rests on comes first, verbatim (`inversion_excerpt`), under its own origin line ("Quelle dieses Satzes:", from `inversion_source`); where that is only the title on the roll-call page, it says so. The counts follow under theirs. The key reads "Ja (hier: gegen den Antrag)". The source's counts and colours do not change. An inverted vote belongs in the tests.
 - **One person's votes.** The same cards in one row per person, one card per vote, oldest first, with the same key and a table as text.
 
 **Strip.** The list form of a vote: a small white bar with a 1px `slip-edge` line, 14px high, directly on the page with no box around it, holding one segment per vote kind in proportion, in the same fills as the cards, with "nicht abgegeben" as a lower stub. Its counts follow in `figure-small`, in words. On an inverted vote a bold line below says "Ja heißt hier: gegen den Antrag." A key opens the list once, also without a box. The strip is `aria-hidden`; the counts carry it.
@@ -325,6 +338,13 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 **Share line.** A horizontal line whose length is the value, with the name and the value as text beside it: 2px in `text-muted` for a neutral share such as a Tagesordnungspunkt's Reden, 4px in the Fraktion's colour for a Fraktion's share. Never stacked, because a segment would then rely on colour alone.
 
 **Source line (Beleg).** A 1px `slip-edge` line, 24px long, runs from a figure to a slip containing the reference (for example "Plenarprotokoll 21/84, S. 10276 D", linked) and, where available, the verbatim sentence. On lists it is a `<details>`, which needs no script; its summary keeps a visible marker, because without one it reads as plain text. Link text must name the source. When the source has no page number, name the protocol and say so.
+
+**Origin line.** The first line inside a slip says where the sheet comes from: "Quelle:" in `note` at weight 600, then the named reference in `reference`, in full ink ("Quelle: bundestag.de, Abstimmung 1009"). On white the edge is the sheet's only visual mark, so the words do the work. It is a 44px target like any reference on a slip.
+- **It names what the rows were read from.** A renderer writes the source it actually used, never a default. A person's facts come from DIP, so the line says DIP. Links to other profiles stand under the slip on the ground, since they are not the sheet's source.
+- **Two sources, two lines.** Each part of a sheet opens with its own line.
+- **Many references.** Where each row carries its own reference, the line names the kind and says so, without a link ("Quelle: Plenarprotokolle des Bundestages, bei jeder Rede genannt").
+- **The exception.** A slip holding only its reference, as in a list's Beleg, is already that line and needs no second one.
+- A corrected count still says so in its row. The line names the source, and it does not promise that every figure stands there unchanged.
 
 **Gap.** A dashed 1px box in `slip-edge` with a short title and the reason in words, on the ground. It looks like an empty place in the file, not an error. Empty states are required on every data view, each with what is missing, why, and a way back where there is one. The thin form states staleness in the page head and does not move between visits.
 
@@ -346,7 +366,7 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 
 **Small multiples.** One panel per Fraktion on a shared axis: a 2px line in the Fraktion's colour, the others as 1px neutral ghost lines, the latest value labelled directly, the name in the panel title. Crosshair and tooltip on hover or touch, plus a table of all values below. Figures are aggregated in Python before they reach a chart.
 
-**Reading a speech.** One slip per Rede, hugging the measure: name in `name-large` with the Fraktion bar, the reference to the right (below on a phone), paragraphs in `body`. A Zwischenfrage or Kurzintervention stays inside the Rede, indented between hairlines under a small heading saying what it is and who asked, with a note that it is not counted as a Rede. Above the slips, a list of the speakers in order, each a full target with Fraktion and page. Never a box inside the slip.
+**Reading a speech.** One slip per Rede, hugging the measure: the origin line with protocol and page, name in `name-large` with the Fraktion bar, paragraphs in `body`. A Zwischenfrage or Kurzintervention stays inside the Rede, indented between hairlines under a small heading saying what it is and who asked, with a note that it is not counted as a Rede. Above the slips, a list of the speakers in order, each a full target with Fraktion and page. Never a box inside the slip.
 
 **Controls.** 44px minimum height at every width, 1px `slip-edge` outline (3.59:1), no fill, no colour, pressed state inverted. Every control has hover, focus-visible, pressed and disabled states; disabled uses the muted colour with a dashed outline and is never low-contrast text carrying needed information. One primary form exists, filled ink, for the single main action of a page such as a download.
 - **Targets.** A link alone on its line is a 44px target at phone width: nav links, source lists, list actions, a row's title, a reference on a slip, any link that is the only thing in its paragraph. Where the row must not grow, the link takes 11px of padding and the same negative margin. A link inside a sentence is not a target.
@@ -355,9 +375,9 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 **Code and downloads.** SQL sits on the ground between hairlines, in mono at note size, and scrolls inside a focusable region. A checksum is mono and wraps anywhere. A file's size and format stand beside its link.
 
 **Daten.** On the ground, since this is the site's own product, in this order: the Stand line, one sentence, the two releases, why they differ, citation, coverage per year, changes, recipes, and a link to `DATA.md`, which holds schema and codebook.
-- **Two releases.** Side by side from 761 px, stacked below, in the same form: heading, identifier in mono, one sentence, download, CSV link, checksum. "Stabiler Stand" with `stable` beside it comes first and takes the page's one primary control, because citations should name it, and its sentence gives the last date it was reviewed by hand. "Laufender Stand" with `main` beside it takes the outline control, and its sentence says it passed every automatic check and that the site always shows it. Where the latest main release is itself the stable one, the sentence says so. No wording may suggest main is unchecked: a failed check publishes nothing.
+- **Two releases.** Side by side from 761 px, stacked below, in the same form: heading, identifier in mono, one sentence, SQLite download, CSV control, checksum. The CSV control is an outline control on both releases, with the number of files and their total size in its label. It is a `<details>` that opens the list of files in place, each with its size and a 44px link. "Stabiler Stand" with `stable` beside it comes first and takes the page's one primary control, because citations should name it, and its sentence gives the last date it was reviewed by hand. "Laufender Stand" with `main` beside it takes the outline control, and its sentence says it passed every automatic check and that the site always shows it. Where the latest main release is itself the stable one, the sentence says so. No wording may suggest main is unchecked: a failed check publishes nothing.
 - **Why they differ.** One visible sentence directly below both: main holds newer Sitzungen and corrections, and stable was also reviewed by hand and stays frozen, so a cited figure can be checked.
-- **Citation.** The code form, but it wraps instead of scrolling, because it is copied whole. It names the stable release and its DOI.
+- **Citation.** The code form, but it wraps instead of scrolling, because it is copied whole. It names the stable release and its DOI. One note below gives the form for a single vote or Sitzung, and says a Sitzung not yet in stable is cited by the main release and its date, since every main release is kept.
 - **Coverage per year.** A table, newest year first: year, Sitzungen in the record, Sitzungen left out, with a link to Sitzungen for the reasons. No chart: nobody compares these values by eye.
 - **Changes.** A list with the date first, then `main` or `stable`, then one line. A moved figure gives its old and new value.
 - **Recipes.** One `<details>` each, holding the SQL and its result table.
@@ -371,6 +391,8 @@ Landmarks on every page (`header`, `nav` with a label, `main`, `footer`) and a s
 - Do show every Fraktion colour with the Fraktion's name beside it. Colour never identifies a Fraktion alone.
 - Do facet Fraktionen into panels or rows, with a table view for every chart.
 - Do put a source line on every figure a reader might cite.
+- Do open every slip with its origin line, unless the slip holds only its reference.
+- Do say on a page of citable figures how it relates to the stable release, and never print "unverändert" without having compared.
 - Do show gaps in words, with the reason.
 - Do take away lines, weight and boxes before anything a reader could check.
 - Do run the dataviz validator when adding a Fraktion colour, and record the result here.
@@ -447,6 +469,7 @@ For the one shared stylesheet. Values come from the front matter; the classes ar
 | Door | `.doors`, `.door`, `.door-what`, `.door-lead` | ground | `heading-2`, `body`, `name`, `--hair` | Home only; one column below 760px |
 | Slip | `.slip`, `.slip.tight` | slip | `--slip`, `--edge`, `--s5`; tight `--s2 --s3`; `--s3` below 760px | `box-shadow: 0 0 0 1px var(--edge)` |
 | Source line | `.faden`, `details.beleg` | ground to slip | 1px by `--s5`, `--edge` | Summary keeps a marker |
+| Origin line | `.origin`, `.lab` | slip | `note`, `reference`, `--ink`, `--target` | First in the slip; one per source |
 | Verdict | `.verdict`, `.what`, `.meaning` | ground | `display`, `title`, `body` | Then `.faden` and the slip |
 | Totals | `.totals`, `.swatch` | slip | `figure-row`, `--v-*` | Swatch 10 by 18 px, stub 10 by 7 px |
 | Vote wall | `.wall-row`, `.cards i` | slip | `name-large`, `figure-small`, `--cw`, `--ch`, `--cg`, `--enth-w`, `--v-*` | Stub 5px, 4px below 760px; `aria-hidden` |
@@ -458,8 +481,10 @@ For the one shared stylesheet. Values come from the front matter; the classes ar
 | List row | `.vrow`, `.brow`, `.rrow` | ground | `heading-3`, `figure`, `--hair` | Title may clamp to 4 lines; radar rows set their title at 1.5rem to 1.875rem |
 | Lead figure | `.huge`, `.figs .big` | ground | `figure-lead`, `figure-row` | Label on the same line below 760px |
 | Stand line | `.stand`, `time[data-age]`, `[data-due]` | ground | `note`, `--ink-2` | Under the page heading; age and overdue come from script |
+| Zitieren line | `.zitier`, `.lab` | ground | `note`, `--ink` | Under the Stand line; on a vote's page under the slip |
 | Sitzung row | `.srow` | ground | mono `figure`, `--target`, `--hair` | Date on its own line below 760px |
 | Release | `.releases`, `.release`, `.rel-id`, `.rel-kind`, `.why` | ground | `heading-2`, mono, `--target` | Stable first and primary |
+| CSV control | `details.csv`, `summary.ctl` | ground | `--target`, 1px `--edge` | Keeps a marker; opens the file list |
 | Citation | `.code.cite-text` | ground | mono `note`, `--hair` | Wraps, never scrolls |
 | Changes | `.relog` | ground | mono `figure`, `--hair` | Date first |
 | Gap | `.gap`, `.gap.thin` | ground | 1px dashed `--edge`, `heading-3` | Thin form in the page head |
@@ -517,3 +542,7 @@ Name to slug: CDU/CSU `cdu`; AfD `afd`; SPD `spd`; BÜNDNIS 90/DIE GRÜNEN `grue
 | 2026-11-06 | The provenance key says "Blatt mit Rand" and "Offene Fläche" | "Weißes Blatt" and "Grund" no longer describe what a reader sees on a page this light |
 | 2026-11-06 | Navigation below 760px is `0.9375rem` with -0.01em tracking and a 4px gap: two rows at 375 and 360 px, three at 320 px | The wider face needed tightening to keep two rows on a 360 px phone. This replaces the measures in the row above on seven links |
 | 2026-11-06 | Owner accepted the open direction and chose ground #FFFFFF | Owner, after comparing in the preview: "much better", and the lightest background is the one they like most. Replaces #F7F7F3 above. The page and the sheet are now the same white, so only the edge, the source line and the named reference mark a source. Contrast only improves; validator re-run on #FFFFFF gives the same ΔE figures. The reader test can still move it |
+| 2026-11-07 | Every slip opens with an origin line, one per source | Impeccable critique, P1: provenance is the promise and barely shows on white. The reference often stood at the sheet's end, after up to 630 cards. Words carry it now; white and the edge stay. Writing it down found that a person's facts come from DIP (`persist_dip_pulse_store.py` reads `funktion` from a DIP person), not the MdB-Stammdaten, and that abgeordnetenwatch.de was inside a sheet it is no source of |
+| 2026-11-07 | A Zitieren line on vote, Sitzung, person and analysis pages, with five states | Critique, P1: pages show main, Daten says cite stable, nothing connected them. "In stable" alone would read as "same figure" after a correction, so "unverändert" needs a comparison and a corrected record gets its own state. Analysis pages are beyond the critique's list, because they hold the figures most likely to be cited |
+| 2026-11-07 | On a vote's page the Zitieren line stands under the slip | In the head it pushed the totals to 673 px at 375 by 667, off the first screen; under the slip they start at 621 px. The rule that the evidence starts on the first screen wins over one place for the line on every page. Judgement by the design session, not tested with readers |
+| 2026-11-07 | CSV is an outline control that opens the file list in place | Critique, P1: the main download was 252 MB of SQLite and the CSV a small link that led nowhere. Stable's SQLite keeps the page's one primary control. A release has 29 CSV files and no single archive, so the control lists them instead of pretending to be one download |
