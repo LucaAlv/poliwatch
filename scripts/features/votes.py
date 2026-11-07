@@ -494,11 +494,23 @@ def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, co
     return ""
 
 
+def _refiled_note_html(vote: dict[str, Any]) -> str:
+    """Says where the groups differ from the linked Bundestag page, and why."""
+    moved = [
+        f'{member.get("name")} bei {member["refiled_to"]} (dort {member.get("faction")})'
+        for member in sorted(vote.get("members") or [], key=lambda value: str(value.get("name") or ""))
+        if member.get("refiled_to")
+    ]
+    if not moved:
+        return ""
+    return f'<p class="vote-state-note">{html.esc("Anders als auf der Bundestag-Seite, nach den MdB-Stammdaten gezählt: " + "; ".join(moved) + ".")}</p>'
+
+
 def _member_sections_html(vote: dict[str, Any], panel: VotePanelContext) -> str:
     """The Einzelstimmen grid, one section per group, fraktionslos last."""
     member_groups: dict[str, list[dict[str, Any]]] = {}
     for member in vote.get("members") or []:
-        member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
+        member_groups.setdefault(str(member.get("refiled_to") or member.get("faction") or "Unbekannt"), []).append(member)
     member_sections = []
     for faction in sorted(member_groups, key=lambda value: (value == "fraktionslos", value)):
         rows = []
@@ -561,7 +573,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         no_members = bool(abweichler) and all(group["state"] == "no_members" for group in abweichler.values())
         fraction_rows = "".join(
             _fraction_group_html(fraction, abweichler, no_members, panel, vote)
-            for fraction in derive.merge_fractions(vote.get("fractions"))
+            for fraction in derive.filed_fractions(vote)
         )
         committee_line = render_committee_line(derive.vote_committees(vote, panel.report), document_links, document_chambers)
         total = vote.get("total") or {}
@@ -597,7 +609,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{render_vote_lead(vote, panel.report, panel.site_prefix)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
+            f'{render_vote_lead(vote, panel.report, panel.site_prefix)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>{_refiled_note_html(vote)}'
             f'{_abweichler_summary_html(abweichler, no_members, derive.vote_abweichler_count(vote, abweichler))}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'

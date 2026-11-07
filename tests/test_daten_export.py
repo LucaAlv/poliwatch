@@ -1241,7 +1241,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 15)
+        self.assertEqual(manifest["export_format"], 16)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1736,7 +1736,26 @@ class ExportDistributionDataTests(unittest.TestCase):
             conn.close()
         manifest = self.export()
         self.assertIsNone(manifest["stammdaten"])
-        self.assertIn("Sitzzahlen: keine (MdB-Stammdaten nicht geladen)", b.render_daten_datenstand(manifest))
+        line = b.render_daten_datenstand(manifest)
+        self.assertIn("Sitzzahlen: keine (MdB-Stammdaten nicht geladen)", line)
+        self.assertIn("jede Stimme zählt, wo die Abstimmungsseite das Mitglied führt", line)
+
+    # Value: protects=a release never goes out without the MdB-Stammdaten, where the seat tables are empty and
+    #   every E4 Stimme is back under the page's wrong group while DATA.md describes the correction, and the
+    #   refusal names the fix; a local export still runs; fails_when=a tagged export of a store with no Stand row
+    #   is written; why_new=E4 made the file decide published vote figures; seam=export_distribution_data
+    def test_a_release_refuses_a_store_without_the_stammdaten(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            for table in ("mdb_zugehoerigkeiten", "party_seats", "mdb_stammdaten_stand"):
+                conn.execute(f"DELETE FROM {table}")
+            conn.commit()
+        finally:
+            conn.close()
+        with self.assertRaisesRegex(RuntimeError, r"release v-test needs the MdB-Stammdaten.*--enrich mdb-stammdaten.*--offline --repersist"):
+            self.export(tag="v-test", commit="abc123def456")
+        self.assertFalse(self.exports_dir.exists())
+        self.assertIsNone(self.export(tag="local", commit=None)["stammdaten"])
 
     # Value: protects=the exported party_seats recount exactly from the exported mdb_zugehoerigkeiten
     #   under the lookup rule (the plan's traceability claim), with an open stretch exported as an empty
