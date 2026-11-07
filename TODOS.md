@@ -23,7 +23,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - "Speaker ids the Bundestag gives to more than one person".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
-5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution", the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
 6. The first release: items 1–5 of "Release pipeline: deferred /ship review findings", the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only).
 7. "Public repository: follow-ups".
 
@@ -51,19 +51,26 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 1. Keep each sitting and its TOPs, Drucksache links and votes. Withhold only refused `<rede>` units, flagged with a reason, text kept, outside all Reden counts. Record this in an ADR.
 2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing".
 3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units.
-4. A written bar: a sitting stays out whole only with a named source defect or when too much of it is refused. 18/20, whose file holds sitting 21, stays out. 18/83, with 16 refused markers, is decided under the bar.
+4. A written bar: a sitting stays out whole only with a named source defect, or a defect that cannot be narrowed to single units. 18/20, whose file holds sitting 21, stays out. Replace the bare "excluded" in `coverage-exclusions.json` with each sitting's real reason.
 5. Parser rounds then shrink the withheld list, one owner-approved rule at a time.
-6. Fetch the 85 sittings. Their votes, TOPs and links were never acquired (decision 0 of 2026-10-22). Check whether the bulk prefetch covers them; otherwise about 26 DIP requests per sitting, about 2,200 in all [estimated from A3].
-7. Measure: votes and TOPs restored, the abgeordnetenwatch match share of WP 18/19 Redner, and a per-sitting `rede_id` comparison with CPP-BT.
+6. Fetch the 85 sittings. Their votes, TOPs and links were never acquired (decision 0 of 2026-10-22). Fetch the XML first and scan it for shared ids and Reden outside a TOP. Check whether the bulk prefetch covers the rest; otherwise about 26 DIP requests per sitting, about 2,200 in all [estimated from A3].
+7. Measure: votes against the roll-call list, date by date; TOPs restored; the abgeordnetenwatch match share of WP 18/19 Redner; and a per-sitting comparison with CPP-BT by `rede_id`, surname and tokens.
 8. Rebuild the store on current main and run the gate on it.
 
-The implementer must prove that withholding one unit leaves every other unit's id, sequence and text unchanged, and must show how "conflicting roles", today a per-sitting check, works per unit.
+**Open, in `docs/plans/v1-scope-review.md`:** N7, the 13 listed sittings that parse and raise no refusal, so step 1 does not reach them (18/2, 18/29, 18/62, 18/83, 18/90, 18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/25, 19/73). N8, a merge and attribution review of restored sittings. Steps 1 and 6 wait on these.
 
-**Why:** The sittings left out hold the links nobody else was found to offer: the store has 0 of its 556 votes on those dates. Measured against CPP-BT on 2026-11-07, they are longer than the rest, with median Reden 70 against 54 in WP 18 and 125 against 102.5 in WP 19. By words, we hold 69.0% of 2018, 73.0% of 2014 and 73.1% of 2015. A trend across those years compares unlike coverage, and the shortfall falls on the longest days.
+The implementer must prove:
+- withholding one unit leaves every other unit's id, sequence and text unchanged, although classification carries state across turns and TOPs;
+- each refusal class has a home: Fragestunde markers have no rede id, Befragung turns raise a different error, "conflicting roles" is sitting-wide, and 18/90's defect is outside any `<rede>`. A class that cannot be narrowed stays out under the bar;
+- step 2 also accounts for Fragestunde turns, which have no `rede_id`.
 
-**Context:** In the audit before any rules, refused markers were about 2 per refused sitting (205 in 112). Fallback if the proof fails: release WP 20 and 21 first as a complete set. Evidence: `docs/research/bundestag-corpora-landscape-2026-11.md`, `docs/plans/v1-scope-review.md` (N1).
+Withholding works on the whole `<rede>`, as decided. After round 2's rules that means 87 Reden, and no refused marker is a Rede's first, so each withheld Rede includes an opening nobody questioned. The ADR says so. `scripts/audit_offline_turns.py` shows the idea but says its counts cannot certify a database, so it is not the base.
 
-**Effort:** L (the per-unit change alone: human ~2 weeks / CC ~1–2 days, estimated)
+**Why:** The sittings left out hold links no single other dataset was found to combine: the store has 0 of its 556 votes on those dates. For those years the parts exist separately, ParlLawSpeech to 2021 and BTVote to WP 19. Long-term analysis needs those years too. Measured against CPP-BT on 2026-11-07, the sittings left out are longer than the rest, with median Reden 70 against 54 in WP 18 and 125 against 102.5 in WP 19. By words, we hold 69.0% of 2018, 73.0% of 2014 and 73.1% of 2015. A trend across those years compares unlike coverage, and the shortfall falls on the longest days.
+
+**Context:** Refused markers after round 2's rules: 103 in 69 sittings, at most 4 per sitting (`docs/plans/a3-wp18-19-round2-blockers.tsv`). Fallback: release WP 20 and 21 first as a complete set, if the first of the proofs above fails or the per-unit change passes twice its estimate. Evidence: `docs/research/bundestag-corpora-landscape-2026-11.md`, `docs/plans/v1-scope-review.md` (N1, N7, N8).
+
+**Effort:** L (the per-unit change alone: human ~3–4 weeks / CC ~3–5 days, estimated; first stated as ~2 weeks / ~1–2 days)
 **Priority:** P1
 **Depends on:** "Reden the parser drops without refusing", and the other correctness P1s of stage 1
 
@@ -75,11 +82,11 @@ The implementer must prove that withholding one unit leaves every other unit's i
 - **One Rede inside a TOP.** 21/43 `ID214301700`, Brandner, 501 tokens, with no unit and no known rule. Find out why first.
 - **Four annex units to classify:** 19/115 (2, "zu der Abstimmung über …"), 19/35 and 19/45 ("Neudruck eines Redebeitrages").
 
-Decide where a Rede outside a TOP belongs before fixing: `agenda_item_id` is required today. Report old and new Reden counts per sitting and Fraktion. The 85 excluded sittings were not scanned.
+Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: `speeches.agenda_item_id` is required, a made-up TOP meets the agenda checks at `validate_dip_protocol.py:3455-3492`, and these Reden get no Drucksache or vote link. Report old and new Reden counts per sitting and Fraktion. The 85 excluded sittings were not scanned.
 
 **Why:** It breaks "refuse, never miscount". 18/49 counts as a complete sitting and shows half its Reden. Excluded on purpose and unaffected: 1,666 §31 declarations (ADR 0002).
 
-**Effort:** S
+**Effort:** M
 **Priority:** P1
 **Depends on:** None
 
@@ -125,7 +132,7 @@ Decide where a Rede outside a TOP belongs before fixing: `agenda_item_id` is req
 
 ### Main and stable releases
 
-**What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols, a per-sitting `rede_id` comparison with CPP-BT's newest speech metadata, outside the build and with no dependency on it; method in `docs/research/bundestag-corpora-landscape-2026-11.md`, and the first run's script was throwaway, so write one when the checklist is built); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
+**What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols, a per-sitting comparison by `rede_id`, surname and tokens with CPP-BT's newest speech metadata, outside the build and with no dependency on it; method in `docs/research/bundestag-corpora-landscape-2026-11.md`, and the first run's script was throwaway, so write one when the checklist is built); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
 
 **Why:** The owner cannot review every release once the project is live. Decision Q3.
 
