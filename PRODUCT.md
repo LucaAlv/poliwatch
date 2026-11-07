@@ -63,8 +63,8 @@ Comparable sites:
 - Main surfaces today: the sitting catalog, sitting Dossiers, Puls/Wochenradar (`puls.html`), Fakt der Woche (weekly and monthly), Abgeordnete roster and profile pages, votes and the votes archive, Gesetzgebung, sources/method, and Daten (`database.html`). None of the long-term analyses exist yet.
 - Domain vocabulary (Rede vs. Kurzintervention vs. Befragung, Sprechrolle, Abweichler, Wahlperiode, Sitzung mit Dossier, and others) is defined in `CONTEXT.md`, with decisions in `docs/adr/`. Use those definitions rather than inventing new ones.
 - **Licences are decided** (ADR 0003): layered data licence (`LICENSE-DATA.md`, shipped with every export), MIT for code (`LICENSE`), and an Impressum naming a private person. The files, `impressum.html` and `datenschutz.html` are built; the Impressum values (address, e-mail, host, supervisory authority) wait on the owner and a lawyer's answer on the address, and render as marked placeholders until then.
+- **Decided 2026-11-06:** the product name is open-parlament (lower case). "Bundestag-Puls" still appears in the code and README, and "poliwatch" is the repo name, until the name is applied.
 - **Open decisions:**
-  - The product name. "Bundestag-Puls" appears in the code and README, "poliwatch" is the repo name, and IDEAS.md suggests "open-parlament". Nothing is final, so design work must not build identity around any of these names.
   - The public host.
   - The shape of the Daten page. The data release is a goal either way. Open: how much documentation the page carries itself, and how much moves into the release's codebook.
   - One site or two for the two angles. Current plan: one site with shared pages for Sitzungen, Reden, Abgeordnete, Vorgänge and votes, which both angles link into.
@@ -73,7 +73,7 @@ Comparable sites:
 
 - **Nonpartisan and neutral.** The site takes no editorial stance, treats all Fraktionen the same way, and ties every claim to a primary source.
 - Generated content is always labelled as generated, and is never presented as editorial or verified.
-- No name or logo has been committed yet. The visual direction is committed: see `DESIGN.md` ("Stimmkarte", 2026-11-04). Fraktion colours stay, tuned there.
+- The name is open-parlament. No logo has been committed yet. The visual direction is committed: see `DESIGN.md` ("Stimmkarte", 2026-11-04). Fraktion colours stay, tuned there.
 
 ## Evidence on Hand
 
