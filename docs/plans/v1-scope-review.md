@@ -288,7 +288,7 @@ Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 | --- | --- | --- | --- | --- | --- |
-| N1 owner | Q1 gate step 1; `round2-result.md:174`; P4, P5 | Whole sittings stay out until parser rounds clear them | Keep each sitting and its links; withhold only refused `<rede>` units, flagged with a reason, outside all Reden counts | decided | Owner 2026-11-07: "N1: B". Reopens decision 0 of 2026-10-22 and Q1 gate step 1 on new evidence |
+| N1 owner | Q1 gate step 1; `round2-result.md:174`; P4, P5 | Whole sittings stay out until parser rounds clear them | Keep each sitting and its links; withhold only refused `<rede>` units, flagged with a reason, outside all Reden counts | decided | Owner 2026-11-07: "N1: B", confirmed after the corrected premise (outside finding 5): "Confirm N1: B". Reopens decision 0 of 2026-10-22 and Q1 gate step 1 on new evidence |
 | N2 owner | `PRODUCT.md:15,40,42-46`; P1 to P3 | Comparables are sites | Name the research datasets; state the claim as the linked, current record; say there is no affiliation | decided, wording changed | Owner: leaning A, but "joined" reads as working together. "I am very open to collaborating in the future, but at the moment it is more a 'common stated direction or cause'." |
 | N3 owner | Q1 gate step 3; download rule | Excluded sittings not compared | Fetch `CPP-BT_2026-09-19_DE_CSV_Reden_Metadaten.zip` (Zenodo 22844952, 10.7 MB, CC0) for a per-sitting `rede_id` comparison; repeat before each stable release, outside the build | decided, done | Owner: "N3: A". Result below |
 | N4 owner | `PRODUCT.md:58`; landscape | `DATA.md` has no comparison | A "Vergleich" table and joinable ids (`rede_id`, `xml_redner_id`) in `DATA.md` | decided | Owner: "N4: A". TODO "Comparison and joinable ids in DATA.md" |
@@ -296,8 +296,8 @@ Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 | Mode owner | Skill Step 0E | none | HOLD SCOPE | default | The owner's reply named no mode, so the recommended HOLD SCOPE ran. Not an owner choice |
 | N6 owner | Section 2; `validate_dip_protocol.py:1373,1300` | A `<rede>` can vanish with no unit and no refusal | Every `<rede>` id ends up stored, withheld with a reason, or excluded by a named rule, reconciled per sitting | part of N1 | N1 cannot be shown complete without it. Recorded as what the implementer must prove, inside the owner's N1 answer |
 | R7 implementer | Step 0 and N3; `CLAUDE.md` review rule | 46 units lost, 43 under the wrong person, 2 stray Fraktion values | Filed, not fixed: the task for this review rules out code changes | filed | `TODOS.md`, stage 1 correctness P1s. Owner to say when |
-| N7 owner | Outside finding 1; `round2-result.md:127,141,225-229,248`; reopens part of N1 | 13 listed sittings parse, raise no refusal and are kept out only by the list, so N1 as worded does not reach them. 7 wait on the ADR 0004 item (18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/73). 2 stay out by the owner's round 2 decision (18/62, 18/90). The open question is 4 sittings with known wrong units: 18/2, 18/29, 18/83, 19/25, the example behind P5 | A reviewed list of single units to withhold in those 4, or keep them out | unresolved | none yet. The owner also sees the corrected premise behind N1 (outside finding 5) and may change B |
-| N8 owner | Outside finding 4; `round2-result.md:89-91,228` | The 400 kept sittings had a merge and attribution review. The sittings N1 restores would not | The same review on restored sittings, with a pass rule | unresolved | none yet |
+| N7 owner | Outside finding 1; `round2-result.md:127,141,225-229,248`; reopens part of N1 | 13 listed sittings parse, raise no refusal and are kept out only by the list, so N1 as worded does not reach them. 7 wait on the ADR 0004 item (18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/73). 2 stay out by the owner's round 2 decision (18/62, 18/90). The open question is 4 sittings with known wrong units: 18/2, 18/29, 18/83, 19/25, the example behind P5 | A reviewed list of single units to withhold in those 4, each with a reason, in the same withheld state as N1 | decided | Owner 2026-11-07: "N7: A". Rejected: keeping the 4 out whole |
+| N8 owner | Outside finding 4; `round2-result.md:89-91,228` | The 400 kept sittings had a merge and attribution review. The sittings N1 restores would not | The same review on restored sittings. Pass rule: any wrong unit goes on the withheld list with a reason, and T4 does not pass until the review has | decided | Owner 2026-11-07: "N8: A". Rejected: relying on the gate and the CPP-BT comparison, which do not check content |
 | R9 implementer | Outside finding 8; `validate_dip_protocol.py:3455-3492` | A Rede outside a TOP has no place in the schema; `agenda_item_id` is required on `speeches` | Decide in `/plan-eng-review`, before T1's first half | pending | Not an owner question unless the choice changes a figure's meaning |
 
 ### N3 result
@@ -312,7 +312,7 @@ Full method and tables: [the landscape note](../research/bundestag-corpora-lands
 
 ## Review sections (2026-11-07, HOLD SCOPE, strategy-only)
 
-**Current scope.** Mode: HOLD SCOPE, by default. Accepted: Q1 to Q17 as decided; N1 B, N2 reworded, N3 done, N4, N5 with the owner, N6 inside N1. Deferred: the fixes for R7. Rejected: none. Not chased: linguistic annotation, WP 1 to 17, ParlaMint encoding, Parquet.
+**Current scope.** Mode: HOLD SCOPE, by default. Accepted: Q1 to Q17 as decided; N1 B, N2 reworded, N3 done, N4, N5 with the owner, N6 inside N1, N7 A, N8 A. Deferred: the fixes for R7. Rejected: none. Not chased: linguistic annotation, WP 1 to 17, ParlaMint encoding, Parquet.
 
 ### Section 1: Architecture
 
@@ -423,11 +423,11 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 
 | # | Severity | Finding | Checked | Disposition |
 | --- | --- | --- | --- | --- |
-| 1 | Critical | 13 listed sittings parse and raise no refusal, so N1 does not reach them, and the reconciliation and comparison would pass with their known wrong units | Confirmed, `round2-result.md:229`. 7 are official or presidium addresses that ADR 0004 kinds cover | **N7**, to the owner |
+| 1 | Critical | 13 listed sittings parse and raise no refusal, so N1 does not reach them, and the reconciliation and comparison would pass with their known wrong units | Confirmed, `round2-result.md:229`. 7 are official or presidium addresses that ADR 0004 kinds cover | **N7**, narrowed to 4 sittings; owner chose A |
 | 2 | High | Refused turn and refused `<rede>` are two designs. No refused marker is a Rede's first, so withholding the `<rede>` also removes its unquestioned opening | Confirmed, 87 Reden | Keeps the owner's N1 wording, `<rede>`: 87 Reden, against 8,235 `rede_id`s in the 85 sittings. The opening is withheld with the rest. Stated in the TODO, for the ADR |
 | 3 | High | Some refusals fit neither design: Fragestunde markers have no rede id, "conflicting roles" is sitting-wide, 18/90's defect is outside any `<rede>`; classification carries state across TOPs; reconciling `<rede>` ids misses a dropped Fragestunde turn | Not traced line by line; consistent with the code read | Added to what the implementer must prove. Estimate raised |
-| 4 | High | Restored sittings would skip the review the other 400 had | Confirmed | **N8**, to the owner |
-| 5 | High | "Links nobody else offers" is overstated for the excluded years: ParlLawSpeech covers speech to law to 2021, BTVote votes to WP 19. WP 20/21 first is the simpler release | Confirmed in part: no single dataset was found with all of them, and C was in front of the owner, but the N1 brief called these links "the part nobody else offers" | "Why" corrected. Corrected premise put to the owner with N7. Fallback now has a trigger |
+| 4 | High | Restored sittings would skip the review the other 400 had | Confirmed | **N8**, owner chose A |
+| 5 | High | "Links nobody else offers" is overstated for the excluded years: ParlLawSpeech covers speech to law to 2021, BTVote votes to WP 19. WP 20/21 first is the simpler release | Confirmed in part: no single dataset was found with all of them, and C was in front of the owner, but the N1 brief called these links "the part nobody else offers" | "Why" corrected. Corrected premise put to the owner, who confirmed B. Fallback now has a trigger |
 | 6 | Medium | Step 0B reuse claims are overstated; the estimate rested on them | Confirmed | Step 0B corrected; gate writes real reasons; estimate raised |
 | 7 | Medium | "Too much refused" has no number. "18/83, 16 markers" looks stale | Confirmed: 18/83 has 0 refused markers, its defects are wrong units. At most 4 per sitting | The bar now says source defect or a defect that cannot be narrowed to single units. 18/83 moved to N7 |
 | 8 | Medium | T1 is not an hour. A Rede outside a TOP needs a decided home | Confirmed. `contributions.agenda_item_id` is nullable, `speeches` is not | T1 estimate raised, R9 |
@@ -451,7 +451,7 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 | Reading `<rede>` | Outside the read path | N | N | Silent. **CRITICAL GAP** | N |
 | Annex titles | Other title | N | N | Silent. **CRITICAL GAP** | N |
 | Person binding | Shared id | N | N | Wrong person. **CRITICAL GAP** | N |
-| Sittings that parse with known wrong units | No refusal, so N1 passes them | N | N | Wrong counts if the list shrinks. **CRITICAL GAP**, N7 | N |
+| Sittings that parse with known wrong units | No refusal, so N1 passes them | N | N | Wrong counts if the list shrinks. **CRITICAL GAP** until N7 A and N8 A are built | N |
 | Withholding | Shifts units | unknown | planned | Wrong order | implementer to verify |
 | Fetch of the 85 | DIP stops | Y | Y | Not acquired | Y |
 
@@ -459,8 +459,8 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 
 - [ ] **T1 (P1, human ~3 days / CC ~half a day)** Parser: Reden outside a TOP (after R9), annex titles, 21/43. Surfaced by N3. Verify: 18/49 has 51 ids; report old and new counts.
 - [ ] **T2 (P1, human ~1 day / CC ~1 h)** Person binding for shared ids. Surfaced by P6. Verify: the 43 units move; Völlers keeps hers; rescan once the 85 are fetched.
-- [ ] **T3 (P1, human ~3–4 weeks / CC ~3–5 days, estimated; was ~2 weeks / ~1–2 days)** Withholding per unit, with reconciliation and an ADR, after `/plan-eng-review`. Surfaced by N1, N6, outside finding 3. Held until N7 and N8 are answered. Verify: Section 6 rows.
-- [ ] **T4 (P1, human ~1 day / CC ~1 h, plus DIP time)** Fetch the 85, scan, rebuild, gate, compare. Held until N7 and N8 are answered. Verify: votes match the roll-call list date by date.
+- [ ] **T3 (P1, human ~3–4 weeks / CC ~3–5 days, estimated; was ~2 weeks / ~1–2 days)** Withholding per unit, with reconciliation, an ADR and N7's reviewed list of single units, after `/plan-eng-review`. Surfaced by N1, N6, N7, outside finding 3. Verify: Section 6 rows; the known wrong units in 18/2, 18/29, 18/83 and 19/25 are withheld with a reason.
+- [ ] **T4 (P1, human ~4 days / CC ~half a day, estimated, plus DIP time; was ~1 day / ~1 h before N8's review)** Fetch the 85, scan, review restored sittings (N8), rebuild, gate, compare. Follows T3. Verify: votes match the roll-call list date by date; the review has passed, with every wrong unit on the withheld list.
 - [ ] **T5 (P1, human ~1 h / CC ~15 min)** `DATA.md` comparison. Surfaced by N4. Verify: doc-link test.
 - [ ] **T6 (P2, human ~1 h / CC ~15 min)** Stray Fraktion values. Verify: every Fraktion value is known.
 
@@ -472,17 +472,15 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 
 | Review | Trigger | Why | Runs | Status | Findings |
 | --- | --- | --- | --- | --- | --- |
-| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 4 critical gaps, 2 decisions open |
-| Outside Review | Codex, automatic | Independent 2nd opinion | 1 attempt | unavailable | Sandbox blocked Codex; no completed external review of this plan. Native fallback: 12 findings; 10 resolved, 2 unresolved (N7, N8) |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 4 critical gaps open until built, all owner decisions answered |
+| Outside Review | Codex, automatic | Independent 2nd opinion | 1 attempt | unavailable | Sandbox blocked Codex; no completed external review of this plan. Native fallback: 12 findings; all resolved, 2 by the owner's answers (N7, N8) |
 | Eng Review | `/plan-eng-review` | Architecture and tests (required) | 0 | not run | none |
 | Design Review | `/plan-design-review` | UI and UX gaps | 0 | not run | none |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | not run | none |
 
 - **OUTSIDE COVERAGE:** Codex, plan review: unavailable (sandbox). The owner's two `codex review` runs covered the diff before commit 06defd1, found no actionable defects, and are not a plan challenge. Native fallback (Plan subagent): completed, not outside coverage.
 - **REVIEW HISTORY:** not persisted. The sandbox blocks writes to `~/.gstack`, so these rows exist only in this file.
-- **VERDICT:** no review is CLEAR. T1, T2, T5 and T6 can start; T3 and T4 wait on N7 and N8; eng review required before T3.
+- **VERDICT:** no review is CLEAR. T1, T2, T5 and T6 can start; eng review required before T3; T4 follows T3.
 
 **UNRESOLVED DECISIONS:**
-- N7: the 4 listed sittings with known wrong units and no refusal (18/2, 18/29, 18/83, 19/25), with N1's corrected premise.
-- N8: review of restored sittings.
 - Host provider and reader test pass rule (recorded in TODOS.md).
