@@ -23,6 +23,29 @@ def _tops(*top_ids):
 
 
 class WrittenTopAssociationTests(unittest.TestCase):
+    def test_annex_titles_decide_what_is_a_written_submission(self):
+        def stored(title):
+            xml = f'''<dbtplenarprotokoll><anlagen><anlage><anlagen-text anlagen-typ="{title}">
+              {_rede("R1", "Beitrag")}
+            </anlagen-text></anlage></anlagen></dbtplenarprotokoll>'''
+            return [c["rede_id"] for c in dip.written_contributions(dip.ET.fromstring(xml), [], {})]
+
+        for title in ["Zu Protokoll gegebene Reden", "Zu Protokoll gegebene Rede",
+                      "Zu Protokoll gegebene Reden zur Beratung",  # 18/133
+                      "Zu Protokoll gegebene Reden zur Beratung:"]:  # 18/134
+            with self.subTest(title=title):
+                self.assertEqual(stored(title), ["R1"])
+        for title in ["Erklärungen nach § 31 GO", "Erklärung nach § 31 GO",
+                      # 19/115: the second block of a §31 annex (ADR 0002).
+                      "zu der Abstimmung über den von der Bundesregierung eingebrachten Entwurf eines Neunten "
+                      "Gesetzes zur Änderung des Stasiunterlagengesetzes",
+                      # 19/35, 19/45: a reprint of a Rede of the sitting before.
+                      "Neudruck eines Redebeitrages  (34. Sitzung, Seite 3222 C f.)",
+                      "Technisch bedingter Neudruck der zu Protokoll gegebenen Rede",
+                      "Zu Protokoll gegebene Ergänzung"]:
+            with self.subTest(title=title):
+                self.assertEqual(stored(title), [])
+
     def test_submissions_follow_local_top_context_in_one_annex(self):
         tops = _tops(1, 2)
         unassigned = _parse(

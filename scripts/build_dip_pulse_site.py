@@ -1979,7 +1979,8 @@ def reparse_cached_xml(
             # re-read from what the report holds, keeping what the XML once gave.
             dip.interpret_report_votes(report, None)
             continue
-        profiles = {item.get("index"): speaker_profiles(item) for item in [report, *(report.get("agenda_items") or [])]}
+        # By object: a re-parse that adds a TOP renumbers the items around it.
+        profiles = {id(item): speaker_profiles(item) for item in [report, *(report.get("agenda_items") or [])]}
         try:
             parsed = dip.parse_protocol_xml(path.read_text(encoding="utf-8"))
             dip.reparse_report_xml(report, parsed)
@@ -1989,7 +1990,7 @@ def reparse_cached_xml(
                 [document_number],
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
-            attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
+            attach_speaker_profiles(item, profiles.get(id(item), {}), by_redner_id)
         dip.interpret_report_votes(report, parsed["vote_recommendations"])
         reparsed += 1
     return reparsed

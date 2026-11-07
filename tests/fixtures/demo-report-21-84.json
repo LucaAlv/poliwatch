@@ -857,7 +857,7 @@
   "warnings": [],
   "validation_summary": {
     "xml_top_count": 1,
-    "speech_kinds_version": 6,
+    "speech_kinds_version": 7,
     "xml_speech_count": 14,
     "xml_contribution_counts": {
       "erwiderung": 1,

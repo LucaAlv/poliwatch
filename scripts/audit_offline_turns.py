@@ -25,6 +25,7 @@ def audit(parser, path):
     root = ET.fromstring(source)
     # Look up turns in the Reden the parser sees (role-less chair markers,
     # and 6c splits nested Reden).
+    getattr(parser, "adopt_reden_outside_tops", lambda _root: None)(root)
     getattr(parser, "mark_roleless_chairs", lambda _root: None)(root)
     for top in root.iter("tagesordnungspunkt"):
         getattr(parser, "split_nested_reden", lambda _top: None)(top)

@@ -59,6 +59,42 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
 
 ## Daten
 
+### Re-acquire 18/49 and 18/44 so their new agenda items get DIP links
+
+**What:** Offline replay gives the agenda items adopted from the Inhaltsverzeichnis an empty `api`, because the cached report holds no match for them. A fresh online acquisition matches them by page range and title like any TOP: DIP's positions for 18/49 run "1. Beratung" 4459–4544 and "1. Beratung (Einzelpläne)" 4459–4485 and 4485–4507, and 18/44 has "Geschäftsordnungsantrag auf Absetzung von der TO" 3927–3931.
+
+**Why:** Until then "Tagesordnungspunkt 1" of 18/49, the Haushaltsgesetz 2015 debate, shows no Vorgang or Drucksache link. Reden are counted; only the links are missing.
+
+**Context:** Costs about 26 DIP requests per sitting and needs the DIP key. `reparse_report_xml` keeps the items once they are in the report. Decide whether to re-match from `api_records` offline only if the key stays out of reach.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** a DIP key
+
+### A repeated Inhaltsverzeichnis title loses the page of Reden
+
+**What:** `parse_toc` keys blocks by title, so of two blocks with one title only the last survives and the first block's `rid_pages` are lost. 87 of the 716 XML files repeat a title. 1,459 of 54,718 stored Reden in 36 sittings have no `source_page` [measured on the A3 reports, 2026-11-07]; the mechanism was read on 18/44, where 13 Reden of "Tagesordnungspunkt II (Fortsetzung)" have none, and the other sittings were not checked one by one.
+
+**Why:** A Rede with no page has no citation and its TOP no page range, which DIP's position matching needs.
+
+**Context:** `validate_dip_protocol.py` `parse_toc`, read by `parse_protocol_xml` for `rid_pages`. Merge the blocks' `rid_pages`, or read them apart from the title key. Report moved figures: TOPs that gain a range can gain DIP positions on a fresh build.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Which text stands for a "Neudruck eines Redebeitrages"
+
+**What:** 19/35 reprints a Rede of Birgit Malsack-Winkemann from 19/34 (`ID193402300`), 19/45 one from 19/44. Both stay out of the store, so the original is what counts. The reprint is not a small correction: the texts of 19/34 and 19/35 match at a ratio of 0.65 [measured: `difflib`], and the order of arguments changes.
+
+**Why:** A reader citing the 19/34 Rede gets the text the Bundestag later replaced, with no note. 19/44 is among the excluded sittings, so that original is not held at all.
+
+**Context:** Owner decision: keep the first print, show the reprint as the text, or keep both. Other reprint titles ("Neudruck: Antwort", "Technisch bedingter Neudruck der zu Protokoll gegebenen Rede") hold no `<rede>` in the 716 files and were not read.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** the coverage gate, for 19/44
+
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
 **What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.
@@ -1616,6 +1652,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Reden the parser drops without refusing: fixed 2026-11-07, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone
