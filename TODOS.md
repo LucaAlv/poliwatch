@@ -15,13 +15,14 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 **Stage 1: the data release.** Needs no redesign, no site host and no A4 slice.
 1. "Coverage gate before the first data release". Today 716 of 801 sittings: WP 18 79%, WP 19 86%.
 2. Correctness P1s:
-   - "Correct the WP 19/20 roll-call group misattributions (E4)", in PR #138.
+   - "Reden the parser drops without refusing".
+   - "Correct the WP 19/20 roll-call group misattributions (E4)", merged as #138; the repersist is owed.
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
    - "Speaker ids the Bundestag gives to more than one person".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
-4. "Rename the project to open-parlament".
+4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution", the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
 6. The first release: items 1–5 of "Release pipeline: deferred /ship review findings", the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only).
 7. "Public repository: follow-ups".
@@ -46,37 +47,85 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 
 ### Coverage gate before the first data release
 
-**What:** The store holds 716 of 801 catalog sittings. Before the first release:
-1. Another parser round on the 85 excluded sittings.
-2. A written bar: a sitting may stay out only with a named source defect, listed with its reason. Coverage is published per year.
-3. Measure: votes in the excluded sittings, whether those sittings differ systematically from the included ones, the abgeordnetenwatch match share of WP 18/19 Redner.
-4. Rebuild the store on current main and run the gate on it.
+**What:** The store holds 716 of 801 catalog sittings. Decision N1 (2026-11-07) replaces the whole-sitting rule of 2026-10-22: one refused unit no longer keeps out a sitting. Before the first release:
+1. Keep each sitting and its TOPs, Drucksache links and votes. Withhold only refused `<rede>` units, flagged with a reason, text kept, outside all Reden counts. Record this in an ADR.
+2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing".
+3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units.
+4. A written bar: a sitting stays out whole only with a named source defect or when too much of it is refused. 18/20, whose file holds sitting 21, stays out. 18/83, with 16 refused markers, is decided under the bar.
+5. Parser rounds then shrink the withheld list, one owner-approved rule at a time.
+6. Fetch the 85 sittings. Their votes, TOPs and links were never acquired (decision 0 of 2026-10-22). Check whether the bulk prefetch covers them; otherwise about 26 DIP requests per sitting, about 2,200 in all [estimated from A3].
+7. Measure: votes and TOPs restored, the abgeordnetenwatch match share of WP 18/19 Redner, and a per-sitting `rede_id` comparison with CPP-BT.
+8. Rebuild the store on current main and run the gate on it.
 
-**Why:** 2014–2018 are at 73–83% of sittings, and 2022–2026 at nearly 100%, so a trend across those years compares unlike coverage. The owner's bar is that researchers can base their work on it.
+The implementer must prove that withholding one unit leaves every other unit's id, sequence and text unchanged, and must show how "conflicting roles", today a per-sitting check, works per unit.
 
-**Context:** Fallback, decided only after a first attempt shows the cost: release WP 20 and 21 first as a complete set.
+**Why:** The sittings left out hold the links nobody else was found to offer: the store has 0 of its 556 votes on those dates. Measured against CPP-BT on 2026-11-07, they are longer than the rest, with median Reden 70 against 54 in WP 18 and 125 against 102.5 in WP 19. By words, we hold 69.0% of 2018, 73.0% of 2014 and 73.1% of 2015. A trend across those years compares unlike coverage, and the shortfall falls on the longest days.
 
-**Effort:** L
+**Context:** In the audit before any rules, refused markers were about 2 per refused sitting (205 in 112). Fallback if the proof fails: release WP 20 and 21 first as a complete set. Evidence: `docs/research/bundestag-corpora-landscape-2026-11.md`, `docs/plans/v1-scope-review.md` (N1).
+
+**Effort:** L (the per-unit change alone: human ~2 weeks / CC ~1–2 days, estimated)
 **Priority:** P1
-**Depends on:** The correctness P1s of stage 1
+**Depends on:** "Reden the parser drops without refusing", and the other correctness P1s of stage 1
 
-### Speaker ids the Bundestag gives to more than one person
+### Reden the parser drops without refusing
 
-**What:** The protocol XML reuses two speaker ids for different people, and the store files all of them under one person. Measured on the A3 store (2026-10-28, 716 XML files), not re-measured on main's tip:
-- `redner id="10000"`: Marja-Liisa Völlers (19/49, 19/57), Olaf in der Beek (19/16), Carsten Sieling, Bürgermeister of Bremen (19/60). The store has one `mps` row, Völlers, so Sieling's Rede `ID196001500` and in der Beek's `befragung_frage` `ID191604600` sit under her.
-- `redner id="999990141"`: Dr. Mehmet Daimagüler (20/144) and Judith Gerlach, Staatsministerin Bayern (20/121, 20/194). The store has one row, Daimagüler, so Gerlach's two Reden and one `erwiderung` sit under him.
+**What:** The cross-check against CPP-BT found `<rede>` elements in sittings we hold that have no stored unit, no refusal and no rule. Measured on the A3 store's 716 XML files, not re-measured on main's tip:
+- **29 Reden outside any TOP.** 18/49: 26 of 51, from Schäuble's budget 2015 speech on. 18/44: 3. `scripts/validate_dip_protocol.py:1373` and `:1920` read only `./sitzungsverlauf/tagesordnungspunkt`, and `scripts/audit_offline_turns.py:69` reads the same path, so the audits could not see them.
+- **16 zu Protokoll gegebene Reden.** 18/133: 5, 18/134: 11. The annex title reads "Zu Protokoll gegebene Reden zur Beratung[:]", and `validate_dip_protocol.py:1300` matches two exact titles.
+- **One Rede inside a TOP.** 21/43 `ID214301700`, Brandner, 501 tokens, with no unit and no known rule. Find out why first.
+- **Four annex units to classify:** 19/115 (2, "zu der Abstimmung über …"), 19/35 and 19/45 ("Neudruck eines Redebeitrages").
 
-That is 5 units under the wrong person. The Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: compare the printed name with the name already bound to an id, treat a known shared id as no id, and resolve those people by name and role. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures.
+Decide where a Rede outside a TOP belongs before fixing: `agenda_item_id` is required today. Report old and new Reden counts per sitting and Fraktion. The 85 excluded sittings were not scanned.
 
-**Why:** A wrong person on a citable record. CPP-BT's codebook documents id 10000 as shared; the rest was found by scanning our XML for ids used with different surnames. 15 of 1,539 ids have more than one surname; the other 13 are name changes, spelling variants or a blank surname.
+**Why:** It breaks "refuse, never miscount". 18/49 counts as a complete sitting and shows half its Reden. Excluded on purpose and unaffected: 1,666 §31 declarations (ADR 0002).
 
 **Effort:** S
 **Priority:** P1
 **Depends on:** None
 
+### Speaker ids the Bundestag gives to more than one person
+
+**What:** The protocol XML reuses speaker ids for different people, and the store files all of them under one person. Measured on the A3 store (716 XML files, 2026-11-07), not re-measured on main's tip. An earlier scan reported 2 ids and 5 units; this one reads every `<redner>` and every stored unit filed under a shared id, and finds 5 ids with **43 units under the wrong person**:
+
+| Id | Filed under | Actually | Units |
+|---|---|---|---:|
+| `999990124` | Dr. Andreas Bovenschulte | Annette Widmann-Mauz | 19 `fragestunde_antwort`, 2 Reden |
+| `999990108` | Maika Friemann-Jennert | Anette Kramme | 14 `fragestunde_antwort` |
+| `999990127` | Enak Ferlemann | Peter Beuth | 3 Reden |
+| `999990141` | Dr. Mehmet Daimagüler | Judith Gerlach | 2 Reden, 1 `erwiderung` |
+| `10000` | Marja-Liisa Völlers | Carsten Sieling; Olaf in der Beek | 1 Rede; 1 `befragung_frage` |
+
+`999990109` and `11003609` are shared in the source too, with no stored unit affected. Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: compare the printed name with the name already bound to an id, treat a known shared id as no id, and resolve those people by name and role. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures. Separate, and possibly not our error: the merged Mende and Föhr records, `docs/source-errors.md` C4.
+
+**Why:** A wrong person on a citable record. A reader of Maika Friemann-Jennert's record sees 14 Fragestunde answers she did not give.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
+### Stored Fraktion values that are not Fraktionen
+
+**What:** Two units carry a value that is not a Fraktion. `speeches.fraktion` is "Bremen" on 19/60 `ID196001500`, and an `erwiderung` in 18/222 holds "CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –", copied from the XML (`docs/source-errors.md` C5). Check that a Fraktion value is one we know, and refuse or normalise the rest.
+
+**Why:** Each could appear as its own group in a per-Fraktion count. CPP-BT has the second as plain CDU/CSU.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Comparison and joinable ids in DATA.md
+
+**What:** Add a short "Vergleich" table to the release's `DATA.md`: this dataset, CPP-BT, GermaParl, ParlLawSpeech and BTVote, by coverage, unit, links and licence, with the date it was checked. Document that `rede_id` and `xml_redner_id` are the Bundestag's own ids and join to CPP-BT, and how: the " (neu)" protocol numbers, sub-ids with `:N`, our `nested*` ids, and shared speaker ids. State what we leave out and CPP-BT keeps, chiefly the §31 declarations. Say these are independent projects with no affiliation. Decision N4.
+
+**Why:** Researchers can use our links alongside text they already hold, and will compare the two anyway.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** "Coverage gate before the first data release", for the figures
+
 ### Main and stable releases
 
-**What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
+**What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols, a per-sitting `rede_id` comparison with CPP-BT's newest speech metadata, outside the build and with no dependency on it; method in `docs/research/bundestag-corpora-landscape-2026-11.md`, and the first run's script was throwaway, so write one when the checklist is built); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
 
 **Why:** The owner cannot review every release once the project is live. Decision Q3.
 
@@ -116,7 +165,7 @@ That is 5 units under the wrong person. The Fraktion and Sprechrolle on each uni
 
 ### Reader test before launch
 
-**What:** Five outside readers on a frozen build of the finished site, with tasks from PRODUCT.md criteria 1 to 3 on desktop and mobile; measure correct answers and time. Covers the grey ground and vote wall that `DESIGN.md` leaves open. Open: a pass rule (proposed: fix any task fewer than four of five complete correctly), and whether one researcher or journalist also tries the data release at stage 1 (proposed).
+**What:** Five outside readers on a frozen build of the finished site, with tasks from PRODUCT.md criteria 1 to 3 on desktop and mobile; measure correct answers and time. Covers the grey ground and vote wall that `DESIGN.md` leaves open. Open: a pass rule (proposed: fix any task fewer than four of five complete correctly). The owner handles the researcher check of the data release (decision N5).
 
 **Why:** Nobody outside the project has seen the site. Decision Q16 puts it after the rollout, so `DESIGN.md` choices stay easy to change until then. Replaces the five-reader week radar test.
 

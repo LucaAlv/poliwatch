@@ -39,6 +39,14 @@ And when a researcher can download a release, cite it by version, and reproduce 
 
 The differentiator is the connection. Debate, people, legislation and votes form one path, and each item links back to the official record: protocol XML or PDF, Drucksache, roll-call publication. The daily view and the long-term analyses are built from the same dataset, so a reader can go from a trend to the Reden behind it, and from a single Sitzung to where it sits in the trend. Every figure is meant to be traceable. The published SQL recipes already run against the store at build time. Moving the rest of the site onto the same store is planned.
 
+A tidy, citable record of the debates alone is not the difference: CPP-BT already offers one. The difference is the linked, current record. No other dataset was found that links speeches, TOPs, Drucksachen, Vorgänge and named votes through the current Wahlperiode. That rests on a search of November 2026, not on proof, so check it again before saying so publicly (`docs/research/bundestag-corpora-landscape-2026-11.md`).
+
+Related research datasets. These are independent projects working in the same direction, an open parliamentary record. This project is not affiliated with any of them; the owner is open to working together later.
+- **CPP-BT** (Seán Fobbe): the largest overlap. Reden text and metadata from the same XML, WP 1–21, CC0, with no links to TOPs, Drucksachen, Vorgänge or votes in its speech table.
+- **GermaParl** (PolMine): annotated debates from 1949, the better choice for language and discourse work. Its open version ends in July 2023.
+- **ParlLawSpeech:** the closest idea to ours, speech to bill to law, but for Germany only from 2009 to 2021.
+- **BTVote:** the reference for roll-calls, up to WP 19.
+
 Comparable sites:
 - **abgeordnetenwatch.de:** leads with MPs and named votes. Its Abstimmungen are the reference for the votes part of the daily view: topic tags, a plain-language description of what was decided, source documents, dissenters.
 - **opendiscourse.de:** a full-text corpus of Plenarprotokolle from 1949 to 2020. Its Diskursanalyse is the reference for the long-term view. It uses 73 LDA-modelled topics with yearly granularity. This project uses published, reviewable term lists instead (confirmed 2026-11-06), so every point on a curve can be recounted from the dataset. A neutrality review of the lists comes before any term series is published.
@@ -61,6 +69,7 @@ Comparable sites:
 - **No visitor feature switches.** The Baustein/gear model was removed on purpose. A section appears when the data behind it exists. When data is missing, the page says so honestly instead of hiding the gap.
 - **AI summaries** are out of v1, on the site and in the release (the reference build holds none); the code stays. When they return, they are the only content preference a visitor can set. They are optional, permanently labelled `KI-generiert · nicht redaktionell geprüft`, carry 3–5 citations that each resolve to a source, and can be collapsed globally. The browser stores only that collapse preference.
 - **Surfaces for v1:** the home page as the door to both angles; Aktuell (`puls.html`); Sitzungen; Abstimmungen; Gesetzesvorhaben; Abgeordnete; Analysen, once the first analysis exists; Daten. Footer: Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Decided 2026-11-06 (`docs/plans/v1-scope-review.md`): `api-sitzungen.html` and `settings.html` are cut, and Fakt der Woche is off the v1 site and out of the release until it is rebuilt to this project's quality bar. The only long-term analysis planned for the first public site is "Politikfelder over time".
+- **A refused passage does not cost a whole Sitzung** (decided 2026-11-07). The Sitzung stays in with its TOPs, links and votes, and only the refused Rede is withheld, flagged with a reason and outside all Reden counts. A Sitzung stays out whole only with a named source defect or when too much of it is refused.
 - **Release stages:** (1) the data release, after a coverage gate; (2) the public site, with the daily view and one analysis, built from a release alone; (3) further analyses, each when ready.
 - **Two kinds of release:** a main release is published automatically per completed Sitzungswoche, only if every check passes, and the site always reads the latest one. A stable release is one frozen main release that the owner has reviewed about every three months against a written checklist. Stable releases carry the DOI and are the ones to cite. Both stay downloadable.
 - Domain vocabulary (Rede vs. Kurzintervention vs. Befragung, Sprechrolle, Abweichler, Wahlperiode, Sitzung mit Dossier, and others) is defined in `CONTEXT.md`, with decisions in `docs/adr/`. Use those definitions rather than inventing new ones.
@@ -83,7 +92,7 @@ Comparable sites:
 ## Product Principles
 
 1. **Primary source first.** Every statement, number and summary leads back to the official record in one step.
-2. **Show gaps honestly.** Missing data gets a clear explanation and is never hidden or quietly skipped. Every count says which Sitzungen it covers.
+2. **Show gaps honestly.** Missing data gets a clear explanation and is never hidden or quietly skipped. Every count says which Sitzungen it covers and which units it leaves out.
 3. **Curated views, free data.** The site is edited: visitors never assemble it themselves, and its structure is stable and predictable. Exploration happens inside views built for it. Free querying belongs to the dataset, not the site.
 4. **Neutral by construction.** Fraktionen and MPs are treated the same way in ordering, wording and emphasis. Topic lists and term lists are published, so a reader can check that no side is framed differently.
 5. **Ease for citizens, integrity for researchers, both at once.** Everything a citizen sees is simple to reach and to read. Everything a researcher relies on is consistent, documented and reproducible. A simplification may leave detail out, but it never states a figure the dataset does not support. Research depth is one click away and never clutters the citizen's path.

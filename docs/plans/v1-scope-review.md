@@ -228,7 +228,7 @@ Open: the host provider; the reader test's pass rule; the researcher check of th
 
 ## Second pass: research datasets (2026-11-06)
 
-The owner asked for `/gstack-plan-ceo-review` on the committed scope, plus a thorough look at GermaParl. Full comparison and sources: [bundestag-corpora-landscape-2026-11.md](../research/bundestag-corpora-landscape-2026-11.md). Depth stays strategy-only. Nothing below changes `PRODUCT.md` or the roadmap until the owner answers. The one exception is the shared-id defect, filed in `TODOS.md` and `docs/source-errors.md`, because a wrong person on a record is a defect whatever the scope.
+The owner asked for `/gstack-plan-ceo-review` on the committed scope, plus a thorough look at GermaParl. Full comparison and sources: [bundestag-corpora-landscape-2026-11.md](../research/bundestag-corpora-landscape-2026-11.md). Depth stays strategy-only. The owner answered N1 to N5 on 2026-11-07, and the answers are applied to `PRODUCT.md` and `TODOS.md`. No code changed. The defects the cross-check found are filed in `TODOS.md` and `docs/source-errors.md`, not fixed.
 
 ### Step 0A: premises
 
@@ -243,7 +243,7 @@ Real problem: researchers need a Bundestag record they can build on, and citizen
 | P3 | Comparable products are sites | `PRODUCT.md:42-46` | **Finding.** No research dataset is named. The positioning that did name them is in the design of the feature now cut, `docs/designs/fakt-der-woche.md:36-41` |
 | P4 | Excluding a sitting costs its Reden | `a3-wp18-19-round2-result.md:165-172` | **Finding.** The cost table counted Reden. Decision 0 there skips a listed sitting before acquisition, so its TOPs, links and votes go too. The store holds 0 of 556 votes on the 85 dates [measured] |
 | P5 | A refused unit means the sitting must go | `round2-result.md:165,174,189` | **Unexamined.** No per-unit alternative appears in the A3 plans or `TODOS.md` [`git grep`]. 19/25 was excluded to keep out 2 units, at a cost of 15 Reden and about 200 other units |
-| P6 | One `redner_id` is one person | store | **False.** Two ids cover 5 people; 5 units are under the wrong person [measured: XML scan, store] |
+| P6 | One `redner_id` is one person | store | **False.** Seven ids are shared in the source; 5 of them put 43 stored units under the wrong person [measured: XML scan of every `<redner>`, store]. First reported as 2 ids and 5 units; that scan undercounted |
 | P7 | "open-parlament" is clear of neighbours | Q11 | **Weak spot.** The owner confirmed OffenesParlament is unmaintained, but CPP-BT's September 2026 record still lists it as an alternative, so researchers will still meet the name |
 
 `unverified=0`.
@@ -272,7 +272,7 @@ REALITY: pr-count pass docs only, one branch, default one PR per wave TODOS.md:5
 
 ```
   TODAY                          THIS PLAN                       12-MONTH IDEAL
-  716 of 801 sittings;    --->   first release, joined and  ---> the citation for "how did this
+  716 of 801 sittings;    --->   first release, linked and  ---> the citation for "how did this
   joins exist, nobody            current, weekly; site with      debate relate to the bill and the
   outside has seen them          one analysis                    vote", checked against CPP-BT and
                                                                  GermaParl on every stable release
@@ -284,16 +284,164 @@ The plan moves toward this, if the release keeps every join it can keep.
 
 Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 
-**Figures for N1.** Lost in the 85 excluded sittings: about 9,300 `rede_id`s (CPP-BT minus ours, WP 18 to 20) [estimated], about 850 TOPs and 4,000 Drucksache links [estimated: store rates], about 70 votes [estimated: 0.78 to 0.86 per sitting]. Refused markers in the WP 18/19 audit, before any rules: 205 in 112 sittings, about 2 per sitting [measured: `a3-wp18-19-audit.md:24-28`]. Cascades stayed in the same Rede (`audit:91`). What the 85 hold today has not been re-counted.
+**Figures for N1.** Lost in the 85 excluded sittings: 8,235 `rede_id`s (CPP-BT's rows on those sittings, including §31 declarations) [measured 2026-11-07; first stated as about 9,300, which also counted annex units in sittings we hold], about 850 TOPs and 4,000 Drucksache links [estimated: store rates], about 70 votes [estimated: 0.78 to 0.86 per sitting]. Refused markers in the WP 18/19 audit, before any rules: 205 in 112 sittings, about 2 per sitting [measured: `a3-wp18-19-audit.md:24-28`]. Cascades stayed in the same Rede (`audit:91`). What the 85 hold today has not been re-counted.
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 | --- | --- | --- | --- | --- | --- |
-| N1 owner | Q1 gate step 1; `round2-result.md:174`; P4, P5 | Whole sittings stay out until parser rounds clear them | Keep each sitting and its joins; withhold only refused `<rede>` units, flagged with a reason, outside all Reden counts | unresolved | none yet |
-| N2 owner | `PRODUCT.md:15,40,42-46`; P1 to P3 | Comparables are sites | Name the research datasets; state the claim as the joined, current record | unresolved | none yet |
-| N3 owner | Q1 gate step 3; download rule | Excluded sittings not compared | Fetch `CPP-BT_2026-09-19_DE_CSV_Reden_Metadaten.zip` (Zenodo 22844952, 10.7 MB, CC0) for a per-sitting `rede_id` comparison; repeat before each stable release, outside the build | unresolved | none yet |
-| N4 owner | `PRODUCT.md:58`; landscape | `DATA.md` has no comparison | A "Vergleich" table and joinable ids (`rede_id`, `xml_redner_id`) in `DATA.md` | unresolved | none yet |
-| N5 owner | Q16 open item | No researcher named | Name Fobbe and the PolMine authors as candidates; the owner decides whether and when to write | unresolved | none yet |
-| Mode owner | Skill Step 0E | none | HOLD SCOPE | unresolved | none yet |
+| N1 owner | Q1 gate step 1; `round2-result.md:174`; P4, P5 | Whole sittings stay out until parser rounds clear them | Keep each sitting and its links; withhold only refused `<rede>` units, flagged with a reason, outside all Reden counts | decided | Owner 2026-11-07: "N1: B". Reopens decision 0 of 2026-10-22 and Q1 gate step 1 on new evidence |
+| N2 owner | `PRODUCT.md:15,40,42-46`; P1 to P3 | Comparables are sites | Name the research datasets; state the claim as the linked, current record; say there is no affiliation | decided, wording changed | Owner: leaning A, but "joined" reads as working together. "I am very open to collaborating in the future, but at the moment it is more a 'common stated direction or cause'." |
+| N3 owner | Q1 gate step 3; download rule | Excluded sittings not compared | Fetch `CPP-BT_2026-09-19_DE_CSV_Reden_Metadaten.zip` (Zenodo 22844952, 10.7 MB, CC0) for a per-sitting `rede_id` comparison; repeat before each stable release, outside the build | decided, done | Owner: "N3: A". Result below |
+| N4 owner | `PRODUCT.md:58`; landscape | `DATA.md` has no comparison | A "Vergleich" table and joinable ids (`rede_id`, `xml_redner_id`) in `DATA.md` | decided | Owner: "N4: A". TODO "Comparison and joinable ids in DATA.md" |
+| N5 owner | Q16 open item | No researcher named | The owner handles the researcher check | decided | Owner: "N5: I'll handle this myself." |
+| Mode owner | Skill Step 0E | none | HOLD SCOPE | default | The owner's reply named no mode, so the recommended HOLD SCOPE ran. Not an owner choice |
+| N6 owner | Section 2; `validate_dip_protocol.py:1373,1300` | A `<rede>` can vanish with no unit and no refusal | Every `<rede>` id ends up stored, withheld with a reason, or excluded by a named rule, reconciled per sitting | part of N1 | N1 cannot be shown complete without it. Recorded as what the implementer must prove, inside the owner's N1 answer |
+| R7 implementer | Step 0 and N3; `CLAUDE.md` review rule | 46 units lost, 43 under the wrong person, 2 stray Fraktion values | Filed, not fixed: the task for this review rules out code changes | filed | `TODOS.md`, stage 1 correctness P1s. Owner to say when |
+
+### N3 result
+
+Full method and tables: [the landscape note](../research/bundestag-corpora-landscape-2026-11.md), "Cross-check against CPP-BT". In the 707 sittings both hold:
+
+- Every real `rede_id` of ours is in CPP-BT. They have 1,716 more in shared sittings.
+- 1,666 of those are §31 declarations, left out by rule. That explains the WP 20 gap of 476, which the second-pass note had left open.
+- 46 units are lost with no refusal: 29 Reden outside any TOP (18/49: 26 of 51, including Schäuble's budget speech; 18/44: 3), 16 written submissions with a longer annex title (18/133, 18/134), and 1 Rede inside a TOP (21/43). 4 more annex units are not classified yet.
+- Comparing surnames led to 3 more shared ids. With a scan of every `<redner>`, 43 units sit under the wrong person. The first scan said 5.
+- The excluded sittings are longer than the rest, which answers gate item 3 and strengthens N1. Median Reden 70 against 54 in WP 18, 125 against 102.5 in WP 19. By words we hold 69.0% of 2018.
+
+## Review sections (2026-11-07, HOLD SCOPE, strategy-only)
+
+**Current scope.** Mode: HOLD SCOPE, by default. Accepted: Q1 to Q17 as decided; N1 B, N2 reworded, N3 done, N4, N5 with the owner, N6 inside N1. Deferred: the fixes for R7. Rejected: none. Not chased: linguistic annotation, WP 1 to 17, ParlaMint encoding, Parquet.
+
+### Section 1: Architecture
+
+```
+  Protocol XML ──► parser ──► every <rede> ─┬─ stored unit ───────────► Reden counts
+  DIP (TOPs,                                ├─ withheld + reason ─────► named omissions
+  Drucksachen,                              └─ excluded by rule (§31)─► documented rule
+  Vorgänge)                                   │
+  roll-calls ──────────► stored for every     └─ reconcile per sitting: must add up,
+                         kept sitting              else the build refuses that sitting
+                                  │
+                                  ▼
+                  release ──► site (A4) ──► page names release and omissions
+                     │
+                     └── outside the build: CPP-BT rede_id comparison per stable release
+```
+
+- **Boundary that changes:** the unit of refusal moves from the sitting to the `<rede>`. The exclusion list stays, for whole-sitting source defects only.
+- **Coupling:** the comparison with CPP-BT is a checklist step, with no build dependency. If CPP-BT stops, the check stops and the release does not.
+- **Feasibility risk:** the 85 sittings were never acquired (P4), so N1 needs a fetch. The estimate is about 2,200 DIP requests, unless the bulk prefetch already covers them.
+- **Rollback:** nothing is published, so the store is rebuilt.
+- **Value test:** the reconciliation is a check on the system, and its consumer is the build's refusal. The comparison serves the stable-release review and retires if CPP-BT stops updating.
+
+### Section 2: Error and rescue map
+
+| Capability | What can go wrong | Handled today? | User sees |
+| --- | --- | --- | --- |
+| Reading `<rede>` | Element outside the path the parser reads | **No. CRITICAL GAP** (18/49, 18/44) | A complete sitting with half its Reden |
+| Annex classification | Title differs from the exact strings | **No. CRITICAL GAP** (18/133, 18/134) | Submissions missing, nothing said |
+| Person binding | One id, several people | **No. CRITICAL GAP** (43 units) | The wrong person's record |
+| Fraktion value | Not a Fraktion | **No** (2 units) | A stray group, possible in a count |
+| Refusal | One bad unit | Yes, but it costs the sitting | Sitting missing, with its votes. N1 changes this |
+| Withholding (new) | Blanking shifts other units | Unknown. The implementer must prove it does not | Wrong ids or order |
+| Fetching the 85 (new) | DIP stops or limits requests | Budget and stop rule exist from A3 | Sitting stays listed as not acquired |
+
+The three silent paths break "refuse, never miscount". N6 is the rescue for the first two and for any future case of the same kind.
+
+### Section 3: Security
+
+No issues found. There is no new endpoint, input or secret. The downloaded CSV stayed in the scratchpad and was read as data with `python3 -I`. A DIP key is needed for the fetch and already has a home.
+
+### Section 4: Data flow and edge cases
+
+```
+  <rede> -> classify -> refused? -> keep text, flag, leave out of counts -> release -> page
+                    \-> nil/empty id, no <redner>: withheld with a reason, not dropped
+                    \-> outside a TOP: needs a decided home, agenda_item_id is required today
+                    \-> all units refused: the written bar decides whether the sitting stays
+                    \-> source file changed since fetch: comparison shows it, C4 may be one
+```
+
+| Interaction | Edge case | Handled? |
+| --- | --- | --- |
+| Reader opens a sitting with a withheld Rede | Sees the place and the reason, reaches the XML | To design, Section 11 |
+| Researcher sums Reden per Fraktion | Withheld units absent, and named | N1, DATA.md |
+| Researcher joins to CPP-BT | §31, `(neu)`, `:N`, `nested*`, shared ids | N4 |
+| Text search in the dump | Withheld text is present | Must be flagged in the row, implementer to confirm |
+
+### Section 5: Code quality
+
+Strategy depth, so only this. `validate_dip_protocol.py:1300` and the audit both read fixed paths and strings, which is why the audit could not see what the parser skipped. A check written against "every `<rede>` in the file" avoids that. The `nested*` ids look like `rede_id`s in `contributions` and misled this review's own first count, so `DATA.md` should explain them.
+
+### Section 6: Tests
+
+| New thing | Must assert | Rejects | `no_claim` |
+| --- | --- | --- | --- |
+| Reconciliation | Stored + withheld + rule-excluded = all `<rede>` ids, per sitting | 18/49 today | Whether a stored unit's content is right |
+| Withholding | Other units identical with and without the withheld unit | Shifted ids or sequence | Whether the refusal itself was right |
+| Reden outside a TOP | 18/49 yields 51 ids | 25 | The right TOP label, until decided |
+| Annex titles | 18/133 and 18/134 yield their 16 | 0 | Other unseen titles; reconciliation catches those |
+| Shared ids | Each of the 43 under the printed person; Völlers keeps her own | One id, one person | Ids not yet seen as shared |
+| CPP-BT comparison | Report per sitting, no build dependency | Silent drift | That either source is right |
+
+The 2am test is a full replay where reconciliation passes on all kept sittings and the comparison leaves only named kinds. The hostile test is a synthetic sitting with a `<rede>` in an unexpected container.
+
+### Section 7: Performance
+
+No issues found at this depth. Reconciliation adds one pass over each sitting's XML, which is already parsed. The real cost is the fetch of the 85. The comparison ran in a few minutes on the laptop.
+
+### Section 8: Observability
+
+Withheld units need a count per sitting and year in the release manifest, so a stable-release review sees a rise. The checklist already has "figures moved since the last stable", and withheld counts join it. Gap: nothing today reports units lost, which is what N6 adds.
+
+### Section 9: Rollout
+
+Order: fix the two silent-loss and shared-id P1s, then build withholding with the reconciliation, then fetch the 85, rebuild, gate, compare, release. Every step moves figures, so report old and new values as `CLAUDE.md` asks. Nothing is public, so there is no migration. Post-rebuild checks: 18/49 has 51 ids, votes on the 85 dates are above 0, and the comparison shows only named kinds.
+
+### Section 10: Long-term trajectory
+
+- **Reversibility:** 4 of 5. Withholding can be undone by rule, until researchers cite figures.
+- **Debt added:** a withheld state that every count must respect. Debt removed: an exclusion list doing two jobs.
+- **Path dependency:** once released, the reasons become part of the citable record, so keep them few and named.
+- **One-year test:** the ADR and the per-unit reasons explain it to a newcomer.
+- **Trajectory:** a parser round now shrinks a list instead of restoring whole days.
+
+### Section 11: Design
+
+Small UI scope: a withheld Rede is a new visible state. No pixel-level review here; "Apply DESIGN.md to the site" must cover it.
+
+| Feature | Empty | Partial | Success |
+| --- | --- | --- | --- |
+| Sitting page | No Reden: says so | "n Reden hier nicht gezählt", with reason and source link | As today |
+| Coverage per year | Year with no sitting | Sittings and units both shown | 100% |
+
+## Second pass: required outputs
+
+**NOT in scope.** Deferred: fixes for R7 (`TODOS.md`). Not chased: annotation, WP 1 to 17, ParlaMint encoding, Parquet, §31 declarations as a new dataset (excluded by ADR 0002; they explain votes, so a later pass could reopen it). Contact with other projects: the owner's.
+
+**What already exists.** `audit_offline_turns.py` blanks refused turns; `contributions.kind`; `coverage-exclusions.json`; A3's DIP budget and bulk prefetch; `rede_id` as a shared key with CPP-BT.
+
+**Dream state delta.** After this plan the record keeps every sitting it can, says what it leaves out, and has been checked against an independent build. Still missing against the 12-month ideal: outside readers, citations, and a repeated comparison.
+
+**Failure modes.**
+
+| Capability | Failure | Rescued | Test | User sees | Logged |
+| --- | --- | --- | --- | --- | --- |
+| Reading `<rede>` | Outside the read path | N | N | Silent. **CRITICAL GAP** | N |
+| Annex titles | Other title | N | N | Silent. **CRITICAL GAP** | N |
+| Person binding | Shared id | N | N | Wrong person. **CRITICAL GAP** | N |
+| Withholding | Shifts units | unknown | planned | Wrong order | implementer to verify |
+| Fetch of the 85 | DIP stops | Y | Y | Not acquired | Y |
+
+**Task list.**
+
+- [ ] **T1 (P1, human ~1 day / CC ~1 h)** Parser: Reden outside a TOP, annex titles, 21/43. Surfaced by N3. Verify: 18/49 has 51 ids; report old and new counts.
+- [ ] **T2 (P1, human ~1 day / CC ~1 h)** Person binding for shared ids. Surfaced by P6. Verify: the 43 units move; Völlers keeps hers.
+- [ ] **T3 (P1, human ~2 weeks / CC ~1–2 days)** Withholding per unit, with reconciliation and an ADR. Surfaced by N1, N6. Verify: Section 6 rows.
+- [ ] **T4 (P1, human ~1 day / CC ~1 h, plus DIP time)** Fetch the 85, rebuild, gate, compare. Verify: votes on those dates above 0.
+- [ ] **T5 (P1, human ~1 h / CC ~15 min)** `DATA.md` comparison. Surfaced by N4. Verify: doc-link test.
+- [ ] **T6 (P2, human ~1 h / CC ~15 min)** Stray Fraktion values. Verify: every Fraktion value is known.
+
+**Stale diagrams.** 0. The Step 0C diagram was updated to "linked".
 
 ## GSTACK REVIEW REPORT
 

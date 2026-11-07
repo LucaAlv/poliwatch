@@ -2,14 +2,16 @@
 
 Research note, 2026-11-06, for the second v1 scope review ([v1-scope-review.md](../plans/v1-scope-review.md)). The owner asked for a thorough look at GermaParl. The largest overlap turned out to be another corpus, CPP-BT, so it comes first.
 
-**Evidence kinds.** "Stated" means the source says so, read on the date above. "Measured" means counted here. Our figures come from the A3 store (`~/agent-runs/a3/full`, 2026-10-28, newest sitting 21/103), not main's tip. "Not stated" means the pages read do not say; it does not mean the feature is absent. No dataset below was downloaded or opened, except the two documentation PDFs.
+**Evidence kinds.** "Stated" means the source says so, read on the date above. "Measured" means counted here. Our figures come from the A3 store (`~/agent-runs/a3/full`, 2026-10-28, newest sitting 21/103), not main's tip. "Not stated" means the pages read do not say; it does not mean the feature is absent. Only CPP-BT's speech metadata was downloaded, with the owner's approval on 2026-11-07. Of the other datasets, only two documentation PDFs were opened.
 
 ## Short answer
 
 - **Speech text from WP 18 to the present is not a gap.** CPP-BT already offers it under CC0, with the Bundestag's own speech and speaker ids, updated in September 2026.
 - **GermaParl overlaps less than it first appears.** Its strengths (1949 on, linguistic annotation, hand checks) are not what this project offers, and its newest open version stops at 2023-07-07.
-- **What nobody else was found to offer is the join for current Wahlperioden.** Speeches, TOPs, Drucksachen, Vorgänge and named votes linked at sitting level, through WP 21. This rests on a negative search, so it is a finding and not proof.
-- **Our 85 excluded sittings are the weak point against this field.** CPP-BT lists every protocol of WP 18 to 20. We hold 613 of those 698.
+- **What nobody else was found to offer is the link for current Wahlperioden.** Speeches, TOPs, Drucksachen, Vorgänge and named votes linked at sitting level, through WP 21. This rests on a negative search, so it is a finding and not proof.
+- **Our 85 excluded sittings are the weak point against this field.** CPP-BT's speech table has 697 sittings of WP 18 to 20. We hold 613 of them.
+- **Where both datasets hold a sitting, they agree closely.** Every `rede_id` of ours is in CPP-BT. Of the 1,716 they have and we do not, 1,666 are §31 declarations we leave out by rule. The check found 46 units we lose without refusing (30 Reden, 16 written submissions) and led to 43 units filed under the wrong person. Both are in `TODOS.md`.
+- **These are independent projects.** This project has no affiliation with any dataset named here. They work in the same direction, an open parliamentary record, separately.
 
 ## Side by side
 
@@ -58,22 +60,50 @@ Research note, 2026-11-06, for the second v1 scope review ([v1-scope-review.md](
 
 *Corpus der Plenarprotokolle des Deutschen Bundestages*, by Seán Fobbe. [Zenodo 22844952](https://zenodo.org/records/22844952), concept DOI 10.5281/zenodo.4542661, version 2026-09-19, CC0.
 
-- **Size:** 4,653 protocols, about 372 million tokens. WP 18 to 21: 245, 239, 214 and 94 protocols. 83,759 speech rows from WP 18 on.
+- **Size:** 4,653 protocols, about 372 million tokens. WP 18 to 21: 245, 239, 214 and 94 protocols. 83,759 speech rows from WP 18 on. The speech table has no rows for 18/20, whose source file holds sitting 21.
 - **Formats:** CSV, TXT, XML and Parquet, 4.4 GB, with SHA hashes and a GPG signature. An open R pipeline, a codebook in German, and a quality report published with the code.
 - **Speech table:** `rede_id`, `redner_id`, names, `redner_fraktion`, role, text, `rede_zitate`, `rede_kommentare`. No TOP, Drucksache, Vorgang or vote column in the variable list.
 - **Its own stated limit:** it does not check deeply, because the build is automatic. It sends readers who need thorough checks to GermaParl.
 - **Twin:** the Drucksachen corpus CDRS-BT. Its record could not be read (HTTP 404 on the API), so its status is unknown.
 
-**Comparison with our counts (measured on ours, stated on theirs):**
+## Cross-check against CPP-BT (2026-11-07)
 
-| WP | Our sittings | CPP-BT sittings | Our base `rede_id`s | CPP-BT Reden | Ours per sitting | CPP-BT per sitting |
-|---|---:|---:|---:|---:|---:|---:|
-| 18 | 194 | 245 | 13,962 | 18,524 | 72.0 | 75.6 |
-| 19 | 206 | 239 | 22,697 | 26,960 | 110.2 | 112.8 |
-| 20 | 213 | 214 | 26,061 | 26,537 | 122.4 | 124.0 |
-| 21 | 103 | 94 | 13,002 | 11,738 | 126.2 | 124.9 |
+**Method.** File `CPP-BT_2026-09-19_DE_CSV_Reden_Metadaten.zip`, Zenodo record 22844952, 10.7 MB, CC0, sha256 `d40cd969f96f34fd48cd56ee1f747b909f269cd4a9a22b49274997ce5b186dee`. It was not committed and nothing in the build reads it. Join rules: drop " (neu)" from their protocol number; drop the `:N` suffix from our sub-ids; skip our `nested*` ids, which are not Bundestag ids; sort each id they have and we lack by its parent element in our XML. Ours is the A3 store and its 716 XML files.
 
-Base ids are `speeches` and `contributions` rows with the `:N` suffix removed, because our sub-ids split one `<rede>`. WP 21 has different cut-offs. The rates sit close together, but 20/11 alone cannot explain WP 20's difference of 476, since one sitting holds about 124. Either CPP-BT keeps rows we do not, or we lose a few. A join on `rede_id` would settle it, and the two id formats match (`ID19200100`).
+| WP | Sittings: ours / theirs / both | `rede_id`s in shared sittings: ours / theirs | Only ours | Only theirs | Their `rede_id`s in sittings we exclude |
+|---|---:|---:|---:|---:|---:|
+| 18 | 194 / 244 / 194 | 13,790 / 14,373 | 0 | 583 | 4,151 |
+| 19 | 206 / 239 / 206 | 22,506 / 23,010 | 0 | 504 | 3,950 |
+| 20 | 213 / 214 / 213 | 25,869 / 26,403 | 0 | 534 | 134 |
+| 21 | 103 / 94 / 94 | 11,643 / 11,738 | 0 | 95 | 0 |
+
+**Old and new figures.** An earlier version of this note counted one `nested` pseudo-id per sitting as a `rede_id` and compared totals, which left a WP 20 gap of 476 unexplained. The sitting-level join replaces that. "About 9,300 `rede_id`s lost" becomes 8,235, because the old figure also counted annex units in sittings we hold.
+
+**The 1,716 ids only they have:**
+
+| Kind | Units | Where | Status |
+|---|---:|---|---|
+| Erklärungen nach § 31 GO | 1,666 | annex | Excluded by rule, disclosed (ADR 0002, `docs/data-methods.md:21`) |
+| Zu Protokoll gegebene Reden with a longer annex title | 16 | 18/133: 5, 18/134: 11 | **Lost.** `validate_dip_protocol.py:1300` matches the title exactly |
+| Other annex types | 4 | 19/115: 2 "zu der Abstimmung über …"; 19/35, 19/45: "Neudruck eines Redebeitrages" | Not classified yet |
+| `<rede>` directly under `<sitzungsverlauf>`, outside any TOP | 29 | 18/49: 26 of 51, from Schäuble's budget speech on; 18/44: 3 | **Lost.** The parser reads only `./sitzungsverlauf/tagesordnungspunkt`, and nothing refuses |
+| `<rede>` inside a TOP | 1 | 21/43 `ID214301700` (Brandner) | **No unit stored,** cause not known |
+
+**Who and which Fraktion, on 73,808 shared ids.**
+- **Speaker id:** 73,772 equal our person's id, 33 differ and 3 of ours have none. The differences are Rinkert (24) and Mende (9), the same person under another id. A shared id passes this test, so it cannot find misfiled people.
+- **Surname:** 185 of 73,803 differ, which is the test that can. Most are spellings or name changes, such as Dağdelen and Dagdelen, or Kemmer and Schmitt. The rest led to the wrong-person units in `TODOS.md`, "Speaker ids the Bundestag gives to more than one person".
+- **Fraktion:** two real differences once labels are folded. 18/222 holds spoken text in the XML's `<fraktion>`, and 20/94's speaker is garbled in the XML (`docs/source-errors.md`, C4, C5).
+
+**Do the excluded sittings differ? Yes, they are longer.**
+
+| | Median Reden: excluded / included | Median tokens: excluded / included |
+|---|---:|---:|
+| WP 18 | 70 / 54 | 72,460 / 47,066 |
+| WP 19 | 125 / 102.5 | 85,623 / 65,733 |
+
+A long sitting has more chances of holding one refused unit, so the rule removes the longest days most often. Coverage by words is lower than by sittings. Share of CPP-BT's tokens in sittings we hold, WP 18 to 20: 2014 73.0%, 2015 73.1%, 2016 80.4%, 2017 82.1%, 2018 69.0%, 2019 92.4%, 2020 85.0%, 2021 90.9%, 2022 98.0%, 2023 to 2025 100%. Over the three Wahlperioden we hold 86.0% of their tokens and 87.9% of their sittings.
+
+**What this check cannot show.** It compares ids and metadata, not text. It covers only units that carry a `rede_id`, so Fragestunde turns are outside it. CPP-BT is automatic too, and says it does not check deeply, so agreement is not proof both are right.
 
 ## Others
 
@@ -87,14 +117,14 @@ Base ids are `speeches` and `contributions` rows with the `:N` suffix removed, b
 
 ## What this means
 
-1. **Positioning.** Our headline cannot be "tidy, citable Bundestag transcripts"; that exists under CC0. It is "the joined, current record". `docs/designs/fakt-der-woche.md:36-41` already said so on 2026-09-19, but that design is the feature now cut, and `PRODUCT.md:42-46` names no research dataset.
-2. **Coverage.** A researcher comparing the two sees 613 of 698 sittings against all of them. CPP-BT keeps a sitting even when its contents are imperfect. Our exclusion also drops the sitting's TOPs, Drucksache links and votes, which are what no other source was found to offer. The store holds 0 of its 556 votes on the 85 excluded dates.
-3. **Free checks.** Three independent pipelines over the same XML can check each other. CPP-BT's codebook already led to one real defect here, the shared speaker ids in the store (`TODOS.md`, "Speaker ids the Bundestag gives to more than one person").
-4. **The right first readers.** Fobbe and the PolMine authors know this material better than anyone, and could be the researcher check that Q16 left open. Contacting them is the owner's call.
+1. **Positioning.** Our headline cannot be "tidy, citable Bundestag transcripts"; that exists under CC0. It is "the linked, current record". `docs/designs/fakt-der-woche.md:36-41` already said so on 2026-09-19, but that design is the feature now cut.
+2. **Coverage.** A researcher comparing the two sees 613 of 697 sittings against all of them. CPP-BT keeps a sitting even when its contents are imperfect. Our exclusion also drops the sitting's TOPs, Drucksache links and votes, which are what no other source was found to offer. The store holds 0 of its 556 votes on the 85 excluded dates.
+3. **Free checks.** Independent pipelines over the same XML can check each other. One join found what our own audits could not, because the audits read the same XML path the parser reads.
+4. **The researcher check.** The owner handles it (decision N5).
 5. **Do not chase.** Linguistic annotation, WP 1 to 17 and ParlaMint encoding are other people's strengths. Parquet would break the standard-library rule (`PRODUCT.md:58`).
 
 ## Sources
 
 GermaParl: [update post](https://polmine.github.io/posts/2025/05/23/GermaParl2-Update.html), [v2.3.0-rc1](https://zenodo.org/records/15495748), [v2.1.0](https://zenodo.org/records/12794676), [docs (v2.0.1)](https://polmine.github.io/GermaParl2/), [data report](https://polmine.github.io/GermaParl2/data-report.html), [ParlaMint-DE paper](https://aclanthology.org/2026.parlaclarin-1.5/). Bundestag: [open data](https://www.bundestag.de/services/opendata). BTVote: [Dataverse](https://dataverse.harvard.edu/dataverse/btvote). Open Discourse: [Dataverse](https://doi.org/10.7910/DVN/FIKIBO), [repository](https://github.com/open-discourse/open-discourse). ParlaMint: [5.0](https://www.clarin.si/repository/xmlui/handle/11356/2004).
 
-**Not read:** the CDRS-BT record, the ParlLawSpeech codebook (GESIS answered 403), the actual files of any dataset. Parts of the Zenodo search and version lists came through a truncated fetch.
+**Not read:** the CDRS-BT record, the ParlLawSpeech codebook (GESIS answered 403), the files of any dataset other than CPP-BT's speech metadata. Parts of the Zenodo search and version lists came through a truncated fetch.
