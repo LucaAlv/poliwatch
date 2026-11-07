@@ -66,7 +66,13 @@ Also listed with no refusal, and not part of N7: 18/178, 18/223, 18/245, 19/1, 1
 The implementer must prove:
 - withholding one unit leaves every other unit's id, sequence and text unchanged, although classification carries state across turns and TOPs;
 - each refusal class has a home: Fragestunde markers have no rede id, Befragung turns raise a different error, "conflicting roles" is sitting-wide, and 18/90's defect is outside any `<rede>`. A class that cannot be narrowed stays out under the bar;
-- step 2 also accounts for Fragestunde turns, which have no `rede_id`.
+- step 2 also accounts for Fragestunde turns, which have no `rede_id`;
+- step 2 inventories the raw XML before `split_nested_reden` (`validate_dip_protocol.py:943`, called at `:1396`), because that and two other functions edit the tree, and a source id in storage does not prove its split-off units survived;
+- withholding has a written rule for split-off units and for text moved between units (`merged_rede`, `merged_erwiderung`, `resumed`, `merged_zwischenfrage`, `:1450-1562`).
+
+**Storage contract, to settle in `/plan-eng-review` before the build (R10):** 20 statements read `speeches` across `build_dip_pulse_site.py` (8), `facts.py` (6) and `compare_store_values.py` (6), and recipes count every row. A flag on `speeches` means changing each of them. A separate withheld table leaves their meaning alone, but `speeches` has UNIQUE(agenda_item_id, sequence), and "every other unit unchanged" needs the slots kept. The review also lists every reader the choice touches.
+
+**Open, in `docs/plans/v1-scope-review.md`:** N9, what coverage is adequate. N10, a check that the links are right.
 
 Withholding works on the whole `<rede>`, as decided. After round 2's rules that means 87 Reden, and no refused marker is a Rede's first, so each withheld Rede includes an opening nobody questioned. The ADR says so. `scripts/audit_offline_turns.py` shows the idea but says its counts cannot certify a database, so it is not the base.
 
@@ -106,7 +112,7 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 | `999990141` | Dr. Mehmet Daimagüler | Judith Gerlach | 2 Reden, 1 `erwiderung` |
 | `10000` | Marja-Liisa Völlers | Carsten Sieling; Olaf in der Beek | 1 Rede; 1 `befragung_frage` |
 
-`999990109` and `11003609` are shared in the source too, with no stored unit affected. Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: compare the printed name with the name already bound to an id, treat a known shared id as no id, and resolve those people by name and role. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures. Separate, and possibly not our error: the merged Mende and Föhr records, `docs/source-errors.md` C4.
+`999990109` and `11003609` are shared in the source too, with no stored unit affected. Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: extend the reviewed partitions in `scripts/person_corrections.json`, which today hold only 11005304, so each printed name gets its own person. An unreviewed label then refuses. Check `999990134` too. Each id's legitimate units stay with their person, and each split person gets the right abgeordnetenwatch profile or none, because the lookup at `build_dip_pulse_site.py:1095` runs on the redner id. A person must not end up with two pages. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures. Separate, and possibly not our error: the merged Mende and Föhr records, `docs/source-errors.md` C4.
 
 **Why:** A wrong person on a citable record. A reader of Maika Friemann-Jennert's record sees 14 Fragestunde answers she did not give.
 

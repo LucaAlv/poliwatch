@@ -299,6 +299,10 @@ Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 | N7 owner | Outside finding 1; `round2-result.md:127,141,225-229,248`; reopens part of N1 | 13 listed sittings parse, raise no refusal and are kept out only by the list, so N1 as worded does not reach them. 7 wait on the ADR 0004 item (18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/73). 2 stay out by the owner's round 2 decision (18/62, 18/90). The open question is 4 sittings with known wrong units: 18/2, 18/29, 18/83, 19/25, the example behind P5 | A reviewed list of single units to withhold in those 4, each with a reason, in the same withheld state as N1 | decided | Owner 2026-11-07: "N7: A". Rejected: keeping the 4 out whole |
 | N8 owner | Outside finding 4; `round2-result.md:89-91,228` | The 400 kept sittings had a merge and attribution review. The sittings N1 restores would not | The same review on restored sittings. Pass rule: any wrong unit goes on the withheld list with a reason, and T4 does not pass until the review has | decided | Owner 2026-11-07: "N8: A". Rejected: relying on the gate and the CPP-BT comparison, which do not check content |
 | R9 implementer | Outside finding 8; `validate_dip_protocol.py:3455-3492` | A Rede outside a TOP has no place in the schema; `agenda_item_id` is required on `speeches` | Decide in `/plan-eng-review`, before T1's first half | pending | Not an owner question unless the choice changes a figure's meaning |
+| R10 implementer | Codex finding 4; `build_dip_pulse_site.py:3440`; `speeches` UNIQUE(agenda_item_id, sequence) | Withheld units have no storage shape, and no one is assigned the 20 statements that read `speeches` | A flag on `speeches` or a separate table; list every reader | pending | Decide in `/plan-eng-review`, before T3 |
+| R11 implementer | Codex finding 2; `validate_dip_protocol.py:943,1396,1450-1562` | Reconciliation assumes one source id per stored unit, but the parser splits Reden and moves text | Inventory the raw XML before any edit to the tree; a written rule for split-off units and moved text | pending | Decide in `/plan-eng-review`, before T3 |
+| N9 owner | Codex finding 5; `TODOS.md` gate step 4 | The bar has no number: a sitting with every Rede withheld would still count as held, and yearly unit totals hide where the loss falls | Publish the withheld share by words per sitting, year and Fraktion, and set a numeric bar from T4's measurement | unresolved | none yet |
+| N10 owner | Codex finding 3; `validate_dip_protocol.py:2686,2893` | No test or gate checks that a vote link is right, though links are the stated difference | A reviewed sample of links before the first release, and the meaning of a link stated in `DATA.md` | unresolved | none yet |
 
 ### N3 result
 
@@ -436,6 +440,18 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 | 11 | Medium | "Independent build" oversells: same XML, ids only, frozen version | Confirmed | Wording corrected; checklist adds surnames and tokens |
 | 12 | Low | `unverified=0` reads cleaner than the estimates under it | Agreed. It counts premises, not figures | Noted |
 
+## Codex plan challenge (2026-11-07)
+
+The owner ran `codex exec` read-only from the terminal, so this is the plan's outside review. Its prompt held the plan before N7 was narrowed and answered, so it did not see those answers. Verdict: revise before implementation, because the gates could pass with identity errors, incomplete accounting and misleading links. Each finding was checked against the code and the A3 store:
+
+| # | Severity | Finding | Checked | Disposition |
+| --- | --- | --- | --- | --- |
+| 1 | High | Clearing `xml_redner_id` can keep the wrong identity through a trusted abgeordnetenwatch id. The repo already has reviewed partitions | Partly. The mechanism exists and does split person pages, but holds only 11005304. On the five ids the wrong person comes through the xml id: their rows carry `xml:<id>`, and aw_match is `name` or NULL. The lookup at `build_dip_pulse_site.py:1095` does run on the redner id, so a profile can attach upstream | T2 and the TODO now extend the partitions. The running session has the correction |
+| 2 | High | Reconciliation assumes a mapping the parser does not have: splits and moved text | Confirmed. 13 speeches with `:N` ids in 11 sittings, 3,419 contributions with `nested:` ids, 18,678 Fragestunde contributions with no `rede_id` | **R11**, added to what the implementer must prove |
+| 3 | High | The gate does not check that speech, bill and vote links are right | Partly. Links need the same date and any shared Drucksache (`:2686`, `:2893`). 590 links, 556 votes, 0 across protocols. 13 votes link to more than one TOP, six of them to 4 to 7 Haushalt TOPs (894, 898, 960, 961, 979, 980), and 84 TOPs have more than one vote. Many may be right. Nothing checks them | **N10**, to the owner |
+| 4 | High | "Outside all Reden counts" is an unassigned change across readers | Confirmed, with a limit: 20 statements in 3 files. A separate table has its own cost: the sequence slots | **R10**, for `/plan-eng-review` |
+| 5 | Medium | No adequacy threshold | Confirmed. Reden withheld per sitting: 1 in 55, 2 in 11, 3 in 2, 4 in 1. Markers by the marker's speaker, who may not own the Rede: LINKE 28, GRÜNE 28, SPD 19, CDU/CSU 14, AfD 5, FDP 5, ministers 4. No shares by words, because the blockers file has no lengths and the XML of the 85 is not on disk | **N9**, to the owner |
+
 ## Second pass: required outputs
 
 **NOT in scope.** Deferred: fixes for R7 (`TODOS.md`). Not chased: annotation, WP 1 to 17, ParlaMint encoding, Parquet, §31 declarations as a new dataset (excluded by ADR 0002; they explain votes, so a later pass could reopen it). Contact with other projects: the owner's.
@@ -453,34 +469,37 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 | Person binding | Shared id | N | N | Wrong person. **CRITICAL GAP** | N |
 | Sittings that parse with known wrong units | No refusal, so N1 passes them | N | N | Wrong counts if the list shrinks. **CRITICAL GAP** until N7 A and N8 A are built | N |
 | Withholding | Shifts units | unknown | planned | Wrong order | implementer to verify |
+| Vote links | Shared Drucksache links the wrong TOP | N | N | Misleading link. **CRITICAL GAP**, N10 | N |
 | Fetch of the 85 | DIP stops | Y | Y | Not acquired | Y |
 
 **Task list.**
 
 - [ ] **T1 (P1, human ~3 days / CC ~half a day)** Parser: Reden outside a TOP (after R9), annex titles, 21/43. Surfaced by N3. Verify: 18/49 has 51 ids; report old and new counts.
-- [ ] **T2 (P1, human ~1 day / CC ~1 h)** Person binding for shared ids. Surfaced by P6. Verify: the 43 units move; Völlers keeps hers; rescan once the 85 are fetched.
-- [ ] **T3 (P1, human ~3–4 weeks / CC ~3–5 days, estimated; was ~2 weeks / ~1–2 days)** Withholding per unit, with reconciliation, an ADR and N7's reviewed list of single units, after `/plan-eng-review`. Surfaced by N1, N6, N7, outside finding 3. Verify: Section 6 rows; the known wrong units in 18/2, 18/29, 18/83 and 19/25 are withheld with a reason.
+- [ ] **T2 (P1, human ~1 day / CC ~1 h)** Person binding for shared ids, by extending the reviewed partitions. Surfaced by P6, Codex finding 1. Verify: the 43 units move; Völlers keeps hers; no person gets two pages; rescan once the 85 are fetched.
+- [ ] **T3 (P1, human ~3–4 weeks / CC ~3–5 days, estimated; was ~2 weeks / ~1–2 days)** Withholding per unit, with reconciliation, an ADR and N7's reviewed list of single units, after `/plan-eng-review`, which settles R10 and R11 and re-estimates this task. Surfaced by N1, N6, N7, outside finding 3, Codex findings 2 and 4. Verify: Section 6 rows; the known wrong units in 18/2, 18/29, 18/83 and 19/25 are withheld with a reason.
 - [ ] **T4 (P1, human ~4 days / CC ~half a day, estimated, plus DIP time; was ~1 day / ~1 h before N8's review)** Fetch the 85, scan, review restored sittings (N8), rebuild, gate, compare. Follows T3. Verify: votes match the roll-call list date by date; the review has passed, with every wrong unit on the withheld list.
 - [ ] **T5 (P1, human ~1 h / CC ~15 min)** `DATA.md` comparison. Surfaced by N4. Verify: doc-link test.
 - [ ] **T6 (P2, human ~1 h / CC ~15 min)** Stray Fraktion values. Verify: every Fraktion value is known.
 
 **Stale diagrams.** 0. The Step 0C diagram was updated to "linked".
 
-**Completion summary.** Mode: HOLD SCOPE, by default. Sections 1 to 11 reviewed; Section 3 and 7 no issues. Failure modes: 6 capabilities, 4 critical gaps. Stale diagrams: 0. Scope proposals: 0, by mode. Reality rows 7/7. Outside voice: Codex unavailable in the sandbox; bounded native fallback completed with 12 findings. Lake score: N/A, no scored option was 10/10.
+**Completion summary.** Mode: HOLD SCOPE, by default. Sections 1 to 11 reviewed; Section 3 and 7 no issues. Failure modes: 7 capabilities, 5 critical gaps. Stale diagrams: 0. Scope proposals: 0, by mode. Reality rows 7/7. Outside voice: bounded native fallback, 12 findings; Codex, run by the owner, 5 findings. Lake score: N/A, no scored option was 10/10.
 
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 | --- | --- | --- | --- | --- | --- |
-| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 4 critical gaps open until built, all owner decisions answered |
-| Outside Review | Codex, automatic | Independent 2nd opinion | 1 attempt | unavailable | Sandbox blocked Codex; no completed external review of this plan. Native fallback: 12 findings; all resolved, 2 by the owner's answers (N7, N8) |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 5 critical gaps open until built, 2 decisions open (N9, N10) |
+| Outside Review | Codex, run by the owner | Independent 2nd opinion | 1 | issues found | 5 findings: 3 confirmed, 2 in part; 2 to the owner, 2 to eng review, 1 corrected T2. Native fallback before it: 12 findings, all resolved |
 | Eng Review | `/plan-eng-review` | Architecture and tests (required) | 0 | not run | none |
 | Design Review | `/plan-design-review` | UI and UX gaps | 0 | not run | none |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | not run | none |
 
-- **OUTSIDE COVERAGE:** Codex, plan review: unavailable (sandbox). The owner's two `codex review` runs covered the diff before commit 06defd1, found no actionable defects, and are not a plan challenge. Native fallback (Plan subagent): completed, not outside coverage.
+- **OUTSIDE COVERAGE:** Codex plan challenge: completed 2026-11-07, run by the owner, because the sandbox blocks it here. Its prompt predates the N7 narrowing and the N7 and N8 answers. The owner's two earlier `codex review` runs covered the diff before commit 06defd1 and found no actionable defects. Native fallback (Plan subagent): completed, not outside coverage.
 - **REVIEW HISTORY:** not persisted. The sandbox blocks writes to `~/.gstack`, so these rows exist only in this file.
-- **VERDICT:** no review is CLEAR. T1, T2, T5 and T6 can start; eng review required before T3; T4 follows T3.
+- **VERDICT:** no review is CLEAR. T1, T2, T5 and T6 can start, and T1 and T2 have started. Eng review required before T3, and it settles R9, R10 and R11; T4 follows T3.
 
 **UNRESOLVED DECISIONS:**
+- N9: what coverage is adequate.
+- N10: a check that the links are right.
 - Host provider and reader test pass rule (recorded in TODOS.md).
