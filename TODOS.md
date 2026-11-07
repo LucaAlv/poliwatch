@@ -692,7 +692,7 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
 2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
 3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values were not tuned against the design's grounds.
-4. **Components.** Vote wall and strip, tally, source line, origin line, gap, slip versus ground, navigation, Stand line, Zitieren line, home doors, Daten's release blocks and CSV control. Votes pages first: the archive now renders from the store (#133). Do not convert `api-sitzungen.html`, `settings.html`, Fakt der Woche or the AI summary: all are out of v1 (`docs/plans/v1-scope-review.md`).
+4. **Components.** Vote wall and strip, tally, source line, origin line, gap, slip versus ground, navigation, Stand line, Zitieren line, vote lead, home doors, Daten's release blocks and CSV control. Votes pages first: the archive now renders from the store (#133). Do not convert `api-sitzungen.html`, `settings.html`, Fakt der Woche or the AI summary: all are out of v1 (`docs/plans/v1-scope-review.md`).
 
 **Why:** the owner finds the site unattractive, and the design system does nothing until pages use it. Every page has to carry the token blocks and the font stack today.
 

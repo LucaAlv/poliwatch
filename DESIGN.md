@@ -195,6 +195,7 @@ The v1 surfaces, navigation and name here follow the owner's decisions of 2026-1
 - Lead figures in `figure-lead`, with their label on the same line or directly below.
 - The site stores nothing about a visit, so there is no "neu" badge. The date does that work.
 - No disclosure hides a first-screen answer. A source line may stay folded.
+- The newest vote always stands on the page, as a Vote lead below the next planned Sitzungswoche. A week without a roll call says so and still shows it, with its older date.
 
 **Aktuell never promises today.** A sitting appears once its Sitzungswoche is complete and its protocol is out, up to 6 days later (a Wednesday sitting shows the next Tuesday). No source gives anything newer. "Aktuell" is only the link's name. The page's heading names the period ("Letzte Sitzungswoche: KW 37/2026"), and no visitor-facing line about the data uses "heute", "gerade", "jetzt", "läuft" or "bisher". One sentence on the page gives the delay: "Eine Sitzung erscheint hier, wenn ihre Sitzungswoche abgeschlossen und das Protokoll veröffentlicht ist, üblicherweise bis zu 6 Tage danach." "Üblicherweise", because 6 days assumes the release ran on time. The sentence stands below the first-screen answers, since it explains them and answers nothing itself.
 
@@ -322,7 +323,12 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 
 **Footer.** A hairline, the provenance key in words ("Blatt mit Rand: steht so in der Quelle, die das Blatt oben nennt. Offene Fläche: von dieser Website berechnet oder zusammengestellt."), then the data note and four links, each a full target: Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz.
 
-**Home.** The door to both angles, which are weighted equally. `heading-1`, the Stand line, then two doors of the same form, Aktuell and then Analysen: a hairline, a heading link, one sentence, one lead line. Two columns from 761 px, stacked below. At 375 by 667 and 360 by 640 px both doors end on the first screen (the second ends at 620 px); only the overdue gap may push it lower. The public site ships with its first analysis (stage 2); a build before that shows a Gap in the second door, and no Analysen link. Below them "Zuletzt": the latest Sitzung and vote as date-first rows, then the next planned Sitzungswoche, then a link to the dataset. No third door and no list of all areas, since the navigation already is that list.
+**Home.** The door to both angles, which are weighted equally. `heading-1`, the Stand line, then two doors of the same form, Aktuell and then Analysen: a hairline, a heading link with the normal underline, one sentence, and one piece of what stands behind the door.
+- **Aktuell door.** The newest vote as a Vote lead, since the card is what the site is about.
+- **Analysen door.** The lead question of an analysis, then one small panel per Fraktion on a shared axis, each with its name and latest value as text, and one line naming the measure. All of them, because one Fraktion alone would pick a side on the home page, and overlaying them is ruled out. This is a reduced form of small multiples, whose full panels and table stand on the analysis page.
+- **Layout.** Two columns from 761 px, stacked below. At 375 by 667 px the first door ends at 610 px and the second's heading stands at the bottom of the first screen, from 631 to 675 px; at 360 by 640 px only its hairline does. Only the overdue gap may push it lower.
+
+The public site ships with its first analysis (stage 2); a build before that shows a Gap in the second door, and no Analysen link. Below them "Zuletzt": the latest Sitzungswoche and Sitzung as date-first rows, then the next planned Sitzungswoche, then a link to the dataset. No third door and no list of all areas, since the navigation already is that list.
 
 **Verdict.** On a vote's page: `display` for the outcome word, then the official title, the date and Sitzung, and a note saying the outcome is computed where it is. All of this is ground. The source line leads from here to the slip, which opens with its origin line, then the totals in `figure-row`. On an inverted vote the verdict names the Antrag ("Antrag abgelehnt", from `derive.vote_outcome`), never the bare result of the recommendation.
 
@@ -332,6 +338,8 @@ Nearly square, like paper and cards: 1px on cards and slips, 2px on controls. Pi
 - **One person's votes.** The same cards in one row per person, one card per vote, oldest first, with the same key and a table as text.
 
 **Strip.** The list form of a vote: a small white bar with a 1px `slip-edge` line, 14px high, directly on the page with no box around it, holding one segment per vote kind in proportion, in the same fills as the cards, with "nicht abgegeben" as a lower stub. Its counts follow in `figure-small`, in words. On an inverted vote a bold line below says "Ja heißt hier: gegen den Antrag." A key opens the list once, also without a box. The strip is `aria-hidden`; the counts carry it.
+
+**Vote lead.** The newest vote where a visitor arrives, on Home and Aktuell, on the ground: the label and date ("Letzte namentliche Abstimmung: 12.06.2026"), the verdict in D-DIN at `figure-row` size, the official title as a 44px link to the vote's page, clamped to two lines, then the strip and its counts. The date always stands first, because the newest vote can be months older than the last Sitzungswoche. The verdict comes from `derive.vote_outcome`, so an inverted vote reads "Antrag abgelehnt", with the strip's bold line below it. If no vote exists, a Gap takes its place.
 
 **Tally.** One tick per Rede, gathered in fives, in the Fraktion's colour, followed by the count as text and preceded by the name. Long periods use one tick per ten, with that scale printed in the row. Single ticks are not tap targets. Rows wrap at phone width in the same Fraktion order.
 
@@ -467,6 +475,8 @@ For the one shared stylesheet. Values come from the front matter; the classes ar
 | Navigation | `.site-nav` | ground | `nav`, `--target`, 2px current underline | Wraps; `0.9375rem`, -0.01em and 4px gap below 760px |
 | Footer | `.site-foot`, `.prov`, `.foot-nav` | ground | `note`, `--target`, `--hair` | Carries the provenance key |
 | Door | `.doors`, `.door`, `.door-what`, `.door-lead` | ground | `heading-2`, `body`, `name`, `--hair` | Home only; one column below 760px |
+| Door panels | `.sparks`, `.spark` | ground | 2px `--c`, 24px high, `figure-small` | 3 columns at every width; name and value as text |
+| Vote lead | `.vote-lead`, `.vote-lead-verdict`, `.vote-lead-title`, `.vote-lead-count` | ground | `figure-row` in D-DIN, `note`, `figure-small`, `--target` | Home and Aktuell; max 44rem |
 | Slip | `.slip`, `.slip.tight` | slip | `--slip`, `--edge`, `--s5`; tight `--s2 --s3`; `--s3` below 760px | `box-shadow: 0 0 0 1px var(--edge)` |
 | Source line | `.faden`, `details.beleg` | ground to slip | 1px by `--s5`, `--edge` | Summary keeps a marker |
 | Origin line | `.origin`, `.lab` | slip | `note`, `reference`, `--ink`, `--target` | First in the slip; one per source |
@@ -546,3 +556,7 @@ Name to slug: CDU/CSU `cdu`; AfD `afd`; SPD `spd`; BÜNDNIS 90/DIE GRÜNEN `grue
 | 2026-11-07 | A Zitieren line on vote, Sitzung, person and analysis pages, with five states | Critique, P1: pages show main, Daten says cite stable, nothing connected them. "In stable" alone would read as "same figure" after a correction, so "unverändert" needs a comparison and a corrected record gets its own state. Analysis pages are beyond the critique's list, because they hold the figures most likely to be cited |
 | 2026-11-07 | On a vote's page the Zitieren line stands under the slip | In the head it pushed the totals to 673 px at 375 by 667, off the first screen; under the slip they start at 621 px. The rule that the evidence starts on the first screen wins over one place for the line on every page. Judgement by the design session, not tested with readers |
 | 2026-11-07 | CSV is an outline control that opens the file list in place | Critique, P1: the main download was 252 MB of SQLite and the CSV a small link that led nowhere. Stable's SQLite keeps the page's one primary control. A release has 29 CSV files and no single archive, so the control lists them instead of pretending to be one download |
+| 2026-11-07 | Home and Aktuell show the newest vote: verdict, strip and counts, date first | Critique, P1: a visitor could see both and never meet a card. It replaces the door's lead line and the vote's row under "Zuletzt". In the preview the newest vote is from 12 June and the last Sitzungswoche from September, so the date has to lead |
+| 2026-11-07 | The Analysen door shows six small panels | Weighting the angles equally rules out a vote on one door and a line of text on the other. A panel for one Fraktion would pick a side on the home page, and the rule against overlaying rules out one chart |
+| 2026-11-07 | The second door's heading must reach the first screen, not its end. Replaces "both doors end on the first screen" | The vote does not fit otherwise: the second door ended at 620 px and now ends at 960 px at 375 by 667. Shortening the first door's sentence and label brought the heading up to 631 to 675 px. At 360 by 640 px only its hairline shows. Judgement by the design session, since the critique's fix and the earlier rule cannot both hold; a reader test can reverse it |
+| 2026-11-07 | Door links carry the normal underline | Critique, P1: without it they read as headings. No exception to the link rule is left there |
