@@ -1,0 +1,45 @@
+person	store	reden	beitraege	stimmen	records	person_id
+Annette Widmann-Mauz	alt	32	63	534	aw:118138 dip:481 xml:11003259	p-002693
+Dr. Andreas Bovenschulte	alt	3	19	0	xml:999990124	person-v1-24598d41d21975f7463de13ceb768aeb47e333160482fdd233fca2cdcc698bd9
+Dr. Andreas Bovenschulte	alt	0	0	0	dip:7131	person-v1-63cb8c097ab93349c5968699a9ff4dca952fbdd286c2ac8d639d00f633fba4fa
+Anette Kramme	alt	19	190	619	aw:79223 xml:11003162	p-001041
+Anette Kramme	alt	0	0	0	dip:8149	person-v1-62e11641dcae37b1fb87d89ed166479aa64082b986f18f67c7d8d4bc6d8db4c3
+Maika Friemann-Jennert	alt	1	14	30	dip:7189 xml:999990108	person-v1-4d79dbd8b148c513a490eda90ac62ba77cb85471a8e93067f9aa44e5c3d637b5
+Enak Ferlemann	alt	28	335	534	aw:79393 xml:11003525	p-002135
+Enak Ferlemann	alt	7	27	0	xml:999990127	person-v1-322aee3609d757e55f421f5a141bd7a0fccbcf2f9bd03719b415b9ee22d9bf3f
+Enak Ferlemann	alt	0	0	0	dip:1757	person-v1-14ede6c199f39cfbd69537652259a3f68614e36e8d666b4e76c497c8666c5942
+Peter Beuth	alt	0	0	0	dip:1809	person-v1-3c611d7ddfbf8446957e5125f460d63918d3065566698aa940d99d313dd9469c
+Judith Gerlach	alt	0	0	0	dip:7686	person-v1-33f1fe890c1016903e4d876cc9130d95ebc08617378be6e550d3dfbc746ba926
+Dr. Mehmet Daimagüler	alt	3	1	0	xml:999990141	person-v1-5a035c693288a2376442620436915b1675f09609523c0d069b1ef616ec97adf6
+Dr. Mehmet Daimagüler	alt	0	0	0	dip:7727	person-v1-3193c56087db4fd83c197f1c8d6a3f42b87b89d9594462da108b3a16e57e9f2f
+Marja-Liisa Völlers	alt	0	0	198	(nur Stimmen)	p-006119
+Marja-Liisa Völlers	alt	0	0	184	(nur Stimmen)	p-003507
+Marja-Liisa Völlers	alt	0	0	85	(nur Stimmen)	p-001319
+Marja-Liisa Völlers	alt	39	7	0	aw:146784 xml:11004942	person-v1-d797595577b8a1a0bcf7647290a673e62ff1b715ce9a80c06082f52355b97f72
+Marja-Liisa Völlers	alt	2	2	0	xml:10000	person-v1-cfbb713ad99a6c07d0c2bb6016edc70810b33ca28f2f3fd972c943a382d92d33
+Marja-Liisa Völlers	alt	0	0	3	(nur Stimmen)	p-002661
+Marja-Liisa Völlers	alt	0	0	0	dip:6968	person-v1-2f4356d4f470f15d80cf1c095f8527ab70763e6ada698af90b1c2e7a855d8f7c
+Olaf in der Beek	alt	0	0	198	(nur Stimmen)	p-005956
+Olaf in der Beek	alt	0	0	184	(nur Stimmen)	p-003106
+Olaf in der Beek	alt	51	14	0	aw:146348 xml:11004667	person-v1-7364f3d0d3f177d49dae39ed09c331f88605c5394a2f2dc730a331666678f391
+Olaf in der Beek	alt	0	0	3	(nur Stimmen)	p-002261
+Olaf in der Beek	alt	0	0	0	dip:2064	person-v1-482b9bb8c290fe88038e4fd7234dfd807d09a573bca9a755ebb7aaf36f64e69b
+Dr. Carsten Sieling	alt	6	0	62	xml:11004157	p-005766
+Dr. Carsten Sieling	alt	0	0	0	dip:1886	person-v1-445d02d5c872d41dfe3486f911b2e15546e53fa3be4d3fd6a18eaf65554d239d
+Dr. Lena Kreck	alt	1	0	0	xml:999990134	person-v1-7343060722439a5b1abc9b22efbf2ef48e28e2c653faea0616b02f8b93caa820
+Dr. Lena Kreck	alt	0	0	0	dip:7642	person-v1-c8b8b81b4f46060efe41d10fac7b1b27728825ee5c16106d600cdeee59b3ca91
+Annette Widmann-Mauz	neu	34	82	534	aw:118138 dip:481 xml:11003259	p-002693
+Dr. Andreas Bovenschulte	neu	1	0	0	dip:7131	person-v1-63cb8c097ab93349c5968699a9ff4dca952fbdd286c2ac8d639d00f633fba4fa
+Anette Kramme	neu	19	204	619	aw:79223 xml:11003162	p-001041
+Anette Kramme	neu	0	0	0	dip:8149	person-v1-62e11641dcae37b1fb87d89ed166479aa64082b986f18f67c7d8d4bc6d8db4c3
+Maika Friemann-Jennert	neu	1	0	30	dip:7189	p-005906
+Enak Ferlemann	neu	32	362	534	aw:79393 xml:11003525	p-002135
+Enak Ferlemann	neu	0	0	0	dip:1757	person-v1-14ede6c199f39cfbd69537652259a3f68614e36e8d666b4e76c497c8666c5942
+Peter Beuth	neu	3	0	0	dip:1809	person-v1-3c611d7ddfbf8446957e5125f460d63918d3065566698aa940d99d313dd9469c
+Judith Gerlach	neu	2	1	0	dip:7686	person-v1-33f1fe890c1016903e4d876cc9130d95ebc08617378be6e550d3dfbc746ba926
+Dr. Mehmet Daimagüler	neu	1	0	0	dip:7727	person-v1-3193c56087db4fd83c197f1c8d6a3f42b87b89d9594462da108b3a16e57e9f2f
+Marja-Liisa Völlers	neu	40	8	470	aw:146784 dip:6968 xml:11004942	p-001319
+Olaf in der Beek	neu	51	15	385	aw:146348 dip:2064 xml:11004667	p-002261
+Dr. Carsten Sieling	neu	7	0	62	xml:11004157	p-005766
+Dr. Carsten Sieling	neu	0	0	0	dip:1886	person-v1-445d02d5c872d41dfe3486f911b2e15546e53fa3be4d3fd6a18eaf65554d239d
+Dr. Lena Kreck	neu	1	0	0	dip:7642	person-v1-c8b8b81b4f46060efe41d10fac7b1b27728825ee5c16106d600cdeee59b3ca91

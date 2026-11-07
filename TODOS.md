@@ -20,7 +20,6 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
-   - "Speaker ids the Bundestag gives to more than one person".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
@@ -100,24 +99,19 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 **Priority:** P1
 **Depends on:** None
 
-### Speaker ids the Bundestag gives to more than one person
+### Shared Redner-IDs: what the fix leaves open
 
-**What:** The protocol XML reuses speaker ids for different people, and the store files all of them under one person. Measured on the A3 store (716 XML files, 2026-11-07), not re-measured on main's tip. An earlier scan reported 2 ids and 5 units; this one reads every `<redner>` and every stored unit filed under a shared id, and finds 5 ids with **43 units under the wrong person**:
+**What:** The fix of 2026-11-07 (`docs/stable-ids.md`, `docs/source-errors.md` E6; figures in `docs/plans/shared-redner-ids-old-new.tsv`) leaves these:
+1. **Dr. Carsten Sieling keeps two pages:** the MdB record `xml:11004157` (7 Reden, 62 Stimmen) and the empty DIP row `dip:1886` (MdBR, Bremen). This predates the fix: a DIP row with no party joins no name+party bucket. A reviewed merge names person keys, which are reissued in a fresh build, so it needs a stable way to name them.
+2. **Not scanned: the 85 excluded sittings.** The name check in `reconcile` scans them when they are included, and refuses until a shared id found there has an entry.
+3. **`999990109` and `11003609` have no entry,** because their second person sits in an annex and a speaker list that are not stored. If "Reden the parser drops without refusing" stores Tim Ostermann's annex unit of 19/234, the build refuses until `999990109` has an entry.
+4. **The name check does not catch two people who share a word,** such as a given name: a surname change looks the same.
+5. **C4 (Föhr/Mende) was not checked against the PDF.** Its six reviewed occurrences and its partition are unchanged, 0 of its units moved.
 
-| Id | Filed under | Actually | Units |
-|---|---|---|---:|
-| `999990124` | Dr. Andreas Bovenschulte | Annette Widmann-Mauz | 19 `fragestunde_antwort`, 2 Reden |
-| `999990108` | Maika Friemann-Jennert | Anette Kramme | 14 `fragestunde_antwort` |
-| `999990127` | Enak Ferlemann | Peter Beuth | 3 Reden |
-| `999990141` | Dr. Mehmet Daimagüler | Judith Gerlach | 2 Reden, 1 `erwiderung` |
-| `10000` | Marja-Liisa Völlers | Carsten Sieling; Olaf in der Beek | 1 Rede; 1 `befragung_frage` |
+**Why:** None of them is a wrong unit in the store today.
 
-`999990109` and `11003609` are shared in the source too, with no stored unit affected. Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: extend the reviewed partitions in `scripts/person_corrections.json`, which today hold only 11005304, so each printed name gets its own person. An unreviewed label then refuses. Check `999990134` too. Each id's legitimate units stay with their person, and each split person gets the right abgeordnetenwatch profile or none, because the lookup at `build_dip_pulse_site.py:1095` runs on the redner id. A person must not end up with two pages. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures. Separate, and possibly not our error: the merged Mende and Föhr records, `docs/source-errors.md` C4.
-
-**Why:** A wrong person on a citable record. A reader of Maika Friemann-Jennert's record sees 14 Fragestunde answers she did not give.
-
-**Effort:** S
-**Priority:** P1
+**Effort:** S each
+**Priority:** P3
 **Depends on:** None
 
 ### Stored Fraktion values that are not Fraktionen
@@ -704,7 +698,7 @@ Done when:
 
 ### Placeholder Redner ids put one speaker on two Personenseiten
 
-**What:** 98 `mps` records have an `xml:99999…` key, a placeholder-looking Redner id in the Bundestag XML. 86 of them are a person of their own although the same name also has another person, holding 463 Reden and 1,423 other Beiträge. Examples: Svenja Schulze (48 Reden, 262 Beiträge), Dr. Franziska Giffey (34, 119), Klara Geywitz (27, 157), Dr. Janosch Dahmen (7 Reden under `999990105`, 37 on his main page). Measured 2026-11-05 on e7b06f3: the same in a store-less build and an upgraded store, and E4 does not touch it.
+**What:** 98 `mps` records have an `xml:99999…` key, a placeholder-looking Redner id in the Bundestag XML. 86 of them are a person of their own although the same name also has another person, holding 463 Reden and 1,423 other Beiträge. Examples: Svenja Schulze (48 Reden, 262 Beiträge), Dr. Franziska Giffey (34, 119), Klara Geywitz (27, 157), Dr. Janosch Dahmen (7 Reden under `999990105`, 37 on his main page). Measured 2026-11-05 on e7b06f3: the same in a store-less build and an upgraded store, and E4 does not touch it. Since 2026-11-07 the records `xml:999990108`, `xml:999990124`, `xml:999990127`, `xml:999990134` and `xml:999990141` are gone (`docs/source-errors.md` E6, C7). So for Widmann-Mauz, Kramme and Ferlemann this decision was taken ahead of it: their Staatssekretär units are on their main pages, because no record could stay on an id shared with someone else. Object here if that is wrong for them.
 
 **Why:** A reader sees part of a person's Reden on each page, so a page's Reden count is short. This has not been checked against the intent: a comment in `derive.py` reads one such id (`999990013`) as an explicit government role, so the split may be deliberate for some of them, though not obviously for Dahmen, who held no government post. Decide that first, then report the moved person counts and pages old/new.
 
@@ -1736,6 +1730,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Speaker ids the Bundestag gives to more than one person: 2026-11-07, not yet released, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone

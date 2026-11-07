@@ -111,7 +111,7 @@ A list of places where an official source file says something wrong or files con
   - `id="999990109"`: Gabriele Lösekrug-Möller in seven sittings of WP 18; Tim Ostermann in an annex of 19/234.
   - `id="11003609"`: Sibylle Pfeiffer; Michael Roth, once, in the speaker list of 18/230.
 - **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
-- **Our side:** TODOS.md, "Speaker ids the Bundestag gives to more than one person".
+- **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored.
 
 ## Candidates
 
@@ -139,6 +139,13 @@ A list of places where an official source file says something wrong or files con
 - **Source:** in 20/94 (`ID209407600`), 20/96 (`ID209614200`) and 20/116 (`ID2011606700`), among others: `<redner id="11005304">` with `<vorname>Dirk-UlrichAlexander</vorname>`, `<nachname>Mende Föhr</nachname>` and `<fraktion>SPDCDU/CSU</fraktion>`. The printed label in 20/94 reads "Dirk-Ulrich Mende (SPD):".
 - **What looks wrong:** the names and Fraktionen of Dirk-Ulrich Mende and Alexander Föhr are run together, 23 times across the WP 20 files. In our files `11005304` also appears alone for each of them, 34 times for Föhr and 23 for Mende. CPP-BT's rows give Mende `11005303`, so the source files may have changed since we fetched ours.
 - **To check before reporting:** who spoke in each case, against the PDF, and whether a fresh download still shows this. Our store files the three Reden above under Mende, CPP-BT files 20/94 under Föhr.
+
+### C7. Two names run together in one speaker in 20/82
+
+- **Status:** candidate. Found 2026-11-07. Not checked against the PDF.
+- **Source:** 20/82, `ID208205200`: `<redner id="999990134">` with `<vorname>Dirk-UlrichLena</vorname>` and `<nachname>Mende Kreck</nachname>`, role "Senatorin (Berlin)". The printed label reads "Dr. Lena Kreck, Senatorin (Berlin):", and the chair gives "Frau Dr. Lena Kreck" the floor.
+- **What looks wrong:** Dirk-Ulrich Mende's name fields run into Lena Kreck's, the pattern of C4. The id itself appears for no one else in our files.
+- **Our side:** `scripts/person_corrections.json` names her, on her DIP record.
 
 ### C5. Spoken text inside `<fraktion>` in 18/222
 
