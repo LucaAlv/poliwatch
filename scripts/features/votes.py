@@ -30,6 +30,17 @@ def result_badge_label(result_raw: Any) -> str | None:
     return RESULT_BADGE_LABELS.get(str(result_raw or ""))
 
 
+def _badge_subject(vote: Mapping[str, Any]) -> str | None:
+    """What the badge's outcome is about, where a bare word would read as the
+    outcome of the Antrag or topic in the row's title. A vote on the Vorlage
+    itself needs none. The same reading as ``render_vote_lead``."""
+    if vote.get("inverted"):
+        return "Antrag"
+    if derive.abstimmungsgegenstand(vote) != "beschlussempfehlung":
+        return None
+    return "Antrag" if vote.get("result_scope") == "application" else "Beschlussempfehlung"
+
+
 def render_result_badge(vote: dict[str, Any]) -> str:
     """The Angenommen/Abgelehnt pill for the dossier panel and the votes
     archive; a vote with no recorded result renders no badge.
@@ -42,8 +53,9 @@ def render_result_badge(vote: dict[str, Any]) -> str:
                   else "Mehrheit der Mitglieder erforderlich; kein amtliches Ergebnis gefunden"
                   if vote.get("procedure_type") else "Kein Ergebnis verfügbar")
         return f'<span class="vote-no-result">{html.esc(reason)}</span>'
-    if vote.get("inverted"):
-        label = "Antrag: " + label
+    subject = _badge_subject(vote)
+    if subject:
+        label = f"{subject}: {label}"
     if result_source == "official":
         return (
             f'<span class="vote-result vote-result-{html.esc(result_raw)}"'
@@ -635,7 +647,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
 class StoredVote:
     """One stored vote, in the shapes the report path hands the vote rules.
 
-    ``vote``: the vote dict (``id``, ``date``, ``title``, ``topic``, ``total``
+    ``vote``: the vote dict (``id``, ``date``, ``title``, ``description``, ``topic``, ``total``
     with ``None`` for a count the source did not give, the result fields,
     ``inverted``, ``document_numbers`` in stored order, ``fractions`` in stored
     order, ``members``). ``item``: the agenda item that supplies the vote's
@@ -735,7 +747,7 @@ def stored_votes(conn: Any) -> list[StoredVote]:
 
     result = []
     for row in conn.execute(
-        "SELECT v.id, v.protocol_id, p.document_number, v.date, v.topic, v.title, v.yes_count, v.no_count, "
+        "SELECT v.id, v.protocol_id, p.document_number, v.date, v.topic, v.title, v.description, v.yes_count, v.no_count, "
         "v.abstain_count, v.absent_count, v.result_raw, v.result_source, v.result_scope, v.procedure_type, v.inverted "
         "FROM votes v LEFT JOIN protocols p ON p.id = v.protocol_id"
     ):
@@ -745,6 +757,7 @@ def stored_votes(conn: Any) -> list[StoredVote]:
             "date": row["date"],
             "topic": row["topic"],
             "title": row["title"],
+            "description": row["description"],
             "total": {key: row[column] for key, column in _TOTAL_COLUMNS},
             "result_raw": row["result_raw"],
             "result_source": row["result_source"],

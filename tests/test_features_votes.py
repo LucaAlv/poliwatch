@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unittest
 
 import _support  # noqa: F401
@@ -14,6 +15,7 @@ from features.votes import (
     document_source_links,
     document_source_chambers,
     render_document_links,
+    render_result_badge,
     result_badge_label,
 )
 
@@ -880,6 +882,21 @@ class VoteLeadTests(unittest.TestCase):
                 markup = vote_summary({"votes": [vote]})
                 self.assertIn("Empfehlung lautete, den Antrag abzulehnen", markup)
                 self.assertIn(f"Antrag wurde {expected}", markup)
+
+    def test_the_badge_names_what_was_accepted_or_rejected(self) -> None:
+        recommendation = "Beschlussempfehlung des Ausschusses zu dem Antrag der Fraktion X"
+        for label, fields, expected in (
+            ("recommendation, direction not established", {"description": recommendation, "result_raw": "accepted", "result_source": "official"}, "Beschlussempfehlung: Angenommen"),
+            ("recommendation, computed", {"description": recommendation, "result_raw": "accepted", "result_source": "derived"}, "Beschlussempfehlung: Angenommen (berechnet)"),
+            ("recommendation fell", {"description": recommendation, "result_raw": "rejected", "result_source": "official"}, "Beschlussempfehlung: Abgelehnt"),
+            ("rejecting recommendation", {"description": recommendation, "result_raw": "accepted", "result_source": "official", "inverted": True}, "Antrag: Abgelehnt"),
+            ("official word on the Antrag", {"description": recommendation, "result_raw": "accepted", "result_source": "official", "result_scope": "application"}, "Antrag: Angenommen"),
+            ("the Vorlage itself", {"description": "Antrag der Fraktion X", "result_raw": "accepted", "result_source": "official"}, "Angenommen"),
+            ("no class", {"description": "Einsetzung eines Ausschusses", "result_raw": "accepted", "result_source": "derived"}, "Angenommen (berechnet)"),
+        ):
+            with self.subTest(label):
+                badge = render_result_badge(_vote(**{"title": "Thema", **fields}))
+                self.assertEqual(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", badge)).strip(), expected)
 
     def test_direct_proposal_acceptance_and_rejection_use_the_recorded_outcome(self) -> None:
         for result_raw, expected in (("accepted", "angenommen"), ("rejected", "abgelehnt")):
