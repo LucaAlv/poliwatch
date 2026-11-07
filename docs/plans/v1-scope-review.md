@@ -296,7 +296,7 @@ Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 | Mode owner | Skill Step 0E | none | HOLD SCOPE | default | The owner's reply named no mode, so the recommended HOLD SCOPE ran. Not an owner choice |
 | N6 owner | Section 2; `validate_dip_protocol.py:1373,1300` | A `<rede>` can vanish with no unit and no refusal | Every `<rede>` id ends up stored, withheld with a reason, or excluded by a named rule, reconciled per sitting | part of N1 | N1 cannot be shown complete without it. Recorded as what the implementer must prove, inside the owner's N1 answer |
 | R7 implementer | Step 0 and N3; `CLAUDE.md` review rule | 46 units lost, 43 under the wrong person, 2 stray Fraktion values | Filed, not fixed: the task for this review rules out code changes | filed | `TODOS.md`, stage 1 correctness P1s. Owner to say when |
-| N7 owner | Outside finding 1; `round2-result.md:127,141,229`; reopens part of N1 | 13 listed sittings parse, raise no refusal and are kept out only by the list. N1 as worded withholds refused units, so it does not reach them, and 19/25, the example behind P5, is one of them | Add a reviewed list of single units to withhold, or keep these sittings out | unresolved | none yet |
+| N7 owner | Outside finding 1; `round2-result.md:127,141,225-229,248`; reopens part of N1 | 13 listed sittings parse, raise no refusal and are kept out only by the list, so N1 as worded does not reach them. 7 wait on the ADR 0004 item (18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/73). 2 stay out by the owner's round 2 decision (18/62, 18/90). The open question is 4 sittings with known wrong units: 18/2, 18/29, 18/83, 19/25, the example behind P5 | A reviewed list of single units to withhold in those 4, or keep them out | unresolved | none yet. The owner also sees the corrected premise behind N1 (outside finding 5) and may change B |
 | N8 owner | Outside finding 4; `round2-result.md:89-91,228` | The 400 kept sittings had a merge and attribution review. The sittings N1 restores would not | The same review on restored sittings, with a pass rule | unresolved | none yet |
 | R9 implementer | Outside finding 8; `validate_dip_protocol.py:3455-3492` | A Rede outside a TOP has no place in the schema; `agenda_item_id` is required on `speeches` | Decide in `/plan-eng-review`, before T1's first half | pending | Not an owner question unless the choice changes a figure's meaning |
 
@@ -427,7 +427,7 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 | 2 | High | Refused turn and refused `<rede>` are two designs. No refused marker is a Rede's first, so withholding the `<rede>` also removes its unquestioned opening | Confirmed, 87 Reden | Keeps the owner's N1 wording, `<rede>`: 87 Reden, against 8,235 `rede_id`s in the 85 sittings. The opening is withheld with the rest. Stated in the TODO, for the ADR |
 | 3 | High | Some refusals fit neither design: Fragestunde markers have no rede id, "conflicting roles" is sitting-wide, 18/90's defect is outside any `<rede>`; classification carries state across TOPs; reconciling `<rede>` ids misses a dropped Fragestunde turn | Not traced line by line; consistent with the code read | Added to what the implementer must prove. Estimate raised |
 | 4 | High | Restored sittings would skip the review the other 400 had | Confirmed | **N8**, to the owner |
-| 5 | High | "Links nobody else offers" is overstated for the excluded years: ParlLawSpeech covers speech to law to 2021, BTVote votes to WP 19. WP 20/21 first is the simpler release | Confirmed in part: no single dataset was found with all of them, and the option was in front of the owner as N1 C | "Why" corrected. N1 not reopened on this: the owner chose B with C's reasoning stated. Fallback now has a trigger |
+| 5 | High | "Links nobody else offers" is overstated for the excluded years: ParlLawSpeech covers speech to law to 2021, BTVote votes to WP 19. WP 20/21 first is the simpler release | Confirmed in part: no single dataset was found with all of them, and C was in front of the owner, but the N1 brief called these links "the part nobody else offers" | "Why" corrected. Corrected premise put to the owner with N7. Fallback now has a trigger |
 | 6 | Medium | Step 0B reuse claims are overstated; the estimate rested on them | Confirmed | Step 0B corrected; gate writes real reasons; estimate raised |
 | 7 | Medium | "Too much refused" has no number. "18/83, 16 markers" looks stale | Confirmed: 18/83 has 0 refused markers, its defects are wrong units. At most 4 per sitting | The bar now says source defect or a defect that cannot be narrowed to single units. 18/83 moved to N7 |
 | 8 | Medium | T1 is not an hour. A Rede outside a TOP needs a decided home | Confirmed. `contributions.agenda_item_id` is nullable, `speeches` is not | T1 estimate raised, R9 |
@@ -479,9 +479,10 @@ Codex could not start in the sandbox, so the skill's bounded fallback ran: one P
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | not run | none |
 
 - **OUTSIDE COVERAGE:** Codex, plan review: unavailable (sandbox). The owner's two `codex review` runs covered the diff before commit 06defd1, found no actionable defects, and are not a plan challenge. Native fallback (Plan subagent): completed, not outside coverage.
+- **REVIEW HISTORY:** not persisted. The sandbox blocks writes to `~/.gstack`, so these rows exist only in this file.
 - **VERDICT:** no review is CLEAR. T1, T2, T5 and T6 can start; T3 and T4 wait on N7 and N8; eng review required before T3.
 
 **UNRESOLVED DECISIONS:**
-- N7: the 13 listed sittings that parse with no refusal.
+- N7: the 4 listed sittings with known wrong units and no refusal (18/2, 18/29, 18/83, 19/25), with N1's corrected premise.
 - N8: review of restored sittings.
 - Host provider and reader test pass rule (recorded in TODOS.md).

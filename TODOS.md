@@ -57,7 +57,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 7. Measure: votes against the roll-call list, date by date; TOPs restored; the abgeordnetenwatch match share of WP 18/19 Redner; and a per-sitting comparison with CPP-BT by `rede_id`, surname and tokens.
 8. Rebuild the store on current main and run the gate on it.
 
-**Open, in `docs/plans/v1-scope-review.md`:** N7, the 13 listed sittings that parse and raise no refusal, so step 1 does not reach them (18/2, 18/29, 18/62, 18/83, 18/90, 18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/25, 19/73). N8, a merge and attribution review of restored sittings. Steps 1 and 6 wait on these.
+**Open, in `docs/plans/v1-scope-review.md`:** N7, the 4 listed sittings with known wrong units and no refusal, so step 1 does not reach them (18/2, 18/29, 18/83, 19/25). N8, a merge and attribution review of restored sittings. Steps 1 and 6 wait on these. Also listed with no refusal: 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 wait on the ADR 0004 item; 18/62 and 18/90 stay out by the owner's round 2 decision.
 
 The implementer must prove:
 - withholding one unit leaves every other unit's id, sequence and text unchanged, although classification carries state across turns and TOPs;
