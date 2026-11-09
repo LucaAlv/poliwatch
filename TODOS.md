@@ -21,6 +21,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
    - "Speaker ids the Bundestag gives to more than one person".
+   - "Check that vote links are right".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
@@ -74,7 +75,7 @@ The implementer must prove:
 
 **N9, decided 2026-11-09:** no bar on sittings. Every sitting stays in, and each analysis on the site declares a minimum coverage, marking a period below it as thin. The owner sets the number after step 6's fetch measures the withheld share by words.
 
-**Open, in `docs/plans/v1-scope-review.md`:** N10, a check that the links are right.
+**N10, decided 2026-11-09:** a reviewed sample of vote links before the first release, in "Check that vote links are right".
 
 Withholding works on the whole `<rede>`, as decided. After round 2's rules that means 87 Reden, and no refused marker is a Rede's first, so each withheld Rede includes an opening nobody questioned. The ADR says so. `scripts/audit_offline_turns.py` shows the idea but says its counts cannot certify a database, so it is not the base.
 
@@ -121,6 +122,23 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 **Effort:** S
 **Priority:** P1
 **Depends on:** None
+
+### Check that vote links are right
+
+**What:** A vote links to a TOP when both are on the same date and share any Drucksache (`validate_dip_protocol.py:2686`, `:2893`). No test or gate checks that a link is right. Decision N10 (2026-11-09): review about 150 links before the first release:
+- all 13 votes linked to more than one TOP, six of them to 4 to 7 Haushalt TOPs (votes 894, 898, 960, 961, 979, 980);
+- all 84 TOPs with more than one vote;
+- 50 random plain links.
+
+Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. Run it with the N8 review once the 85 sittings are fetched, and add their multi-link cases. State in `DATA.md` what a link means: same sitting and a shared Drucksache, which does not mean that this vote alone decided that TOP. Report how many reviewed links were right, fixed or flagged.
+
+**Open:** fix the matching rule or flag the single link. Recommended: fix the rule where a pattern explains the error, flag one-off cases on the vote page.
+
+**Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest error is an amendment that shares a Drucksache with an unrelated TOP on the same day.
+
+**Effort:** M (human ~2 days / CC ~2 h, estimated)
+**Priority:** P1
+**Depends on:** None for the 556 votes held today; the fetch in "Coverage gate before the first data release" for the 85 sittings
 
 ### Stored Fraktion values that are not Fraktionen
 

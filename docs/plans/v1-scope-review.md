@@ -302,7 +302,7 @@ Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 | R10 implementer | Codex finding 4; `build_dip_pulse_site.py:3440`; `speeches` UNIQUE(agenda_item_id, sequence) | Withheld units have no storage shape, and no one is assigned the 20 statements that read `speeches` | A flag on `speeches` or a separate table; list every reader | pending | Decide in `/plan-eng-review`, before T3 |
 | R11 implementer | Codex finding 2; `validate_dip_protocol.py:943,1396,1450-1562` | Reconciliation assumes one source id per stored unit, but the parser splits Reden and moves text | Inventory the raw XML before any edit to the tree; a written rule for split-off units and moved text | pending | Decide in `/plan-eng-review`, before T3 |
 | N9 owner | Codex finding 5; `TODOS.md` gate step 4 | The bar has no number: a sitting with every Rede withheld would still count as held, and yearly unit totals hide where the loss falls | Every sitting stays in, and the withheld share by words is published per sitting, year and Fraktion. Each analysis on the site declares a minimum coverage and marks a period below it as thin. The owner sets the number after T4 measures | decided | Owner 2026-11-09: "Yes, to analyses". Rejected: a per-sitting bar, which would bring back whole-sitting losses |
-| N10 owner | Codex finding 3; `validate_dip_protocol.py:2686,2893` | No test or gate checks that a vote link is right, though links are the stated difference | A reviewed sample of links before the first release, and the meaning of a link stated in `DATA.md` | unresolved | none yet |
+| N10 owner | Codex finding 3; `validate_dip_protocol.py:2686,2893` | No test or gate checks that a vote link is right, though links are the stated difference | A reviewed sample of about 150 links before the first release: all 13 votes linked to several TOPs, all 84 TOPs with several votes, 50 random plain links, sharing a pass with N8. The meaning of a link stated in `DATA.md` | decided | Owner 2026-11-09: "Yes, ~150 links". Rejected: all 590. Not answered: fix the matching rule or flag the link; recommended rule where a pattern explains the error, flag for one-offs |
 
 ### N3 result
 
@@ -448,7 +448,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 | --- | --- | --- | --- | --- |
 | 1 | High | Clearing `xml_redner_id` can keep the wrong identity through a trusted abgeordnetenwatch id. The repo already has reviewed partitions | Partly. The mechanism exists and does split person pages, but holds only 11005304. On the five ids the wrong person comes through the xml id: their rows carry `xml:<id>`, and aw_match is `name` or NULL. The lookup at `build_dip_pulse_site.py:1095` does run on the redner id, so a profile can attach upstream | T2 and the TODO now extend the partitions. The running session has the correction |
 | 2 | High | Reconciliation assumes a mapping the parser does not have: splits and moved text | Confirmed. 13 speeches with `:N` ids in 11 sittings, 3,419 contributions with `nested:` ids, 18,678 Fragestunde contributions with no `rede_id` | **R11**, added to what the implementer must prove |
-| 3 | High | The gate does not check that speech, bill and vote links are right | Partly. Links need the same date and any shared Drucksache (`:2686`, `:2893`). 590 links, 556 votes, 0 across protocols. 13 votes link to more than one TOP, six of them to 4 to 7 Haushalt TOPs (894, 898, 960, 961, 979, 980), and 84 TOPs have more than one vote. Many may be right. Nothing checks them | **N10**, to the owner |
+| 3 | High | The gate does not check that speech, bill and vote links are right | Partly. Links need the same date and any shared Drucksache (`:2686`, `:2893`). 590 links, 556 votes, 0 across protocols. 13 votes link to more than one TOP, six of them to 4 to 7 Haushalt TOPs (894, 898, 960, 961, 979, 980), and 84 TOPs have more than one vote. Many may be right. Nothing checks them | **N10**, owner chose a ~150-link sample (T7) |
 | 4 | High | "Outside all Reden counts" is an unassigned change across readers | Confirmed, with a limit: 20 statements in 3 files. A separate table has its own cost: the sequence slots | **R10**, for `/plan-eng-review` |
 | 5 | Medium | No adequacy threshold | Confirmed. Reden withheld per sitting: 1 in 55, 2 in 11, 3 in 2, 4 in 1. Markers by the marker's speaker, who may not own the Rede: LINKE 28, GRÜNE 28, SPD 19, CDU/CSU 14, AfD 5, FDP 5, ministers 4. No shares by words, because the blockers file has no lengths and the XML of the 85 is not on disk | **N9**, owner: the bar applies to analyses, not sittings |
 
@@ -469,7 +469,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 | Person binding | Shared id | N | N | Wrong person. **CRITICAL GAP** | N |
 | Sittings that parse with known wrong units | No refusal, so N1 passes them | N | N | Wrong counts if the list shrinks. **CRITICAL GAP** until N7 A and N8 A are built | N |
 | Withholding | Shifts units | unknown | planned | Wrong order | implementer to verify |
-| Vote links | Shared Drucksache links the wrong TOP | N | N | Misleading link. **CRITICAL GAP**, N10 | N |
+| Vote links | Shared Drucksache links the wrong TOP | N | N | Misleading link. **CRITICAL GAP** until T7's review is done | N |
 | Fetch of the 85 | DIP stops | Y | Y | Not acquired | Y |
 
 **Task list.**
@@ -480,6 +480,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 - [ ] **T4 (P1, human ~4 days / CC ~half a day, estimated, plus DIP time; was ~1 day / ~1 h before N8's review)** Fetch the 85, scan, review restored sittings (N8), rebuild, gate, compare. Follows T3. Verify: votes match the roll-call list date by date; the review has passed, with every wrong unit on the withheld list.
 - [ ] **T5 (P1, human ~1 h / CC ~15 min)** `DATA.md` comparison. Surfaced by N4. Verify: doc-link test.
 - [ ] **T6 (P2, human ~1 h / CC ~15 min)** Stray Fraktion values. Verify: every Fraktion value is known.
+- [ ] **T7 (P1, human ~2 days / CC ~2 h, estimated)** Review about 150 vote links and state a link's meaning in `DATA.md`. Surfaced by N10, Codex finding 3. Runs with the N8 review once the 85 are fetched; the 556 votes held today can be reviewed earlier. Verify: every reviewed link is right, fixed or flagged, with the counts reported.
 
 **Stale diagrams.** 0. The Step 0C diagram was updated to "linked".
 
@@ -489,7 +490,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 
 | Review | Trigger | Why | Runs | Status | Findings |
 | --- | --- | --- | --- | --- | --- |
-| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 5 critical gaps open until built, 1 decision open (N10) |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 5 critical gaps open until built, all owner decisions answered |
 | Outside Review | Codex, run by the owner | Independent 2nd opinion | 1 | issues found | 5 findings: 3 confirmed, 2 in part; 2 to the owner, 2 to eng review, 1 corrected T2. Native fallback before it: 12 findings, all resolved |
 | Eng Review | `/plan-eng-review` | Architecture and tests (required) | 0 | not run | none |
 | Design Review | `/plan-design-review` | UI and UX gaps | 0 | not run | none |
@@ -500,5 +501,4 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 - **VERDICT:** no review is CLEAR. T1 and T2 are built on unmerged branches; T5 and T6 can start. Eng review required before T3, and it settles R10 and R11; T4 follows T3.
 
 **UNRESOLVED DECISIONS:**
-- N10: a check that the links are right.
 - Host provider and reader test pass rule (recorded in TODOS.md).
