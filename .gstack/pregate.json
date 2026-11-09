@@ -29,6 +29,8 @@
     "tests/_daten_fixture.py": ["tests/test_daten_export.py"],
     "tests/fixtures/roll_call_detail_869.html": ["tests/test_roll_call_scraping.py"],
     "tests/fixtures/antrag-text/*": ["tests/test_antrag_text.py"],
+    "tests/fixtures/reden-outside-tops/*": ["tests/test_reden_outside_tops.py"],
+    "tests/fixtures/demo-report-21-84.json": ["tests/test_demo_site.py", "tests/test_repersist.py"],
     "docs/research/b4-local-audit-2026-10-29.csv": ["tests/test_antrag_text.py"],
     "tests/fixtures/vote_debate_906.html": ["tests/test_roll_call_scraping.py"],
     "tests/fixtures/vote_debate_994.html": ["tests/test_roll_call_scraping.py"],
