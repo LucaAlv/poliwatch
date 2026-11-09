@@ -116,8 +116,10 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 12. **The name check misses two people printed with the same role word** when the XML puts the role into the name fields ("Dr. Carsten Sieling, Bürgermeister"). Drop role words from `_name_words`.
 13. **Profile coverage metadata counts raw profiles** (`build_dip_pulse_site.py`, the ready/partial counts), including the trusted ones `corrected_speaker` drops for shared ids: off by a few speakers.
 14. **No test builds a record with no Redner-ID under two unrelated names,** which the name check must skip.
+15. **An own id is checked for shape, not for canonical form:** `dip:0` or `dip:007` passes `OWN_ID_RE`, but `canonical_dip_person_id` reads them as none and `7`, so the person silently misses the roster join or the page link. Require `canonical_dip_person_id(id) == id` in `_load_corrections`.
+16. **The name check compares names within one record only.** Two records that share a Redner-ID (an `aw:` and an `xml:` record) and hold one name each pass it, and pass 1 of `match_rows` then joins them on the Redner-ID. A cross-record check over the A3 store's 784 multi-record Redner-ID groups found no clash today. Compare names across each pass-1 component.
 
-**Why:** None of them is a wrong unit in the store today. Items 6–14 come from the pre-landing review of 2026-11-09.
+**Why:** None of them is a wrong unit in the store today. Items 6–16 come from the pre-landing and adversarial reviews of 2026-11-09.
 
 **Effort:** S each
 **Priority:** P3
@@ -1744,7 +1746,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
-- Speaker ids the Bundestag gives to more than one person: 2026-11-07, not yet released, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
+- Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone
