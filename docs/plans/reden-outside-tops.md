@@ -200,6 +200,10 @@ A full `--offline --repersist` on the fixed clone then ran without error and lef
 
 The store's rule version moves from 6 to 7, so an existing store refuses facts, export and rendering until `--offline --repersist` has run once. That is the guard working.
 
+## Merged-tree replay (2026-11-10)
+
+After merging main v0.35.0.0 (the shared Redner-ID fix, #141), the same database-only replay ran on fresh clones: baseline 47b4115, fix at the merge 00723f4, 1,064 s each. Every delta above holds unchanged: Reden 54,718 → 54,747, Beiträge 42,465 → 42,484 (`zu_protokoll` +16, Zwischenfragen +3), agenda items 7,131 → 7,135, Politikfelder rows +5, SPD `mps` rows 1,621 → 1,624. `persons` 6,687, `person_records` 7,470, the vote tables and the 1,908 Fakten are identical, and #141's reconcile refuses none of the new units.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |

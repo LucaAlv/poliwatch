@@ -178,8 +178,8 @@ A list of places where an official source file says something wrong or files con
 - **Status:** candidate. Found 2026-11-07.
 - **Source:** 18/49: 26 of 51 `<rede>` elements sit directly under `<sitzungsverlauf>`, from `ID1804900100` (Dr. Wolfgang Schäuble, budget 2015) on. 18/44: 3 such elements, from `ID1804400100`.
 - **What looks wrong:** every other `<rede>` outside the annexes in the 716 files sits inside a `<tagesordnungspunkt>`.
-- **To check before reporting:** whether the schema allows this, and how the printed protocol labels these debates.
-- **Our side:** TODOS.md, "Reden the parser drops without refusing".
+- **To check before reporting:** whether the schema allows this.
+- **Our side:** since v0.36.0.0 each run is read under the item the protocol's Inhaltsverzeichnis names for it (`docs/data-methods.md`). Their DIP links: TODOS.md, "Give the agenda items of 18/49 and 18/44 adopted from the Inhaltsverzeichnis their DIP links".
 
 ### C3. Roll-call votes with no document number on www.bundestag.de
 
