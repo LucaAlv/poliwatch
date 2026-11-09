@@ -71,7 +71,16 @@ The implementer must prove:
 - step 2 inventories the raw XML before `split_nested_reden` (`validate_dip_protocol.py:943`, called at `:1396`), because that and two other functions edit the tree, and a source id in storage does not prove its split-off units survived;
 - withholding has a written rule for split-off units and for text moved between units (`merged_rede`, `merged_erwiderung`, `resumed`, `merged_zwischenfrage`, `:1450-1562`).
 
-**Storage contract, to settle in `/plan-eng-review` before the build (R10):** 20 statements read `speeches` across `build_dip_pulse_site.py` (8), `facts.py` (6) and `compare_store_values.py` (6), and recipes count every row. A flag on `speeches` means changing each of them. A separate withheld table leaves their meaning alone, but `speeches` has UNIQUE(agenda_item_id, sequence), and "every other unit unchanged" needs the slots kept. The review also lists every reader the choice touches.
+**Settled by `/plan-eng-review` on 2026-11-09 (`docs/plans/v1-scope-review.md`, "Eng review: the withholding build", tasks E1-E8):**
+- Two PRs: first the raw XML inventory and reconciliation, then withholding.
+- First fetch only the XML of the 85 and audit it, before PR 2.
+- Withheld units go in a separate `withheld_units` table.
+- `speeches.sequence` becomes the source position.
+- Only the refused part of a split Rede is withheld. Text that pass 1 moved out of it stays where it went.
+- A weekly release goes out and lists newly withheld Reden, but stops above 2.
+- The audit script is deleted in PR 2.
+
+All ten choices were answered by the owner's adjudicator hook.
 
 **N9, decided 2026-11-09:** no bar on sittings. Every sitting stays in, and each analysis on the site declares a minimum coverage, marking a period below it as thin. The owner sets the number after step 6's fetch measures the withheld share by words.
 
