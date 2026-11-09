@@ -59,17 +59,35 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
 
 ## Daten
 
-### Re-acquire 18/49 and 18/44 so their new agenda items get DIP links
+### Give the agenda items of 18/49 and 18/44 adopted from the Inhaltsverzeichnis their DIP links
 
-**What:** Offline replay gives the agenda items adopted from the Inhaltsverzeichnis an empty `api`, because the cached report holds no match for them. A fresh online acquisition matches them by page range and title like any TOP: DIP's positions for 18/49 run "1. Beratung" 4459–4544 and "1. Beratung (Einzelpläne)" 4459–4485 and 4485–4507, and 18/44 has "Geschäftsordnungsantrag auf Absetzung von der TO" 3927–3931.
+**What:** Offline replay gives the adopted items an empty `api`, because the cached report holds no match for them. A fresh online acquisition alone fixes only "Tagesordnungspunkt 1" of 18/49, the one adopted item with a heading (the T_ paragraphs it takes from `<sitzungsbeginn>`). `enrich_with_api` matches positions through `position_matches_top`, which with no Drucksache in the XML falls back to `title_matches(top["heading"], titel)`, and that is False for an empty heading. "Zur Geschäftsordnung" (18/44), "Allgemeine Finanzdebatte" and "Einzelplan 06" (18/49) have heading "" [measured on the fixtures, 2026-11-09], so they would get activities by page range but no position. DIP's positions are there: 18/49 "1. Beratung" 4459–4544 and "1. Beratung (Einzelpläne)" 4459–4485 and 4485–4507; 18/44 "Geschäftsordnungsantrag auf Absetzung von der TO" 3927–3931.
 
-**Why:** Until then "Tagesordnungspunkt 1" of 18/49, the Haushaltsgesetz 2015 debate, shows no Vorgang or Drucksache link. Reden are counted; only the links are missing.
+Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay only through the `by_redner_id` fallback (profiles other cached reports resolved), since the old report held no item for them; a fresh build resolves them itself. Not measured how many go without.
 
-**Context:** Costs about 26 DIP requests per sitting and needs the DIP key. `reparse_report_xml` keeps the items once they are in the report. Decide whether to re-match from `api_records` offline only if the key stays out of reach.
+**Why:** Until then these items show no Vorgang or Drucksache link. Reden are counted; only the links are missing.
+
+**Context:** Needs a matching rule for an adopted item first (for example `title_matches` against `top_id`, or the page range alone when the item's top_source is `inhaltsverzeichnis`), then re-acquisition: about 26 DIP requests per sitting, with the DIP key. `reparse_report_xml` keeps the items once they are in the report. Re-match from `api_records` offline only if the key stays out of reach. Report moved figures.
 
 **Effort:** S
 **Priority:** P2
 **Depends on:** a DIP key
+
+### Reden outside a TOP: what the 2026-11-09 ship review left open
+
+**What:** Latent findings of the ship review of `adopt_reden_outside_tops`; no current input reaches them.
+1. `no_api_fields()` restates the `api` shape `enrich_with_api` builds inline; a field added to one is missing from the other. Build both from one helper.
+2. A non-Rede element between two Reden in `<sitzungsverlauf>` is refused with "after a TOP", which names the wrong cause; the `open_block = None` reset can never take effect. Word the refusal for any element.
+3. An Inhaltsverzeichnis title ending in "-" with no `A_TOP` continuation is cut silently.
+4. Tests do not pin: only T_ paragraphs move from `<sitzungsbeginn>`, only for a Tagesordnungspunkt/Zusatzpunkt title (mutants "move all p", "no startswith" and "drop Zusatzpunkt" survive); `ZU_PROTOKOLL_ANNEX`'s end anchor (no negative title starts with a matching one). Value cards in the PR body of this fix.
+
+**Why:** Each is a wrong refusal message or an unguarded rule that a later edit could break without a failing test.
+
+**Context:** `scripts/validate_dip_protocol.py` `adopt_reden_outside_tops`, `no_api_fields`, `ZU_PROTOKOLL_ANNEX`; tests in `tests/test_reden_outside_tops.py`, `tests/test_written_top_association.py`.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### A repeated Inhaltsverzeichnis title loses the page of Reden
 
