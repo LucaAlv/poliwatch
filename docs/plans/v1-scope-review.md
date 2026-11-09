@@ -1170,7 +1170,7 @@ Synthesized from this review's findings. They refine T3 above; T4's DIP part fol
 
 - [ ] **E1 (P1, human: ~2h / CC: ~30min, plus the owner's network run)** — data — Fetch only the XML of the 85 and audit it
   - Surfaced by: Outside voice 2, D8
-  - Files: a report under `docs/plans/`; no code
+  - Files: run with `docs/plans/withholding-preflight/fetch_and_audit.py` (in the owner's terminal, with the Reden fix's `scripts/`); report under `docs/plans/withholding-preflight/`
   - Verify: the report lists refusal classes per sitting, which of the 69 parse once located refusals are withheld, finding 8's sitting, words withheld, and pass-1 moves out of refused Reden
 - [ ] **E2 (P1, human: ~3d / CC: ~4h)** — parser — PR 1: raw XML inventory and reconciliation
   - Surfaced by: Scope Challenge, D1; N6
