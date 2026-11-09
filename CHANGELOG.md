@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.2.0] - 2026-11-09
+
+A vote on a Beschlussempfehlung to reject an Antrag now says that the Antrag fell, where the site said the opposite or left it open. Every badge on such a vote names what its outcome is about.
+
+### Fixed
+
+- **Vote 990 (21/51) read "Antrag: Angenommen" although Antrag 21/627 was rejected.** bundestag.de contradicts itself there: its text and Beschluss list say the Beschlussempfehlung to reject passed, and its roll-call box says "Antrag 21/627 angenommen". On a vote established as a recommendation to reject, a Ja majority now outranks that box: the result stays official and reads "Antrag: Abgelehnt". The contradiction is filed as E6 in `docs/source-errors.md`.
+- **Five rejections the site missed now read "Antrag: Abgelehnt":** votes 638 (19/127), 695 (19/187), 774 (20/37), 777 (20/38) and 801 (20/56) read a bare "Angenommen". DIP's record of the decision ("Annahme der Beschlussempfehlung auf Ablehnung") is now evidence of direction when it matches the vote's exact tally and a shared Drucksache; it ranks below the chair's announcement and the listing's wording. On the 350 votes with both an outcome and a DIP decision matching their tally, the site's outcome disagreed with it 6 times before and 0 times now.
+- **A badge on a Beschlussempfehlung names it:** "Beschlussempfehlung: Angenommen", or "Antrag: …" where the outcome is the Antrag's. A bare word next to an Antrag's title read as the Antrag passing.
+
+Old and new values, replayed on the same 619-vote store:
+- `votes`: 6 rows change. `inverted` 90 → 95 (638, 695, 774, 777, 801). `result_scope` application 25 → 24 (990, now proposition).
+- Votes archive: 133 badge texts change (these 6, 126 gain "Beschlussempfehlung:", 846 gains "Antrag:"), and the Fraktion filter counts 5 votes as gegen/für den Antrag instead of Ja/Nein.
+- Unchanged: vote totals, Mehrheitsvotum, Abweichungen, facts, recipes r1–r6 and every other export table.
+
 ## [0.34.1.0] - 2026-11-07
 
 Documents only: no page, figure or export changes in this release. `DESIGN.md` is ready to be applied to the site.
