@@ -92,7 +92,7 @@ Research note, 2026-11-06, for the second v1 scope review ([v1-scope-review.md](
 **Who and which Fraktion, on 73,808 shared ids.**
 - **Speaker id:** 73,772 equal our person's id, 33 differ and 3 of ours have none. The differences are Rinkert (24) and Mende (9), the same person under another id. A shared id passes this test, so it cannot find misfiled people.
 - **Surname:** 185 of 73,803 differ, which is the test that can. Most are spellings or name changes, such as Dağdelen and Dagdelen, or Kemmer and Schmitt. The rest led to the wrong-person units in `TODOS.md`, "Speaker ids the Bundestag gives to more than one person".
-- **Fraktion:** two real differences once labels are folded. 18/222 holds spoken text in the XML's `<fraktion>`, and 20/94's speaker is garbled in the XML (`docs/source-errors.md`, C4, C5).
+- **Fraktion:** two real differences once labels are folded. 18/222 holds spoken text in the XML's `<fraktion>`, and 20/94's speaker is garbled in the XML (`docs/source-errors.md`, C5, C6).
 
 **Do the excluded sittings differ? Yes, they are longer.**
 

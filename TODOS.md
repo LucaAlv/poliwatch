@@ -20,7 +20,6 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
-   - "Speaker ids the Bundestag gives to more than one person".
    - "Check that vote links are right".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
@@ -29,7 +28,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 7. "Public repository: follow-ups".
 
 **Stage 2: the public site.** Daily view plus one analysis.
-1. "Split the dataset from the site" (A4): slices 2 to 11, all before going public. Later slices are in `docs/plans/a4-site-from-release.md`. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
+1. "Split the dataset from the site" (A4): slices 2 to 11, all before going public. Later slices are in `docs/plans/a4-site-from-release.md`. Main is at schema 11 and export format 16, so the next slice takes the numbers after those. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
 2. "Apply DESIGN.md to the site" and "Apply the v1 surface list". Order against A4 is for the architecture session.
 3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 59.7%: check it before calling the analysis good enough.
 4. Abstimmungen: "B4 extractive fallback: finish validation locally" and the rest of "Abstimmungen for the daily view".
@@ -71,7 +70,7 @@ The implementer must prove:
 - step 2 inventories the raw XML before `split_nested_reden` (`validate_dip_protocol.py:943`, called at `:1396`), because that and two other functions edit the tree, and a source id in storage does not prove its split-off units survived;
 - withholding has a written rule for split-off units and for text moved between units (`merged_rede`, `merged_erwiderung`, `resumed`, `merged_zwischenfrage`, `:1450-1562`).
 
-**Settled by `/plan-eng-review` on 2026-11-09 (`docs/plans/v1-scope-review.md`, "Eng review: the withholding build", tasks E1-E8):**
+**Settled by `/plan-eng-review` on 2026-11-09 (`docs/plans/v1-scope-review.md`, "Eng review: the withholding build", tasks W1-W8):**
 - Two PRs: first the raw XML inventory and reconciliation, then withholding.
 - First fetch only the XML of the 85 and audit it, before PR 2.
 - Withheld units go in a separate `withheld_units` table.
@@ -112,24 +111,30 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 **Priority:** P1
 **Depends on:** None
 
-### Speaker ids the Bundestag gives to more than one person
+### Shared Redner-IDs: what the fix leaves open
 
-**What:** The protocol XML reuses speaker ids for different people, and the store files all of them under one person. Measured on the A3 store (716 XML files, 2026-11-07), not re-measured on main's tip. An earlier scan reported 2 ids and 5 units; this one reads every `<redner>` and every stored unit filed under a shared id, and finds 5 ids with **43 units under the wrong person**:
+**What:** The fix of 2026-11-07 (`docs/stable-ids.md`, `docs/source-errors.md` E7; figures in `docs/plans/shared-redner-ids-old-new.tsv`) leaves these:
+1. **Dr. Carsten Sieling keeps two pages:** the MdB record `xml:11004157` (7 Reden, 62 Stimmen) and the empty DIP row `dip:1886` (MdBR, Bremen). This predates the fix: a DIP row with no party joins no name+party bucket. A reviewed merge names person keys, which are reissued in a fresh build, so it needs a stable way to name them.
+2. **Not scanned: the 85 excluded sittings.** The name check in `reconcile` scans them when they are included, and refuses until a shared id found there has an entry.
+3. **`999990109` and `11003609` have no entry,** because their second person sits in an annex and a speaker list that are not stored. If "Reden the parser drops without refusing" stores Tim Ostermann's annex unit of 19/234, the build refuses until `999990109` has an entry.
+4. **The name check does not catch two people who share a word,** such as a given name: a surname change looks the same.
+5. **C5 (Föhr/Mende) was not checked against the PDF.** Its six reviewed occurrences and its partition are unchanged, 0 of its units moved.
+6. **Untested call site:** the `registry.profile_follows_redner_id` clause in `reparse_cached_xml` (`scripts/build_dip_pulse_site.py`) is only tested through a direct call; deleting it keeps the suite green. Add a reparse test with two speakers under `999990127`, one with a profile, and a `11005304` control that keeps its profile owner's profile.
+7. **`reconcile` loads every record three times** (`person_registry.reconcile`: the name check, the durable merges, the guesses), each with the full `vote_members` join. Pass the durable-merge load to `require_reviewed_redner_ids` instead.
+8. **`_on_shared_id` knows only `xml:` keys.** An old record keyed `aw:` (a trusted lookup under the shared id) or `profile:` that holds a shared id keeps a dip-only rebind, so a replay differs from a fresh build. None exists in the A3 store. Decide on the record's evidence instead of its key prefix.
+9. **`own_ids` may name one id twice** across owners or entries, which would file two reviewed people under one record. Refuse a repeat in `_load_corrections`.
+10. **A `dip:` own id for a partition's `profile_owner`** keeps a trusted profile, so `mp_identity` keys the record `aw:N` while it holds `dip_person_id`, which collides with the roster's `dip:N` row (`mps.dip_person_id UNIQUE`). No entry does this today. Refuse the combination in `_load_corrections`.
+11. **`render_dip_pulse_html` corrects only `xml_speakers`;** the `xml_speakers_first` fallback of a legacy truncated item still links the raw shared-id speaker. No cached item hits it today.
+12. **The name check misses two people printed with the same role word** when the XML puts the role into the name fields ("Dr. Carsten Sieling, Bürgermeister"). Drop role words from `_name_words`.
+13. **Profile coverage metadata counts raw profiles** (`build_dip_pulse_site.py`, the ready/partial counts), including the trusted ones `corrected_speaker` drops for shared ids: off by a few speakers.
+14. **No test builds a record with no Redner-ID under two unrelated names,** which the name check must skip.
+15. **An own id is checked for shape, not for canonical form:** `dip:0` or `dip:007` passes `OWN_ID_RE`, but `canonical_dip_person_id` reads them as none and `7`, so the person silently misses the roster join or the page link. Require `canonical_dip_person_id(id) == id` in `_load_corrections`.
+16. **The name check compares names within one record only.** Two records that share a Redner-ID (an `aw:` and an `xml:` record) and hold one name each pass it, and pass 1 of `match_rows` then joins them on the Redner-ID. A cross-record check over the A3 store's 784 multi-record Redner-ID groups found no clash today. Compare names across each pass-1 component.
 
-| Id | Filed under | Actually | Units |
-|---|---|---|---:|
-| `999990124` | Dr. Andreas Bovenschulte | Annette Widmann-Mauz | 19 `fragestunde_antwort`, 2 Reden |
-| `999990108` | Maika Friemann-Jennert | Anette Kramme | 14 `fragestunde_antwort` |
-| `999990127` | Enak Ferlemann | Peter Beuth | 3 Reden |
-| `999990141` | Dr. Mehmet Daimagüler | Judith Gerlach | 2 Reden, 1 `erwiderung` |
-| `10000` | Marja-Liisa Völlers | Carsten Sieling; Olaf in der Beek | 1 Rede; 1 `befragung_frage` |
+**Why:** None of them is a wrong unit in the store today. Items 6–16 come from the pre-landing and adversarial reviews of 2026-11-09.
 
-`999990109` and `11003609` are shared in the source too, with no stored unit affected. Fraktion and Sprechrolle on each unit are as printed, so Fraktion counts should hold; per-person counts and the Abgeordnete pages do not. Fix: extend the reviewed partitions in `scripts/person_corrections.json`, which today hold only 11005304, so each printed name gets its own person. An unreviewed label then refuses. Check `999990134` too. Each id's legitimate units stay with their person, and each split person gets the right abgeordnetenwatch profile or none, because the lookup at `build_dip_pulse_site.py:1095` runs on the redner id. A person must not end up with two pages. Rescan on a full store, because the 85 excluded sittings were not scanned. Report old and new per-person figures. Separate, and possibly not our error: the merged Mende and Föhr records, `docs/source-errors.md` C4.
-
-**Why:** A wrong person on a citable record. A reader of Maika Friemann-Jennert's record sees 14 Fragestunde answers she did not give.
-
-**Effort:** S
-**Priority:** P1
+**Effort:** S each
+**Priority:** P3
 **Depends on:** None
 
 ### Check that vote links are right
@@ -151,7 +156,7 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 ### Stored Fraktion values that are not Fraktionen
 
-**What:** Two units carry a value that is not a Fraktion. `speeches.fraktion` is "Bremen" on 19/60 `ID196001500`, and an `erwiderung` in 18/222 holds "CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –", copied from the XML (`docs/source-errors.md` C5). Check that a Fraktion value is one we know, and refuse or normalise the rest.
+**What:** Two units carry a value that is not a Fraktion. `speeches.fraktion` is "Bremen" on 19/60 `ID196001500`, and an `erwiderung` in 18/222 holds "CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –", copied from the XML (`docs/source-errors.md` C6). Check that a Fraktion value is one we know, and refuse or normalise the rest.
 
 **Why:** Each could appear as its own group in a per-Fraktion count. CPP-BT has the second as plain CDU/CSU.
 
@@ -404,6 +409,32 @@ Done when each has a fix or a decision.
 
 **Effort:** M
 **Priority:** P2
+**Depends on:** None
+
+### Vote direction: what the 2026-11-07 fix left open
+
+Found while fixing how vote pages state the outcome of a Beschlussempfehlung to reject (votes 990, 638, 695, 774, 777, 801). None of these is a false statement: a vote without an established direction reads "Beschlussempfehlung: Angenommen" and "Die Beschlussempfehlung wurde angenommen".
+
+1. **Vote 883 is a rejection the replay cannot establish.** bundestag.de: "Beschlussempfehlung 20/9559 (Antrag 20/9305 ablehnen)". It sits in report 20/141 (date 2023-11-30), but its documents are in the XML of 20/140 (2023-11-29), whose positions hold no decision on it. It needs (2) or (3).
+2. **Votes whose documents their own report's XML never names.** 11 of 619: 883, 944, 945, 943, 948, 956, 969, 978, 977, 1008, 1034. For 883 and 956 the documents are in the previous sitting's XML, and the vote's date is the next sitting's, which is likely why they were filed there. The others were not traced. Chair evidence and the TOP link cannot reach any of them. Find out whether they are filed under the wrong sitting, and whether `votes.protocol_id` is wrong.
+3. **The page's "(Antrag X ablehnen)" is not cached.** It states the direction outright on 990, 774, 777 and 883, and not on 638 and 695; 801 reads "(Entschl 20/2347)" with no direction. `fetch_roll_call_vote_detail` could keep it as evidence, but a replay gains nothing until each sitting is fetched again.
+4. **The chair parser misses two shapes DIP now covers.** `_ANTRAG_WORD_RE` does not match "Entschließungsantrag" (777), and `fits` refuses a clause naming no Antrag number (774). A sitting cached before DIP records its decision would miss these until it is fetched again. How long DIP takes to record a decision was not measured. If it matters, take the Antrag number from the TOP's earlier sentence and diff all records and conflicts over the 619 votes.
+5. **No state for a direction never established.** `inverted` is 1 or NULL, so the store cannot tell an established recommendation to accept from an unknown one. A state on the page needs a stored value: `inverted = 0` is free, and DIP's recorded acceptance ("Annahme …" or "Zustimmung …") on 108 Beschlussempfehlung votes is the evidence it would use, beside the chair's "anzunehmen". After this fix 15 Beschlussempfehlung votes have neither: Haushalt 374, 435, 531, 556, 705, 778; Bundeswehr 261, 611, 943, 944, 945, 948; and 883, 1008, 1034. Owner decision on the wording.
+6. **DESIGN.md has no subject for a non-inverted Beschlussempfehlung.** Verdict and Vote lead name the Antrag on an inverted vote, and neither says what a non-inverted Beschlussempfehlung's verdict reads. Whoever applies them should carry "Beschlussempfehlung angenommen" over from `features.votes._badge_subject`, or the display verdict brings back the bare word this fix removed.
+7. **DIP has a result where the site says "Ergebnis nicht verfügbar".** 12 votes with no result (special-majority procedures) have a DIP decision bound by tally: 481, 465, 467, 468, 307, 308, 574, 612, 613, 624, 970, 971. DIP's Beschlusstenor could supply the outcome. On the 350 votes with both a decision bound by tally and an outcome, it never disagrees with `derive.vote_outcome` after this fix, so it could also be a standing cross-check in the replay.
+8. **The re-scope sticks in a saved report.** `_read_contradicted_official_result` writes `proposition` into the report. If a vote like 990 later lost its established direction, a replay would keep `proposition` where a fresh fetch gives `application`. No current input reaches this: 990 stands on both the chair and DIP, and either reading says the ballot passed. Keeping the page's scope in its own report field, as `official_result` keeps its word, would end it.
+9. **The long badge wraps at 375px on the dossier panel.** Uppercased, "BESCHLUSSEMPFEHLUNG: ANGENOMMEN (BERECHNET)" breaks onto two lines inside its pill (20/210). It stays inside the card and the page does not scroll. Cosmetic, and the Stimmkarte work replaces this pill.
+10. **Two latent edges in the DIP binding (red team, 2026-11-07).** "Beschlussempfehlung auf Ablehnung" could also stand on a Gesetzentwurf, and the page would then say "den Antrag abzulehnen"; all 86 bound votes are on an Antrag or Entschließungsantrag. `tally_of` reads an unknown count as 0, so a vote with no Enthaltungen figure could bind to "x:y:0", but yes, no and a Drucksache must still match; no real case. Gate on a linked document's type, and compare `None` as unknown.
+11. **The re-scope trusts any inversion source (ship review, 2026-11-09).** `_read_contradicted_official_result` tests `inverted` alone, so an inversion read only from a roll-call title or description would also turn an official "Antrag angenommen" into "Antrag: Abgelehnt", still attributed to bundestag.de. It fires once on the real data, on 990, which both the chair and DIP establish. Gate it on `inversion_source in ("bundestag-protocol", DIP_DECISION_SOURCE)` or on a Beschlussempfehlung subject, and add the test the review asked for: only a DIP decision, an official "Antrag angenommen" box and a Ja majority.
+12. **`derive.vote_outcome` turns a failed recommendation to reject into "Antrag angenommen".** On an inverted vote with Nein ≥ Ja it flips the derived "rejected" to "accepted", and the lead says "der Antrag wurde angenommen"; but the Antrag can still fall in a vote of its own. The DIP route accepts "Ablehnung der Beschlussempfehlung auf Ablehnung" as direction, which is right for `inverted`, and adds a way into this flip. 0 of 95 inverted votes have Nein ≥ Ja. Return None (or say "die Empfehlung wurde abgelehnt") there unless the result is official and about the Antrag.
+13. **The DIP route has no rival check where the chair route has one.** For a vote whose listing is neither Vorlage nor Beschlussempfehlung, an Antrag number shared with the decision plus an equal tally binds; equal tallies on distinct votes are common (1026, 1027, 1028 all 445:132:1). 3 of 86 bound votes are of that kind (720, 575, 1003), all correct. A tally-only bind (no document numbers, 638) also trusts that the sitting's roll-calls were all acquired. Require the protocol path's rivals check, or a complete acquisition state, for those cases.
+14. **A no-XML replay lets DIP re-open a vote the chair refused.** Without cached XML, evidence is None unless a protocol inversion was kept, so a chair "accept" or "conflict" recorded earlier is not carried forward, and a DIP decision can set `inverted`. A later XML pass where the chair refutes it also leaves item 8's `proposition`. No real case.
+15. **Malformed DIP input.** `dip_vote_decisions` raises on a position that is not a dict or a `beschlussfassung` that is not a list (as the older `context_items` loop does on a non-dict position), and `clamp_text(note, 300)` could cut the rejecting phrase from a long note (fails closed). `_DIP_TALLY_RE` uses `\d`, which matches non-ASCII digits; use `[0-9]`. No cached record has any of these shapes.
+16. **The archive badge reads stored rows without `vote_heading`.** `_badge_subject` classifies over description, `vote_heading` and title, and the votes table keeps no `vote_heading`, so a vote whose Beschlussempfehlung wording sat only there would read differently on the archive and the dossier panel. Measured 2026-11-09: 0 of 597 badges differ. `_badge_subject` and `render_vote_lead` are also two copies of one decision (the lead names the Antrag for any application scope); have both read one helper.
+17. **Smaller structure.** `dip_vote_decisions` returns anonymous `(tally, numbers, note)` tuples read by index; a NamedTuple would name them.
+
+**Effort:** M
+**Priority:** P2 (1 and 2 first: a real rejection reads without its direction)
 **Depends on:** None
 
 ### Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)
@@ -731,6 +762,18 @@ Done when:
 **Priority:** P3
 **Depends on:** None
 
+### Placeholder Redner ids put one speaker on two Personenseiten
+
+**What:** 98 `mps` records have an `xml:99999…` key, a placeholder-looking Redner id in the Bundestag XML. 86 of them are a person of their own although the same name also has another person, holding 463 Reden and 1,423 other Beiträge. Examples: Svenja Schulze (48 Reden, 262 Beiträge), Dr. Franziska Giffey (34, 119), Klara Geywitz (27, 157), Dr. Janosch Dahmen (7 Reden under `999990105`, 37 on his main page). Measured 2026-11-05 on e7b06f3: the same in a store-less build and an upgraded store, and E4 does not touch it. Since 2026-11-07 the records `xml:999990108`, `xml:999990124`, `xml:999990127`, `xml:999990134` and `xml:999990141` are gone (`docs/source-errors.md` E7, C8). So for Widmann-Mauz, Kramme and Ferlemann this decision was taken ahead of it: their Staatssekretär units are on their main pages, because no record could stay on an id shared with someone else. Object here if that is wrong for them.
+
+**Why:** A reader sees part of a person's Reden on each page, so a page's Reden count is short. This has not been checked against the intent: a comment in `derive.py` reads one such id (`999990013`) as an explicit government role, so the split may be deliberate for some of them, though not obviously for Dahmen, who held no government post. Decide that first, then report the moved person counts and pages old/new.
+
+**Context:** The name matching behind these counts ignores titles and anything after the first comma. Registry territory: needs a registry reviewer.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### The carried-forward registry diverges from a fresh build after A3
 
 **What:** The A3 Phase 4 gate failed `replayed_store_groups_like_fresh` on a clone of `~/agent-runs/a3/full` (4,168 vs. 4,165 groups on the fresh store's bindings). Details are in [the Phase 4 record](docs/plans/a3-phase4.md), Step 1. There are two parts:
@@ -749,6 +792,8 @@ Done when:
 - The replayed store has 2,244 persons.
 - 302 persons are retired-only, 289 of them with a page, 8 of those linked from the index.
 - 494 retired bindings (307 roster / 187 contribution).
+
+**Re-measured on e7b06f3, 2026-11-05** (E4 plus main v0.33.0.0; complete gate, `all_passed`): unchanged, the same 1,942 = 1,942, 2,244, 302, 289 and 494. A store-less `--offline --repersist` of the same reports has 1,577 Personenseiten against the upgraded store's 2,005. The +428 are the 289 retired-only pages plus 139 on live persons: 68 roster MdBs who have a page only because the roster exists, and 71 persons holding only a roster binding, all with `ever_mdb` evidence, many of them Bundesrat or Land office holders. So those 71 belong with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
 Decide whether retired-only persons render a page. Report persons and pages old/new.
 
@@ -837,33 +882,39 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 ### Apply DESIGN.md to the site
 
-**What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04. No site page uses it yet. Apply it in the current Python renderer:
+**What:** `DESIGN.md` ("Stimmkarte") was written and approved by the owner on 2026-11-04, and revised with the owner on 2026-11-06. No site page uses it yet. Apply it in the current Python renderer:
 1. **One shared stylesheet.** Replace each page's inline `<style>` (41,232 bytes on a dossier, repeated on every page) and its own `:root` block with one cached file, linked relatively so every page depth works.
 2. **Fonts.** Self-host D-DIN Condensed Bold, Atkinson Hyperlegible Next and Mono as WOFF2 (about 95 KB), with their OFL licence texts. Serve D-DIN unmodified: its names are reserved. The Datenschutz sentence about same-host assets stays true; check it when this lands.
-3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values fail on the grey ground.
-4. **Components.** Vote wall and strip, tally, source line, gap, slip versus ground, navigation. Votes pages first: the archive now renders from the store (#133).
+3. **Fraktion colours.** Replace `PARTY_COLORS` in `render_dip_pulse_html.py` with the tuned values. Bundesregierung, Bundesrat and fraktionslos lose their hues. Today's values were not tuned against the design's grounds.
+4. **Components.** Vote wall and strip, tally, source line, origin line, gap, slip versus ground, navigation, Stand line, Zitieren line, vote lead, home doors, Daten's release blocks and CSV control. Votes pages first: the archive now renders from the store (#133). Do not convert `api-sitzungen.html`, `settings.html`, Fakt der Woche or the AI summary: all are out of v1 (`docs/plans/v1-scope-review.md`).
 
 **Why:** the owner finds the site unattractive, and the design system does nothing until pages use it. Every page has to carry the token blocks and the font stack today.
 
 **Context:**
-- Preview on real data: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte.html`. It also holds the generator, for values and markup.
+- `DESIGN.md` holds the rules and a component inventory with tokens for the stylesheet.
+- Preview on real data, every surface at 375 px and in dark mode, with a switch back to the earlier look and a page comparing grounds: `~/.gstack/projects/LucaAlv-poliwatch/designs/design-system-20261104/stimmkarte-v2.html`, generator `build_preview_v2.py` beside it, for values and markup.
 - Known limits are in DESIGN.md under Colors: Fraktion hues fail colour-blind separation, so the rules "always with the name" and "facet, never overlay" are binding. Ja and Nein are close in lightness in dark mode.
-- Nobody outside this project has seen the design. Test the grey ground and the vote wall with real readers.
+- Nobody outside this project has seen the design. The five-reader test runs after this rollout, just before launch (decision Q16), so keep to `DESIGN.md` "Held Open Until the Reader Test": the ground and the vote wall stay token-only. Beside its tasks, ask what the edged sheet means and what a Ja on the BAföG vote means.
+- Age and overdue are worked out in the browser (`DESIGN.md`, Stand line), which retires `STALE_AFTER_WEEKS`, "Auswertung vom" and the "Woche läuft" state in `build_dip_pulse_site.py`. The due date needs the scheduled workflow's rule; the identifier format needs the release work.
+- The Zitieren line (`DESIGN.md`) needs three things from the release work: which Sitzungen the stable release holds, a comparison of each record against that release (without it, "unverändert" may not be printed), and a page rebuild whenever a release is marked stable. A site build today has none of them.
+- The origin line must name what each sheet's rows were actually read from, so check each renderer's source when applying it. A person page mixes DIP (Funktion, Wahlperioden) and abgeordnetenwatch.de (Geburtsjahr, Beruf, Bundesland, Wahlkreis). The preview's person sheet is too narrow to show this: it has one DIP line, and its Fraktion and Wahlkreis rows need checking.
+- The CSV control lists a release's files, because no single archive exists. One archive per release would make it a direct download; decide that in the release work.
 - The nested cards the puls.html review flagged are absorbed here. `DESIGN.md` makes visited links look like unvisited ones, so every link `:visited` rule goes (`render_dip_pulse_html.py`, `build_dip_pulse_site.py`).
-- Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks).
+- Tests assert CSS and markup strings, so expect churn (`tests/test_render_dip_pulse_html.py`, `tests/test_build_dip_pulse_site.py`, the browser checks). Put an inverted vote in the tests.
 - The preview and the chart prototype exist only on the owner's machine, under `~/.gstack`. Copy into the repository whatever the pages need.
+- The preview predates E4: `build_preview_v2.py` reads `vote_fractions` as the printed counts, and its store and the A3 store have no `listed_party_id`. Pages need the rule under `DESIGN.md` Vote wall, on a store rebuilt with E4. A row with a re-filed Stimme prints both numbers, which goes beyond today's note (`_refiled_note_html` names the members). Put a re-filed vote in the tests. Release identifiers, dates, sizes, the 29 files in the CSV control and the citation in the preview are examples.
+- Deferred from the `/gstack-ship` review of this entry (2026-11-07), none of them a wrong statement on a page today:
+  - **Gaps to settle in `DESIGN.md` before building the pieces.** Verdict and Vote lead give no wording when `derive.vote_outcome` is None (22 of 556 votes in the A3 store, and it could be the newest), and the Vote lead has no "berechnet" note for a `result_source` that is not official (356 of 534 verdicts there). Sitzungen promises a reason per excluded sitting, but all 85 entries in `coverage-exclusions.json` read `excluded`, so the release work has to supply reasons. The word for a verdict comes from the site's labels (`RESULT_BADGE_LABELS`), not from `derive.vote_outcome`, which returns a code.
+  - **Wording that disagrees within `DESIGN.md`.** "Generated text" on a slip is undefined, and the inverted vote's key ("Ja (hier: gegen den Antrag)") stands on the slip although Surfaces lists "für" and "gegen" as ground. The log's rows on display size, a third mode and both doors on the first screen are not marked superseded. "Below 760px" and "Between 760 and 1000px" disagree with `max-width: 760px` at exactly 760. The radar row's title size is not in the front matter. The Stand line example says "Release" where visitors read "Stand". "Six small panels" is fixed only in the log, and the Analysen layout depends on the count. CSS variable and family names need a stated mapping to the front-matter tokens. Atkinson Mono 700 has no use in the type scale, and the five-font count depends on it.
+  - **References that need another document.** `docs/plans/v1-scope-review.md` and commit cc0b0f7 are only on `claude/strange-germain-01ea7e`, so decisions Q3 to Q16 can't be followed from main until that lands. "Principle 6" is `PRODUCT.md`'s and "stage 2" the plan's Q1; neither is named as such. The log's "Mehr" is "Weitere Bereiche" in today's code.
+  - **Figures tied to one store.** The longest title, 642 characters, holds for the preview store; the A3 store has 1,114. The three-month gap behind "date first" also comes from the preview store: on the A3 store the newest vote is in the latest Sitzungswoche. 252 MB is the A3 build's gzipped SQLite.
+  - **States the rules leave open, from the adversarial passes. Settle these with the owner before building vote pages, because each can print something false.** (a) Direction unknown: `recommendation_inversion` returns True or None, never False, and None also covers a conflict, a blocked read and no evidence (`validate_dip_protocol.py`), so the store cannot tell "not inverted" from "not known". NULL mostly means not inverted: in the E4 gate store (619 votes, 2026-11-07 fix applied) 95 are inverted and 15 Beschlussempfehlung votes have no established direction ("Vote direction: what the 2026-11-07 fix left open", item 5). The A3 store's "NULL on 529 of 556" predates the interpretation fixes and measures nothing. `DESIGN.md` has no state for "direction not established" on a Beschlussempfehlung; since the fix the site names the Beschlussempfehlung in such a verdict ("Beschlussempfehlung: Angenommen"), which is true either way. (b) "A week without a roll call says so" and "Letzte namentliche Abstimmung" need complete acquisition (`validate_dip_protocol.py` scan states, the partial warning in `features/votes.py`); partial data must not read as "no vote". (c) A count the source did not give is NULL, today "nicht überliefert" (`tests/test_features_votes.py`), and the strip and totals have no form for it. A member's `vote` can be `unknown`, which the wall's four kinds leave out. (d) Release states: no release yet (`local` builds), no stable release, no DOI, a record in stable but gone from main. "Unverändert" needs its unit defined as every figure printed on the page. Two releases can reach the same Sitzung and differ in an aggregate (E4 moved Abweichungen 3,711 → 3,720), which the "counts over many Sitzungen" state can't say. (e) `DESIGN.md`'s Verdict and Vote lead say an inverted vote reads "Antrag abgelehnt". In the E4 gate store 94 of 95 inverted votes read that after the 2026-11-07 fix and one has no result; before it, vote 990 read "Antrag: Angenommen" from a self-contradicting bundestag.de box (`docs/source-errors.md` E6). `derive.vote_outcome` returns accepted when `result_raw` is rejected, so the page reads the outcome and never hard-codes the word. `inversion_source` has four values (protocol, roll-call page, DIP title, DIP Beschlussfassung), and the excerpt can be a whole title, not a sentence. (f) `person_corrections.json` splits a `redner_id` into two people, so "Quelle: Plenarprotokolle" on a person's Reden needs a row that says where the site decided the person. (g) The next Sitzungswoche is written at build, so a late release can name a past week, and the calendar can be empty.
+  - **Other points from those passes, not all checked.** A Fragestunde has contributions and no Reden, and the reading component has no place for them. Small multiples ask for neutral ghost lines while "don't overlay" forbids overlaying, and the Analysen door's reasoning relies on that ban. Fraktion order "by size" has no reference date, tie-break or place for Gruppen and Unbekannt. A tally can mix one tick per Rede and one per ten in a view, and has no cap. First-screen figures use a 667 px screen, and mobile Safari's viewport is smaller; fallback fonts move them too. `box-shadow` edges vanish under forced colours, and print drops background-drawn cards and strips. The strip, controls and fields wear the same edge colour the footer explains as "steht so in der Quelle". `overflow-wrap: anywhere` can collapse table columns on long titles.
+  - **Component list and tests.** This entry names fewer components than the `DESIGN.md` inventory, which also has Speech with its blocker (`speeches.text` has no paragraphs) and Small multiples. Tests worth naming: no "unverändert" without a comparison, incomplete member rows give a gap and not a wall, an unmapped Fraktion takes `f-none`, no inline hex in markup, and the word check on data lines. Colour values and card geometry are not asserted.
 
-**Settle while applying** (found by the v0.32.1.0 reviews; `DESIGN.md` does not answer these yet):
-- **Inverted votes.** On a vote with `inverted` set, a Ja means "gegen den Antrag" (`derive.fraction_position`), so a blue Ja card reads as approval when it means the opposite. The key and the rows must say what Ja means on such a vote. Put an inverted vote in the tests.
-- **Touch targets.** `DESIGN.md` sets controls at 36px, but the site ships 44px touch targets (`min-height:44px` in `render_dip_pulse_html.py`, CHANGELOG entries on the filter buttons and the Wochenübersicht). Do not regress them: ask the owner to change `DESIGN.md`.
-- **Where computed figures sit.** "No computed figures on a slip" collides with "the vote wall sits on a slip": the preview prints each row's counts inside the slip. The list strip is computed too, and its vote colours fail on the ground (Nein 2.08:1). Decide, and write the answer into `DESIGN.md`.
-- **The wall as text.** A card's `title` does not show on touch or reliably reach a screen reader. Give the member votes as text too, such as a `<details>` list or table per Fraktion.
-- **Dark mode.** `theme_bootstrap_script` follows the saved choice, then `prefers-color-scheme`, and the Datenschutz page names the `bundestag-pulse-theme` key. Keep the toggle and the key. "Light by default" applies only when neither says dark.
-- **Fraktion colours in both modes.** `PARTY_COLORS` writes one hex value into inline styles; only CDU/CSU is a variable. `DESIGN.md` has a light and a dark value per Fraktion, so emit a variable for each.
+**Settle while applying:**
 - **Fonts without a package manager.** The `@fontsource` packages are a one-time download source. Commit the five WOFF2 files (D-DIN Condensed Bold; Atkinson Next variable, latin and latin-ext; Atkinson Mono 400 and 700) and the licence texts, with no `package.json`.
 - **Stale stylesheet.** Put a content hash or version in the stylesheet's URL, so new HTML never pairs with a cached old file.
-- **Long compounds.** Bill titles come from DIP, so nobody inserts the soft hyphens `DESIGN.md` asks for. Add an overflow fallback and check long titles at 375 px.
-- **Enthaltung and provenance.** There is no outline token for the Enthaltung card. Slip against ground is only 1.59:1 in light mode and 1.40:1 in dark mode, so the surface alone may not carry provenance for a low-vision reader.
 - **Reviews until this lands.** The `CLAUDE.md` rule to flag UI that does not match `DESIGN.md` means new or changed UI. Existing pages are this entry, not findings.
 
 **Effort:** L
@@ -876,7 +927,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 - The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.
 - `docs/designs/gesetzesvorhaben.md:300` names the removed TODO "DESIGN.md, tokens and a typeface decision".
 - `README.md:494` and `docs/project-documentation.md:21,313` link to `docs/design/bundestag-pulse-design.md`, deleted in ad389bf. Remove the links or point them at `PRODUCT.md` and `DESIGN.md`.
-- `DESIGN.md` has not been checked against two outside sources in the v0.32.1.0 reviews: the colour-blind ΔE figures (validator not re-run) and the bundestag.de ballot-card link (not reachable from the sandbox).
 
 **Why:** none of these moves a figure or misleads a site reader, but each can send a later reader the wrong way.
 
@@ -1115,6 +1165,8 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 
 Also: DATA.md's sources paragraph (`_codebook_sources_and_citation`) names the open redistribution question for the roll-call data only; name the MdB-Stammdaten there too until the terms are settled (ship adversarial pass 3).
 
+The answer also reaches two tables outside this layer. Since E4 (2026-11-05), 100 rows of `vote_members.party_id` and 146 rows of `vote_fractions` counts rest partly on the Stammdaten, while the dictionary still tags those columns `bundestag-abstimmungen` alone. If the file can't be redistributed, dropping the seat tables does not remove these rows: decide then whether a correction may stay, and tag the columns to match.
+
 Done when the layer has written terms and DATA.md's attribution names the file.
 
 **Why:** It is a release blocker under track D, not an implementation blocker. The zip itself stays in the private directory, never in OUTPUT (D9).
@@ -1310,26 +1362,40 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 ## Abstimmungen
 
-### Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten
+### E4 /gstack-review: deferred findings (2026-11-05)
 
-**What:** On 55 roll-calls in WP 19 and WP 20 (rebuilt store, 2026-11-02; 47 in the older store file), bundestag.de files six MdBs under the wrong group: Kamann, Bülow, Pasemann, Witt, Huber and Heßenkemper (`docs/source-errors.md` E4). `vote_members.party_id` and `vote_fractions` copy the pages, so these members' Stimmen count for the wrong group. That affects the vote panel's group blocks, the Mehrheitsvotum and Abweichler (R3, Fakten). Re-file each member's Stimme under their Zugehörigkeit on the vote's date from `mdb_zugehoerigkeiten`, recompute the affected `vote_fractions` rows and Mehrheitsvoten, and report old and new values per vote.
-
-Done when:
-- the C1 cross-check (`seat-crosscheck.json`) shows no `shift_between_groups` roll-call;
-- the page's totals stay available as the source's own figures;
-- the fix runs on every rebuild, not as a one-off patch.
-
-**Why:** The C1 cross-check measured it on 2026-11-01. The Textarchiv backs the Stammdaten in every case. Until this is fixed, the published group counts of those 55 votes are wrong.
-
-**Context:**
-- **Vote ids:** `docs/plans/c1-seat-counts.md` "Step 9 result" lists them: 38 from 487 to 571, 10 from 696 to 706, 750–754 and 756–757.
-- **Where the rule goes:** at persist time, after the C1 tables exist in the staged store. The rebuild order puts `rebuild_seat_counts` after the reports are persisted, so the rule needs a pass after it, or the seat tables must move earlier.
-- **Votes from before WP 18** have no Stammdaten rows and stay as the source has them.
-- **Decide** whether a Stimme keeps the page's group as a second column, the page being the source.
+Pre-landing review of 23629a5 (specialists, red team, Claude adversarial; Codex gpt-6.1-sol on the tree with the first round of doc fixes: gate PASS, one P2, item 3). No figure moves on today's data: the tip's filing equals the replayed store on all 619 votes. These matter when the Stammdaten file changes or goes missing:
+1. **Outside a release, no file still means the correction disappears, with only a warning.** A rebuild without `mdb-stammdaten.*` in the private directory puts all 100 Stimmen back under the page's groups. `data-methods.md`, the warning and the Datenstand line say so. A tagged export and `publish_dip_pulse_data.py` refuse this state since the owner's decision of 2026-11-05, so it can't be released, but a local build and its pages stay uncorrected. The file (Stand 2026-04-29) has been in `.context/.dip-pulse-site.private` since 2026-11-05, but the store beside it is still schema 8 with 217 votes, so it needs `--offline --repersist` before its first release build. `~/agent-runs/a3/.full.private`, beside the 716-sitting store, has no file. Both refusals ran on real files on e7b06f3: a tagged export of a clone without the Stand row refuses, `publish_dip_pulse_data.py` refuses a manifest whose `stammdaten` is null, and a tagged export with the file passes its dry run.
+2. **A gap in the file counts as proof of fraktionslos.** `_mandate_stretches` makes each Mandat day without a Fraktion or Gruppe record fraktionslos, and `_proved_group` treats that row as proof. An MdB whose Mandat is entered before their Fraktion would be re-filed from a correct page row into fraktionslos (synthetic check: page SPD, no INSTITUTIONEN, moved). Today's six MdBs are backed by the Textarchiv; a refreshed file is not. Require a Fraktion or Gruppe record in that Wahlperiode before a move into fraktionslos. A lag in the file is a second route to the same wrong move: `_proved_group`'s only freshness guard is `day > stand_day`, so a group change the file has not recorded yet, or one made on the Stand day after the Stand instant, re-files a correct page row to the old group (0 votes fall on the Stand day today). Treat a window before the Stand as unproven; `stammdaten.py`'s `after_stand` cause uses the same boundary.
+3. **An offline render files from the file on disk, the store from the file it was built with.** `refresh` swaps the cache before the rebuild, so a rebuild that then fails (a roster outage) leaves a new file beside the old store; `--offline` then gives panels and store different moves wherever the two Stands differ. Compare the cache's sha256 with `mdb_stammdaten_stand`, or take the marks from `vote_members.listed_party_id`. A second read of the zip in `rebuild_seat_counts` has the same gap inside one rebuild: read it once and pass it on. Codex found this independently (P2) and says it reproduced the mismatch in memory for a missing cache. The refusal in `main` for an unreadable file says "or remove it, then re-run", which on a plain `--offline` leads straight here: it should say `--offline --repersist`.
+4. **The seat cross-check can't see a wrong Stammdaten row any more.** It compares `vote_fractions.total_count` with seats from the same file the moves came from, so `shift_between_groups` 0 is no independent proof of the moves. It still catches misfilings among the unmatched names. Comparing the page's own counts (read back through `listed_party_id`) would restore the check.
+5. **Tests.** `test_hostile_names_end_in_no_key_quickly` asserts a wall-clock bound. `validate_store_gate._data_clone` copies no Stammdaten, so the gate never sees a re-filed Stimme (it compares person grouping, which E4 leaves alone). The success path of `main`'s offline branch has no test: a readable file marks the entries before the render. The v0.34.0.0 ship covered the other gaps this item listed; reverting `vote_groups_cover_total` is an equivalent mutant, since a move keeps every count's sum.
+6. **Small.** `person_name_key` runs three times per member and the zip is parsed per run (measured: 6.3 s and 1.1 s on 425,322 rows). A refused vote shows only on stderr (none today). `filed_fractions` could store a negative `total_count` for a page row whose `total` is under its counts (`parse_fraction_votes` never writes one). The panel note prints "dort None" for a member with no faction (none moved today). `zusammenschluss(faction) or "Unbekannt"` is written out four times; a `listed_group` helper would name it. `refile_entry_votes` loops again only to count what `refile_report_votes` could return. The comment on `vote_fractions.rank` in `persist_dip_pulse_store.py` and the dictionary's `rank` meaning say the source's order, but `filed_fractions` appends a group the page has no row for (none today: every destination row in the TSV already existed).
+7. **The online fresh vs incremental comparison is still owed.** It needs a DIP key, and only an online build fetches the roster. The offline half ran on e7b06f3 (2026-11-05): a store-less `--offline --repersist` against the gate's upgraded clone of `~/agent-runs/a3/full`. Votes, `vote_members`, `vote_fractions`, Reden, Fakten, Abweichungen (3,720) and all r2, r4, r5 and r6 rows are equal. The differences are timestamps; 17,913 Reden keyed `xml:` on one side and `aw:` on the other, and person keys issued anew (84,301 of 523,968 shared bindings have the same key), with the same grouping (1,942 persons on each side over those bindings, 0 split, 0 merged); the retired-only records; the upgraded store's 1,077 extra `mps` rows, which were already in its input (7,457 before the replay), so E4 did not create them; and everything the roster decides: 0 against 589 listed Abgeordnete, 1,577 against 2,005 Personenseiten, the eyebrow on a Personenseite, the display name in r1 and r3, and in 174 protocol pages whether a member's name links to the Personenseite or to bundestag.de. A store-less offline build has no roster by design, so `docs/agents/review-checklist.md`'s "identical CSVs and pages" can't hold for it. That line should say which comparison it means.
+8. **Found by the v0.34.0.0 ship reviews (2026-11-06), none reached by today's data.**
+   - `refile_entry_votes` only warns about a refused vote, and the release guards check only that the file was loaded. A tagged release could carry a refused vote under the page's group while the Datenstand line and `data-methods.md` describe the correction. Today: 0 refused. Fix: return the refused list and let a tagged export refuse on it.
+   - `refile_vote_members` checks that the page's row has a Stimme to give, not that the page's list and chart agreed for that group. If the chart already counted a member in the proved group and only the list misfiled them, the move double-counts. Today: `vote_members` per group equals `vote_fractions` on all 619 votes.
+   - `_member_sections_html` (`features/votes.py`) builds its group key from `refiled_to` or the raw `faction`, not `derive.member_group`. A page spelling a group in a variant form would get two headings once a member moves there. All 100 moves land on AfD, SPD or fraktionslos today.
+   - `scripts/compare_store_values.py` reads no `vote_members.party_id`, `listed_party_id` or `vote_fractions` counts, only `leading_vote` and r3. A re-filing that flips no Mehrheitsvotum and no Abweichler is invisible to the README's "Validate a data correction" replay. Add a per-(vote, group) count comparison.
+   - `filed_fractions` trusts a `refiled_to` mark in a cached report; only `refile_vote_members` checks the Stimme is a count. Every loader that feeds persist or render clears and recomputes the marks today, so only a new reader would hit this.
+   - `filed_fractions` iterates every member entry, while `vote_abweichler` and `vote_members` dedupe by identity. Two entries with different name text and one identity could both move. Close it with "Persist overwrites a roll-call member row when two members of one vote resolve to one mp".
+   - `vote_members.listed_party_id` is `ON DELETE SET NULL`: a party-dedupe path other than `_repoint_party` would make a moved Stimme read as not moved.
 
 **Effort:** M
-**Priority:** P1 (a wrong published figure)
-**Depends on:** Fraktion seat counts in the store (done)
+**Priority:** P2 (items 1 to 4 and 7 before the first release)
+**Depends on:** None
+
+### E4 re-filing: what it leaves open
+
+The rule in `derive.refile_vote_members` moved 100 Stimmen in 55 roll-calls (2026-11-05, `docs/plans/e4-refiled-votes-old-new.tsv`). Nothing here moves a known figure:
+1. **`data/bills.json` and a bill page's raw block show the page's `fractions`.** They dump the report's vote as it is, with the `refiled_to` marks beside the counts, so a reader summing `fractions` there gets the Bundestag page's figures, not the store's. No bill page renders group counts. Either give the dump `derive.filed_fractions` or say so in the data docs.
+2. **27 member names (3,073 rows) find no Stammdaten name, and 10 (927 rows) match a name only in another Wahlperiode** (measured 2026-11-05 on the E4 replay, 425,322 rows). Examples: Dagdelen/Dağdelen, Özoguz/Özoğuz, Merkel "Angela Dorothea"; Wadephul and Kemmer in the second group, with Breilmann and Zschau, who joined after the Stand. They keep the page's group. The cross-check would show a misfiling among them as `shift_between_groups`, and shows none today. A stored link from a vote member to the MdB id (via the registry) would replace the name match.
+3. **`mps.party_id` keeps the page's group on purpose,** because the registry reads it as name-and-party evidence. Passing the corrected group split Pasemann's Reden from his Stimmen and moved Heßenkemper's page in the first replay. So "Fraktion" on a Personenseite can still rest on a misfiled vote row (Kamann, Bülow). Those pages need the Zugehörigkeit from the Stammdaten, which "Link `mdb_zugehoerigkeiten` to the MP pages" covers.
+4. **The panel note is plain body text.** Its look belongs to "Apply DESIGN.md to the site".
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
@@ -1735,6 +1801,8 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
+- Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone
 - "Validate a data correction" copies no private directory, so `after` loses the seat tables: v0.33.0.0, 2026-11-05

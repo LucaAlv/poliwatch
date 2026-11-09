@@ -365,7 +365,7 @@ No issues found. There is no new endpoint, input or secret. The downloaded CSV s
                     \-> nil/empty id, no <redner>: withheld with a reason, not dropped
                     \-> outside a TOP: needs a decided home, agenda_item_id is required today
                     \-> all units refused: the written bar decides whether the sitting stays
-                    \-> source file changed since fetch: comparison shows it, C4 may be one
+                    \-> source file changed since fetch: comparison shows it, C5 may be one
 ```
 
 | Interaction | Edge case | Handled? |
@@ -476,7 +476,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 
 - [x] **T1 (P1, human ~3 days / CC ~half a day)** Parser: Reden outside a TOP (after R9), annex titles, 21/43. Surfaced by N3. Built on `claude/objective-satoshi-86c7a1`, not landed: 18/49 has 51 ids, Reden 54,718 → 54,747.
 - [x] **T2 (P1, human ~1 day / CC ~1 h)** Person binding for shared ids, by extending the reviewed partitions. Surfaced by P6, Codex finding 1. Built on `claude/elated-tereshkova-f657d3`, not landed: the 43 units move, Fraktion figures hold. Still owed: rendered pages not opened; rescan once the 85 are fetched.
-- [ ] **T3 (P1, human ~3–4 weeks / CC ~3–5 days, estimated; was ~2 weeks / ~1–2 days)** Withholding per unit, with reconciliation, an ADR and N7's reviewed list of single units, after `/plan-eng-review`, which ran on 2026-11-09: two PRs, refined as tasks E1-E8 in "Eng review: the withholding build". Surfaced by N1, N6, N7, outside finding 3, Codex findings 2 and 4. Verify: Section 6 rows; the known wrong units in 18/2, 18/29, 18/83 and 19/25 are withheld with a reason.
+- [ ] **T3 (P1, human ~3–4 weeks / CC ~3–5 days, estimated; was ~2 weeks / ~1–2 days)** Withholding per unit, with reconciliation, an ADR and N7's reviewed list of single units, after `/plan-eng-review`, which ran on 2026-11-09: two PRs, refined as tasks W1-W8 in "Eng review: the withholding build". Surfaced by N1, N6, N7, outside finding 3, Codex findings 2 and 4. Verify: Section 6 rows; the known wrong units in 18/2, 18/29, 18/83 and 19/25 are withheld with a reason.
 - [ ] **T4 (P1, human ~4 days / CC ~half a day, estimated, plus DIP time; was ~1 day / ~1 h before N8's review)** Fetch the 85, scan, review restored sittings (N8), rebuild, gate, compare. Follows T3. Verify: votes match the roll-call list date by date; the review has passed, with every wrong unit on the withheld list.
 - [ ] **T5 (P1, human ~1 h / CC ~15 min)** `DATA.md` comparison. Surfaced by N4. Verify: doc-link test.
 - [ ] **T6 (P2, human ~1 h / CC ~15 min)** Stray Fraktion values. Verify: every Fraktion value is known.
@@ -1154,49 +1154,49 @@ Critical gaps: 0.
 
 | Step | Modules touched | Depends on |
 | --- | --- | --- |
-| E1 fetch and audit the 85's XML | data only, a report under `docs/plans/` | — |
-| E2 PR 1, inventory and reconciliation | parser, tests, docs | the Reden fix landed |
-| E3 PR 2, parser withholding | parser, reviewed list, tests | E1, E2 |
-| E4 PR 2, storage and export | persist, build/export, data dictionary, comparison and gate scripts | E3 |
-| E5 PR 2, release behaviour | build | E4 |
-| E6 PR 2, regression contract | scripts, tests | E3, E4 |
-| E7 PR 2, docs and retirement | docs, ADR, audit script | E3 |
-| E8 PR 2, N7 reviewed entries | reviewed list | E3, the N8 review pass |
+| W1 fetch and audit the 85's XML | data only, a report under `docs/plans/` | — |
+| W2 PR 1, inventory and reconciliation | parser, tests, docs | the Reden fix landed |
+| W3 PR 2, parser withholding | parser, reviewed list, tests | W1, W2 |
+| W4 PR 2, storage and export | persist, build/export, data dictionary, comparison and gate scripts | W3 |
+| W5 PR 2, release behaviour | build | W4 |
+| W6 PR 2, regression contract | scripts, tests | W3, W4 |
+| W7 PR 2, docs and retirement | docs, ADR, audit script | W3 |
+| W8 PR 2, N7 reviewed entries | reviewed list | W3, the N8 review pass |
 
-Lane A: E2 (parser). Lane B: E1 (the owner's network run), independent of the code. Launch A and B together. Then PR 2 runs sequentially (E3 → E4 → E5, then E6, E7, E8), because every step touches the parser or reads its report shape. Conflict flags: E2 and the Reden fix both touch `validate_dip_protocol.py`, so E2 starts from main after that fix lands.
+Lane A: W2 (parser). Lane B: W1 (the owner's network run), independent of the code. Launch A and B together. Then PR 2 runs sequentially (W3 → W4 → W5, then W6, W7, W8), because every step touches the parser or reads its report shape. Conflict flags: W2 and the Reden fix both touch `validate_dip_protocol.py`, so W2 starts from main after that fix lands.
 
 ## Implementation Tasks
 Synthesized from this review's findings. They refine T3 above; T4's DIP part follows them.
 
-- [ ] **E1 (P1, human: ~2h / CC: ~30min, plus the owner's network run)** — data — Fetch only the XML of the 85 and audit it
+- [ ] **W1 (P1, human: ~2h / CC: ~30min, plus the owner's network run)** — data — Fetch only the XML of the 85 and audit it
   - Surfaced by: Outside voice 2, D8
   - Files: run with `docs/plans/withholding-preflight/fetch_and_audit.py` (in the owner's terminal, with the Reden fix's `scripts/`); report under `docs/plans/withholding-preflight/`
   - Verify: the report lists refusal classes per sitting, which of the 69 parse once located refusals are withheld, finding 8's sitting, words withheld, and pass-1 moves out of refused Reden
-- [ ] **E2 (P1, human: ~3d / CC: ~4h)** — parser — PR 1: raw XML inventory and reconciliation
+- [ ] **W2 (P1, human: ~3d / CC: ~4h)** — parser — PR 1: raw XML inventory and reconciliation
   - Surfaced by: Scope Challenge, D1; N6
   - Files: `scripts/validate_dip_protocol.py`, a new test file, `docs/data-methods.md`
   - Verify: `python3 -m unittest`; A3 replay compared with `--cohort shared`: 0 moved values and no held sitting refused (D6)
-- [ ] **E3 (P1, human: ~1w / CC: ~1d)** — parser — PR 2: withhold located refusals
+- [ ] **W3 (P1, human: ~1w / CC: ~1d)** — parser — PR 2: withhold located refusals
   - Surfaced by: Scope Challenge 3-5, Section 2 items 1-3, D4, D7, D3
   - Files: `scripts/validate_dip_protocol.py`, a new reviewed list in `scripts/`, tests
   - Verify: tests for both located classes, the split part (D4), rollback, text merged in and moved out (D7), a stale list entry, unchanged refusal for every other class; speeches carry their source position
-- [ ] **E4 (P1, human: ~2d / CC: ~3h)** — store/export — PR 2: `withheld_units` table and its outputs
+- [ ] **W4 (P1, human: ~2d / CC: ~3h)** — store/export — PR 2: `withheld_units` table and its outputs
   - Surfaced by: D2, D3, Section 1 items 2 and 4, N9
   - Files: `scripts/persist_dip_pulse_store.py`, `scripts/build_dip_pulse_site.py`, `scripts/data_dictionary.json`, `scripts/compare_store_values.py`, `scripts/validate_store_gate.py`
   - Verify: export test (`withheld_units.csv`, DATA.md coverage by words per year and Fraktion), replay equals fresh, schema, export format and rule version taken after both fix branches land
-- [ ] **E5 (P1, human: ~1d / CC: ~1h)** — release — PR 2: list, cap and exclusion reasons
+- [ ] **W5 (P1, human: ~1d / CC: ~1h)** — release — PR 2: list, cap and exclusion reasons
   - Surfaced by: D5, D9, Section 1 item 3
   - Files: `scripts/build_dip_pulse_site.py`, tests
   - Verify: run summary lists newly withheld Reden; more than 2 stops the automatic release; an exclusion with reason "excluded" or none is refused
-- [ ] **E6 (P1, human: ~1d / CC: ~2h, plus run time)** — verification — PR 2: regression contract
+- [ ] **W6 (P1, human: ~1d / CC: ~2h, plus run time)** — verification — PR 2: regression contract
   - Surfaced by: D6, outside voice 7
   - Files: a withhold-one script, tests
   - Verify: replays show 0 moved values except `speeches.sequence` (counted); withholding one Rede per TOP, including Reden next to Kurzintervention/Erwiderung and resumed pairs, leaves every other unit unchanged
-- [ ] **E7 (P2, human: ~1d / CC: ~1h)** — docs — PR 2: ADR 0005, CONTEXT.md, data-methods, retire the audit script
+- [ ] **W7 (P2, human: ~1d / CC: ~1h)** — docs — PR 2: ADR 0005, CONTEXT.md, data-methods, retire the audit script
   - Surfaced by: N1 ("record this in an ADR"), outside voice 6, D10
   - Files: `docs/adr/0005-…`, `CONTEXT.md`, `docs/data-methods.md`, `scripts/audit_offline_turns.py` and its tests (deleted)
   - Verify: the ADR states the grain, the cost of an opening withheld with its Rede, the moved-text rule and the cap; doc-link test
-- [ ] **E8 (P1, human: ~1d / CC: ~1h, after the N8 review pass)** — data — PR 2: reviewed entries for 18/2, 18/29, 18/83, 19/25
+- [ ] **W8 (P1, human: ~1d / CC: ~1h, after the N8 review pass)** — data — PR 2: reviewed entries for 18/2, 18/29, 18/83, 19/25
   - Surfaced by: N7 A
   - Files: the reviewed list
   - Verify: each entry carries a reason; the four sittings reconcile; their known wrong units are in `withheld_units`, not in any count
@@ -1229,13 +1229,13 @@ The JSONL task artifact is written beside the test plan in the review state dire
 | --- | --- | --- | --- | --- | --- |
 | CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 5 critical gaps open until built, all owner decisions answered |
 | Outside Review | Codex for the CEO plan, run by the owner; native fallback for the eng plan | Independent 2nd opinion | 2 | CEO: issues found. Eng: unavailable, fallback completed | CEO: 5 findings (3 confirmed, 2 in part). Eng: Codex could not start in the sandbox; the native fallback found 8, three became D7, D8 and D9 |
-| Eng Review | `/plan-eng-review` | Architecture and tests (required) | 1 | ISSUES OPEN | 29 issues, 0 critical gaps; all mapped to tasks E1-E8; D1-D10 answered by the owner's adjudicator |
+| Eng Review | `/plan-eng-review` | Architecture and tests (required) | 1 | ISSUES OPEN | 29 issues, 0 critical gaps; all mapped to tasks W1-W8; D1-D10 answered by the owner's adjudicator |
 | Design Review | `/plan-design-review` | UI and UX gaps | 0 | not run | none |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | not run | none |
 
 - **OUTSIDE COVERAGE:** CEO phase: Codex plan challenge completed 2026-11-07, run by the owner. Eng phase, 2026-11-09: Codex unavailable (sandbox), so no outside coverage; the native Plan-subagent fallback completed with 8 findings and does not count as outside coverage. The owner can run the eng challenge from a terminal with `codex exec`, using the prompt in the session scratchpad.
 - **REVIEW HISTORY:** the eng review log is kept under a scratchpad state directory, because the sandbox blocks `~/.gstack`; it does not reach the dashboard on other machines.
-- **VERDICT:** no review is CLEAR. The eng review answered every decision and mapped every finding to tasks; its status is ISSUES OPEN because those tasks are unbuilt. E1 and E2 can start, E2 once the Reden fix lands. eng review required (the dashboard's rule while Eng is not CLEAR).
+- **VERDICT:** no review is CLEAR. The eng review answered every decision and mapped every finding to tasks; its status is ISSUES OPEN because those tasks are unbuilt. W1 and W2 can start, W2 once the Reden fix lands. eng review required (the dashboard's rule while Eng is not CLEAR).
 
 **UNRESOLVED DECISIONS:**
 - + 2 unresolved from prior reviews: the host provider and the reader test's pass rule (CEO review, `TODOS.md`).

@@ -32,7 +32,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -62,6 +62,11 @@ def require_current_schema(conn):
         # Schema 9: no link and fraction order, no per-item Drucksache url, and a
         # missing vote total stored as 0. None of it can be derived from the
         # store, so the cached reports are persisted again.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    vote_members = {row[1] for row in conn.execute("PRAGMA table_info(vote_members)")}
+    if vote_members and "listed_party_id" not in vote_members:
+        # Schema 10: every Stimme still counts for the group the page lists, and
+        # the correction needs the cached reports.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -437,7 +442,11 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS vote_members (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
           mp_id TEXT NOT NULL REFERENCES mps(id) ON DELETE CASCADE,
+          -- The group the Stimme counts for, in vote_fractions too.
           party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
+          -- The group the roll-call page lists, only where the MdB-Stammdaten
+          -- prove another one (derive.refile_vote_members); else NULL.
+          listed_party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
           vote TEXT NOT NULL,
           PRIMARY KEY (vote_id, mp_id)
         );
@@ -598,6 +607,7 @@ def _repoint_party(conn: sqlite3.Connection, old_id: str, new_id: str) -> None:
     """Move every reference off ``old_id`` so the duplicate row can be deleted."""
     conn.execute("UPDATE mps SET party_id = ? WHERE party_id = ?", (new_id, old_id))
     conn.execute("UPDATE vote_members SET party_id = ? WHERE party_id = ?", (new_id, old_id))
+    conn.execute("UPDATE vote_members SET listed_party_id = ? WHERE listed_party_id = ?", (new_id, old_id))
     # vote_fractions is keyed (vote_id, party_id): a vote that already counted the
     # clean Fraktion absorbs the duplicate's counts instead of colliding with it.
     counts = ("yes_count", "no_count", "abstain_count", "absent_count", "total_count")
@@ -1225,10 +1235,12 @@ def resolve_speaker(
         identity_key=mp_identity(
             aw_politician_id=aw_politician_id,
             aw_match=profile.get("match"),
+            dip_person_id=speaker.get("dip_person_id"),
             xml_redner_id=xml_redner_id,
             display_name=display_name,
             party_name=party_name,
         ),
+        dip_person_id=speaker.get("dip_person_id"),
         xml_redner_id=xml_redner_id,
         occurrence_id=occurrence_id,
         profile_url=profile.get("url"),
@@ -1529,7 +1541,7 @@ def persist_vote(
 
     # Rows of one vote that name the same Zusammenschluss under two
     # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
-    for rank, merged in enumerate(derive.merge_fractions(vote.get("fractions")), start=1):
+    for rank, merged in enumerate(derive.filed_fractions(vote), start=1):
         party_name = merged["name"]
         party_id = party(party_name)
         if party_id is None:
@@ -1559,8 +1571,8 @@ def persist_vote(
         )
 
     for member in vote.get("members") or []:
-        party_name = derive.zusammenschluss(member.get("faction")) or "Unbekannt"
-        party_id = party(party_name)
+        listed_party_id = party(derive.zusammenschluss(member.get("faction")) or "Unbekannt")
+        party_id = party(derive.member_group(member))
         profile = member.get("abgeordnetenwatch") or {}
         aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
         profile_url = derive.member_profile_url(member)
@@ -1568,7 +1580,10 @@ def persist_vote(
             conn,
             now=now,
             display_name=clean(member.get("name")) or "Unbekannt",
-            party_id=party_id,
+            # The page's group, also for a re-filed Stimme: the identity registry
+            # reads this as name-and-party evidence, and a correction of one vote
+            # must not split or move a person.
+            party_id=listed_party_id,
             # The key vote_abweichler dedupes on, so derive and the store agree.
             identity_key=derive.vote_member_identity(member),
             occurrence_id=derive.vote_member_key(vote_id, member),
@@ -1578,13 +1593,14 @@ def persist_vote(
         )
         conn.execute(
             """
-            INSERT INTO vote_members(vote_id, mp_id, party_id, vote)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO vote_members(vote_id, mp_id, party_id, listed_party_id, vote)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(vote_id, mp_id) DO UPDATE SET
               party_id = excluded.party_id,
+              listed_party_id = excluded.listed_party_id,
               vote = excluded.vote
             """,
-            (vote_id, mp_id, party_id, clean(member.get("vote")) or "unknown"),
+            (vote_id, mp_id, party_id, listed_party_id if member.get("refiled_to") else None, clean(member.get("vote")) or "unknown"),
         )
 
 def _warn_merged_redner_ids(report: dict[str, Any]) -> None:

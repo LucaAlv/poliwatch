@@ -676,7 +676,7 @@
       }
     },
     "mdb_stammdaten_stand": {
-      "meaning": "Die MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats in diesem Build gebildet sind: eine Zeile mit ihrem Stand und ihrer Prüfsumme, keine Zeile, wenn keine Datei geladen war (dann sind beide Tabellen leer).",
+      "meaning": "Die MdB-Stammdaten-Datei, aus der mdb_zugehoerigkeiten und party_seats in diesem Build gebildet und Stimmen in vote_members und vote_fractions umgebucht sind: eine Zeile mit ihrem Stand und ihrer Prüfsumme, keine Zeile, wenn keine Datei geladen war (dann sind beide Tabellen leer und jede Stimme zählt, wo die Abstimmungsquelle das Mitglied führt).",
       "columns": {
         "sha256": {
           "meaning": "SHA-256-Prüfsumme der zwischengespeicherten Zip-Datei, wie sie von bundestag.de geladen wurde.",
@@ -784,9 +784,9 @@
           "license": "dip"
         },
         "xml_redner_id": {
-          "meaning": "Redner-ID, die im Plenarprotokoll-XML für die sprechende Person verwendet wird.",
+          "meaning": "Redner-ID der sprechenden Person aus dem Plenarprotokoll-XML. Einige IDs vergibt der Bundestag an mehrere Personen. Für die geprüften Fälle hält scripts/person_corrections.json je gedrucktem Namen fest, wer gemeint ist: Dann steht hier die eigene Redner-ID dieser Person, nicht die gedruckte, und die Spalte ist leer, wenn die Person nur eine DIP-ID hat (dann in `dip_person_id`). Wo eine mehrfach vergebene ID stehen bleibt, etwa 11005304, trennt `person_id` die Personen.",
           "unit": "Protokoll-Rednerkennung als Text.",
-          "source": "Rednerkennung aus dem Protokoll-XML.",
+          "source": "Rednerkennung aus dem Protokoll-XML; für geprüfte mehrfach vergebene IDs die eigene Redner-ID der Person aus scripts/person_corrections.json.",
           "license": "dip"
         },
         "display_name": {
@@ -1439,60 +1439,60 @@
       }
     },
     "vote_fractions": {
-      "meaning": "Abstimmungssummen und führendes Votum je Zusammenschluss.",
+      "meaning": "Abstimmungssummen und führendes Votum je Zusammenschluss; Stimmen, die die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen als die Quelle, zählen dort (vote_members.listed_party_id).",
       "columns": {
         "vote_id": {
           "meaning": "Kennung der namentlichen Abstimmung, deren Stimmen je Zusammenschluss aggregiert werden.",
           "unit": "Kennung der Abstimmung als Text.",
-          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
           "meaning": "Kennung des Zusammenschlusses, dessen Stimmen summiert sind.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
-          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "yes_count": {
-          "meaning": "Ja-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Ja-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "no_count": {
-          "meaning": "Nein-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Nein-Stimmenzahl je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "abstain_count": {
-          "meaning": "Enthaltungen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Enthaltungen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "absent_count": {
-          "meaning": "Nicht abgegebene Stimmen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen.",
+          "meaning": "Nicht abgegebene Stimmen je Zusammenschluss aus den vom Bericht gelieferten und zusammengeführten Stimmenanteilen, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "total_count": {
-          "meaning": "Gesamtzahl der Mitgliederstimmen je Zusammenschluss, einschließlich nicht abgegebener Stimmen, sofern im Bericht enthalten.",
+          "meaning": "Gesamtzahl der Mitgliederstimmen je Zusammenschluss, einschließlich nicht abgegebener Stimmen, sofern im Bericht enthalten, nach der Umbuchung aus den MdB-Stammdaten.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt.",
+          "source": "Abstimmungssummen je Zusammenschluss aus dem geparsten Bundestagsbericht; gleichnamige/aliasierte Gruppierungen werden vom Store-Schreiber zusammengeführt; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         },
         "leading_vote": {
           "meaning": "Eindeutig häufigstes Votum unter Ja, Nein und Enthaltung (relative Mehrheit); bei Gleichstand an der Spitze oder ohne abgegebene Stimmen NULL.",
           "unit": "Textcode yes, no, abstain oder NULL; Abwesenheiten bleiben bei der Mehrheitswahl außer Betracht.",
-          "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen berechnet; Gleichstand/keine Stimmen ergibt NULL.",
+          "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen nach der Umbuchung aus den MdB-Stammdaten berechnet; Gleichstand/keine Stimmen ergibt NULL.",
           "license": "eigene-auswertung"
         },
         "rank": {
           "meaning": "Reihenfolge, in der die Abstimmungsquelle die Zusammenschlüsse nennt (erste Nennung nach Zusammenführung gleichnamiger Schreibweisen).",
           "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
-          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite; die Stimme eines Mitglieds, das die MdB-Stammdaten am Abstimmungstag einem anderen Zusammenschluss zuweisen, zählt dort (scripts/derive.py, filed_fractions).",
           "license": "bundestag-abstimmungen"
         }
       }
@@ -1513,9 +1513,15 @@
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
-          "meaning": "Zusammenschluss, dem das Mitglied in der Abstimmungsquelle zugeordnet ist; immer gesetzt: ohne erkennbaren Zusammenschluss steht die Partei „Unbekannt“.",
+          "meaning": "Zusammenschluss, für den die Stimme zählt: wie in der Abstimmungsquelle, außer wo die MdB-Stammdaten am Abstimmungstag einen anderen belegen (dann steht der Quellenwert in listed_party_id); immer gesetzt: ohne erkennbaren Zusammenschluss steht die Partei „Unbekannt“.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
-          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe; wo sie abweichen, die MdB-Stammdaten (scripts/derive.py, refile_vote_members).",
+          "license": "bundestag-abstimmungen"
+        },
+        "listed_party_id": {
+          "meaning": "Zusammenschluss, unter dem die Abstimmungsquelle das Mitglied führt, nur wo die MdB-Stammdaten am Abstimmungstag einen anderen belegen; sonst leer, dann gilt party_id auch für die Quelle. Die Summen der Quelle je Zusammenschluss: vote_fractions abzüglich der hierher umgebuchten und zuzüglich der von hier fortgebuchten Stimmen.",
+          "unit": "Projektkennung des Zusammenschlusses als Text oder leer.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichte Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
         },
         "vote": {
@@ -1660,7 +1666,7 @@
           "license": "eigene-auswertung"
         },
         "result_scope": {
-          "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition.",
+          "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition. Nennt der Beschlusstext den Antrag als angenommen, obwohl eine Ja-Mehrheit für die empfohlene Ablehnung stimmte (inverted = 1), steht proposition: Die Seite widerspricht sich dort, und das Wort gilt der Beschlussempfehlung.",
           "unit": "Textcode application oder proposition; NULL nur in Zeilen aus Berichten, die vor Einführung des Felds gespeichert wurden.",
           "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
@@ -1674,19 +1680,19 @@
         "inverted": {
           "meaning": "1, wenn die Projektregel feststellt, dass die Beschlussempfehlung die Ablehnung des zugrunde liegenden Antrags empfiehlt; NULL, wenn sie das nicht feststellt (kein Beleg, Abstimmung über die Vorlage selbst oder widersprüchliche Evidenz). Der Wert 0 wird nicht geschrieben.",
           "unit": "1 oder NULL; NULL heißt nicht festgestellt, nicht bestätigt nicht umgekehrt.",
-          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe inversion_source.",
           "license": "eigene-auswertung"
         },
         "inversion_source": {
-          "meaning": "Art der Quelle/Evidenz, mit der die Ablehnungsempfehlung festgestellt wurde.",
-          "unit": "Evidenztyp der Umkehrung als Code/Text oder NULL.",
-          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "meaning": "Art der Quelle/Evidenz, mit der die Ablehnungsempfehlung festgestellt wurde: bundestag-protocol (Ansage der Sitzungsleitung), bundestag-roll-call (Wortlaut der Abstimmungsseite), bundestag-dip (DIP-Drucksachentitel), bundestag-dip-beschlussfassung (in DIP verzeichnete Beschlussfassung, per Stimmenzahlen und Drucksache der Abstimmung zugeordnet).",
+          "unit": "Evidenztyp der Umkehrung als Textcode oder NULL.",
+          "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "inversion_excerpt": {
           "meaning": "Quellenausschnitt, der die erkannte Ablehnungsempfehlung belegt.",
-          "unit": "Belegausschnitt als Text oder NULL: bei Protokollbeleg die Klausel der Ansage (Leerraum normalisiert, auf 300 Zeichen mit „…“ gekürzt), sonst der ganze Titel, die Beschreibung oder der DIP-Drucksachentitel, der die Ablehnungsempfehlung enthält.",
-          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "unit": "Belegausschnitt als Text oder NULL: bei Protokollbeleg die Klausel der Ansage (Leerraum normalisiert, auf 300 Zeichen mit „…“ gekürzt), bei DIP-Beschlussfassung die Drucksache und die Bemerkung zum Abstimmungsergebnis, sonst der ganze Titel, die Beschreibung oder der DIP-Drucksachentitel, der die Ablehnungsempfehlung enthält.",
+          "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "xlsx_url": {

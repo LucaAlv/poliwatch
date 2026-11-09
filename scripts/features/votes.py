@@ -30,6 +30,17 @@ def result_badge_label(result_raw: Any) -> str | None:
     return RESULT_BADGE_LABELS.get(str(result_raw or ""))
 
 
+def _badge_subject(vote: Mapping[str, Any]) -> str | None:
+    """What the badge's outcome is about, where a bare word would read as the
+    outcome of the Antrag or topic in the row's title. A vote on the Vorlage
+    itself needs none. The same reading as ``render_vote_lead``."""
+    if vote.get("inverted"):
+        return "Antrag"
+    if derive.abstimmungsgegenstand(vote) != "beschlussempfehlung":
+        return None
+    return "Antrag" if vote.get("result_scope") == "application" else "Beschlussempfehlung"
+
+
 def render_result_badge(vote: dict[str, Any]) -> str:
     """The Angenommen/Abgelehnt pill for the dossier panel and the votes
     archive; a vote with no recorded result renders no badge.
@@ -42,8 +53,9 @@ def render_result_badge(vote: dict[str, Any]) -> str:
                   else "Mehrheit der Mitglieder erforderlich; kein amtliches Ergebnis gefunden"
                   if vote.get("procedure_type") else "Kein Ergebnis verfügbar")
         return f'<span class="vote-no-result">{html.esc(reason)}</span>'
-    if vote.get("inverted"):
-        label = "Antrag: " + label
+    subject = _badge_subject(vote)
+    if subject:
+        label = f"{subject}: {label}"
     if result_source == "official":
         return (
             f'<span class="vote-result vote-result-{html.esc(result_raw)}"'
@@ -494,11 +506,23 @@ def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, co
     return ""
 
 
+def _refiled_note_html(vote: dict[str, Any]) -> str:
+    """Says where the groups differ from the linked Bundestag page, and why."""
+    moved = [
+        f'{member.get("name")} bei {member["refiled_to"]} (dort {member.get("faction")})'
+        for member in sorted(vote.get("members") or [], key=lambda value: str(value.get("name") or ""))
+        if member.get("refiled_to")
+    ]
+    if not moved:
+        return ""
+    return f'<p class="vote-state-note">{html.esc("Anders als auf der Bundestag-Seite, nach den MdB-Stammdaten gezählt: " + "; ".join(moved) + ".")}</p>'
+
+
 def _member_sections_html(vote: dict[str, Any], panel: VotePanelContext) -> str:
     """The Einzelstimmen grid, one section per group, fraktionslos last."""
     member_groups: dict[str, list[dict[str, Any]]] = {}
     for member in vote.get("members") or []:
-        member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
+        member_groups.setdefault(str(member.get("refiled_to") or member.get("faction") or "Unbekannt"), []).append(member)
     member_sections = []
     for faction in sorted(member_groups, key=lambda value: (value == "fraktionslos", value)):
         rows = []
@@ -561,7 +585,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         no_members = bool(abweichler) and all(group["state"] == "no_members" for group in abweichler.values())
         fraction_rows = "".join(
             _fraction_group_html(fraction, abweichler, no_members, panel, vote)
-            for fraction in derive.merge_fractions(vote.get("fractions"))
+            for fraction in derive.filed_fractions(vote)
         )
         committee_line = render_committee_line(derive.vote_committees(vote, panel.report), document_links, document_chambers)
         total = vote.get("total") or {}
@@ -597,7 +621,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{render_vote_lead(vote, panel.report, panel.site_prefix)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
+            f'{render_vote_lead(vote, panel.report, panel.site_prefix)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>{_refiled_note_html(vote)}'
             f'{_abweichler_summary_html(abweichler, no_members, derive.vote_abweichler_count(vote, abweichler))}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
@@ -623,7 +647,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
 class StoredVote:
     """One stored vote, in the shapes the report path hands the vote rules.
 
-    ``vote``: the vote dict (``id``, ``date``, ``title``, ``topic``, ``total``
+    ``vote``: the vote dict (``id``, ``date``, ``title``, ``description``, ``topic``, ``total``
     with ``None`` for a count the source did not give, the result fields,
     ``inverted``, ``document_numbers`` in stored order, ``fractions`` in stored
     order, ``members``). ``item``: the agenda item that supplies the vote's
@@ -723,7 +747,7 @@ def stored_votes(conn: Any) -> list[StoredVote]:
 
     result = []
     for row in conn.execute(
-        "SELECT v.id, v.protocol_id, p.document_number, v.date, v.topic, v.title, v.yes_count, v.no_count, "
+        "SELECT v.id, v.protocol_id, p.document_number, v.date, v.topic, v.title, v.description, v.yes_count, v.no_count, "
         "v.abstain_count, v.absent_count, v.result_raw, v.result_source, v.result_scope, v.procedure_type, v.inverted "
         "FROM votes v LEFT JOIN protocols p ON p.id = v.protocol_id"
     ):
@@ -733,6 +757,7 @@ def stored_votes(conn: Any) -> list[StoredVote]:
             "date": row["date"],
             "topic": row["topic"],
             "title": row["title"],
+            "description": row["description"],
             "total": {key: row[column] for key, column in _TOTAL_COLUMNS},
             "result_raw": row["result_raw"],
             "result_source": row["result_source"],

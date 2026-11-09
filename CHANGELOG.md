@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0.0] - 2026-11-09
+
+A Rede or Beitrag now belongs to the person who gave it, also where the Bundestag printed the same speaker id for several people. Per-Fraktion figures do not move; per-person figures and some Abgeordnete pages do.
+
+### Fixed
+
+- **43 Reden and Beiträge move to the person who gave them.** Five speaker ids in the Plenarprotokoll XML name more than one person (`docs/source-errors.md` E7), and the store had filed every unit under one of them. Old and new, on the A3 store of 716 sittings:
+  - Annette Widmann-Mauz gains 19 Fragestunde answers and 2 Reden that sat on Dr. Andreas Bovenschulte's page (34 Reden, 82 Beiträge now).
+  - Anette Kramme gains 14 Fragestunde answers that sat on Maika Friemann-Jennert's page (19 / 204).
+  - Peter Beuth gains 3 Reden from Enak Ferlemann's page; Judith Gerlach gains 2 Reden and 1 Erwiderung from Dr. Mehmet Daimagüler's.
+  - Dr. Carsten Sieling gains 1 Rede and Olaf in der Beek 1 Frage that sat on a second Marja-Liisa Völlers page.
+  - Fraktion and Sprechrolle stay as the protocol prints them on every unit, so the per-Fraktion figures, votes and Redeanteile are unchanged.
+  - Per person: `docs/plans/shared-redner-ids-old-new.tsv`.
+- **A person split across pages by a shared id is one page again.** Enak Ferlemann's Staatssekretär page joins his main page (32 Reden, 362 Beiträge). Marja-Liisa Völlers (three pages) and Olaf in der Beek (two) each join their DIP record and their roll-call votes on one page. Profile pages drop from 2,005 to 1,999.
+- **The garbled speaker "Dr. Dirk-UlrichLena Mende Kreck" of 20/82 is Dr. Lena Kreck,** as the printed label and the chair name her.
+- **No abgeordnetenwatch profile is shown on the wrong person.** Ferlemann's page linked Peter Beuth's profile and Daimagüler's linked Judith Gerlach's; each person now keeps only the profile found under their own name.
+- **Five `erste-reden` Fakten change value,** because each person now debuts once and as themselves: 2014-W23 27 → 26, 2015-W12 3 → 2, 2022-W11 49 → 50, 2022-W27 1 → 2, 2023-W50 0 → 1. 22 more rows change only their percentile.
+
+### Changed
+
+- **A build stops when one speaker id is printed for two unrelated names,** naming the id and the names, until `scripts/person_corrections.json` says who each printed name is. Name changes such as a new surname do not trip it. The 85 sittings outside the coverage run are checked this way when they come in.
+- **The codebook says what `mps.xml_redner_id` holds for a reviewed shared id:** the person's own Redner-ID, or nothing for a person with only a DIP id.
+- **The v1 scope review is recorded:** the owner's decisions in `PRODUCT.md` and the TODOS roadmap, a comparison with other Bundestag research datasets, and a cross-check against the CPP-BT corpus that found these shared ids.
+
+## [0.34.2.0] - 2026-11-09
+
+A vote on a Beschlussempfehlung to reject an Antrag now says that the Antrag fell, where the site said the opposite or left it open. Every badge on such a vote names what its outcome is about.
+
+### Fixed
+
+- **Vote 990 (21/51) read "Antrag: Angenommen" although Antrag 21/627 was rejected.** bundestag.de contradicts itself there: its text and Beschluss list say the Beschlussempfehlung to reject passed, and its roll-call box says "Antrag 21/627 angenommen". On a vote established as a recommendation to reject, a Ja majority now outranks that box: the result stays official and reads "Antrag: Abgelehnt". The contradiction is filed as E6 in `docs/source-errors.md`.
+- **Five rejections the site missed now read "Antrag: Abgelehnt":** votes 638 (19/127), 695 (19/187), 774 (20/37), 777 (20/38) and 801 (20/56) read a bare "Angenommen". DIP's record of the decision ("Annahme der Beschlussempfehlung auf Ablehnung") is now evidence of direction when it matches the vote's exact tally and a shared Drucksache; it ranks below the chair's announcement and the listing's wording. On the 350 votes with both an outcome and a DIP decision matching their tally, the site's outcome disagreed with it 6 times before and 0 times now.
+- **A badge on a Beschlussempfehlung names it:** "Beschlussempfehlung: Angenommen", or "Antrag: …" where the outcome is the Antrag's. A bare word next to an Antrag's title read as the Antrag passing.
+
+Old and new values, replayed on the same 619-vote store:
+- `votes`: 6 rows change. `inverted` 90 → 95 (638, 695, 774, 777, 801). `result_scope` application 25 → 24 (990, now proposition).
+- Votes archive: 133 badge texts change (these 6, 126 gain "Beschlussempfehlung:", 846 gains "Antrag:"), and the Fraktion filter counts 5 votes as gegen/für den Antrag instead of Ja/Nein.
+- Unchanged: vote totals, Mehrheitsvotum, Abweichungen, facts, recipes r1–r6 and every other export table.
+
+## [0.34.1.0] - 2026-11-07
+
+Documents only: no page, figure or export changes in this release. `DESIGN.md` is ready to be applied to the site.
+
+### Changed
+
+- **"Stimmkarte" takes a lighter, more open direction.** The ground is white, headings and navigation use Atkinson, D-DIN stays for verdicts and lead figures, and hairlines replace the heavy rules. Evidence stays in sight: no source, count or gap is folded away for looks.
+- **Every sheet says where it comes from, and pages say how to cite them.** A sheet opens with its source, and vote, Sitzung, person and analysis pages say how they relate to the stable release. On Daten, CSV is a real control that opens the file list.
+- **Home and Aktuell show the newest vote,** with its date, verdict, title, strip and counts. The Analysen door shows one small panel per Fraktion, and door links read as links.
+- **The open questions from the first version are settled,** with rules for the components it left out, a component inventory, and the owner's v1 decisions: the name open-parlament, seven navigation links and two kinds of release.
+
+### Fixed
+
+- `DESIGN.md` now says where a vote row's numbers come from since the re-filing in 0.34.0.0: the stored count can differ from what the Bundestag's page prints, and a row with a moved Stimme says so with both numbers.
+
+## [0.34.0.0] - 2026-11-06
+
+A roll-call Stimme now counts for the group its member belonged to on the day, where the Bundestag's own page files it under another. A data user can read both: the corrected group and the one the page lists.
+
+### Fixed
+
+- **100 Stimmen in 55 roll-calls of WP 19 and 20 count for the group the MdB-Stammdaten prove.** The vote pages list six MdBs (Kamann, Bülow, Pasemann, Witt, Huber, Heßenkemper) under the wrong group on those days; the Bundestag's Textarchiv agrees with the Stammdaten in every case. Old and new values, measured on the same store against the code before this change:
+  - `vote_fractions`: 146 rows change, and no vote's total.
+  - Mehrheitsvotum: 9 fraktionslos rows change.
+  - Abweichungen: 3,711 → 3,720, all Bülow under the SPD. Recipe r3: 1,389 → 1,390 rows.
+  - Seat cross-check: `shift_between_groups` 55 → 0, agreeing roll-calls 551 → 606.
+  - Fakten: 0 of 1,908 move.
+  - Per vote and group: `docs/plans/e4-refiled-votes-old-new.tsv`.
+- **A Stimme stays where the page has it wherever the Stammdaten prove nothing:** a vote after the file's Stand, a group change on the vote's own day (the 111 Gruppe rows of 2024-02-02), a name without one MdB in that Wahlperiode, or a vote whose rows can't absorb the move.
+
+### Changed
+
+- **Schema 11, export format 16: `vote_members.listed_party_id` holds the group the page lists wherever a Stimme moved,** so the page's counts can be read back from the store. A person's record keeps the page's group, so no one's Reden and Stimmen split. An older store needs `--offline --repersist`.
+- **The dossier panel shows the corrected groups and names each member it moved,** with the group on the Bundestag page. The Quellen card, the Daten page's Datenstand line and the DATA.md dictionary say the file also decides these groups.
+- **A release needs the MdB-Stammdaten.** A tagged export and `publish_dip_pulse_data.py` refuse a store built without them, because all 100 Stimmen would be back under the page's group while DATA.md describes the correction. A local build still runs, and its warning says what is missing.
+- **A plain `--offline` render corrects from the cached file too, and stops with a named error if that file can't be read.**
+
 ## [0.33.0.1] - 2026-11-06
 
 A stronger test for roll-call member rows. Only a test changes, so no figure moves.
