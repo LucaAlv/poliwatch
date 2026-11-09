@@ -301,7 +301,7 @@ Numbered N, to stay apart from Q1 to Q17, A4's D and R rows and roadmap C1.
 | R9 implementer | Outside finding 8; `validate_dip_protocol.py:3455-3492` | A Rede outside a TOP has no place in the schema; `agenda_item_id` is required on `speeches` | Under the item the Inhaltsverzeichnis names; a Rede with no entry, or one after a TOP, refuses the sitting. No schema change. `docs/plans/reden-outside-tops.md` | settled, owner may veto | The fix session's eng review; the adjudicator hook answered, not the owner. No figure changes meaning |
 | R10 implementer | Codex finding 4; `build_dip_pulse_site.py:3440`; `speeches` UNIQUE(agenda_item_id, sequence) | Withheld units have no storage shape, and no one is assigned the 20 statements that read `speeches` | A flag on `speeches` or a separate table; list every reader | pending | Decide in `/plan-eng-review`, before T3 |
 | R11 implementer | Codex finding 2; `validate_dip_protocol.py:943,1396,1450-1562` | Reconciliation assumes one source id per stored unit, but the parser splits Reden and moves text | Inventory the raw XML before any edit to the tree; a written rule for split-off units and moved text | pending | Decide in `/plan-eng-review`, before T3 |
-| N9 owner | Codex finding 5; `TODOS.md` gate step 4 | The bar has no number: a sitting with every Rede withheld would still count as held, and yearly unit totals hide where the loss falls | Publish the withheld share by words per sitting, year and Fraktion, and set a numeric bar from T4's measurement | unresolved | none yet |
+| N9 owner | Codex finding 5; `TODOS.md` gate step 4 | The bar has no number: a sitting with every Rede withheld would still count as held, and yearly unit totals hide where the loss falls | Every sitting stays in, and the withheld share by words is published per sitting, year and Fraktion. Each analysis on the site declares a minimum coverage and marks a period below it as thin. The owner sets the number after T4 measures | decided | Owner 2026-11-09: "Yes, to analyses". Rejected: a per-sitting bar, which would bring back whole-sitting losses |
 | N10 owner | Codex finding 3; `validate_dip_protocol.py:2686,2893` | No test or gate checks that a vote link is right, though links are the stated difference | A reviewed sample of links before the first release, and the meaning of a link stated in `DATA.md` | unresolved | none yet |
 
 ### N3 result
@@ -450,7 +450,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 | 2 | High | Reconciliation assumes a mapping the parser does not have: splits and moved text | Confirmed. 13 speeches with `:N` ids in 11 sittings, 3,419 contributions with `nested:` ids, 18,678 Fragestunde contributions with no `rede_id` | **R11**, added to what the implementer must prove |
 | 3 | High | The gate does not check that speech, bill and vote links are right | Partly. Links need the same date and any shared Drucksache (`:2686`, `:2893`). 590 links, 556 votes, 0 across protocols. 13 votes link to more than one TOP, six of them to 4 to 7 Haushalt TOPs (894, 898, 960, 961, 979, 980), and 84 TOPs have more than one vote. Many may be right. Nothing checks them | **N10**, to the owner |
 | 4 | High | "Outside all Reden counts" is an unassigned change across readers | Confirmed, with a limit: 20 statements in 3 files. A separate table has its own cost: the sequence slots | **R10**, for `/plan-eng-review` |
-| 5 | Medium | No adequacy threshold | Confirmed. Reden withheld per sitting: 1 in 55, 2 in 11, 3 in 2, 4 in 1. Markers by the marker's speaker, who may not own the Rede: LINKE 28, GRÜNE 28, SPD 19, CDU/CSU 14, AfD 5, FDP 5, ministers 4. No shares by words, because the blockers file has no lengths and the XML of the 85 is not on disk | **N9**, to the owner |
+| 5 | Medium | No adequacy threshold | Confirmed. Reden withheld per sitting: 1 in 55, 2 in 11, 3 in 2, 4 in 1. Markers by the marker's speaker, who may not own the Rede: LINKE 28, GRÜNE 28, SPD 19, CDU/CSU 14, AfD 5, FDP 5, ministers 4. No shares by words, because the blockers file has no lengths and the XML of the 85 is not on disk | **N9**, owner: the bar applies to analyses, not sittings |
 
 ## Second pass: required outputs
 
@@ -489,7 +489,7 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 
 | Review | Trigger | Why | Runs | Status | Findings |
 | --- | --- | --- | --- | --- | --- |
-| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 5 critical gaps open until built, 2 decisions open (N9, N10) |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | ISSUES OPEN | Run 1: 17 questions, 16 answered, 1 closed by correction. Run 2, mode HOLD SCOPE: 0 proposals, 5 critical gaps open until built, 1 decision open (N10) |
 | Outside Review | Codex, run by the owner | Independent 2nd opinion | 1 | issues found | 5 findings: 3 confirmed, 2 in part; 2 to the owner, 2 to eng review, 1 corrected T2. Native fallback before it: 12 findings, all resolved |
 | Eng Review | `/plan-eng-review` | Architecture and tests (required) | 0 | not run | none |
 | Design Review | `/plan-design-review` | UI and UX gaps | 0 | not run | none |
@@ -500,6 +500,5 @@ The owner ran `codex exec` read-only from the terminal, so this is the plan's ou
 - **VERDICT:** no review is CLEAR. T1 and T2 are built on unmerged branches; T5 and T6 can start. Eng review required before T3, and it settles R10 and R11; T4 follows T3.
 
 **UNRESOLVED DECISIONS:**
-- N9: what coverage is adequate.
 - N10: a check that the links are right.
 - Host provider and reader test pass rule (recorded in TODOS.md).

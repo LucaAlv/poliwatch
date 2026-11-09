@@ -50,7 +50,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 **What:** The store holds 716 of 801 catalog sittings. Decision N1 (2026-11-07) replaces the whole-sitting rule of 2026-10-22: one refused unit no longer keeps out a sitting. Before the first release:
 1. Keep each sitting and its TOPs, Drucksache links and votes. Withhold only refused `<rede>` units, flagged with a reason, text kept, outside all Reden counts. Record this in an ADR.
 2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing".
-3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units.
+3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units, and the withheld share by words per sitting, year and Fraktion (N9).
 4. A written bar: a sitting stays out whole only with a named source defect, or a defect that cannot be narrowed to single units. 18/20, whose file holds sitting 21, stays out. Replace the bare "excluded" in `coverage-exclusions.json` with each sitting's real reason.
 5. Parser rounds then shrink the withheld list, one owner-approved rule at a time.
 6. Fetch the 85 sittings. Their votes, TOPs and links were never acquired (decision 0 of 2026-10-22). Fetch the XML first and scan it for shared ids and Reden outside a TOP. Check whether the bulk prefetch covers the rest; otherwise about 26 DIP requests per sitting, about 2,200 in all [estimated from A3].
@@ -72,7 +72,9 @@ The implementer must prove:
 
 **Storage contract, to settle in `/plan-eng-review` before the build (R10):** 20 statements read `speeches` across `build_dip_pulse_site.py` (8), `facts.py` (6) and `compare_store_values.py` (6), and recipes count every row. A flag on `speeches` means changing each of them. A separate withheld table leaves their meaning alone, but `speeches` has UNIQUE(agenda_item_id, sequence), and "every other unit unchanged" needs the slots kept. The review also lists every reader the choice touches.
 
-**Open, in `docs/plans/v1-scope-review.md`:** N9, what coverage is adequate. N10, a check that the links are right.
+**N9, decided 2026-11-09:** no bar on sittings. Every sitting stays in, and each analysis on the site declares a minimum coverage, marking a period below it as thin. The owner sets the number after step 6's fetch measures the withheld share by words.
+
+**Open, in `docs/plans/v1-scope-review.md`:** N10, a check that the links are right.
 
 Withholding works on the whole `<rede>`, as decided. After round 2's rules that means 87 Reden, and no refused marker is a Rede's first, so each withheld Rede includes an opening nobody questioned. The ADR says so. `scripts/audit_offline_turns.py` shows the idea but says its counts cannot certify a database, so it is not the base.
 
@@ -1271,7 +1273,7 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 ### Politikfelder over time: which Zusammenschluss emphasises what
 
-**What:** Using the Politikfeld tags, show per Zusammenschluss and per period the share of its Reden (and of its speaking time by characters) that falls under each Politikfeld, and how the share of each Politikfeld in the whole plenary changes over time. Ship as a recipe first, then as a page next to the term series.
+**What:** Using the Politikfeld tags, show per Zusammenschluss and per period the share of its Reden (and of its speaking time by characters) that falls under each Politikfeld, and how the share of each Politikfeld in the whole plenary changes over time. Ship as a recipe first, then as a page next to the term series. The page declares a minimum coverage (decision N9, 2026-11-09) and marks a period below it as thin, not drawn as complete. The owner sets the number once the coverage gate has measured the withheld share by words.
 
 **Why:** This answers "which party has which priorities" and "how does attention to a topic change" (PRODUCT.md) from the agenda side, without depending on vocabulary. The term series answers it from the language side. The two complement each other.
 
