@@ -1,61 +1,209 @@
 # TODOS
 
-Open work, grouped by area. The roadmap orders the items that lead to v1. Every other item keeps its own priority. Finished items get one line each under Completed. This file was last cleaned up on 2026-11-02, against main v0.31.0.0, and brought up to date on 2026-11-04, against v0.32.0.0.
+Open work, grouped by area. The roadmap orders the items that lead to v1. Every other item keeps its own priority. Finished items get one line each under Completed. This file was last cleaned up on 2026-11-02, against main v0.31.0.0, and brought up to date on 2026-11-04, against v0.32.0.0. The roadmap was rewritten on 2026-11-06 from the owner's answers in `docs/plans/v1-scope-review.md`.
 
-## Roadmap to v1 (updated 2026-11-04)
+## Roadmap to v1 (updated 2026-11-06)
 
-The goal comes from PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the present, and a site with two equal angles, the daily view and long-term analysis. Items are named by their headings below. Track D has to be finished before anything goes public.
+The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and one site with two equal angles, the daily view and long-term analysis. Scope decisions: `docs/plans/v1-scope-review.md`. Items are named by their headings below. There are three stages, and the data comes first.
 
 **Done so far** (see Completed):
-- A1: what counts as a Rede (v0.13.0.0 to v0.15.0.0).
-- A2: stable ids (v0.12.0.0 onward).
-- A3: v1 coverage (v0.27.0.0). 716 Sitzungen of WP 18–21, 85 on the reviewed exclusion list.
-- A4: slice 0, every page renders from the store (v0.29.0.0); slice 1, the votes archive from the store (v0.32.0.0).
-- B1–B4, the daily vote panel: inverted votes, majority rule, TOP matching, external member links, Politikfelder, and the B4 panel with "Vote reading misses half the inverted votes and never stores it".
-- C1: Fraktion seat counts from the MdB-Stammdaten (v0.31.0.0).
-- D, the code half:
-  - the licence files, Impressum and Datenschutz pages (v0.30.0.0)
-  - the release script, data changelog and CITATION.cff (v0.26.0.0)
-  - the abgeordnetenwatch source tags (v0.20.5.1)
+- A1 what counts as a Rede; A2 stable ids; A3 coverage run (v0.27.0.0).
+- A4 slices 0 and 1 (v0.29.0.0, v0.32.0.0).
+- B1–B4, the daily vote panel. C1, Fraktion seat counts (v0.31.0.0).
+- The code half of D: licence files, Impressum and Datenschutz pages (v0.30.0.0), release script, data changelog, CITATION.cff (v0.26.0.0), abgeordnetenwatch source tags (v0.20.5.1).
 
-**A. Counts and coverage: fix what A3 and C1 surfaced, then finish the split**
-1. Correctness P1s. Each one moves published figures:
-   - "The carried-forward registry diverges from a fresh build after A3", part 2: 289 pages of persons who hold only retired bindings. Fix it together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs". The MdB-Stammdaten from C1 can be the membership source.
-   - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". This needs an owner decision on the kinds first. 18/1 and 19/1 stay excluded until then.
-   - Plan item 1.5 of "A3 /gstack-ship review: deferred findings": measure the abgeordnetenwatch match share of the WP 18/19 Redner.
-2. "Split the dataset from the site: the site builds from a release alone" (A4).
-   - Slices 0 and 1 are done. The later slices are in `docs/plans/a4-site-from-release.md`.
-   - Main is at schema 11 and export format 16, so the next slice takes the numbers after those.
+**Stage 1: the data release.** Needs no redesign, no site host and no A4 slice.
+1. "Coverage gate before the first data release". Today 716 of 801 sittings: WP 18 79%, WP 19 86%.
+2. Correctness P1s:
+   - "Reden the parser drops without refusing".
+   - "Correct the WP 19/20 roll-call group misattributions (E4)", merged as #138; the repersist is owed.
+   - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+   - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
+   - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
+3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
+4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
+6. The first release: items 1–5 of "Release pipeline: deferred /ship review findings", the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only).
+7. "Public repository: follow-ups".
 
-**B. Abstimmungen (daily view)**
-1. "B4 extractive fallback: finish validation locally": no population reaches the 90% coverage gate yet. Add one extractor rule at a time. The entry's P1 gate applies before the fallback runs on a larger Drucksache cache.
-2. The rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". The AI sentence is deferred.
-3. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
+**Stage 2: the public site.** Daily view plus one analysis.
+1. "Split the dataset from the site" (A4): slices 2 to 11, all before going public. Later slices are in `docs/plans/a4-site-from-release.md`. Main is at schema 11 and export format 16, so the next slice takes the numbers after those. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
+2. "Apply DESIGN.md to the site" and "Apply the v1 surface list". Order against A4 is for the architecture session.
+3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 59.7%: check it before calling the analysis good enough.
+4. Abstimmungen: "B4 extractive fallback: finish validation locally" and the rest of "Abstimmungen for the daily view".
+5. "Site hosting plan": a German host with SSH, provider to pick; `generation_file_href` changes; `data/` is not deployed wholesale; the deploy gate. Then the Impressum inputs and Datenschutz values.
+6. Automatic main releases: "Scheduled data-release workflow", with an alert when an update fails.
+7. "Reader test before launch".
 
-**Frontend:** decided 2026-11-04: the site stays Python-generated HTML ([go/no-go](docs/plans/frontend-go-no-go.md)). DESIGN.md is written; next is "Apply DESIGN.md to the site".
+**Stage 3: further analyses,** each when ready.
+1. "Diskursanalyse: precomputed term series per Zusammenschluss and month". Term lists are confirmed; the neutrality review gates publication.
+2. "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion".
+3. "Muster" and "Präsenz".
 
-**C. Analysen (long-term view)**
+**Later:** AI summaries and the LLM-content items, "Rebuild Fakt der Woche", the XLSX roll-call source, Puls and copy fixes. WP 1–17 come after v1, because the DIP catalog has no structured XML for them.
 
-A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as their denominator. A count fix in track A still moves every series C draws.
-1. "Diskursanalyse: precomputed term series per Zusammenschluss and month".
-2. "Politikfelder over time: which Zusammenschluss emphasises what".
-3. "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion", which answers "who interrupts most".
-4. Then "Muster" and "Präsenz".
+## v1 scope items (2026-11-06)
 
-**D. Before anything goes public** (items under Recht und Lizenz, Publication and Zitierfähiger Datensatz)
-- **Owner inputs and outside answers (no code):**
-  - For "Impressum, Datenschutz and licence files before the site goes public": the Impressum address (after question 1 to the lawyer, ADR 0003), a dedicated e-mail address, the host and its log retention, and the supervisory authority. Until then both pages render `data-operator-missing`.
-  - The e-mail to parlamentsdokumentation@bundestag.de for "Settle the roll-call source for redistribution".
-  - The terms in "Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)".
-  - A Zenodo account for "A DOI per release and a citation file".
-- **Hosting:** "Site hosting plan for the 2.5 GB generated site" (P1). After A3 the site is 5.4 GB, and still 1.35 GB without `data/` (2026-10-29). The plan also settles the link layout the first real release needs (owner decision (b) in "Write the release script").
-- **The first release:**
-  - items 1–5 of "Release pipeline: deferred /ship review findings"
-  - the first real `--publish` of "Write the release script"
-  - CHANGES.md on the Daten page ("Public data changelog per release")
-  - the DOI
+### Coverage gate before the first data release
 
-**Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B and C, and the Puls and copy fixes. These stay at their own priorities. WP 1–17 come after v1, because the DIP catalog has no structured XML for them.
+**What:** The store holds 716 of 801 catalog sittings. Decision N1 (2026-11-07) replaces the whole-sitting rule of 2026-10-22: one refused unit no longer keeps out a sitting. Before the first release:
+1. Keep each sitting and its TOPs, Drucksache links and votes. Withhold only refused `<rede>` units, flagged with a reason, text kept, outside all Reden counts. Record this in an ADR.
+2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing".
+3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units.
+4. A written bar: a sitting stays out whole only with a named source defect, or a defect that cannot be narrowed to single units. 18/20, whose file holds sitting 21, stays out. Replace the bare "excluded" in `coverage-exclusions.json` with each sitting's real reason.
+5. Parser rounds then shrink the withheld list, one owner-approved rule at a time.
+6. Fetch the 85 sittings. Their votes, TOPs and links were never acquired (decision 0 of 2026-10-22). Fetch the XML first and scan it for shared ids and Reden outside a TOP. Check whether the bulk prefetch covers the rest; otherwise about 26 DIP requests per sitting, about 2,200 in all [estimated from A3].
+7. Measure: votes against the roll-call list, date by date; TOPs restored; the abgeordnetenwatch match share of WP 18/19 Redner; and a per-sitting comparison with CPP-BT by `rede_id`, surname and tokens.
+8. Rebuild the store on current main and run the gate on it.
+
+**Decided 2026-11-07, in `docs/plans/v1-scope-review.md`:**
+- N7 A: 18/2, 18/29, 18/83 and 19/25 have known wrong units and no refusal, so step 1 alone does not reach them. They come back with a reviewed list of single units to withhold, each with a reason, in the same withheld state as step 1.
+- N8 A: restored sittings get the same merge and attribution review as the 400 kept sittings, about human ~3 days / CC ~half a day [estimated]. Any wrong unit goes on that withheld list with a reason. The gate in step 8 does not pass until this review has.
+
+Also listed with no refusal, and not part of N7: 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 wait on the ADR 0004 item; 18/62 and 18/90 stay out by the owner's round 2 decision.
+
+The implementer must prove:
+- withholding one unit leaves every other unit's id, sequence and text unchanged, although classification carries state across turns and TOPs;
+- each refusal class has a home: Fragestunde markers have no rede id, Befragung turns raise a different error, "conflicting roles" is sitting-wide, and 18/90's defect is outside any `<rede>`. A class that cannot be narrowed stays out under the bar;
+- step 2 also accounts for Fragestunde turns, which have no `rede_id`;
+- step 2 inventories the raw XML before `split_nested_reden` (`validate_dip_protocol.py:943`, called at `:1396`), because that and two other functions edit the tree, and a source id in storage does not prove its split-off units survived;
+- withholding has a written rule for split-off units and for text moved between units (`merged_rede`, `merged_erwiderung`, `resumed`, `merged_zwischenfrage`, `:1450-1562`).
+
+**Storage contract, to settle in `/plan-eng-review` before the build (R10):** 20 statements read `speeches` across `build_dip_pulse_site.py` (8), `facts.py` (6) and `compare_store_values.py` (6), and recipes count every row. A flag on `speeches` means changing each of them. A separate withheld table leaves their meaning alone, but `speeches` has UNIQUE(agenda_item_id, sequence), and "every other unit unchanged" needs the slots kept. The review also lists every reader the choice touches.
+
+**Open, in `docs/plans/v1-scope-review.md`:** N9, what coverage is adequate. N10, a check that the links are right.
+
+Withholding works on the whole `<rede>`, as decided. After round 2's rules that means 87 Reden, and no refused marker is a Rede's first, so each withheld Rede includes an opening nobody questioned. The ADR says so. `scripts/audit_offline_turns.py` shows the idea but says its counts cannot certify a database, so it is not the base.
+
+**Why:** The sittings left out hold links no single other dataset was found to combine: the store has 0 of its 556 votes on those dates. For those years the parts exist separately, ParlLawSpeech to 2021 and BTVote to WP 19. Long-term analysis needs those years too. Measured against CPP-BT on 2026-11-07, the sittings left out are longer than the rest, with median Reden 70 against 54 in WP 18 and 125 against 102.5 in WP 19. By words, we hold 69.0% of 2018, 73.0% of 2014 and 73.1% of 2015. A trend across those years compares unlike coverage, and the shortfall falls on the longest days.
+
+**Context:** Refused markers after round 2's rules: 103 in 69 sittings, at most 4 per sitting (`docs/plans/a3-wp18-19-round2-blockers.tsv`). Fallback: release WP 20 and 21 first as a complete set, if the first of the proofs above fails or the per-unit change passes twice its estimate. Evidence: `docs/research/bundestag-corpora-landscape-2026-11.md`, `docs/plans/v1-scope-review.md` (N1, N7, N8).
+
+**Effort:** L (the per-unit change alone: human ~3–4 weeks / CC ~3–5 days, estimated; first stated as ~2 weeks / ~1–2 days)
+**Priority:** P1
+**Depends on:** "Reden the parser drops without refusing", and the other correctness P1s of stage 1
+
+### Reden the parser drops without refusing
+
+**What:** The cross-check against CPP-BT found `<rede>` elements in sittings we hold that have no stored unit, no refusal and no rule. Measured on the A3 store's 716 XML files, not re-measured on main's tip:
+- **29 Reden outside any TOP.** 18/49: 26 of 51, from Schäuble's budget 2015 speech on. 18/44: 3. `scripts/validate_dip_protocol.py:1373` and `:1920` read only `./sitzungsverlauf/tagesordnungspunkt`, and `scripts/audit_offline_turns.py:69` reads the same path, so the audits could not see them.
+- **16 zu Protokoll gegebene Reden.** 18/133: 5, 18/134: 11. The annex title reads "Zu Protokoll gegebene Reden zur Beratung[:]", and `validate_dip_protocol.py:1300` matches two exact titles.
+- **One Rede inside a TOP.** 21/43 `ID214301700`, Brandner, 501 tokens, with no unit and no known rule. Find out why first.
+- **Four annex units to classify:** 19/115 (2, "zu der Abstimmung über …"), 19/35 and 19/45 ("Neudruck eines Redebeitrages").
+
+Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: `speeches.agenda_item_id` is required, a made-up TOP meets the agenda checks at `validate_dip_protocol.py:3455-3492`, and these Reden get no Drucksache or vote link. Report old and new Reden counts per sitting and Fraktion. The 85 excluded sittings were not scanned.
+
+**Why:** It breaks "refuse, never miscount". 18/49 counts as a complete sitting and shows half its Reden. Excluded on purpose and unaffected: 1,666 §31 declarations (ADR 0002).
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Shared Redner-IDs: what the fix leaves open
+
+**What:** The fix of 2026-11-07 (`docs/stable-ids.md`, `docs/source-errors.md` E7; figures in `docs/plans/shared-redner-ids-old-new.tsv`) leaves these:
+1. **Dr. Carsten Sieling keeps two pages:** the MdB record `xml:11004157` (7 Reden, 62 Stimmen) and the empty DIP row `dip:1886` (MdBR, Bremen). This predates the fix: a DIP row with no party joins no name+party bucket. A reviewed merge names person keys, which are reissued in a fresh build, so it needs a stable way to name them.
+2. **Not scanned: the 85 excluded sittings.** The name check in `reconcile` scans them when they are included, and refuses until a shared id found there has an entry.
+3. **`999990109` and `11003609` have no entry,** because their second person sits in an annex and a speaker list that are not stored. If "Reden the parser drops without refusing" stores Tim Ostermann's annex unit of 19/234, the build refuses until `999990109` has an entry.
+4. **The name check does not catch two people who share a word,** such as a given name: a surname change looks the same.
+5. **C5 (Föhr/Mende) was not checked against the PDF.** Its six reviewed occurrences and its partition are unchanged, 0 of its units moved.
+6. **Untested call site:** the `registry.profile_follows_redner_id` clause in `reparse_cached_xml` (`scripts/build_dip_pulse_site.py`) is only tested through a direct call; deleting it keeps the suite green. Add a reparse test with two speakers under `999990127`, one with a profile, and a `11005304` control that keeps its profile owner's profile.
+7. **`reconcile` loads every record three times** (`person_registry.reconcile`: the name check, the durable merges, the guesses), each with the full `vote_members` join. Pass the durable-merge load to `require_reviewed_redner_ids` instead.
+8. **`_on_shared_id` knows only `xml:` keys.** An old record keyed `aw:` (a trusted lookup under the shared id) or `profile:` that holds a shared id keeps a dip-only rebind, so a replay differs from a fresh build. None exists in the A3 store. Decide on the record's evidence instead of its key prefix.
+9. **`own_ids` may name one id twice** across owners or entries, which would file two reviewed people under one record. Refuse a repeat in `_load_corrections`.
+10. **A `dip:` own id for a partition's `profile_owner`** keeps a trusted profile, so `mp_identity` keys the record `aw:N` while it holds `dip_person_id`, which collides with the roster's `dip:N` row (`mps.dip_person_id UNIQUE`). No entry does this today. Refuse the combination in `_load_corrections`.
+11. **`render_dip_pulse_html` corrects only `xml_speakers`;** the `xml_speakers_first` fallback of a legacy truncated item still links the raw shared-id speaker. No cached item hits it today.
+12. **The name check misses two people printed with the same role word** when the XML puts the role into the name fields ("Dr. Carsten Sieling, Bürgermeister"). Drop role words from `_name_words`.
+13. **Profile coverage metadata counts raw profiles** (`build_dip_pulse_site.py`, the ready/partial counts), including the trusted ones `corrected_speaker` drops for shared ids: off by a few speakers.
+14. **No test builds a record with no Redner-ID under two unrelated names,** which the name check must skip.
+15. **An own id is checked for shape, not for canonical form:** `dip:0` or `dip:007` passes `OWN_ID_RE`, but `canonical_dip_person_id` reads them as none and `7`, so the person silently misses the roster join or the page link. Require `canonical_dip_person_id(id) == id` in `_load_corrections`.
+16. **The name check compares names within one record only.** Two records that share a Redner-ID (an `aw:` and an `xml:` record) and hold one name each pass it, and pass 1 of `match_rows` then joins them on the Redner-ID. A cross-record check over the A3 store's 784 multi-record Redner-ID groups found no clash today. Compare names across each pass-1 component.
+
+**Why:** None of them is a wrong unit in the store today. Items 6–16 come from the pre-landing and adversarial reviews of 2026-11-09.
+
+**Effort:** S each
+**Priority:** P3
+**Depends on:** None
+
+### Stored Fraktion values that are not Fraktionen
+
+**What:** Two units carry a value that is not a Fraktion. `speeches.fraktion` is "Bremen" on 19/60 `ID196001500`, and an `erwiderung` in 18/222 holds "CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –", copied from the XML (`docs/source-errors.md` C6). Check that a Fraktion value is one we know, and refuse or normalise the rest.
+
+**Why:** Each could appear as its own group in a per-Fraktion count. CPP-BT has the second as plain CDU/CSU.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Comparison and joinable ids in DATA.md
+
+**What:** Add a short "Vergleich" table to the release's `DATA.md`: this dataset, CPP-BT, GermaParl, ParlLawSpeech and BTVote, by coverage, unit, links and licence, with the date it was checked. Document that `rede_id` and `xml_redner_id` are the Bundestag's own ids and join to CPP-BT, and how: the " (neu)" protocol numbers, sub-ids with `:N`, our `nested*` ids, and shared speaker ids. State what we leave out and CPP-BT keeps, chiefly the §31 declarations. Say these are independent projects with no affiliation. Decision N4.
+
+**Why:** Researchers can use our links alongside text they already hold, and will compare the two anyway.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** "Coverage gate before the first data release", for the figures
+
+### Main and stable releases
+
+**What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols, a per-sitting comparison by `rede_id`, surname and tokens with CPP-BT's newest speech metadata, outside the build and with no dependency on it; method in `docs/research/bundestag-corpora-landscape-2026-11.md`, and the first run's script was throwaway, so write one when the checklist is built); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
+
+**Why:** The owner cannot review every release once the project is live. Decision Q3.
+
+**Effort:** M
+**Priority:** P1 (checklist and policy for the first release; the rest for the site)
+**Depends on:** The release script
+
+### Rename the project to open-parlament
+
+**What:** Replace "Bundestag-Puls" and "poliwatch" in the site, code (43 lines in `scripts/` name Bundestag-Puls), README, `CITATION.cff`, the CC BY attribution string and `CONTEXT.md`. Check whether storage keys and file names such as `bundestag-pulse.sqlite` follow.
+
+**Why:** Decision Q11. Citations copy whatever the first release says.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Apply the v1 surface list
+
+**What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, and its `facts` tables out of the release. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
+
+**Why:** Decisions Q5, Q6, Q7, Q10.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Fits with A4 slices 2 and 7 and "Apply DESIGN.md to the site"
+
+### Public repository: follow-ups
+
+**What:** The repository is public, though `SECURITY.md:8`, the "Community" entry and the "Impressum/licence" item 8 say it is not. Fix them; the owner turned on GitHub private vulnerability reporting on 2026-11-06, so `SECURITY.md` can say it is available. Add `repository-code` and `url` to `CITATION.cff`. Scan the full history for secrets, and look through plans and docs for anything that should not be public.
+
+**Why:** Found by the v1 scope review. `SECURITY.md` wrongly says the repository is not public.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
+### Reader test before launch
+
+**What:** Five outside readers on a frozen build of the finished site, with tasks from PRODUCT.md criteria 1 to 3 on desktop and mobile; measure correct answers and time. Covers the grey ground and vote wall that `DESIGN.md` leaves open. Open: a pass rule (proposed: fix any task fewer than four of five complete correctly). The owner handles the researcher check of the data release (decision N5).
+
+**Why:** Nobody outside the project has seen the site. Decision Q16 puts it after the rollout, so `DESIGN.md` choices stay easy to change until then. Replaces the five-reader week radar test.
+
+**Effort:** M; the owner recruits, about 45 minutes per reader
+**Priority:** P1 for launch
+**Depends on:** "Apply DESIGN.md to the site"
+
+### Rebuild Fakt der Woche
+
+**What:** Rethink it before it returns. Start from "what happened this week that a citizen should know, and what does the record show that a headline would not?", not "what number was unusual?". Test on outside readers before building.
+
+**Why:** The last three weekly cards in the A3 build all won on the longest sitting. The owner would not subscribe to it. Improving it is required, but not for v1. "Fakt der Woche, rasterize and post one card", the ledger, Approach B and Approach C wait for this rethink.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** v1
 
 ## Daten
 
@@ -112,16 +260,6 @@ A1–A3 are done, so C can start. Per-Fraktion figures take C1's seat table as t
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
-
-### Pilot gate: decide keep/remove for the Daten page
-
-**What:** 8 weeks after the first public data release, decide keep/remove using `gh release view --json assets` download counts, any inbound question or citation, and whether the builder himself used the downloaded file for anything.
-
-**Why:** The user's own go/no-go framing ("if it doesn't work for v1, that is not a deal breaker"); the audience ("developers and researchers") is chosen, not demand-tested, so this is the cheap way to find out without a demand study.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
 
 ### Export robustness gaps found by the codebook review
 
@@ -496,18 +634,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** summary data available
 
-### Five-reader comprehension test of the week radar
-
-**What:** Sit five intended readers in front of the week radar and a plain weekly index of the same week; ask what happened, what changed, where they would verify it; measure correct answers and time.
-
-**Why:** The plan verifies rendering and numbers, not whether a citizen understands the week better (Codex CEO-review challenge). The June design doc's "honest test" is the builder's own use.
-
-**Context:** No code. Use a frozen build (`--today`/`--week`) so every reader sees the same page. Record answers per section (header, rows, Außerdem, Wochenvergleich).
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
-
 ### Puls outward (batch 7): deferred review findings
 
 **What:** The /gstack-review of `fix/todo-batch-7-puls-outward` and the v0.28.0.0 /ship (2026-11-01) left these:
@@ -609,7 +735,7 @@ Done when:
 
 ### Placeholder Redner ids put one speaker on two Personenseiten
 
-**What:** 98 `mps` records have an `xml:99999…` key, a placeholder-looking Redner id in the Bundestag XML. 86 of them are a person of their own although the same name also has another person, holding 463 Reden and 1,423 other Beiträge. Examples: Svenja Schulze (48 Reden, 262 Beiträge), Dr. Franziska Giffey (34, 119), Klara Geywitz (27, 157), Dr. Janosch Dahmen (7 Reden under `999990105`, 37 on his main page). Measured 2026-11-05 on e7b06f3: the same in a store-less build and an upgraded store, and E4 does not touch it.
+**What:** 98 `mps` records have an `xml:99999…` key, a placeholder-looking Redner id in the Bundestag XML. 86 of them are a person of their own although the same name also has another person, holding 463 Reden and 1,423 other Beiträge. Examples: Svenja Schulze (48 Reden, 262 Beiträge), Dr. Franziska Giffey (34, 119), Klara Geywitz (27, 157), Dr. Janosch Dahmen (7 Reden under `999990105`, 37 on his main page). Measured 2026-11-05 on e7b06f3: the same in a store-less build and an upgraded store, and E4 does not touch it. Since 2026-11-07 the records `xml:999990108`, `xml:999990124`, `xml:999990127`, `xml:999990134` and `xml:999990141` are gone (`docs/source-errors.md` E7, C8). So for Widmann-Mauz, Kramme and Ferlemann this decision was taken ahead of it: their Staatssekretär units are on their main pages, because no record could stay on an id shared with someone else. Object here if that is wrong for them.
 
 **Why:** A reader sees part of a person's Reden on each page, so a page's Reden count is short. This has not been checked against the intent: a comment in `derive.py` reads one such id (`999990013`) as an explicit government role, so the split may be deliberate for some of them, though not obviously for Dahmen, who held no government post. Decide that first, then report the moved person counts and pages old/new.
 
@@ -769,7 +895,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 ### Design hand-over leftovers
 
 **What:**
-- `PRODUCT.md:58` says the votes archive renders from report JSON and only the Abgeordnete, Fakten and Daten pages read the store. The archive has rendered from the store since #133.
 - The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.
 - `docs/designs/gesetzesvorhaben.md:300` names the removed TODO "DESIGN.md, tokens and a typeface decision".
 - `README.md:494` and `docs/project-documentation.md:21,313` link to `docs/design/bundestag-pulse-design.md`, deleted in ad389bf. Remove the links or point them at `PRODUCT.md` and `DESIGN.md`.
@@ -1647,6 +1772,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"
 - `documents.url` of BT-Drs. 19/19 is the Bundesrat PDF: closed 2026-11-05, no defect: BT 19/19 (`btd/19/000/1900019.pdf`) and BR 19/19 (`brd/2019/0019-19.pdf`) are two correct rows, 0 rows of either issuer carry the other chamber's url, and `docs/plans/a4-slice1-oracle/t11_measure.py` M2 keyed its lookup on the number alone

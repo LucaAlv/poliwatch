@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0.0] - 2026-11-09
+
+A Rede or Beitrag now belongs to the person who gave it, also where the Bundestag printed the same speaker id for several people. Per-Fraktion figures do not move; per-person figures and some Abgeordnete pages do.
+
+### Fixed
+
+- **43 Reden and Beiträge move to the person who gave them.** Five speaker ids in the Plenarprotokoll XML name more than one person (`docs/source-errors.md` E7), and the store had filed every unit under one of them. Old and new, on the A3 store of 716 sittings:
+  - Annette Widmann-Mauz gains 19 Fragestunde answers and 2 Reden that sat on Dr. Andreas Bovenschulte's page (34 Reden, 82 Beiträge now).
+  - Anette Kramme gains 14 Fragestunde answers that sat on Maika Friemann-Jennert's page (19 / 204).
+  - Peter Beuth gains 3 Reden from Enak Ferlemann's page; Judith Gerlach gains 2 Reden and 1 Erwiderung from Dr. Mehmet Daimagüler's.
+  - Dr. Carsten Sieling gains 1 Rede and Olaf in der Beek 1 Frage that sat on a second Marja-Liisa Völlers page.
+  - Fraktion and Sprechrolle stay as the protocol prints them on every unit, so the per-Fraktion figures, votes and Redeanteile are unchanged.
+  - Per person: `docs/plans/shared-redner-ids-old-new.tsv`.
+- **A person split across pages by a shared id is one page again.** Enak Ferlemann's Staatssekretär page joins his main page (32 Reden, 362 Beiträge). Marja-Liisa Völlers (three pages) and Olaf in der Beek (two) each join their DIP record and their roll-call votes on one page. Profile pages drop from 2,005 to 1,999.
+- **The garbled speaker "Dr. Dirk-UlrichLena Mende Kreck" of 20/82 is Dr. Lena Kreck,** as the printed label and the chair name her.
+- **No abgeordnetenwatch profile is shown on the wrong person.** Ferlemann's page linked Peter Beuth's profile and Daimagüler's linked Judith Gerlach's; each person now keeps only the profile found under their own name.
+- **Five `erste-reden` Fakten change value,** because each person now debuts once and as themselves: 2014-W23 27 → 26, 2015-W12 3 → 2, 2022-W11 49 → 50, 2022-W27 1 → 2, 2023-W50 0 → 1. 22 more rows change only their percentile.
+
+### Changed
+
+- **A build stops when one speaker id is printed for two unrelated names,** naming the id and the names, until `scripts/person_corrections.json` says who each printed name is. Name changes such as a new surname do not trip it. The 85 sittings outside the coverage run are checked this way when they come in.
+- **The codebook says what `mps.xml_redner_id` holds for a reviewed shared id:** the person's own Redner-ID, or nothing for a person with only a DIP id.
+- **The v1 scope review is recorded:** the owner's decisions in `PRODUCT.md` and the TODOS roadmap, a comparison with other Bundestag research datasets, and a cross-check against the CPP-BT corpus that found these shared ids.
+
 ## [0.34.2.0] - 2026-11-09
 
 A vote on a Beschlussempfehlung to reject an Antrag now says that the Antrag fell, where the site said the opposite or left it open. Every badge on such a vote names what its outcome is about.
