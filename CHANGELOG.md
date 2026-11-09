@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.1.0] - 2026-11-07
+
+Documents only: no page, figure or export changes in this release. `DESIGN.md` is ready to be applied to the site.
+
+### Changed
+
+- **"Stimmkarte" takes a lighter, more open direction.** The ground is white, headings and navigation use Atkinson, D-DIN stays for verdicts and lead figures, and hairlines replace the heavy rules. Evidence stays in sight: no source, count or gap is folded away for looks.
+- **Every sheet says where it comes from, and pages say how to cite them.** A sheet opens with its source, and vote, Sitzung, person and analysis pages say how they relate to the stable release. On Daten, CSV is a real control that opens the file list.
+- **Home and Aktuell show the newest vote,** with its date, verdict, title, strip and counts. The Analysen door shows one small panel per Fraktion, and door links read as links.
+- **The open questions from the first version are settled,** with rules for the components it left out, a component inventory, and the owner's v1 decisions: the name open-parlament, seven navigation links and two kinds of release.
+
+### Fixed
+
+- `DESIGN.md` now says where a vote row's numbers come from since the re-filing in 0.34.0.0: the stored count can differ from what the Bundestag's page prints, and a row with a moved Stimme says so with both numbers.
+
 ## [0.34.0.0] - 2026-11-06
 
 A roll-call Stimme now counts for the group its member belonged to on the day, where the Bundestag's own page files it under another. A data user can read both: the corrected group and the one the page lists.
