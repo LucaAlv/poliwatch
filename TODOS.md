@@ -204,13 +204,20 @@ Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay
 **Priority:** P2
 **Depends on:** a DIP key
 
-### Reden outside a TOP: what the 2026-11-09 ship review left open
+### Reden outside a TOP: what the ship review left open
 
-**What:** Latent findings of the ship review of `adopt_reden_outside_tops`; no current input reaches them.
+**What:** Latent findings of the 2026-11-09/10 ship review of `adopt_reden_outside_tops`; no current input reaches them.
 1. `no_api_fields()` restates the `api` shape `enrich_with_api` builds inline; a field added to one is missing from the other. Build both from one helper.
 2. A non-Rede element between two Reden in `<sitzungsverlauf>` is refused with "after a TOP", which names the wrong cause; the `open_block = None` reset can never take effect. Word the refusal for any element.
 3. An Inhaltsverzeichnis title ending in "-" with no `A_TOP` continuation is cut silently.
 4. Tests do not pin: only T_ paragraphs move from `<sitzungsbeginn>`, only for a Tagesordnungspunkt/Zusatzpunkt title (mutants "move all p", "no startswith" and "drop Zusatzpunkt" survive); `ZU_PROTOKOLL_ANNEX`'s end anchor (no negative title starts with a matching one). Value cards in the PR body of this fix.
+5. **A Rede listed in two Inhaltsverzeichnis blocks goes to the first one** (`blocks.setdefault(rid, block)`), with no refusal; Codex reproduced it on a doctored 18/49. Both adversarial passes ranked it first. Refuse when one rid maps to blocks with different titles.
+6. **`top_source` is read back from the XML attribute,** so a source element carrying it would pass the "after a TOP" refusal and count as adopted in `replay_top_map`. Track adopted TOPs by object, or strip the attribute from the source first.
+7. **The Politikfelder regression guard keys TOPs by index** (`build_dip_pulse_site.py`, `missing_tops`/`known_tops`). After renumbering, a store whose Vorgang cache lacks 18/2000 and 18/2001 would refuse naming the wrong item, and a real `not_fetched` regression on a moved item would go unseen. The A3 replay of 2026-11-10 did not trip it. Key the guard by (protocol, top_id, heading), or skip sittings whose item set changed.
+8. **A second replay can refuse** when an adopted item and a real item share a `top_id` and an empty heading and the adopted one has no Reden ("ambiguous or missing source TOP"). Match on `top_source` too. Not the case in 18/44 or 18/49.
+9. **`reparse_report_xml` leaves stale fields:** `xml_top_fields` omits a falsy `top_source`, so a stale flag is never cleared, and `validation_summary.xml_drucksache_count`/`tops_with_xml_drucksachen` are not refreshed after T_ paragraphs move. Neither is displayed.
+10. **Replay and a fresh build can attach votes differently** on an adopted item that now holds a Drucksache (18/49 item 1 holds 18/2000 and 18/2001): replay keeps `votes: []`. No roll-call vote touches them today.
+11. **An annex title not seen yet still drops its Reden silently.** The per-sitting unit count of "Coverage gate before the first data release" step 2 is what closes this class.
 
 **Why:** Each is a wrong refusal message or an unguarded rule that a later edit could break without a failing test.
 
@@ -1809,7 +1816,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
-- Reden the parser drops without refusing: fixed 2026-11-07, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
+- Reden the parser drops without refusing: v0.36.0.0, 2026-11-10, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
 - Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"

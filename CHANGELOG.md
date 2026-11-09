@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.36.0.0] - 2026-11-10
+
+29 Reden and 16 written submissions that the parser dropped without a word now count. 18/49, a budget sitting, shows all 51 of its Reden instead of 25.
+
+### Fixed
+
+- **Reden printed outside any agenda item now count.** 18/49 prints 26 of its 51 Reden, from Dr. Wolfgang Schäuble's budget 2015 speech on, and 18/44 three, with no `<tagesordnungspunkt>` around them (`docs/source-errors.md` C7). Each run now sits under the item the protocol's own Inhaltsverzeichnis names for it: "Tagesordnungspunkt 1", "Allgemeine Finanzdebatte …", "Einzelplan 06" and "Zur Geschäftsordnung", labels other sittings use as agenda items. A Rede with no Inhaltsverzeichnis entry, or one printed after an agenda item, stops the build instead of being placed by guess. Old and new, on the A3 store of 716 sittings:
+  - Reden 54,718 → 54,747: 18/49 25 → 51, 18/44 41 → 44.
+  - Per Fraktion: CDU/CSU 14,952 → 14,963, SPD 11,612 → 11,620, Grüne 7,638 → 7,643, Linke 5,611 → 5,616. Redeanteil counts CDU/CSU +9, not +11, because Schäuble and de Maizière speak as Bundesregierung (2,836 → 2,838). Every share stays at its rounded value.
+  - 18/49's agenda items 1 → 4. Einzelplan 07 now holds 25 Reden, 49.0% of the sitting, where it held all of them; Einzelplan 06 13 (25.5%). Zwischenfragen 3,058 → 3,061, all in 18/49.
+  - Agenda items 7,131 → 7,135; Politikfelder rows 11,460 → 11,465 ("Einzelplan 06" gets Innere Sicherheit and Migration from its Einzelplan rule).
+  - Carsten Schneider, Dr. Eva Högl and Christine Lambrecht gain SPD as their Fraktion, which only these Reden printed.
+- **Written submissions under a longer annex title count.** "Zu Protokoll gegebene Reden zur Beratung" (18/133) and "… zur Beratung:" (18/134) were skipped: 18/133 27 → 32, 18/134 0 → 11; zu Protokoll 3,326 → 3,342 in all. §31 declarations stay out (ADR 0002), also the two in 19/115 whose second block lost the words "nach § 31 GO", and so do the reprints "Neudruck eines Redebeitrages" in 19/35 and 19/45, which repeat a Rede of the sitting before.
+
+Votes, persons, Abstimmungen and Fakten do not move. Agenda item ids follow the order of a sitting, so in 18/44 and 18/49 six ids now name another item and four are new.
+
+### Changed
+
+- **The speech rule goes from 6 to 7.** A store built before this release refuses facts, export and rendering until one `--offline --repersist`, which reads the cached reports again and adds the new agenda items.
+- **The three new agenda items of 18/49 and "Zur Geschäftsordnung" of 18/44 have no DIP Vorgang or Drucksache link yet.** Their Reden count; the links need a matching rule for an item that has no heading, then a new DIP fetch.
+
 ## [0.35.0.0] - 2026-11-09
 
 A Rede or Beitrag now belongs to the person who gave it, also where the Bundestag printed the same speaker id for several people. Per-Fraktion figures do not move; per-person figures and some Abgeordnete pages do.
