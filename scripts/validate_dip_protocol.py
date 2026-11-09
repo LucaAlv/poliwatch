@@ -1876,6 +1876,11 @@ _RECOMMENDATION_DOCUMENT_RE = re.compile(
     r"Beschlussempfehlung(?:(?!Antr|Gesetzentwurf|Entwurf|Ablehnung|Annahme|empfiehl|Drucksache).){0,120}?"
     r"\bauf\s+(?:der\s+|den\s+)?Drucksachen?\s+((?:[0-9]{1,2}/[0-9]{1,6}(?:\s*\(neu\))?(?:,|\s+und)?\s*)+)"
 )
+# DIP's note on a decision opens with the tally. Bounded digits: int() refuses a
+# run of more than 4,300.
+_DIP_TALLY_RE = re.compile(r"\s*(\d{1,4})\s*:\s*(\d{1,4})\s*:\s*(\d{1,4})\b")
+_DIP_REJECTING_RECOMMENDATION_RE = re.compile(r"Beschlussempfehlung\s+auf\s+Ablehnung", re.I)
+DIP_DECISION_SOURCE = "bundestag-dip-beschlussfassung"
 # What the chair's announcements say about one vote's recommendation; "none"
 # when no announcement is attributable to it.
 ProtocolDirection = Literal["reject", "accept", "conflict", "none"]
@@ -2028,6 +2033,51 @@ def protocol_recommendation_evidence(
     return directions.pop(), matching[0]
 
 
+def dip_vote_decisions(agenda_items: list[dict[str, Any]]) -> list[tuple[tuple[int, int, int], frozenset[str], str]]:
+    """Every decision DIP records with a tally, in the sitting's Vorgang positions,
+    as ((yes, no, abstain), its Drucksachen, its note): ``abstimm_ergebnis_bemerkung``
+    reads "546:79:0 (Annahme der Beschlussempfehlung auf Ablehnung)". The same
+    decision under several TOPs counts once. A malformed record adds nothing."""
+    decisions = {}
+    for item in agenda_items:
+        for position in ((item.get("api") or {}).get("raw") or {}).get("positions") or []:
+            for decision in position.get("beschlussfassung") or []:
+                note = decision.get("abstimm_ergebnis_bemerkung") if isinstance(decision, dict) else None
+                tally = _DIP_TALLY_RE.match(note) if isinstance(note, str) else None
+                if tally:
+                    numbers = _DOCUMENT_NUMBER_RE.findall(str(decision.get("dokumentnummer") or ""))
+                    entry = (tuple(map(int, tally.groups())), frozenset(numbers), clamp_text(note, 300))
+                    decisions[entry] = None
+    return list(decisions)
+
+
+def dip_decision_evidence(
+    vote: dict[str, Any],
+    decisions: list[tuple[tuple[int, int, int], frozenset[str], str]],
+    sitting_votes: list[dict[str, Any]],
+) -> str | None:
+    """The excerpt of a DIP decision saying this ballot was on a Beschlussempfehlung
+    to reject, else None. Its exact tally and a shared Drucksache prove which vote
+    it is. A vote with no document numbers (638) rests on the tally alone, so that
+    tally must occur once among the sitting's decisions and once among its votes."""
+    def tally_of(candidate: dict[str, Any]) -> tuple[int, int, int]:
+        counts = candidate.get("total") or {}
+        return tuple(int(counts.get(key) or 0) for key in ("yes", "no", "abstain"))
+
+    tally = tally_of(vote)
+    numbers = set(vote.get("document_numbers") or [])
+    fitting = [decision for decision in decisions if decision[0] == tally and any(tally)]
+    if numbers:
+        fitting = [decision for decision in fitting if decision[1] & numbers]
+    elif len(fitting) > 1 or sum(tally_of(other) == tally for other in sitting_votes) > 1:
+        return None
+    # A decision on the vote that does not say so leaves the direction open, as a chair's conflict does.
+    if not fitting or not all(_DIP_REJECTING_RECOMMENDATION_RE.search(note) for _, _, note in fitting):
+        return None
+    _, document_numbers, note = min(fitting, key=lambda decision: (sorted(decision[1]), decision[2]))
+    return f"Drucksache {', '.join(sorted(document_numbers))}: {note}" if document_numbers else note
+
+
 def _text_recommendation_inversion(
     vote: dict[str, Any], documents: list[dict[str, Any]] | None = None
 ) -> tuple[Literal["reject", "blocked", "none"], str | None, str | None]:
@@ -2070,12 +2120,14 @@ def recommendation_inversion(
     vote: dict[str, Any],
     documents: list[dict[str, Any]] | None = None,
     protocol_evidence: tuple[ProtocolDirection, dict[str, Any] | None] | None = None,
+    dip_decision: str | None = None,
 ) -> tuple[bool | None, str | None, str | None]:
     """Whether a Ja on this vote rejects an Antrag, with the evidence behind it.
 
     The chair's announcement in the sitting's proceedings leads. Without one,
-    vote-specific wording or an unambiguous matched DIP recommendation counts,
-    but never against attributable protocol evidence of any other reading."""
+    vote-specific wording, an unambiguous matched DIP recommendation or a DIP
+    decision on the ballot counts, but never against attributable protocol
+    evidence of any other reading."""
     direction, record = protocol_evidence or ("none", None)
     # A roll-call listing that opens with the Vorlage itself ("Gesetzentwurf der
     # ...", "Antrag der ...") is a vote on it: Ja is for the Vorlage even where a
@@ -2091,6 +2143,8 @@ def recommendation_inversion(
         return None, None, None
     if text_state == "reject":
         return True, text_source, text_excerpt
+    if dip_decision is not None and text_state != "blocked":
+        return True, DIP_DECISION_SOURCE, dip_decision
     return None, None, None
 
 
@@ -2106,8 +2160,9 @@ def interpret_vote(
     documents: list[dict[str, Any]] | None = None,
     procedure_context: Any = None,
     protocol_evidence: tuple[ProtocolDirection, dict[str, Any] | None] | None = None,
+    dip_decision: str | None = None,
 ) -> None:
-    inverted, source, excerpt = recommendation_inversion(vote, documents, protocol_evidence)
+    inverted, source, excerpt = recommendation_inversion(vote, documents, protocol_evidence, dip_decision)
     vote.update(inverted=inverted, inversion_source=source, inversion_excerpt=excerpt)
     vote["procedure_type"] = special_majority_procedure(vote.get("title"), procedure_context)
     official = _recorded_official_result(vote)
@@ -2119,6 +2174,20 @@ def interpret_vote(
         title=vote.get("title"), procedure_context=procedure_context,
     )
     if vote["result_source"] != "official":
+        vote["result_scope"] = "proposition"
+
+
+def _read_contradicted_official_result(vote: dict[str, Any]) -> None:
+    """The ballot was on a Beschlussempfehlung to reject, so a Ja majority cannot
+    have accepted the Antrag: where a page's box says so (vote 990,
+    docs/source-errors.md E6), its word is the ballot's, as the page's own Beschluss
+    list and the protocol have it. Nothing proves such a mismatch for a Nein
+    majority: the Antrag can fall or stand in a vote of its own. Runs once the
+    sitting's evidence is in, since a title alone can read as a rejection the
+    chair then refutes."""
+    counts = vote.get("total") or {}
+    if (vote.get("inverted") and vote.get("result_source") == "official" and vote.get("result_raw") == "accepted"
+            and vote.get("result_scope") == "application" and int(counts.get("yes") or 0) > int(counts.get("no") or 0)):
         vote["result_scope"] = "proposition"
 
 
@@ -2141,8 +2210,9 @@ def interpret_sitting_votes(
     recommendations: list[dict[str, Any]] | None,
 ) -> None:
     """Interpret every vote of one sitting from its stored evidence, the same
-    way online and on replay: the Drucksachen and Vorgang positions the agenda
-    items carry, plus the chair's recommendation announcements.
+    way online and on replay: the Drucksachen and Vorgang positions (with DIP's
+    recorded decisions) the agenda items carry, plus the chair's recommendation
+    announcements.
 
     ``agenda_items`` need ``api.linked_drucksachen``, ``api.raw.positions`` and
     ``votes``; ``sitting_votes`` are the votes no TOP claimed. A vote can appear
@@ -2156,6 +2226,7 @@ def interpret_sitting_votes(
     vote: the plan's "missing source evidence must not silently clear" means
     a missing XML (docs/plans/fix-vote-interpretation.md, step 4)."""
     documents = [doc for item in agenda_items for doc in (item.get("api") or {}).get("linked_drucksachen") or []]
+    decisions = dip_vote_decisions(agenda_items)
     numbers_by_vorgang: dict[str, set[str]] = {}
     for doc in documents:
         if doc.get("vorgang_id") and doc.get("dokumentnummer"):
@@ -2218,7 +2289,9 @@ def interpret_sitting_votes(
         if official is not None:
             representative["official_result"] = official
             representative["result_scope"] = scope or "proposition"
-        interpret_vote(representative, documents=vote_documents, procedure_context=context, protocol_evidence=evidence)
+        interpret_vote(representative, documents=vote_documents, procedure_context=context, protocol_evidence=evidence,
+                       dip_decision=dip_decision_evidence(representative, decisions, representatives))
+        _read_contradicted_official_result(representative)
         fields = ("inverted", "inversion_source", "inversion_excerpt", "procedure_type", "result_raw", "result_source", "result_scope")
         for vote in copies:
             vote.update({field: representative.get(field) for field in fields})
