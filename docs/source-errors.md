@@ -118,6 +118,21 @@ A list of places where an official source file says something wrong or files con
 - **Effect on poliwatch:** vote 990 read "Antrag: Angenommen" and "der Antrag wurde angenommen (laut Beschluss auf bundestag.de)".
 - **Corrected in poliwatch, 2026-11-07:** on a vote established as a Beschlussempfehlung to reject, a Ja majority outranks the box's word "Antrag … angenommen": the word is read as the ballot's (`validate_dip_protocol._read_contradicted_official_result`). Vote 990 now reads "Antrag: Abgelehnt". `votes.result_scope` moved from `application` to `proposition`, and `result_raw` and `result_source` stay `accepted` and `official`. The Bundestag's page still shows the error, so the entry stands for a correction request.
 
+### E7. Seven speaker ids are given to more than one person
+
+- **Status:** verified 2026-11-07, on the 716 cached XML files of the A3 store, scanning every `<redner>`. The first scan on 2026-11-06 found two of these ids. The 85 excluded sittings were not scanned.
+- **Source:** `https://dserver.bundestag.de/btp/<WP>/`, the files of the sittings named below.
+- **What is wrong:** `<redner id>` is meant to identify one person.
+  - `id="10000"`: "Marja-Liisa Völlers (SPD)" in 19/49 and 19/57; "Olaf in der Beek (FDP)" in 19/16; "Dr. Carsten Sieling, Bürgermeister (Bremen)" in 19/60. The Sieling entry also prints "Carsten Sieling," as `<vorname>` and "Bürgermeister" as `<nachname>`.
+  - `id="999990141"`: Dr. Mehmet Daimagüler in 20/144; Judith Gerlach, Staatsministerin (Bayern), in 20/121 and 20/194.
+  - `id="999990124"`: Annette Widmann-Mauz in 18/39, 18/53, 18/72, 18/84 and 18/91; Dr. Andreas Bovenschulte in 20/21.
+  - `id="999990108"`: Anette Kramme in 18/53, 18/72 and 18/78; Maika Friemann-Jennert in 19/228.
+  - `id="999990127"`: Enak Ferlemann in 18/44, 18/54, 18/59, 18/76, 18/81, 18/87 and 18/91; Peter Beuth in 20/46, 20/75 and 20/95.
+  - `id="999990109"`: Gabriele Lösekrug-Möller in seven sittings of WP 18; Tim Ostermann in an annex of 19/234.
+  - `id="11003609"`: Sibylle Pfeiffer; Michael Roth, once, in the speaker list of 18/230.
+- **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
+- **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
@@ -137,6 +152,34 @@ A list of places where an official source file says something wrong or files con
 - **Source:** `<redner id="11005217 999990074">` for Svenja Schulze (SPD) in 21/18 (ID211802600, ID211807500), 21/24 (ID212409300), 21/25 (ID212501900, ID212504800), 21/28 (ID212802500, ID212809700), 21/44 (ID214402100) and 21/45 (ID214502600, ID214505400).
 - **What looks wrong:** the id attribute holds two ids. The schema expects one. We use the first.
 - **To check before reporting:** what `999990074` is (an id outside the MdB number range), and whether the Stammdaten list both.
+
+### C5. Two people merged into one speaker in WP 20
+
+- **Status:** candidate. Found 2026-11-07. Not checked against the PDF.
+- **Source:** in 20/94 (`ID209407600`), 20/96 (`ID209614200`) and 20/116 (`ID2011606700`), among others: `<redner id="11005304">` with `<vorname>Dirk-UlrichAlexander</vorname>`, `<nachname>Mende Föhr</nachname>` and `<fraktion>SPDCDU/CSU</fraktion>`. The printed label in 20/94 reads "Dirk-Ulrich Mende (SPD):".
+- **What looks wrong:** the names and Fraktionen of Dirk-Ulrich Mende and Alexander Föhr are run together, 23 times across the WP 20 files. In our files `11005304` also appears alone for each of them, 34 times for Föhr and 23 for Mende. CPP-BT's rows give Mende `11005303`, so the source files may have changed since we fetched ours.
+- **To check before reporting:** who spoke in each case, against the PDF, and whether a fresh download still shows this. Our store files the three Reden above under Mende, CPP-BT files 20/94 under Föhr.
+
+### C8. Two names run together in one speaker in 20/82
+
+- **Status:** candidate. Found 2026-11-07. Not checked against the PDF.
+- **Source:** 20/82, `ID208205200`: `<redner id="999990134">` with `<vorname>Dirk-UlrichLena</vorname>` and `<nachname>Mende Kreck</nachname>`, role "Senatorin (Berlin)". The printed label reads "Dr. Lena Kreck, Senatorin (Berlin):", and the chair gives "Frau Dr. Lena Kreck" the floor.
+- **What looks wrong:** Dirk-Ulrich Mende's name fields run into Lena Kreck's, the pattern of C5. The id itself appears for no one else in our files.
+- **Our side:** `scripts/person_corrections.json` names her, on her DIP record.
+
+### C6. Spoken text inside `<fraktion>` in 18/222
+
+- **Status:** candidate. Found 2026-11-07. Not checked against the PDF.
+- **Source:** 18/222, `ID1822204600`: `<fraktion>CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –</fraktion>` for Dr. Astrid Freudenstein.
+- **What looks wrong:** the start of her reply sits inside the Fraktion element.
+
+### C7. Reden outside any `<tagesordnungspunkt>` in 18/44 and 18/49
+
+- **Status:** candidate. Found 2026-11-07.
+- **Source:** 18/49: 26 of 51 `<rede>` elements sit directly under `<sitzungsverlauf>`, from `ID1804900100` (Dr. Wolfgang Schäuble, budget 2015) on. 18/44: 3 such elements, from `ID1804400100`.
+- **What looks wrong:** every other `<rede>` outside the annexes in the 716 files sits inside a `<tagesordnungspunkt>`.
+- **To check before reporting:** whether the schema allows this, and how the printed protocol labels these debates.
+- **Our side:** TODOS.md, "Reden the parser drops without refusing".
 
 ### C3. Roll-call votes with no document number on www.bundestag.de
 

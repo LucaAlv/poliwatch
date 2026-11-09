@@ -22,6 +22,7 @@ CORRECTIONS_PATH = Path(__file__).with_name("person_corrections.json")
 REGISTRY_TABLES = ("persons", "person_aliases", "person_records", "person_bindings")
 #: A person key is a page file name: URL-safe, never starting with a dot.
 PERSON_KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+OWN_ID_RE = re.compile(r"(?:xml|dip):[0-9]+")
 #: File stems under abgeordnete/ that belong to the site, not to a person.
 RESERVED_PERSON_KEYS = frozenset({"index"})
 
@@ -205,6 +206,14 @@ def _load_corrections(path: Path) -> dict[str, Any]:
             if partition.get("profile_owner") is not None:
                 if text(partition["profile_owner"], "partition profile_owner") not in owner_of_name.values():
                     raise ValueError(f"partition profile_owner {partition['profile_owner']!r} is not one of its label owners")
+            own_ids = partition.setdefault("own_ids", {})
+            if not isinstance(own_ids, dict):
+                raise ValueError("partition own_ids must be an object")
+            for owner, own_id in own_ids.items():
+                if owner not in owner_of_name.values():
+                    raise ValueError(f"partition own_ids owner {owner!r} is not one of its label owners")
+                if not OWN_ID_RE.fullmatch(text(own_id, f"own id of partition owner {owner!r}")):
+                    raise ValueError(f"own id {own_id!r} of partition owner {owner!r} must read xml:<Redner-ID> or dip:<DIP id>")
             for key, reviewed in occurrences.items():
                 if not isinstance(reviewed, dict):
                     raise ValueError(f"partition occurrence {key!r} must be an object")
@@ -213,6 +222,12 @@ def _load_corrections(path: Path) -> dict[str, Any]:
             texts(merge_["persons"], "merge persons")
             if merge_.get("survivor") is not None:
                 text(merge_["survivor"], "merge survivor")
+        # corrected_speaker replaces a shared id once: an own id that is itself
+        # shared would land on a partition its printed name was never reviewed for.
+        for partition in data["partitions"]:
+            for owner, own_id in partition["own_ids"].items():
+                if own_id.startswith("xml:") and own_id[4:] in partitioned_ids:
+                    raise ValueError(f"own id {own_id} of partition owner {owner!r} is itself partitioned")
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RegistryError(f"Unreadable person corrections {path}: {exc}") from exc
@@ -229,7 +244,30 @@ def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -
             profile = speaker.get("abgeordnetenwatch") or {}
             if owner and partition.get("profile_owner") != owner and profile.get("match") == derive.TRUSTED_AW_MATCH:
                 speaker["abgeordnetenwatch"] = {}
+            # The reviewed owner holds an id of their own: the occurrence binds as
+            # the source should have printed it, and partitions no further. A
+            # person with no Redner-ID but this one is named by their DIP id.
+            if owner in partition["own_ids"]:
+                kind, _, own_id = partition["own_ids"][owner].partition(":")
+                speaker["xml_redner_id"] = own_id if kind == "xml" else None
+                speaker["dip_person_id"] = own_id if kind == "dip" else None
+                break
     return speaker
+
+
+def _on_shared_id(record: sqlite3.Row) -> bool:
+    """A record keyed by a Redner-ID that is under review: what it folded together
+    was more than one person, so no occurrence may stay on it."""
+    identity = record["identity_key"]
+    return identity.startswith("xml:") and any(identity[4:] == partition["xml_redner_id"] for partition in corrections()["partitions"])
+
+
+def profile_follows_redner_id(redner_id: Any) -> bool:
+    """Whether a profile found for one speaker of this Redner-ID holds for another:
+    not under a shared id with no reviewed profile owner, whose speakers are
+    different people."""
+    return not any(partition["xml_redner_id"] == redner_id and partition.get("profile_owner") is None
+                   for partition in corrections()["partitions"])
 
 def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
     for partition in corrections()["partitions"]:
@@ -514,6 +552,7 @@ def bind(
         moved = (
             (evidence.get("partition") and evidence.get("partition") != previous["partition"])
             or _hard_id_conflict(json.loads(baseline or previous["evidence_json"]), evidence)
+            or _on_shared_id(previous)
         )
         if not moved:
             row = previous
@@ -787,6 +826,35 @@ def name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
 
 def _names(row: dict[str, Any]) -> set[str]:
     return {name for name in (_normalized_mp_name(n) for n, _ in _name_party_pairs(row)) if name}
+
+
+# Name particles two different people share ("von", "de"), so they prove nothing.
+_NAME_PARTICLES = frozenset({"von", "van", "vom", "zu", "de", "der", "den", "dos", "freiherr", "graf"})
+
+
+def _name_words(name: Any) -> frozenset[str]:
+    words = {word.rstrip(".") for word in _normalized_mp_name(name).split()}
+    return frozenset(words - _MP_TITLE_WORDS - _NAME_PARTICLES - {"unbekannt"})
+
+
+def require_reviewed_redner_ids(rows: list[dict[str, Any]]) -> None:
+    """A Redner-ID printed with names that share no word names two people, so this
+    build would file both under one record. Compared on the record's folded
+    (name, party) pairs, which do not depend on persist order, and on live records
+    only, because a stale record's names are not what this build read. A person who
+    changes a surname keeps the given name, and the Bundestag's name changes all do
+    (Obermeier/Bartz); two people who share a word are not caught."""
+    clashes = []
+    for row in rows:
+        if not row["live"] or row.get("partition") or not _redner_ids(row):
+            continue
+        names = {name: words for name, _ in _name_party_pairs(row) if (words := _name_words(name))}
+        if any(not left & right for left, right in itertools.combinations(names.values(), 2)):
+            clashes.append(f"{min(_redner_ids(row))} ({', '.join(sorted(names))})")
+    if clashes:
+        raise RegistryError(
+            f"Redner-IDs printed for more than one person: {'; '.join(sorted(clashes))}. Review who spoke and add a partition "
+            f"to {CORRECTIONS_PATH}; one person printed under two unrelated names gets one owner for both (docs/stable-ids.md)")
 
 
 def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dict, dict]:
@@ -1178,6 +1246,7 @@ def reconcile(conn: sqlite3.Connection) -> dict[str, int]:
     require_applied_partitions(conn)
     data = corrections()
     touched = {row[0] for row in conn.execute("SELECT id FROM temp.registry_touched")}
+    require_reviewed_redner_ids(_load_rows(conn, touched))
     # Every record restarts from its durable home.
     for record in conn.execute("SELECT id, home_person_id FROM person_records").fetchall():
         _assign(conn, record["id"], resolve(conn, record["home_person_id"]))

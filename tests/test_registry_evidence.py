@@ -12,6 +12,7 @@ import itertools
 import json
 import random
 import unittest
+from unittest import mock
 import _support  # noqa: F401
 from _registry_fixture import RegistryFixture
 import person_registry as registry
@@ -549,6 +550,9 @@ class RandomEvidenceTests(EvidenceHelpers, unittest.TestCase):
         self.assertEqual((len(components), totals["same_identity"]), (2, 0))
 
     # Value: protects=grouping and evidence of a seeded world with multi-name, multi-party and multi-Redner-ID records are independent of persist order and of incremental versus fresh builds; fails_when=any evidence or match step reads insertion order; why_new=combinations of the hand-written shapes; seam=none
+    # These worlds print unrelated names under one Redner-ID on purpose, to stress the
+    # fold; the name check would refuse them before the fold's result is compared.
+    @mock.patch.object(registry, "require_reviewed_redner_ids", new=lambda rows: None)
     def test_random_worlds_are_order_independent(self):
         names = ["Ada Example", "Dr. Ada Example", "Bea Beta", "Cem Gamma"]
         parties = ["SPD", "CDU/CSU", "DIE LINKE"]

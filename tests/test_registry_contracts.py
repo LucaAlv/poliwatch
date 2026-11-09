@@ -612,7 +612,9 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         r = report(names=("Alexander Föhr", "Dirk-Ulrich Mende"))
         for speech in r["agenda_items"][0]["xml_speakers"]:
             speech["speaker"]["xml_redner_id"] = "11005304"
-        with self.correction_file({}):  # the shipped file already partitions this Redner-ID
+        # The shipped file already partitions this Redner-ID, and the name check now
+        # refuses to build this store at all: this one predates both.
+        with self.correction_file({}), mock.patch.object(registry, "require_reviewed_redner_ids"):
             self.rebuild([r])
         before = self.rows("persons")
         self.assertEqual(len(before), 1)
@@ -630,7 +632,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         # Value: protects=a partition added to a store that showed the shared ext_id profile on one person leaves it on the profile owner's row only, and the old person keeps no occurrence; fails_when=the old record's profile survives on a bound row or the non-owner partition inherits it from the record it left; why_new=the add-partition case ran without a profile; seam=none
         self.db = self.root / "profiled.sqlite"
         shared = self.shared_id_report()
-        with self.correction_file({}):
+        with self.correction_file({}), mock.patch.object(registry, "require_reviewed_redner_ids"):
             self.rebuild([shared])
         self.assertEqual(self.profiles(), {"Dirk-Ulrich Mende": (123, "ext_id", "https://example.test/foehr")})
         old_person = self.rows("person_records")[0]["person_id"]
@@ -704,12 +706,11 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             self.assertEqual(build.main(), 1)
         self.assertIn("error: Redner-ID 11005304 is partitioned in this registry", stderr.getvalue())
         self.assertEqual((site / "data" / "bundestag-pulse.sqlite").read_bytes(), before)
-        # The documented way to drop a partition: a new history from the cached reports.
+        # A new history from the cached reports does not drop it either while the Redner-ID
+        # prints two unrelated names: the name check refuses to file them as one person.
         self.db = self.root / "fresh.sqlite"
-        with self.correction_file({}):
+        with self.correction_file({}), self.assertRaisesRegex(build.DatabaseRebuildError, r"11005304 \(Alexander Föhr, Dirk-Ulrich Mende\)"):
             self.rebuild([r])
-        self.assertEqual(len({b["person_id"] for b in self.rows("person_bindings")}), 1)
-        self.assertEqual(self.rows("person_aliases"), [])
 
     # Value: protects=label and profile-owner edits of an applied partition follow the file, move the shared profile with the owner and reach a fixed point; fails_when=profile_blocked or the binding is kept from an earlier build, or the incremental store groups or attributes differently from a fresh build of the same correction history; why_new=only adding a partition and the shipped file were tested; seam=none
     def test_partition_edits_follow_the_file_and_replay_to_a_fixed_point(self):

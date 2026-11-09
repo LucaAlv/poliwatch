@@ -1967,7 +1967,7 @@ def reparse_cached_xml(
         for item in [entry["report"], *(entry["report"].get("agenda_items") or [])]:
             for identity, profile in speaker_profiles(item).items():
                 redner_id = derive.first_redner_id(identity[0])
-                if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
+                if redner_id and isinstance(profile, dict) and profile.get("id") is not None and registry.profile_follows_redner_id(redner_id):
                     by_redner_id.setdefault(redner_id, profile)
     reparsed = 0
     for entry in entries:

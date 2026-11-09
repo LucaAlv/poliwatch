@@ -1235,10 +1235,12 @@ def resolve_speaker(
         identity_key=mp_identity(
             aw_politician_id=aw_politician_id,
             aw_match=profile.get("match"),
+            dip_person_id=speaker.get("dip_person_id"),
             xml_redner_id=xml_redner_id,
             display_name=display_name,
             party_name=party_name,
         ),
+        dip_person_id=speaker.get("dip_person_id"),
         xml_redner_id=xml_redner_id,
         occurrence_id=occurrence_id,
         profile_url=profile.get("url"),

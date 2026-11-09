@@ -784,9 +784,9 @@
           "license": "dip"
         },
         "xml_redner_id": {
-          "meaning": "Redner-ID, die im Plenarprotokoll-XML für die sprechende Person verwendet wird.",
+          "meaning": "Redner-ID der sprechenden Person aus dem Plenarprotokoll-XML. Einige IDs vergibt der Bundestag an mehrere Personen. Für die geprüften Fälle hält scripts/person_corrections.json je gedrucktem Namen fest, wer gemeint ist: Dann steht hier die eigene Redner-ID dieser Person, nicht die gedruckte, und die Spalte ist leer, wenn die Person nur eine DIP-ID hat (dann in `dip_person_id`). Wo eine mehrfach vergebene ID stehen bleibt, etwa 11005304, trennt `person_id` die Personen.",
           "unit": "Protokoll-Rednerkennung als Text.",
-          "source": "Rednerkennung aus dem Protokoll-XML.",
+          "source": "Rednerkennung aus dem Protokoll-XML; für geprüfte mehrfach vergebene IDs die eigene Redner-ID der Person aus scripts/person_corrections.json.",
           "license": "dip"
         },
         "display_name": {
