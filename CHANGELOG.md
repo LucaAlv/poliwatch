@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.2.0] - 2026-11-09
+
+A vote on a Beschlussempfehlung to reject an Antrag now says that the Antrag fell, where the site said the opposite or left it open. Every badge on such a vote names what its outcome is about.
+
+### Fixed
+
+- **Vote 990 (21/51) read "Antrag: Angenommen" although Antrag 21/627 was rejected.** bundestag.de contradicts itself there: its text and Beschluss list say the Beschlussempfehlung to reject passed, and its roll-call box says "Antrag 21/627 angenommen". On a vote established as a recommendation to reject, a Ja majority now outranks that box: the result stays official and reads "Antrag: Abgelehnt". The contradiction is filed as E6 in `docs/source-errors.md`.
+- **Five rejections the site missed now read "Antrag: Abgelehnt":** votes 638 (19/127), 695 (19/187), 774 (20/37), 777 (20/38) and 801 (20/56) read a bare "Angenommen". DIP's record of the decision ("Annahme der Beschlussempfehlung auf Ablehnung") is now evidence of direction when it matches the vote's exact tally and a shared Drucksache; it ranks below the chair's announcement and the listing's wording. On the 350 votes with both an outcome and a DIP decision matching their tally, the site's outcome disagreed with it 6 times before and 0 times now.
+- **A badge on a Beschlussempfehlung names it:** "Beschlussempfehlung: Angenommen", or "Antrag: …" where the outcome is the Antrag's. A bare word next to an Antrag's title read as the Antrag passing.
+
+Old and new values, replayed on the same 619-vote store:
+- `votes`: 6 rows change. `inverted` 90 → 95 (638, 695, 774, 777, 801). `result_scope` application 25 → 24 (990, now proposition).
+- Votes archive: 133 badge texts change (these 6, 126 gain "Beschlussempfehlung:", 846 gains "Antrag:"), and the Fraktion filter counts 5 votes as gegen/für den Antrag instead of Ja/Nein.
+- Unchanged: vote totals, Mehrheitsvotum, Abweichungen, facts, recipes r1–r6 and every other export table.
+
+## [0.34.1.0] - 2026-11-07
+
+Documents only: no page, figure or export changes in this release. `DESIGN.md` is ready to be applied to the site.
+
+### Changed
+
+- **"Stimmkarte" takes a lighter, more open direction.** The ground is white, headings and navigation use Atkinson, D-DIN stays for verdicts and lead figures, and hairlines replace the heavy rules. Evidence stays in sight: no source, count or gap is folded away for looks.
+- **Every sheet says where it comes from, and pages say how to cite them.** A sheet opens with its source, and vote, Sitzung, person and analysis pages say how they relate to the stable release. On Daten, CSV is a real control that opens the file list.
+- **Home and Aktuell show the newest vote,** with its date, verdict, title, strip and counts. The Analysen door shows one small panel per Fraktion, and door links read as links.
+- **The open questions from the first version are settled,** with rules for the components it left out, a component inventory, and the owner's v1 decisions: the name open-parlament, seven navigation links and two kinds of release.
+
+### Fixed
+
+- `DESIGN.md` now says where a vote row's numbers come from since the re-filing in 0.34.0.0: the stored count can differ from what the Bundestag's page prints, and a row with a moved Stimme says so with both numbers.
+
 ## [0.34.0.0] - 2026-11-06
 
 A roll-call Stimme now counts for the group its member belonged to on the day, where the Bundestag's own page files it under another. A data user can read both: the corrected group and the one the page lists.
