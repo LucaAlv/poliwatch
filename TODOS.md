@@ -107,8 +107,17 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 3. **`999990109` and `11003609` have no entry,** because their second person sits in an annex and a speaker list that are not stored. If "Reden the parser drops without refusing" stores Tim Ostermann's annex unit of 19/234, the build refuses until `999990109` has an entry.
 4. **The name check does not catch two people who share a word,** such as a given name: a surname change looks the same.
 5. **C4 (Föhr/Mende) was not checked against the PDF.** Its six reviewed occurrences and its partition are unchanged, 0 of its units moved.
+6. **Untested call site:** the `registry.profile_follows_redner_id` clause in `reparse_cached_xml` (`scripts/build_dip_pulse_site.py`) is only tested through a direct call; deleting it keeps the suite green. Add a reparse test with two speakers under `999990127`, one with a profile, and a `11005304` control that keeps its profile owner's profile.
+7. **`reconcile` loads every record three times** (`person_registry.reconcile`: the name check, the durable merges, the guesses), each with the full `vote_members` join. Pass the durable-merge load to `require_reviewed_redner_ids` instead.
+8. **`_on_shared_id` knows only `xml:` keys.** An old record keyed `aw:` (a trusted lookup under the shared id) or `profile:` that holds a shared id keeps a dip-only rebind, so a replay differs from a fresh build. None exists in the A3 store. Decide on the record's evidence instead of its key prefix.
+9. **`own_ids` may name one id twice** across owners or entries, which would file two reviewed people under one record. Refuse a repeat in `_load_corrections`.
+10. **A `dip:` own id for a partition's `profile_owner`** keeps a trusted profile, so `mp_identity` keys the record `aw:N` while it holds `dip_person_id`, which collides with the roster's `dip:N` row (`mps.dip_person_id UNIQUE`). No entry does this today. Refuse the combination in `_load_corrections`.
+11. **`render_dip_pulse_html` corrects only `xml_speakers`;** the `xml_speakers_first` fallback of a legacy truncated item still links the raw shared-id speaker. No cached item hits it today.
+12. **The name check misses two people printed with the same role word** when the XML puts the role into the name fields ("Dr. Carsten Sieling, Bürgermeister"). Drop role words from `_name_words`.
+13. **Profile coverage metadata counts raw profiles** (`build_dip_pulse_site.py`, the ready/partial counts), including the trusted ones `corrected_speaker` drops for shared ids: off by a few speakers.
+14. **No test builds a record with no Redner-ID under two unrelated names,** which the name check must skip.
 
-**Why:** None of them is a wrong unit in the store today.
+**Why:** None of them is a wrong unit in the store today. Items 6–14 come from the pre-landing review of 2026-11-09.
 
 **Effort:** S each
 **Priority:** P3
