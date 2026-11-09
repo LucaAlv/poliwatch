@@ -686,6 +686,31 @@ class OnlineAndReplayAgreeTests(unittest.TestCase):
             self.assertEqual({key: vote_.get(key) for key in INTERPRETATION_KEYS}, online_values[vote_["id"]], vote_["id"])
             self.assertEqual(vote_["debate_url"], "https://www.bundestag.de/dokumente/textarchiv/1181880" if vote_["id"] == "996" else None)
 
+    def test_a_dip_decision_reaches_the_online_build_and_survives_the_replay(self) -> None:
+        # Value: protects=the online enrichment hands the Vorgang positions' beschlussfassung to the vote rules and the saved report keeps it, so a replay re-derives the same inversion; fails_when=enrich_with_api stops passing the raw positions on, or a slimmed saved report drops beschlussfassung (online inverted, replay not); why_new=the unit tests feed interpret_sitting_votes a hand-built item and never run enrich_with_api or a JSON round trip; seam=none; no_claim=does not prove DIP's live JSON field names (fixture notes are verbatim, the shape is assumed)
+        note = "311:222:3 (Annahme der Beschlussempfehlung auf Ablehnung)"
+        positions = self.client.list_all("/vorgangsposition", {})
+        positions[0]["beschlussfassung"] = [{"abstimm_ergebnis_bemerkung": note, "dokumentnummer": "20/7777", "beschlusstenor": "Ablehnung der Vorlage"}]
+        ballot = {"id": "9002", "date": "2024-03-14", "title": "Grundgesetz", "document_numbers": ["20/7777"],
+                  "description": "Beschlussempfehlung des Ausschusses zu dem Antrag der Fraktion der CDU/CSU",
+                  "total": {"yes": 311, "no": 222, "abstain": 3, "absent": 0}}
+        self.candidates.append(ballot)
+        parsed = dip.parse_protocol_xml(PROTOCOL_XML)
+        online = self.enrich(parsed)
+        found = [v for item in online["agenda_items"] for v in item["votes"] if v["id"] == "9002"]
+        self.assertTrue(found)
+        for item in found:
+            self.assertEqual((item["inverted"], item["inversion_source"]), (True, "bundestag-dip-beschlussfassung"))
+            self.assertEqual(item["inversion_excerpt"], f"Drucksache 20/7777: {note}")
+        saved = json.loads(json.dumps({key: online[key] for key in ("agenda_items", "sitting_votes", "api_records")}))
+        for item in (v for top in saved["agenda_items"] for v in top["votes"] if v["id"] == "9002"):
+            for key in INTERPRETATION_KEYS:
+                item.pop(key, None)
+        dip.interpret_report_votes(saved, parsed["vote_recommendations"])
+        for item in (v for top in saved["agenda_items"] for v in top["votes"] if v["id"] == "9002"):
+            self.assertEqual((item["inverted"], item["inversion_source"], item["inversion_excerpt"]),
+                             (True, "bundestag-dip-beschlussfassung", f"Drucksache 20/7777: {note}"))
+
 
 FIELDS = ("inverted", "inversion_source", "inversion_excerpt", "result_raw", "result_source", "result_scope", "debate_url")
 
