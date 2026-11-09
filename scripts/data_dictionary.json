@@ -1666,7 +1666,7 @@
           "license": "eigene-auswertung"
         },
         "result_scope": {
-          "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition.",
+          "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition. Nennt der Beschlusstext den Antrag als angenommen, obwohl eine Ja-Mehrheit für die empfohlene Ablehnung stimmte (inverted = 1), steht proposition: Die Seite widerspricht sich dort, und das Wort gilt der Beschlussempfehlung.",
           "unit": "Textcode application oder proposition; NULL nur in Zeilen aus Berichten, die vor Einführung des Felds gespeichert wurden.",
           "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
@@ -1680,19 +1680,19 @@
         "inverted": {
           "meaning": "1, wenn die Projektregel feststellt, dass die Beschlussempfehlung die Ablehnung des zugrunde liegenden Antrags empfiehlt; NULL, wenn sie das nicht feststellt (kein Beleg, Abstimmung über die Vorlage selbst oder widersprüchliche Evidenz). Der Wert 0 wird nicht geschrieben.",
           "unit": "1 oder NULL; NULL heißt nicht festgestellt, nicht bestätigt nicht umgekehrt.",
-          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe inversion_source.",
           "license": "eigene-auswertung"
         },
         "inversion_source": {
-          "meaning": "Art der Quelle/Evidenz, mit der die Ablehnungsempfehlung festgestellt wurde.",
-          "unit": "Evidenztyp der Umkehrung als Code/Text oder NULL.",
-          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "meaning": "Art der Quelle/Evidenz, mit der die Ablehnungsempfehlung festgestellt wurde: bundestag-protocol (Ansage der Sitzungsleitung), bundestag-roll-call (Wortlaut der Abstimmungsseite), bundestag-dip (DIP-Drucksachentitel), bundestag-dip-beschlussfassung (in DIP verzeichnete Beschlussfassung, per Stimmenzahlen und Drucksache der Abstimmung zugeordnet).",
+          "unit": "Evidenztyp der Umkehrung als Textcode oder NULL.",
+          "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "inversion_excerpt": {
           "meaning": "Quellenausschnitt, der die erkannte Ablehnungsempfehlung belegt.",
-          "unit": "Belegausschnitt als Text oder NULL: bei Protokollbeleg die Klausel der Ansage (Leerraum normalisiert, auf 300 Zeichen mit „…“ gekürzt), sonst der ganze Titel, die Beschreibung oder der DIP-Drucksachentitel, der die Ablehnungsempfehlung enthält.",
-          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "unit": "Belegausschnitt als Text oder NULL: bei Protokollbeleg die Klausel der Ansage (Leerraum normalisiert, auf 300 Zeichen mit „…“ gekürzt), bei DIP-Beschlussfassung die Drucksache und die Bemerkung zum Abstimmungsergebnis, sonst der ganze Titel, die Beschreibung oder der DIP-Drucksachentitel, der die Ablehnungsempfehlung enthält.",
+          "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "xlsx_url": {

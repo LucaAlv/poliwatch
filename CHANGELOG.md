@@ -8,7 +8,7 @@ A Rede or Beitrag now belongs to the person who gave it, also where the Bundesta
 
 ### Fixed
 
-- **43 Reden and Beiträge move to the person who gave them.** Five speaker ids in the Plenarprotokoll XML name more than one person (`docs/source-errors.md` E6), and the store had filed every unit under one of them. Old and new, on the A3 store of 716 sittings:
+- **43 Reden and Beiträge move to the person who gave them.** Five speaker ids in the Plenarprotokoll XML name more than one person (`docs/source-errors.md` E7), and the store had filed every unit under one of them. Old and new, on the A3 store of 716 sittings:
   - Annette Widmann-Mauz gains 19 Fragestunde answers and 2 Reden that sat on Dr. Andreas Bovenschulte's page (34 Reden, 82 Beiträge now).
   - Anette Kramme gains 14 Fragestunde answers that sat on Maika Friemann-Jennert's page (19 / 204).
   - Peter Beuth gains 3 Reden from Enak Ferlemann's page; Judith Gerlach gains 2 Reden and 1 Erwiderung from Dr. Mehmet Daimagüler's.
@@ -25,6 +25,21 @@ A Rede or Beitrag now belongs to the person who gave it, also where the Bundesta
 - **A build stops when one speaker id is printed for two unrelated names,** naming the id and the names, until `scripts/person_corrections.json` says who each printed name is. Name changes such as a new surname do not trip it. The 85 sittings outside the coverage run are checked this way when they come in.
 - **The codebook says what `mps.xml_redner_id` holds for a reviewed shared id:** the person's own Redner-ID, or nothing for a person with only a DIP id.
 - **The v1 scope review is recorded:** the owner's decisions in `PRODUCT.md` and the TODOS roadmap, a comparison with other Bundestag research datasets, and a cross-check against the CPP-BT corpus that found these shared ids.
+
+## [0.34.2.0] - 2026-11-09
+
+A vote on a Beschlussempfehlung to reject an Antrag now says that the Antrag fell, where the site said the opposite or left it open. Every badge on such a vote names what its outcome is about.
+
+### Fixed
+
+- **Vote 990 (21/51) read "Antrag: Angenommen" although Antrag 21/627 was rejected.** bundestag.de contradicts itself there: its text and Beschluss list say the Beschlussempfehlung to reject passed, and its roll-call box says "Antrag 21/627 angenommen". On a vote established as a recommendation to reject, a Ja majority now outranks that box: the result stays official and reads "Antrag: Abgelehnt". The contradiction is filed as E6 in `docs/source-errors.md`.
+- **Five rejections the site missed now read "Antrag: Abgelehnt":** votes 638 (19/127), 695 (19/187), 774 (20/37), 777 (20/38) and 801 (20/56) read a bare "Angenommen". DIP's record of the decision ("Annahme der Beschlussempfehlung auf Ablehnung") is now evidence of direction when it matches the vote's exact tally and a shared Drucksache; it ranks below the chair's announcement and the listing's wording. On the 350 votes with both an outcome and a DIP decision matching their tally, the site's outcome disagreed with it 6 times before and 0 times now.
+- **A badge on a Beschlussempfehlung names it:** "Beschlussempfehlung: Angenommen", or "Antrag: …" where the outcome is the Antrag's. A bare word next to an Antrag's title read as the Antrag passing.
+
+Old and new values, replayed on the same 619-vote store:
+- `votes`: 6 rows change. `inverted` 90 → 95 (638, 695, 774, 777, 801). `result_scope` application 25 → 24 (990, now proposition).
+- Votes archive: 133 badge texts change (these 6, 126 gain "Beschlussempfehlung:", 846 gains "Antrag:"), and the Fraktion filter counts 5 votes as gegen/für den Antrag instead of Ja/Nein.
+- Unchanged: vote totals, Mehrheitsvotum, Abweichungen, facts, recipes r1–r6 and every other export table.
 
 ## [0.34.1.0] - 2026-11-07
 

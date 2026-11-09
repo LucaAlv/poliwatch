@@ -302,6 +302,204 @@ class ChairAnnouncementTests(unittest.TestCase):
         self.assertIsNone(contradicted["inverted"])
 
 
+def decision(note: object, number: object = "20/10", **fields: object) -> dict:
+    return {"abstimmungsart": "Namentliche Abstimmung", "beschlusstenor": "Ablehnung der Vorlage",
+            "abstimm_ergebnis_bemerkung": note, "dokumentnummer": number, "seite": "1A", **fields}
+
+
+def interpret_with_decisions(votes: list[dict], decisions: list[dict], records: list[dict] | None = None) -> list[dict]:
+    item = {"votes": votes, "api": {"raw": {"positions": [{"id": "1", "titel": "Antrag", "beschlussfassung": decisions}]}}}
+    dip.interpret_sitting_votes([item], [], [] if records is None else records)
+    return votes
+
+
+class DipDecisionEvidenceTests(unittest.TestCase):
+    """DIP's Beschlussfassung of a Vorgangsposition names a rejecting recommendation
+    outright; its tally and Drucksache prove which vote it speaks of. Notes verbatim."""
+
+    REJECTING = "574:71:1 (Annahme der Beschlussempfehlung auf Ablehnung)"
+    TOTAL = {"yes": 574, "no": 71, "abstain": 1, "absent": 90}
+
+    def ballot(self, **fields: object) -> dict:
+        return {"id": "774", "description": "Beschlussempfehlung des Ausschusses zu dem Antrag der Fraktion X",
+                "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=774",
+                "document_numbers": ["20/10", "20/20"], "total": dict(self.TOTAL),
+                "result_raw": "accepted", "result_source": "derived", **fields}
+
+    def test_each_shape_the_chair_does_not_settle_reads_as_a_rejection(self) -> None:
+        # 774 names no Antrag number, 777 an Entschließungsantrag, 638 has no document numbers,
+        # 695 and 801 have no recommendation wording. The chair's sentences are verbatim.
+        for label, numbers, paragraph, number in (
+            ("774", ["20/1890", "20/699"], "Der Ausschuss für Gesundheit empfiehlt unter Buchstabe b seiner Beschlussempfehlung auf Drucksache 20/1890, den Antrag der Fraktion der AfD abzulehnen.", "20/699"),
+            ("777", ["20/1835", "20/524"], "Der Ausschuss empfiehlt in seiner Beschlussempfehlung auf Drucksache 20/1835, den Entschließungsantrag der Fraktion der CDU/CSU auf Drucksache 20/524 abzulehnen.", "20/524"),
+            ("638", [], "Der Ausschuss empfiehlt in seiner Beschlussempfehlung auf Drucksache 19/9107, den Antrag der Fraktion der AfD auf Drucksache 19/5532 abzulehnen.", "19/5532"),
+            ("695", ["19/22832", "19/23471"], "Wir stimmen jetzt über die Beschlussempfehlung des Ausschusses namentlich ab.", "19/22832"),
+            ("801", ["20/2347", "20/2712"], "Wir kommen zur Abstimmung über die Beschlussempfehlung des Wirtschaftsausschusses auf Drucksache 20/2712 zu dem Entschließungsantrag der Fraktion der CDU/CSU auf Drucksache 20/2347.", "20/2347"),
+        ):
+            with self.subTest(label):
+                xml = ('<dbtplenarprotokoll wahlperiode="20" sitzung-nr="1"><sitzungsverlauf><tagesordnungspunkt top-id="T1">'
+                       f'<p klasse="J">{paragraph}</p></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+                records = dip.parse_vote_recommendations(dip.ET.fromstring(xml))
+                (item,) = interpret_with_decisions([self.ballot(document_numbers=numbers)], [decision(self.REJECTING, number)], records)
+                self.assertIs(item["inverted"], True)
+                self.assertEqual(item["inversion_source"], "bundestag-dip-beschlussfassung")
+                self.assertEqual(item["inversion_excerpt"], f"Drucksache {number}: {self.REJECTING}")
+                self.assertEqual(derive.vote_outcome(item), "rejected")
+                self.assertIn("der Antrag wurde abgelehnt", vote_summary({"votes": [item]}))
+
+    def test_every_wording_of_the_note_counts_and_a_note_without_it_does_not(self) -> None:
+        for note, expected in (
+            ("574:71:1 (Annahme der  Beschlussempfehlung auf Ablehnung)", True),
+            ("574:71:1 (Abstimmung über Beschlussempfehlung auf Ablehnung)", True),
+            ("574:71:1 (Annahme der Beschlussempfehlung auf Ablehnung der Vorlage)", True),
+            ("574:71:1 (Annahme der Beschlussempfehlung auf Ablehnung); Berichtigung (Abstimmungsergebnis und Namensliste)", True),
+            ("574:71:1 (Annahme der Beschlussempfehlung auf Ablehnung; korrigierte Abstimmungsliste s. PlPr 18/213, S. 21408B)", True),
+            ("574:71:1", None),
+            ("574:71:1 (korrigierte Abstimmungsliste s. PlPr 19/89, S. 10672D)", None),
+            ("einstimmig", None),
+        ):
+            with self.subTest(note):
+                (item,) = interpret_with_decisions([self.ballot()], [decision(note)])
+                self.assertIs(item["inverted"], expected)
+
+    def test_a_decision_binds_only_by_its_tally_and_its_drucksache(self) -> None:
+        for label, ballot, decisions, expected in (
+            ("other tally", {}, [decision("575:71:1 (Annahme der Beschlussempfehlung auf Ablehnung)")], None),
+            ("other Enthaltungen", {}, [decision("574:71:2 (Annahme der Beschlussempfehlung auf Ablehnung)")], None),
+            ("other Drucksache", {}, [decision(self.REJECTING, "20/99")], None),
+            ("no Drucksache", {}, [decision(self.REJECTING, None)], None),
+            ("several numbers in one field (vote 892)", {}, [decision(self.REJECTING, "20/10, 20/20")], True),
+            ("no tally on the vote", {"total": {}}, [decision("0:0:0 (Annahme der Beschlussempfehlung auf Ablehnung)")], None),
+            ("a second decision on it says nothing", {}, [decision(self.REJECTING), decision("574:71:1")], None),
+            ("no document numbers, tally unique", {"document_numbers": []}, [decision(self.REJECTING, "19/5532")], True),
+            ("no document numbers, tally twice", {"document_numbers": []},
+             [decision(self.REJECTING, "19/5532"), decision(self.REJECTING, "19/5533")], None),
+            ("the same decision under two TOPs", {"document_numbers": []},
+             [decision(self.REJECTING, "19/5532"), decision(self.REJECTING, "19/5532")], True),
+        ):
+            with self.subTest(label):
+                (item,) = interpret_with_decisions([self.ballot(**ballot)], decisions)
+                self.assertIs(item["inverted"], expected)
+
+    def test_the_excerpt_does_not_depend_on_the_order_of_the_positions(self) -> None:
+        decisions = [decision(self.REJECTING, "20/20"), decision(self.REJECTING, "20/10")]
+        excerpts = [interpret_with_decisions([self.ballot()], order)[0]["inversion_excerpt"] for order in (decisions, decisions[::-1])]
+        self.assertEqual(excerpts, [f"Drucksache 20/10: {self.REJECTING}"] * 2)
+        (without,) = interpret_with_decisions([self.ballot(document_numbers=[])], [decision(self.REJECTING, None)])
+        self.assertEqual(without["inversion_excerpt"], self.REJECTING)
+
+        votes = [self.ballot(document_numbers=[]), self.ballot(id="775", document_numbers=["20/10", "20/20"])]
+        interpret_with_decisions(votes, [decision(self.REJECTING)])
+        self.assertEqual([item["inverted"] for item in votes], [None, True])
+
+    def test_a_decision_never_overrides_other_attributable_evidence(self) -> None:
+        for label, ballot, records, source in (
+            ("chair accepts", {}, [record("accept", ["20/10"], ["20/20"])], None),
+            ("chair conflicts", {}, [record("conflict", ["20/10"], ["20/20"])], None),
+            ("chair rejects leads", {}, [record("reject", ["20/10"], ["20/20"])], "bundestag-protocol"),
+            ("a vote on the Vorlage itself", {"description": "Antrag der Fraktion X"}, [], None),
+            ("a title that accepts", {"title": "Annahme des Antrags"}, [], None),
+        ):
+            with self.subTest(label):
+                (item,) = interpret_with_decisions([self.ballot(**ballot)], [decision(self.REJECTING)], records)
+                self.assertEqual(item["inversion_source"], source)
+                self.assertIs(item["inverted"], True if source else None)
+
+    def test_hostile_or_malformed_decisions_add_nothing_and_never_raise(self) -> None:
+        for bad in (
+            decision("9" * 5000 + ":71:1 (Annahme der Beschlussempfehlung auf Ablehnung)"),
+            decision(None), decision(574), decision(["574:71:1"]), decision(self.REJECTING, 20),
+            decision(":::" * 1000), "not a decision", None,
+        ):
+            with self.subTest(str(bad)[:30]):
+                (item,) = interpret_with_decisions([self.ballot()], [bad])
+                self.assertIsNone(item["inverted"])
+
+    def test_without_cached_xml_the_decision_still_counts(self) -> None:
+        item = {"votes": [self.ballot()], "api": {"raw": {"positions": [{"beschlussfassung": [decision(self.REJECTING)]}]}}}
+        dip.interpret_sitting_votes([item], [], None)
+        self.assertEqual(item["votes"][0]["inversion_source"], "bundestag-dip-beschlussfassung")
+
+    def test_interpreting_again_changes_nothing(self) -> None:
+        item = {"agenda_items": [{"votes": [self.ballot()], "api": {"raw": {"positions": [{"beschlussfassung": [decision(self.REJECTING)]}]}}}]}
+        dip.interpret_report_votes(item, [])
+        first = json.loads(json.dumps(item))
+        dip.interpret_report_votes(first, [])
+        self.assertEqual(first, json.loads(json.dumps(item)))
+
+
+class ContradictoryOfficialResultTests(unittest.TestCase):
+    """bundestag.de's roll-call box can name the Antrag where the ballot was on the
+    Beschlussempfehlung (vote 990, docs/source-errors.md E6)."""
+
+    def inverted(self, official: str, yes: int, no: int) -> dict:
+        (item,) = interpret(
+            [{"id": "990", "title": "Ablehnung der Streichung von Erbschaftsteuer-Privilegien",
+              "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=990",
+              "description": "Beschlussempfehlung des Finanzausschusses zu dem Antrag der Fraktion Die Linke (Drucksachen 21/2691 und 21/627)",
+              "document_numbers": ["21/2691", "21/627"], "total": {"yes": yes, "no": no, "abstain": 0},
+              "official_result": official, "result_scope": "application"}],
+            [record("reject", ["21/627"], ["21/2691"])],
+        )
+        return item
+
+    def test_vote_990_a_ja_majority_for_rejecting_cannot_have_accepted_the_antrag(self) -> None:
+        item = self.inverted("accepted", 507, 47)
+        self.assertEqual((item["result_raw"], item["result_source"], item["result_scope"]), ("accepted", "official", "proposition"))
+        self.assertEqual(derive.vote_outcome(item), "rejected")
+        markup = vote_summary({"votes": [item]})
+        self.assertIn("der Antrag wurde abgelehnt", markup)
+        self.assertNotIn("der Antrag wurde angenommen", markup)
+        self.assertIn(">Antrag: Abgelehnt<", markup)
+
+    def test_an_official_result_the_tally_does_not_contradict_keeps_its_scope(self) -> None:
+        for official, yes, no, expected in (
+            ("rejected", 507, 47, "rejected"),    # the shape of vote 996: "Antrag abgelehnt", Ja for rejecting
+            ("accepted", 47, 507, "accepted"),    # the recommendation fell: the Antrag can stand
+            ("rejected", 47, 507, "rejected"),    # the Antrag can still fall in its own vote
+            ("accepted", 50, 50, "accepted"),     # a tie proves nothing
+        ):
+            with self.subTest(official=official, yes=yes, no=no):
+                item = self.inverted(official, yes, no)
+                self.assertEqual(item["result_scope"], "application")
+                self.assertEqual(derive.vote_outcome(item), expected)
+
+    def test_an_antrag_voted_directly_keeps_its_application_scope(self) -> None:
+        (item,) = interpret(
+            [{"id": "1", "description": "Antrag der Fraktion X (Drucksache 20/1)", "document_numbers": ["20/1"],
+              "total": {"yes": 400, "no": 100, "abstain": 0}, "official_result": "accepted", "result_scope": "application"}],
+            [],
+        )
+        self.assertEqual((item["result_scope"], derive.vote_outcome(item)), ("application", "accepted"))
+
+    def test_the_rule_holds_through_a_saved_report_and_a_second_pass(self) -> None:
+        for official, yes, no in (("accepted", 507, 47), ("rejected", 507, 47)):
+            with self.subTest(official=official):
+                item = self.inverted(official, yes, no)
+                values = {key: item.get(key) for key in INTERPRETATION_KEYS}
+                saved = json.loads(json.dumps(item))
+                interpret([saved], [record("reject", ["21/627"], ["21/2691"])])
+                self.assertEqual({key: saved.get(key) for key in INTERPRETATION_KEYS}, values)
+
+    def test_a_title_the_chair_refutes_leaves_the_official_scope_alone(self) -> None:
+        # The fetch reads the title alone; the sitting's evidence comes after it.
+        item = {"id": "1", "title": "Ablehnung des Antrags", "document_numbers": ["20/10", "20/20"],
+                "total": {"yes": 60, "no": 40, "abstain": 0}, "official_result": "accepted", "result_scope": "application"}
+        dip.interpret_vote(item)
+        self.assertIs(item["inverted"], True)
+        interpret([item], [record("accept", ["20/10"], ["20/20"])])
+        self.assertIsNone(item["inverted"])
+        self.assertEqual((item["result_scope"], derive.vote_outcome(item)), ("application", "accepted"))
+
+    def test_every_copy_of_the_vote_reads_the_same(self) -> None:
+        first = self.inverted("accepted", 507, 47)
+        second = {**copy.deepcopy(first), "result_scope": "application"}
+        third = {**copy.deepcopy(first), "result_scope": "application"}
+        interpret([second, third], [record("reject", ["21/627"], ["21/2691"])])
+        self.assertEqual({key: second.get(key) for key in INTERPRETATION_KEYS}, {key: third.get(key) for key in INTERPRETATION_KEYS})
+        self.assertEqual(second["result_scope"], "proposition")
+
+
 class CopiesAndReplayTests(unittest.TestCase):
     def test_debate_links_are_shared_and_conflicts_fail_closed_in_any_order(self) -> None:
         url = "https://www.bundestag.de/dokumente/textarchiv/992936"
@@ -488,6 +686,31 @@ class OnlineAndReplayAgreeTests(unittest.TestCase):
             self.assertEqual({key: vote_.get(key) for key in INTERPRETATION_KEYS}, online_values[vote_["id"]], vote_["id"])
             self.assertEqual(vote_["debate_url"], "https://www.bundestag.de/dokumente/textarchiv/1181880" if vote_["id"] == "996" else None)
 
+    def test_a_dip_decision_reaches_the_online_build_and_survives_the_replay(self) -> None:
+        # Value: protects=the online enrichment hands the Vorgang positions' beschlussfassung to the vote rules and the saved report keeps it, so a replay re-derives the same inversion; fails_when=enrich_with_api stops passing the raw positions on, or a slimmed saved report drops beschlussfassung (online inverted, replay not); why_new=the unit tests feed interpret_sitting_votes a hand-built item and never run enrich_with_api or a JSON round trip; seam=none; no_claim=does not prove DIP's live JSON field names (fixture notes are verbatim, the shape is assumed)
+        note = "311:222:3 (Annahme der Beschlussempfehlung auf Ablehnung)"
+        positions = self.client.list_all("/vorgangsposition", {})
+        positions[0]["beschlussfassung"] = [{"abstimm_ergebnis_bemerkung": note, "dokumentnummer": "20/7777", "beschlusstenor": "Ablehnung der Vorlage"}]
+        ballot = {"id": "9002", "date": "2024-03-14", "title": "Grundgesetz", "document_numbers": ["20/7777"],
+                  "description": "Beschlussempfehlung des Ausschusses zu dem Antrag der Fraktion der CDU/CSU",
+                  "total": {"yes": 311, "no": 222, "abstain": 3, "absent": 0}}
+        self.candidates.append(ballot)
+        parsed = dip.parse_protocol_xml(PROTOCOL_XML)
+        online = self.enrich(parsed)
+        found = [v for item in online["agenda_items"] for v in item["votes"] if v["id"] == "9002"]
+        self.assertTrue(found)
+        for item in found:
+            self.assertEqual((item["inverted"], item["inversion_source"]), (True, "bundestag-dip-beschlussfassung"))
+            self.assertEqual(item["inversion_excerpt"], f"Drucksache 20/7777: {note}")
+        saved = json.loads(json.dumps({key: online[key] for key in ("agenda_items", "sitting_votes", "api_records")}))
+        for item in (v for top in saved["agenda_items"] for v in top["votes"] if v["id"] == "9002"):
+            for key in INTERPRETATION_KEYS:
+                item.pop(key, None)
+        dip.interpret_report_votes(saved, parsed["vote_recommendations"])
+        for item in (v for top in saved["agenda_items"] for v in top["votes"] if v["id"] == "9002"):
+            self.assertEqual((item["inverted"], item["inversion_source"], item["inversion_excerpt"]),
+                             (True, "bundestag-dip-beschlussfassung", f"Drucksache 20/7777: {note}"))
+
 
 FIELDS = ("inverted", "inversion_source", "inversion_excerpt", "result_raw", "result_source", "result_scope", "debate_url")
 
@@ -648,6 +871,18 @@ class RepairedReportsTests(unittest.TestCase):
         self.assertEqual(badge("996"), "Antrag: Abgelehnt")
         self.assertEqual(badge("810"), "Angenommen (berechnet)")
         self.assertEqual(badge("926"), "Abgelehnt (berechnet)")
+
+    def test_the_archive_badge_reads_the_stored_listing_not_only_the_title(self) -> None:
+        # stored_votes hands the archive what the panel has: a Beschlussempfehlung the title does not name.
+        self.repersist()
+        conn = sqlite3.connect(self.database)
+        with conn:
+            conn.execute("UPDATE votes SET inverted = NULL, inversion_source = NULL, inversion_excerpt = NULL WHERE id = '906'")
+        conn.close()
+        self.assertIsNone(derive.abstimmungsgegenstand({"title": VOTES["906"]["title"]}))
+        archive = build.render_votes_archive_index(build.votes_archive_rows(self.database))
+        row = re.search(r'#vote-906">.*?</h3>', archive, re.S).group(0)
+        self.assertIn(">Beschlussempfehlung: Angenommen", row)
 
     def test_a_second_repair_changes_nothing(self) -> None:
         self.repersist()

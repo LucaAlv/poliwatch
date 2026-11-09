@@ -365,7 +365,7 @@ No issues found. There is no new endpoint, input or secret. The downloaded CSV s
                     \-> nil/empty id, no <redner>: withheld with a reason, not dropped
                     \-> outside a TOP: needs a decided home, agenda_item_id is required today
                     \-> all units refused: the written bar decides whether the sitting stays
-                    \-> source file changed since fetch: comparison shows it, C4 may be one
+                    \-> source file changed since fetch: comparison shows it, C5 may be one
 ```
 
 | Interaction | Edge case | Handled? |

@@ -1,4 +1,4 @@
-"""Redner-IDs the Bundestag gives to more than one person (docs/source-errors.md E6).
+"""Redner-IDs the Bundestag gives to more than one person (docs/source-errors.md E7).
 
 These tests read the shipped scripts/person_corrections.json, so they cover the
 reviewed entries themselves and not a fixture of them."""

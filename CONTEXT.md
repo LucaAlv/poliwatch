@@ -59,7 +59,7 @@ A Person giving a Rede in a Sitzung: an MdB, or someone speaking for the Bundesr
 _Avoid_: MP, MdB for every speaker
 
 **Personenkennung**:
-An identifier a source assigns to exactly one Person and keeps for them, such as the Bundestag's Redner-ID in the Plenarprotokoll or DIP's Person-ID. Two records sharing a Personenkennung describe the same Person. An identifier that was itself found by searching for a name is not a Personenkennung but the result of a Namensabgleich. A few Redner-IDs break this rule: the Bundestag gives them to more than one Person (`docs/source-errors.md` E6). A reviewed entry in `scripts/person_corrections.json` says who each printed name is, and the shared id is no Personenkennung for them.
+An identifier a source assigns to exactly one Person and keeps for them, such as the Bundestag's Redner-ID in the Plenarprotokoll or DIP's Person-ID. Two records sharing a Personenkennung describe the same Person. An identifier that was itself found by searching for a name is not a Personenkennung but the result of a Namensabgleich. A few Redner-IDs break this rule: the Bundestag gives them to more than one Person (`docs/source-errors.md` E7). A reviewed entry in `scripts/person_corrections.json` says who each printed name is, and the shared id is no Personenkennung for them.
 _Avoid_: treating a name, a Zusammenschluss or a profile link as proof of identity
 
 **Namensabgleich**:

@@ -39,7 +39,7 @@
     },
     {
       "xml_redner_id": "999990108",
-      "note": "docs/source-errors.md E6. WP 18: Parl. Staatssekretärin (Arbeit und Soziales). WP 19: MdB, CDU/CSU.",
+      "note": "docs/source-errors.md E7. WP 18: Parl. Staatssekretärin (Arbeit und Soziales). WP 19: MdB, CDU/CSU.",
       "labels": {
         "Anette Kramme": "kramme",
         "Maika Friemann-Jennert": "friemann-jennert"
@@ -51,7 +51,7 @@
     },
     {
       "xml_redner_id": "999990124",
-      "note": "docs/source-errors.md E6. WP 18: Parl. Staatssekretärin (Gesundheit). WP 20: Bürgermeister (Bremen).",
+      "note": "docs/source-errors.md E7. WP 18: Parl. Staatssekretärin (Gesundheit). WP 20: Bürgermeister (Bremen).",
       "labels": {
         "Annette Widmann-Mauz": "widmann-mauz",
         "Andreas Bovenschulte": "bovenschulte"
@@ -63,7 +63,7 @@
     },
     {
       "xml_redner_id": "999990127",
-      "note": "docs/source-errors.md E6. WP 18: Parl. Staatssekretär (Verkehr). WP 20: Staatsminister (Hessen).",
+      "note": "docs/source-errors.md E7. WP 18: Parl. Staatssekretär (Verkehr). WP 20: Staatsminister (Hessen).",
       "labels": {
         "Enak Ferlemann": "ferlemann",
         "Peter Beuth": "beuth"
@@ -75,7 +75,7 @@
     },
     {
       "xml_redner_id": "999990141",
-      "note": "docs/source-errors.md E6. WP 20: Beauftragter der Bundesregierung; Staatsministerin (Bayern).",
+      "note": "docs/source-errors.md E7. WP 20: Beauftragter der Bundesregierung; Staatsministerin (Bayern).",
       "labels": {
         "Mehmet Daimagüler": "daimagueler",
         "Judith Gerlach": "gerlach"
@@ -87,7 +87,7 @@
     },
     {
       "xml_redner_id": "10000",
-      "note": "docs/source-errors.md E6. The CPP-BT codebook documents this id as assigned several times. All three hold a Redner-ID of their own.",
+      "note": "docs/source-errors.md E7. The CPP-BT codebook documents this id as assigned several times. All three hold a Redner-ID of their own.",
       "labels": {
         "Marja-Liisa Völlers": "voellers",
         "Olaf in der Beek": "in-der-beek",
@@ -102,7 +102,7 @@
     },
     {
       "xml_redner_id": "999990134",
-      "note": "docs/source-errors.md E6. One person, not a shared id: 20/82 runs Mende's and Kreck's name fields together. The chair and the printed label name Dr. Lena Kreck, Senatorin (Berlin).",
+      "note": "docs/source-errors.md C8. One person, not a shared id: 20/82 runs Mende's and Kreck's name fields together. The chair and the printed label name Dr. Lena Kreck, Senatorin (Berlin).",
       "labels": {
         "Dr. Dirk-UlrichLena Mende Kreck": "kreck",
         "Lena Kreck": "kreck"
