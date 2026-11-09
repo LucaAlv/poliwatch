@@ -6,6 +6,7 @@ from __future__ import annotations
 import itertools
 import json
 import unittest
+from pathlib import Path
 import _support  # noqa: F401
 import persist_dip_pulse_store as store
 import person_registry as registry
@@ -234,6 +235,11 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         beuth = registry.corrected_speaker(speaker("999990127", "Peter Beuth"), "p1", "ID1")
         self.assertEqual((beuth["xml_redner_id"], beuth["dip_person_id"]), (None, "1809"))
         self.assertEqual(registry.corrected_speaker(speaker("10000", "Erika Mustermann"), "p1", "ID1")["xml_redner_id"], "10000")
+
+    # Value: protects=these tests read the shipped corrections file, not a fixture of it; fails_when=CORRECTIONS_PATH points elsewhere, so the five entries go untested; why_new=the module docstring claims it; seam=none
+    def test_reads_the_shipped_corrections_file(self):
+        shipped = Path(__file__).resolve().parents[1] / "scripts/person_corrections.json"
+        self.assertEqual(registry.CORRECTIONS_PATH.resolve(), shipped)
 
     # Value: protects=a malformed own_ids stops the build with a diagnostic; fails_when=the loader accepts a shape corrected_speaker misreads; why_new=own_ids is new; seam=none
     def test_malformed_own_ids_are_refused(self):
