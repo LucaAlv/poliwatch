@@ -20,6 +20,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
+   - "Check that vote links are right".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
 4. "Rename the project to open-parlament" and "Comparison and joinable ids in DATA.md".
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
@@ -49,7 +50,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 **What:** The store holds 716 of 801 catalog sittings. Decision N1 (2026-11-07) replaces the whole-sitting rule of 2026-10-22: one refused unit no longer keeps out a sitting. Before the first release:
 1. Keep each sitting and its TOPs, Drucksache links and votes. Withhold only refused `<rede>` units, flagged with a reason, text kept, outside all Reden counts. Record this in an ADR.
 2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing".
-3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units.
+3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units, and the withheld share by words per sitting, year and Fraktion (N9).
 4. A written bar: a sitting stays out whole only with a named source defect, or a defect that cannot be narrowed to single units. 18/20, whose file holds sitting 21, stays out. Replace the bare "excluded" in `coverage-exclusions.json` with each sitting's real reason.
 5. Parser rounds then shrink the withheld list, one owner-approved rule at a time.
 6. Fetch the 85 sittings. Their votes, TOPs and links were never acquired (decision 0 of 2026-10-22). Fetch the XML first and scan it for shared ids and Reden outside a TOP. Check whether the bulk prefetch covers the rest; otherwise about 26 DIP requests per sitting, about 2,200 in all [estimated from A3].
@@ -69,9 +70,20 @@ The implementer must prove:
 - step 2 inventories the raw XML before `split_nested_reden` (`validate_dip_protocol.py:943`, called at `:1396`), because that and two other functions edit the tree, and a source id in storage does not prove its split-off units survived;
 - withholding has a written rule for split-off units and for text moved between units (`merged_rede`, `merged_erwiderung`, `resumed`, `merged_zwischenfrage`, `:1450-1562`).
 
-**Storage contract, to settle in `/plan-eng-review` before the build (R10):** 20 statements read `speeches` across `build_dip_pulse_site.py` (8), `facts.py` (6) and `compare_store_values.py` (6), and recipes count every row. A flag on `speeches` means changing each of them. A separate withheld table leaves their meaning alone, but `speeches` has UNIQUE(agenda_item_id, sequence), and "every other unit unchanged" needs the slots kept. The review also lists every reader the choice touches.
+**Settled by `/plan-eng-review` on 2026-11-09 (`docs/plans/v1-scope-review.md`, "Eng review: the withholding build", tasks W1-W8):**
+- Two PRs: first the raw XML inventory and reconciliation, then withholding.
+- First fetch only the XML of the 85 and audit it, before PR 2.
+- Withheld units go in a separate `withheld_units` table.
+- `speeches.sequence` becomes the source position.
+- Only the refused part of a split Rede is withheld. Text that pass 1 moved out of it stays where it went.
+- A weekly release goes out and lists newly withheld Reden, but stops above 2.
+- The audit script is deleted in PR 2.
 
-**Open, in `docs/plans/v1-scope-review.md`:** N9, what coverage is adequate. N10, a check that the links are right.
+All ten choices were answered by the owner's adjudicator hook.
+
+**N9, decided 2026-11-09:** no bar on sittings. Every sitting stays in, and each analysis on the site declares a minimum coverage, marking a period below it as thin. The owner sets the number after step 6's fetch measures the withheld share by words.
+
+**N10, decided 2026-11-09:** a reviewed sample of vote links before the first release, in "Check that vote links are right".
 
 Withholding works on the whole `<rede>`, as decided. After round 2's rules that means 87 Reden, and no refused marker is a Rede's first, so each withheld Rede includes an opening nobody questioned. The ADR says so. `scripts/audit_offline_turns.py` shows the idea but says its counts cannot certify a database, so it is not the base.
 
@@ -124,6 +136,23 @@ Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: 
 **Effort:** S each
 **Priority:** P3
 **Depends on:** None
+
+### Check that vote links are right
+
+**What:** A vote links to a TOP when both are on the same date and share any Drucksache (`validate_dip_protocol.py:2686`, `:2893`). No test or gate checks that a link is right. Decision N10 (2026-11-09): review about 150 links before the first release:
+- all 13 votes linked to more than one TOP, six of them to 4 to 7 Haushalt TOPs (votes 894, 898, 960, 961, 979, 980);
+- all 84 TOPs with more than one vote;
+- 50 random plain links.
+
+Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. Run it with the N8 review once the 85 sittings are fetched, and add their multi-link cases. State in `DATA.md` what a link means: same sitting and a shared Drucksache, which does not mean that this vote alone decided that TOP. Report how many reviewed links were right, fixed or flagged.
+
+**Open:** fix the matching rule or flag the single link. Recommended: fix the rule where a pattern explains the error, flag one-off cases on the vote page.
+
+**Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest error is an amendment that shares a Drucksache with an unrelated TOP on the same day.
+
+**Effort:** M (human ~2 days / CC ~2 h, estimated)
+**Priority:** P1
+**Depends on:** None for the 556 votes held today; the fetch in "Coverage gate before the first data release" for the 85 sittings
 
 ### Stored Fraktion values that are not Fraktionen
 
@@ -1323,7 +1352,7 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 ### Politikfelder over time: which Zusammenschluss emphasises what
 
-**What:** Using the Politikfeld tags, show per Zusammenschluss and per period the share of its Reden (and of its speaking time by characters) that falls under each Politikfeld, and how the share of each Politikfeld in the whole plenary changes over time. Ship as a recipe first, then as a page next to the term series.
+**What:** Using the Politikfeld tags, show per Zusammenschluss and per period the share of its Reden (and of its speaking time by characters) that falls under each Politikfeld, and how the share of each Politikfeld in the whole plenary changes over time. Ship as a recipe first, then as a page next to the term series. The page declares a minimum coverage (decision N9, 2026-11-09) and marks a period below it as thin, not drawn as complete. The owner sets the number once the coverage gate has measured the withheld share by words.
 
 **Why:** This answers "which party has which priorities" and "how does attention to a topic change" (PRODUCT.md) from the agenda side, without depending on vocabulary. The term series answers it from the language side. The two complement each other.
 

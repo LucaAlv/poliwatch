@@ -10,7 +10,7 @@ Research note, 2026-11-06, for the second v1 scope review ([v1-scope-review.md](
 - **GermaParl overlaps less than it first appears.** Its strengths (1949 on, linguistic annotation, hand checks) are not what this project offers, and its newest open version stops at 2023-07-07.
 - **What nobody else was found to offer is the link for current Wahlperioden.** Speeches, TOPs, Drucksachen, Vorgänge and named votes linked at sitting level, through WP 21. This rests on a negative search, so it is a finding and not proof.
 - **Our 85 excluded sittings are the weak point against this field.** CPP-BT's speech table has 697 sittings of WP 18 to 20. We hold 613 of them.
-- **Where both datasets hold a sitting, they agree closely.** Every `rede_id` of ours is in CPP-BT. Of the 1,716 they have and we do not, 1,666 are §31 declarations we leave out by rule. The check found 46 units we lose without refusing (30 Reden, 16 written submissions) and led to 43 units filed under the wrong person. Both are in `TODOS.md`.
+- **Where both datasets hold a sitting, they agree closely.** Every `rede_id` of ours is in CPP-BT. Of the 1,716 they have and we do not, 1,666 are §31 declarations we leave out by rule. The check found 45 units we lose without refusing (29 Reden, 16 written submissions; first counted as 46, see the table below) and led to 43 units filed under the wrong person. Both are in `TODOS.md`.
 - **These are independent projects.** This project has no affiliation with any dataset named here. They work in the same direction, an open parliamentary record, separately.
 
 ## Side by side
@@ -85,9 +85,9 @@ Research note, 2026-11-06, for the second v1 scope review ([v1-scope-review.md](
 |---|---:|---|---|
 | Erklärungen nach § 31 GO | 1,666 | annex | Excluded by rule, disclosed (ADR 0002, `docs/data-methods.md:21`) |
 | Zu Protokoll gegebene Reden with a longer annex title | 16 | 18/133: 5, 18/134: 11 | **Lost.** `validate_dip_protocol.py:1300` matches the title exactly |
-| Other annex types | 4 | 19/115: 2 "zu der Abstimmung über …"; 19/35, 19/45: "Neudruck eines Redebeitrages" | Not classified yet |
+| Other annex types | 4 | 19/115: 2 "zu der Abstimmung über …"; 19/35, 19/45: "Neudruck eines Redebeitrages" | Not lost. 19/115's 2 are § 31 declarations; 19/35 and 19/45 reprint a Rede of the sitting before |
 | `<rede>` directly under `<sitzungsverlauf>`, outside any TOP | 29 | 18/49: 26 of 51, from Schäuble's budget speech on; 18/44: 3 | **Lost.** The parser reads only `./sitzungsverlauf/tagesordnungspunkt`, and nothing refuses |
-| `<rede>` inside a TOP | 1 | 21/43 `ID214301700` (Brandner) | **No unit stored,** cause not known |
+| `<rede>` inside a TOP | 1 | 21/43 `ID214301700` (Brandner) | Not lost. The element holds Brandner's procedural motion, held out by an existing rule, and Frömming's resumed speech, merged into `ID214301600` |
 
 **Who and which Fraktion, on 73,808 shared ids.**
 - **Speaker id:** 73,772 equal our person's id, 33 differ and 3 of ours have none. The differences are Rinkert (24) and Mende (9), the same person under another id. A shared id passes this test, so it cannot find misfiled people.
