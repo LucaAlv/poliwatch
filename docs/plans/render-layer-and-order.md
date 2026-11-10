@@ -2,7 +2,7 @@
 
 Status: **decided, 2026-11-10.**
 - The owner accepted L1 to L5 on the condition that an adversarial review agreed. Five reviews, one per decision, all returned "agree with changes", and none disagreed. Their changes are applied below.
-- Two choices inside the changes were made under that delegation, and the owner can overturn them: the calendar exception in L4, and merging move and port in L1.
+- Two choices inside the changes were made under that delegation: merging move and port in L1, and the calendar exception in L4. The owner confirmed both in chat on 2026-11-10: "Keep both".
 - Planning only: no renderer code changes here.
 
 Frame: `/gstack-plan-eng-review` on the architecture brief in `docs/plans/v1-scope-review.md` ("What this means for the design and architecture sessions", "Architecture session"). That ledger (Q2, Q3, Q7) wins over older plans. Owner decisions went to the owner in chat, not through AskUserQuestion, because a global hook can auto-answer gstack briefs.
@@ -108,7 +108,7 @@ The reader test (Q16) comes after step 13.
 - Slice 11's benefit comes early, without a 15k-line conflict.
 - Merging move and port where an AST check covers the move keeps the PR count near A's.
 
-**Answer (owner, 2026-11-10):** "All five sound plausible to me … run each question and recommendation through a quick adversarial review agent. Come back to me if any of them disagrees with your recommendation. If not proceed automatically." The review agreed with changes. B′ is its proposed refinement of B, adopted under that delegation.
+**Answer (owner, 2026-11-10):** "All five sound plausible to me … run each question and recommendation through a quick adversarial review agent. Come back to me if any of them disagrees with your recommendation. If not proceed automatically." The review agreed with changes. B′ is its proposed refinement of B, adopted under that delegation and confirmed by the owner: "Keep both".
 
 ## L2. The shared layer, built before the first restyle
 
@@ -213,7 +213,7 @@ Principle 6 and D9: renderers read only what is persisted. The votes archive, al
 - **Inputs.** Renderers read no report JSON and no DIP or abgeordnetenwatch cache.
 - **Two named exceptions:**
   - The data age is computed in the browser from dates in the HTML (DESIGN.md "Age and overdue").
-  - The next planned Sitzungswoche comes from the Bundestag's Sitzungskalender (`sitzungskalender.py`, official `.ics` files), read at build time. It is a planned date, not a figure. Its source line names the calendar and its fetch date. The HTML carries every upcoming week as `<time>`, and `site.js` marks the next one, so the choice does not freeze when a release is late. Persisting the weeks in the release was the alternative; it would add data under Q12. The owner can still choose it.
+  - The next planned Sitzungswoche comes from the Bundestag's Sitzungskalender (`sitzungskalender.py`, official `.ics` files), read at build time. It is a planned date, not a figure. Its source line names the calendar and its fetch date. The HTML carries every upcoming week as `<time>`, and `site.js` marks the next one, so the choice does not freeze when a release is late. Persisting the weeks in the release was the alternative; it would add data under Q12. The owner kept the exception.
 
 **The inventory, sorted into buckets** (subagent inventory, corrected by the review):
 
@@ -233,7 +233,7 @@ Options:
 - **B.** One early PR that moves every computation. It is out of step with the slices, which still read `entries`.
 - **C.** Leave rules and aggregates in the renderers. This breaks D9 for buckets 3 and 4.
 
-**Answer (owner, 2026-11-10):** the delegation quoted under L1. The review agreed with changes, applied above. The calendar exception was chosen under the delegation over persisting the weeks, to stay within Q12.
+**Answer (owner, 2026-11-10):** the delegation quoted under L1. The review agreed with changes, applied above. The calendar exception was chosen under the delegation over persisting the weeks, to stay within Q12, and the owner confirmed it: "Keep both".
 
 ## L5. Tests
 
