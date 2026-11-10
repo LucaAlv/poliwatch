@@ -4,6 +4,14 @@
 
 This is roadmap item A4: TODOS.md "Split the dataset from the site: the site builds from a release alone" (effort L, P2). A1–A3 are done (v0.27.0.0, 4705fb3). The TODO's done criterion is: an offline build from a downloaded release SQLite, with no report JSON present, produces the same site as today's build. The dev-view API dumps are exempt.
 
+**Status (2026-11-10):** the order of slices 2 to 11 against the DESIGN.md rollout is decided in `docs/plans/render-layer-and-order.md`. Its order table and L1 to L5 win over the slice map below where they differ:
+- each page group is moved and ported (strict oracle), then restyled in a separate PR;
+- slice 11 dissolves into per-page moves and a closing PR;
+- slice 2 loses the catalog page (cut in step 0) and builds `weekly.py`;
+- position order is a slice 5 store addition;
+- the vote outcome and Abweichler count are settled before slice 2;
+- the content compare script for restyles is written early, a departure from D4.
+
 **Status (2026-11-06):** the v1 scope review (`docs/plans/v1-scope-review.md`) requires slices 2 to 11 before the public site and none for the data release. D8: no AI summaries in v1, so slice 5 adds no `summaries` table. D9: as recommended. D10: both dumps dropped; slice 7 first checks no needed field exists only in the dump. Fakt der Woche is off the v1 site, so slice 3 drops its gap notes rather than moving them.
 
 **Status (2026-11-04):** a re-scope to a static site generator was reviewed and **held by the owner** (ledger R17, part "A4 re-scope for a new frontend" near the end of this file): design pass, chart prototype and a go/no-go come first (TODOS.md "Decide the frontend stack"). Slice 1 has since shipped in Python (#133, v0.32.0.0). **The go/no-go ended in no-go on 2026-11-04 (`docs/plans/frontend-go-no-go.md`), so R10 to R16 are not applied and A4 continues in Python.**
@@ -135,12 +143,12 @@ Sibling TODOs that a slice needs are listed under **Needs**. A slice may not sta
 | 3 | Acquisition state: dossier vote-panel status copy, profile notice, facts gap notes (drop `completeness_from_entries`), publication manifest and `readiness` | TODOS "Typed completeness gaps", then "Persist per-sitting acquisition state (`protocol_acquisition`)", which this slice implements | `protocol_acquisition`, validation counts and warnings |
 | 4 | Dossier vote panels and the puls votes card; the single online dossier write (T0.3) | 1, 3 | `vote_heading`, member faction as printed |
 | 5 | Dossiers (rest): speeches, Beiträge, Drucksachen, positions, AI summaries | TODOS "One module that counts Reden and Beiträge", D8 | paragraphs, role text, per-item document order, position-to-item links, `summaries` + receipts |
-| 6 | `puls.html` (radar, week comparison, topic rows) | 5 (Reden module, summaries) | probably none |
+| 6 | `puls.html` (radar, week comparison, topic rows) | 5 (Reden module, summaries) | none of its own: it adopts `weekly.py` from slice 2 and the position order and position-to-item links from slice 5 (`render-layer-and-order.md` L4) |
 | 7 | Bills pages and `data/bills.json` | 5, D10 | none expected |
 | 8 | `sources.html`, the remaining manifest inputs | 2, 3 | none expected |
 | 9 | Export as its own module `export(store, out_dir) -> manifest`; `has_page` from the store | TODOS "One Persons module", plus the Reden module | `has_page` computed from the registry |
 | 10 | Release-only build: `--from-release <file.sqlite[.gz]>` (a proposed flag) | 1–9 | none |
-| 11 | File split: the renderers leave `build_dip_pulse_site.py` | 10 | none |
+| 11 | File split: the renderers leave `build_dip_pulse_site.py`. Since 2026-11-10 this is done per page group, before each port, plus a closing PR (`render-layer-and-order.md` L1) | none for the per-page moves; all for the closing PR | none |
 
 **Slice 10 in detail:**
 - gunzip into the private staging dir;

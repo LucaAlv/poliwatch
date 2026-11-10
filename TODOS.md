@@ -27,8 +27,14 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 7. "Public repository: follow-ups".
 
 **Stage 2: the public site.** Daily view plus one analysis.
-1. "Split the dataset from the site" (A4): slices 2 to 11, all before going public. Later slices are in `docs/plans/a4-site-from-release.md`. Main is at schema 11 and export format 16, so the next slice takes the numbers after those. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
-2. "Apply DESIGN.md to the site" and "Apply the v1 surface list". Order against A4 is for the architecture session.
+1. "Split the dataset from the site" (A4), "Apply DESIGN.md to the site" and "Apply the v1 surface list", in the order of `docs/plans/render-layer-and-order.md` (decided 2026-11-10):
+   - step 0, the surface cuts;
+   - step 1, the shared layer (`scripts/render/`, one stylesheet, fonts, page shell);
+   - step 2, the pilot restyle of `votes/index.html`;
+   - then each page group as move and port (the A4 slice, strict oracle), then restyle (content oracle), never both in one PR.
+
+   Slice 11 dissolves into the per-page moves and a closing PR. All of it comes before going public. Slice details are in `docs/plans/a4-site-from-release.md`. Main is at schema 11 and export format 16, so the next slice takes the numbers after those. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
+2. "Persist or prove the vote outcome and Abweichler count", before slice 2.
 3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 59.7%: check it before calling the analysis good enough.
 4. Abstimmungen: "B4 extractive fallback: finish validation locally" and the rest of "Abstimmungen for the daily view".
 5. "Site hosting plan": a German host with SSH, provider to pick; `generation_file_href` changes; `data/` is not deployed wholesale; the deploy gate. Then the Impressum inputs and Datenschutz values.
@@ -182,6 +188,12 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 **What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, and its `facts` tables out of the release. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
 
 **Why:** Decisions Q5, Q6, Q7, Q10.
+
+**Order (2026-11-10, `docs/plans/render-layer-and-order.md`):**
+- The page cuts (`api-sitzungen.html`, `settings.html`, the Fakt pages and their references, the `sources.html` sitting list) are step 0, before any port or restyle. That PR edits the same regions of `build_dip_pulse_site.py` as the `facts` tables leaving the release, which stays with the release work, so land one first and rebase the other.
+- The nav change comes with the new page shell (step 1).
+- The "Erfasste Quelldaten" block goes in slice 7.
+- The Daten page comes at step 10.
 
 **Effort:** M
 **Priority:** P2
@@ -958,12 +970,35 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Settle while applying:**
 - **Fonts without a package manager.** The `@fontsource` packages are a one-time download source. Commit the five WOFF2 files (D-DIN Condensed Bold; Atkinson Next variable, latin and latin-ext; Atkinson Mono 400 and 700) and the licence texts, with no `package.json`.
-- **Stale stylesheet.** Put a content hash or version in the stylesheet's URL, so new HTML never pairs with a cached old file.
+- **How and in what order (decided 2026-11-10).** `docs/plans/render-layer-and-order.md`:
+  - L2 settles the shared layer: package `scripts/render/`, a stylesheet whose token blocks are generated from DESIGN.md, hashed asset names (this replaces the stale-stylesheet item that stood here), the page shell and the components.
+  - L5 settles tests: `tests/_page.py`, stylesheet tests, the content compare for restyle PRs, and browser checks ported to `data-*` hooks.
+  - The pilot (`votes/index.html`) keeps today's content. The strip and counts on vote rows, the per-vote pages and the Vote lead wait for states (a) to (g) above.
+  - Until slice 10, the Stand line's release slot reads "lokaler Build".
 - **Reviews until this lands.** The `CLAUDE.md` rule to flag UI that does not match `DESIGN.md` means new or changed UI. Existing pages are this entry, not findings.
 
 **Effort:** L
 **Priority:** P2
-**Depends on:** None
+**Depends on:** The shared layer, step 1 of `docs/plans/render-layer-and-order.md`
+
+### Persist or prove the vote outcome and Abweichler count
+
+**What:**
+- **Three definitions exist today:**
+  - The site computes a vote's outcome (`derive.vote_outcome`) and Abweichler count (`derive.vote_abweichler_count`, `derive.py:729`) at render time.
+  - The release defines the outcome as SQL (`docs/project-documentation.md:648-657`).
+  - The release defines the Abweichler count as recipe `r3-abweichler` (`build_dip_pulse_site.py:3580`, tested by `tests/test_mehrheitsvotum.py:163`).
+- **Choose one:**
+  - Persist both as columns and point the SQL snippet and the recipe at them.
+  - Or keep the derive functions and prove on the reference store that they equal the SQL and the recipe on every vote.
+- **Never a third definition.** `vote_abweichler_count` returns None unless every group is complete and covers the total, so compare that case first.
+- **Report.** Old and new values of any figure that moves.
+
+**Why:** principle 6 and `docs/plans/render-layer-and-order.md` L4. The Vote lead on Home and Aktuell reads the outcome, and the landing page is ported in slice 2.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None. Needed before A4 slice 2
 
 ### Design hand-over leftovers
 
