@@ -20,6 +20,12 @@ Daher zählt die Exporttabelle `speeches` nur Reden; ähnlich markierte XML-Elem
 
 Das schließt beliebige Anhangs-Reden und §31-Erklärungen aus; nur explizit identifizierte, quellengestützte Einreichungen werden separat als `zu_protokoll` geführt.
 
+Der Anlagentitel entscheidet: „Zu Protokoll gegebene Rede(n)“, auch mit dem Zusatz „zur Beratung“ (18/133, 18/134). Draußen bleiben §31-Erklärungen, auch die zwei in 19/115, deren zweiter Textblock in Anlage 3 nur „zu der Abstimmung über …“ heißt, und der „Neudruck eines Redebeitrages“ (19/35, 19/45): Er druckt eine Rede der Sitzung davor erneut und gehört zu ihr.
+
+Zwei Sitzungen drucken Reden ohne umschließendes `<tagesordnungspunkt>`: 26 in 18/49 und 3 in 18/44. Sie stehen unter dem Punkt, den das Inhaltsverzeichnis des Protokolls für sie nennt („Tagesordnungspunkt 1“, „Allgemeine Finanzdebatte …“, „Einzelplan 06“, „Zur Geschäftsordnung“). Andere Sitzungen führen dieselben Bezeichnungen als `top-id`. Fehlt der Eintrag im Inhaltsverzeichnis oder steht die Rede hinter einem Tagesordnungspunkt, wird die Sitzung abgelehnt, nicht geraten.
+
+Der Antrag von Stephan Brandner in 21/43 (`ID214301700`), den Bundesbeauftragten herbeizurufen, ist keine Rede: Er unterbricht die Rede von Götz Frömming und ist als Verfahrensbeitrag vermerkt. Frömmings Fortsetzung im selben `<rede>`-Element zählt zu dessen Rede `ID214301600`.
+
 > **Sprechrolle**: “The capacity in which a speaker gives one speech, e.g. Bundesminister, Staatsministerin, Bundesratsmitglied. It belongs to the speech, never to the person, and does not change the speaker's parliamentary membership.”
 
 Eine Rolle gehört also zur einzelnen Rede. Sie wird nicht als dauerhafte Eigenschaft der Person oder als Fraktion behandelt.

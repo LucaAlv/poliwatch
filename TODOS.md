@@ -15,7 +15,6 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 **Stage 1: the data release.** Needs no redesign, no site host and no A4 slice.
 1. "Coverage gate before the first data release". Today 716 of 801 sittings: WP 18 79%, WP 19 86%.
 2. Correctness P1s:
-   - "Reden the parser drops without refusing".
    - "Correct the WP 19/20 roll-call group misattributions (E4)", merged as #138; the repersist is owed.
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
@@ -93,30 +92,14 @@ Withholding works on the whole `<rede>`, as decided. After round 2's rules that 
 
 **Effort:** L (the per-unit change alone: human ~3–4 weeks / CC ~3–5 days, estimated; first stated as ~2 weeks / ~1–2 days)
 **Priority:** P1
-**Depends on:** "Reden the parser drops without refusing", and the other correctness P1s of stage 1
-
-### Reden the parser drops without refusing
-
-**What:** The cross-check against CPP-BT found `<rede>` elements in sittings we hold that have no stored unit, no refusal and no rule. Measured on the A3 store's 716 XML files, not re-measured on main's tip:
-- **29 Reden outside any TOP.** 18/49: 26 of 51, from Schäuble's budget 2015 speech on. 18/44: 3. `scripts/validate_dip_protocol.py:1373` and `:1920` read only `./sitzungsverlauf/tagesordnungspunkt`, and `scripts/audit_offline_turns.py:69` reads the same path, so the audits could not see them.
-- **16 zu Protokoll gegebene Reden.** 18/133: 5, 18/134: 11. The annex title reads "Zu Protokoll gegebene Reden zur Beratung[:]", and `validate_dip_protocol.py:1300` matches two exact titles.
-- **One Rede inside a TOP.** 21/43 `ID214301700`, Brandner, 501 tokens, with no unit and no known rule. Find out why first.
-- **Four annex units to classify:** 19/115 (2, "zu der Abstimmung über …"), 19/35 and 19/45 ("Neudruck eines Redebeitrages").
-
-Decide where a Rede outside a TOP belongs before fixing, in `/plan-eng-review`: `speeches.agenda_item_id` is required, a made-up TOP meets the agenda checks at `validate_dip_protocol.py:3455-3492`, and these Reden get no Drucksache or vote link. Report old and new Reden counts per sitting and Fraktion. The 85 excluded sittings were not scanned.
-
-**Why:** It breaks "refuse, never miscount". 18/49 counts as a complete sitting and shows half its Reden. Excluded on purpose and unaffected: 1,666 §31 declarations (ADR 0002).
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** None
+**Depends on:** the correctness P1s of stage 1
 
 ### Shared Redner-IDs: what the fix leaves open
 
 **What:** The fix of 2026-11-07 (`docs/stable-ids.md`, `docs/source-errors.md` E7; figures in `docs/plans/shared-redner-ids-old-new.tsv`) leaves these:
 1. **Dr. Carsten Sieling keeps two pages:** the MdB record `xml:11004157` (7 Reden, 62 Stimmen) and the empty DIP row `dip:1886` (MdBR, Bremen). This predates the fix: a DIP row with no party joins no name+party bucket. A reviewed merge names person keys, which are reissued in a fresh build, so it needs a stable way to name them.
 2. **Not scanned: the 85 excluded sittings.** The name check in `reconcile` scans them when they are included, and refuses until a shared id found there has an entry.
-3. **`999990109` and `11003609` have no entry,** because their second person sits in an annex and a speaker list that are not stored. If "Reden the parser drops without refusing" stores Tim Ostermann's annex unit of 19/234, the build refuses until `999990109` has an entry.
+3. **`999990109` and `11003609` have no entry,** because their second person sits in an annex and a speaker list that are not stored. The Reden fix of 2026-11-07 did not store Tim Ostermann's annex unit of 19/234; if a later rule does, the build refuses until `999990109` has an entry.
 4. **The name check does not catch two people who share a word,** such as a given name: a surname change looks the same.
 5. **C5 (Föhr/Mende) was not checked against the PDF.** Its six reviewed occurrences and its partition are unchanged, 0 of its units moved.
 6. **Untested call site:** the `registry.profile_follows_redner_id` clause in `reparse_cached_xml` (`scripts/build_dip_pulse_site.py`) is only tested through a direct call; deleting it keeps the suite green. Add a reparse test with two speakers under `999990127`, one with a profile, and a `11005304` control that keeps its profile owner's profile.
@@ -235,6 +218,67 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 **Depends on:** v1
 
 ## Daten
+
+### Give the agenda items of 18/49 and 18/44 adopted from the Inhaltsverzeichnis their DIP links
+
+**What:** Offline replay gives the adopted items an empty `api`, because the cached report holds no match for them. A fresh online acquisition alone fixes only "Tagesordnungspunkt 1" of 18/49, the one adopted item with a heading (the T_ paragraphs it takes from `<sitzungsbeginn>`). `enrich_with_api` matches positions through `position_matches_top`, which with no Drucksache in the XML falls back to `title_matches(top["heading"], titel)`, and that is False for an empty heading. "Zur Geschäftsordnung" (18/44), "Allgemeine Finanzdebatte" and "Einzelplan 06" (18/49) have heading "" [measured on the fixtures, 2026-11-09], so they would get activities by page range but no position. DIP's positions are there: 18/49 "1. Beratung" 4459–4544 and "1. Beratung (Einzelpläne)" 4459–4485 and 4485–4507; 18/44 "Geschäftsordnungsantrag auf Absetzung von der TO" 3927–3931.
+
+Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay only through the `by_redner_id` fallback (profiles other cached reports resolved), since the old report held no item for them; a fresh build resolves them itself. Not measured how many go without.
+
+**Why:** Until then these items show no Vorgang or Drucksache link. Reden are counted; only the links are missing.
+
+**Context:** Needs a matching rule for an adopted item first (for example `title_matches` against `top_id`, or the page range alone when the item's top_source is `inhaltsverzeichnis`), then re-acquisition: about 26 DIP requests per sitting, with the DIP key. `reparse_report_xml` keeps the items once they are in the report. Re-match from `api_records` offline only if the key stays out of reach. Report moved figures.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** a DIP key
+
+### Reden outside a TOP: what the ship review left open
+
+**What:** Latent findings of the 2026-11-09/10 ship review of `adopt_reden_outside_tops`; no current input reaches them.
+1. `no_api_fields()` restates the `api` shape `enrich_with_api` builds inline; a field added to one is missing from the other. Build both from one helper.
+2. A non-Rede element between two Reden in `<sitzungsverlauf>` is refused with "after a TOP", which names the wrong cause; the `open_block = None` reset can never take effect. Word the refusal for any element.
+3. An Inhaltsverzeichnis title ending in "-" with no `A_TOP` continuation is cut silently.
+4. Tests do not pin: only T_ paragraphs move from `<sitzungsbeginn>`, only for a Tagesordnungspunkt/Zusatzpunkt title (mutants "move all p", "no startswith" and "drop Zusatzpunkt" survive); `ZU_PROTOKOLL_ANNEX`'s end anchor (no negative title starts with a matching one). Value cards in the PR body of this fix.
+5. **A Rede listed in two Inhaltsverzeichnis blocks goes to the first one** (`blocks.setdefault(rid, block)`), with no refusal; Codex reproduced it on a doctored 18/49. Both adversarial passes ranked it first. Refuse when one rid maps to blocks with different titles.
+6. **`top_source` is read back from the XML attribute,** so a source element carrying it would pass the "after a TOP" refusal and count as adopted in `replay_top_map`. Track adopted TOPs by object, or strip the attribute from the source first.
+7. **The Politikfelder regression guard keys TOPs by index** (`build_dip_pulse_site.py`, `missing_tops`/`known_tops`). After renumbering, a store whose Vorgang cache lacks 18/2000 and 18/2001 would refuse naming the wrong item, and a real `not_fetched` regression on a moved item would go unseen. The A3 replay of 2026-11-10 did not trip it. Key the guard by (protocol, top_id, heading), or skip sittings whose item set changed.
+8. **A second replay can refuse** when an adopted item and a real item share a `top_id` and an empty heading and the adopted one has no Reden ("ambiguous or missing source TOP"). Match on `top_source` too. Not the case in 18/44 or 18/49.
+9. **`reparse_report_xml` leaves stale fields:** `xml_top_fields` omits a falsy `top_source`, so a stale flag is never cleared, and `validation_summary.xml_drucksache_count`/`tops_with_xml_drucksachen` are not refreshed after T_ paragraphs move. Neither is displayed.
+10. **Replay and a fresh build can attach votes differently** on an adopted item that now holds a Drucksache (18/49 item 1 holds 18/2000 and 18/2001): replay keeps `votes: []`. No roll-call vote touches them today.
+11. **An annex title not seen yet still drops its Reden silently.** The per-sitting unit count of "Coverage gate before the first data release" step 2 is what closes this class.
+
+**Why:** Each is a wrong refusal message or an unguarded rule that a later edit could break without a failing test.
+
+**Context:** `scripts/validate_dip_protocol.py` `adopt_reden_outside_tops`, `no_api_fields`, `ZU_PROTOKOLL_ANNEX`; tests in `tests/test_reden_outside_tops.py`, `tests/test_written_top_association.py`.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### A repeated Inhaltsverzeichnis title loses the page of Reden
+
+**What:** `parse_toc` keys blocks by title, so of two blocks with one title only the last survives and the first block's `rid_pages` are lost. 87 of the 716 XML files repeat a title. 1,459 of 54,718 stored Reden in 36 sittings have no `source_page` [measured on the A3 reports, 2026-11-07]; the mechanism was read on 18/44, where 13 Reden of "Tagesordnungspunkt II (Fortsetzung)" have none, and the other sittings were not checked one by one.
+
+**Why:** A Rede with no page has no citation and its TOP no page range, which DIP's position matching needs.
+
+**Context:** `validate_dip_protocol.py` `parse_toc`, read by `parse_protocol_xml` for `rid_pages`. Merge the blocks' `rid_pages`, or read them apart from the title key. Report moved figures: TOPs that gain a range can gain DIP positions on a fresh build.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Which text stands for a "Neudruck eines Redebeitrages"
+
+**What:** 19/35 reprints a Rede of Birgit Malsack-Winkemann from 19/34 (`ID193402300`), 19/45 one from 19/44. Both stay out of the store, so the original is what counts. The reprint is not a small correction: the texts of 19/34 and 19/35 match at a ratio of 0.65 [measured: `difflib`], and the order of arguments changes.
+
+**Why:** A reader citing the 19/34 Rede gets the text the Bundestag later replaced, with no note. 19/44 is among the excluded sittings, so that original is not held at all.
+
+**Context:** Owner decision: keep the first print, show the reprint as the text, or keep both. Other reprint titles ("Neudruck: Antwort", "Technisch bedingter Neudruck der zu Protokoll gegebenen Rede") hold no `<rede>` in the 716 files and were not read.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** the coverage gate, for 19/44
 
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
@@ -1801,6 +1845,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Reden the parser drops without refusing: v0.36.0.0, 2026-11-10, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
 - Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
 - Unmatched roll-call votes never reach the report (`sitting_votes`): fixed by v0.22.0.0 (#109); checked 2026-11-05 on a clone of `~/agent-runs/a3/full` repersisted from main: 619 votes, 63 with no TOP, 41 dossiers with "TOP nicht zugeordnet"

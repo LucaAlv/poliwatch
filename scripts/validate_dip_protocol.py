@@ -934,6 +934,54 @@ def mark_presidium_fraktionsreden(root: ET.Element) -> None:
                 name.remove(name.find("rolle"))
 
 
+def adopt_reden_outside_tops(root: ET.Element) -> None:
+    """18/49 and 18/44 print Reden directly under ``<sitzungsverlauf>``: the source
+    lost the ``<tagesordnungspunkt>`` around them. The Inhaltsverzeichnis still names
+    each one's item ("Einzelplan 06", "Zur Geschäftsordnung"), the labels other sittings
+    use as ``top-id``. Each run in one block is wrapped in place under that label and
+    marked ``top_source``; a TOP the chair called in ``<sitzungsbeginn>`` moves in with
+    the run after it. A Rede with no entry, or after a TOP, is a shape no source has
+    shown yet: refused, never placed by guess.
+    """
+    verlauf = root.find("sitzungsverlauf")
+    if verlauf is None or verlauf.find("rede") is None:
+        return
+    blocks: dict[str, ET.Element] = {}
+    for block in root.findall("./vorspann/inhaltsverzeichnis/ivz-block"):
+        for xref in block.findall(".//xref"):
+            if xref.get("rid"):
+                blocks.setdefault(xref.get("rid"), block)
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    arranged: list[ET.Element] = []
+    open_block = None
+    for child in list(verlauf):
+        verlauf.remove(child)
+        if child.tag != "rede":
+            arranged.append(child)
+            open_block = None
+            continue
+        rid = child.get("id")
+        if any(c.tag != "sitzungsbeginn" and c.get("top_source") is None for c in arranged):
+            raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, after a TOP")
+        block = blocks.get(rid)
+        title = elem_text(block.find("ivz-block-titel")) if block is not None else ""
+        if not title:
+            raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, with no Inhaltsverzeichnis entry")
+        if block is not open_block:
+            if title.endswith("-"):
+                title = title[:-1] + elem_text(block.find("p[@klasse='A_TOP']"))
+            top = ET.Element("tagesordnungspunkt", {"top-id": title.rstrip(": "), "top_source": "inhaltsverzeichnis"})
+            if arranged and arranged[-1].tag == "sitzungsbeginn" and title.startswith(("Tagesordnungspunkt", "Zusatzpunkt")):
+                for paragraph in arranged[-1].findall("p"):
+                    if (paragraph.get("klasse") or "").startswith("T_"):
+                        arranged[-1].remove(paragraph)
+                        top.append(paragraph)
+            arranged.append(top)
+            open_block = block
+        arranged[-1].append(child)
+    verlauf.extend(arranged)
+
+
 def presidium_marker(redner: ET.Element | None) -> bool:
     if redner is not None and redner.get("sitzungsleitung") == "1":
         return True
@@ -1289,6 +1337,9 @@ def contribution_unit(kind: str, rede_id: str | None, parent: str | None, sequen
             "paragraph_count": len(paragraphs), "snippet": text[:240], "unattributed_char_count": 0}
 
 
+ZU_PROTOKOLL_ANNEX = re.compile(r"zu protokoll gegebene reden?(?: zur beratung:?)?")
+
+
 def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                          rid_pages: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Only explicitly typed written submissions; an uncertain TOP stays null."""
@@ -1297,9 +1348,10 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
     for top in agenda_items:
         tops_by_id.setdefault(clean_text(top.get("top_id") or ""), []).append(top)
     for annex_index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1):
-        if clean_text(block.get("anlagen-typ") or "").casefold() not in {
-            "zu protokoll gegebene reden", "zu protokoll gegebene rede"
-        }:
+        # Other annex titles stay out on purpose. §31 declarations (ADR 0002), also
+        # 19/115's second block, which lost the words "nach § 31 GO"; a "Neudruck eines
+        # Redebeitrages" (19/35, 19/45) repeats a Rede of the sitting before.
+        if not ZU_PROTOKOLL_ANNEX.fullmatch(clean_text(block.get("anlagen-typ") or "").casefold()):
             continue
         annex_pages = {}
         current_page = None
@@ -1357,6 +1409,7 @@ def xml_source_sha256(xml_text: str) -> str:
 
 def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
     root = ET.fromstring(xml_text)
+    adopt_reden_outside_tops(root)
     toc = parse_toc(root)
     rid_pages: dict[str, dict[str, Any]] = {}
     for block in toc.values():
@@ -1616,6 +1669,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             {
                 "index": index,
                 "top_id": top.attrib.get("top-id"),
+                "top_source": top.get("top_source"),
                 "heading": heading,
                 "question_formats": sorted(top_format.formats),
                 "xml_turn_diagnostics": diagnostics,
@@ -3431,6 +3485,7 @@ def xml_top_fields(top: dict[str, Any]) -> dict[str, Any]:
     built and when a cached one is re-parsed from its cached XML, so the two
     cannot disagree."""
     return {
+        **({"top_source": top["top_source"]} if top.get("top_source") else {}),
         "top_id": top["top_id"],
         "heading": top["heading"],
         "page_range": top["page_range"],
@@ -3531,7 +3586,11 @@ def check_xml_belongs_to_report(
 def replay_top_map(report: dict[str, Any], parsed_xml: dict[str, Any]) -> dict[int, dict[str, Any]]:
     """Prove one-to-one source association before changing enrichment fields."""
     old = report.get("agenda_items") or []
-    new = parsed_xml["agenda_items"]
+    # A TOP adopted since this report was built (adopt_reden_outside_tops) has no item
+    # in it yet: reparse_report_xml adds it. Any other change to the set still refuses.
+    adopted = {clean_text(item.get("top_id") or "") for item in old if item.get("top_source")}
+    new = [top for top in parsed_xml["agenda_items"]
+           if not top.get("top_source") or clean_text(top["top_id"]) in adopted]
     if len(old) != len(new):
         raise ValueError("agenda item set changed; reacquire the sitting report")
     remaining = list(new)
@@ -3566,6 +3625,12 @@ def replay_top_map(report: dict[str, Any], parsed_xml: dict[str, Any]) -> dict[i
     return result
 
 
+def no_api_fields() -> dict[str, Any]:
+    """The ``api`` of an agenda item that matched nothing in DIP."""
+    return {"positions": [], "activities_count": 0, "activities": [], "activities_first": [],
+            "linked_drucksachen": [], "raw": {"positions": [], "activities": []}}
+
+
 def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> None:
     """Replace what a cached report holds of the XML-derived fields (heading,
     Reden, Beiträge; see ``xml_top_fields``) with what the current parser reads
@@ -3597,6 +3662,17 @@ def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> No
             ):
                 del item["llm_summary"]
                 dropped += 1
+    if len(by_index) != len(parsed_xml["agenda_items"]):
+        # Newly adopted TOPs: the sitting's order and numbering a fresh build gives.
+        # Their DIP fields stay empty until the sitting is acquired again.
+        items = {id(by_index[item["index"]]): item for item in report["agenda_items"]}
+        report["agenda_items"] = [
+            items.get(id(top)) or {**xml_top_fields(top), "api": no_api_fields(), "votes": []}
+            for top in parsed_xml["agenda_items"]
+        ]
+        for item, top in zip(report["agenda_items"], parsed_xml["agenda_items"]):
+            item["index"] = top["index"]
+        report.setdefault("validation_summary", {})["xml_top_count"] = len(parsed_xml["agenda_items"])
     generation = report.get("summary_generation")
     if dropped and isinstance(generation, dict) and "available_top_count" in generation:
         generation["available_top_count"] = sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary"))
