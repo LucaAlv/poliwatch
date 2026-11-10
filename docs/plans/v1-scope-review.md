@@ -179,6 +179,8 @@ Draft for `PRODUCT.md:58`, staying on line 58 because other files cite it (E19):
 
 The reason sentence is drafted from the go/no-go's cost list. The owner should confirm it is the real reason.
 
+**Applied 2026-11-10** in #141, as drafted, but under the "Capabilities and Constraints" heading rather than on line 58. Line-number citations of `PRODUCT.md:58` in the review records below and in the A4 plan describe the file as it was then. The ledger row records what is still open.
+
 ## Decision ledger
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
@@ -199,7 +201,7 @@ The reason sentence is drafted from the go/no-go's cost list. The owner should c
 | Q14 owner | `PRODUCT.md:44`, E14 | term lists confirmed over a topic model; neutrality review gates any published term series | none | approved | owner in chat, 2026-11-06: "Yes, term lists". |
 | Q15 owner | E15 | no decision needed: already public | none | closed by correction | owner in chat, 2026-11-06: "this repo is public on github". My brief was wrong. Follow-up for the roadmap: fix the stale claims, turn on private vulnerability reporting, add `repository-code` to `CITATION.cff`. |
 | Q16 owner | TODOS, DESIGN.md | five-reader test before launch, after the rollout | none | approved | owner in chat, 2026-11-06: "Test before launch" (option B over testing before the rollout). The pass rule and the separate researcher check of the data release are not decided by this answer. |
-| Q17 owner | E19, TODOS "Design hand-over leftovers" | stale | draft | unresolved | none yet |
+| Q17 owner | E19, TODOS "Design hand-over leftovers" | draft applied to `PRODUCT.md` "Stack" | none | applied, reason unconfirmed | Applied in #141 (47b4115), 2026-11-10, with no owner answer on record. The owner still has to confirm the reason sentence ("A public record has to stay buildable and auditable for years by a small operator"). The paragraph did not stay on line 58: cite it by its heading, `PRODUCT.md` "Capabilities and Constraints", "Stack". |
 
 ## What this means for the design and architecture sessions
 
