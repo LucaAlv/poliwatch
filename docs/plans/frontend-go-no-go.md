@@ -2,7 +2,7 @@
 
 Status: **decided: no-go, by the owner in chat on 2026-11-04,** after opening all three versions. The criteria were approved before anything was built.
 
-Step 2 and 3 of TODOS.md "Decide the frontend stack". The question: is a static site generator worth reversing `PRODUCT.md:58` (stdlib only, no package manager, framework or build toolchain), judged on the one thing it was meant to deliver, interactive long-term charts?
+Step 2 and 3 of TODOS.md "Decide the frontend stack". The question: is a static site generator worth reversing the stack rule in `PRODUCT.md` (stdlib only, no package manager, framework or build toolchain), judged on the one thing it was meant to deliver, interactive long-term charts? The rule sits under "Capabilities and Constraints", "Stack"; it was line 58 when this was written.
 
 The owner decides. The prototype produces evidence and a recommendation.
 
@@ -74,7 +74,7 @@ Change-task times come from one agent working in sequence, so whichever arm goes
 
 **A tie or a narrow win is no-go.** Switching has fixed costs that one chart cannot show: ADR 0005, npm and its upkeep, moving about 5,000 pages, 357 test functions in the render test files. The generator has to clearly earn them.
 
-**If no-go:** the better Python arm becomes the way charts are built, `PRODUCT.md:58` stays (or gains one named exception if arm B wins, since a vendored file is still a dependency), and "Apply DESIGN.md to the site" carries on in Python.
+**If no-go:** the better Python arm becomes the way charts are built, the stack rule in `PRODUCT.md` stays (or gains one named exception if arm B wins, since a vendored file is still a dependency), and "Apply DESIGN.md to the site" carries on in Python.
 
 ## What this cannot measure
 
@@ -148,7 +148,7 @@ Line counts include the shared `tip.js` for A and C (2 lines per task). The fixe
 **Owner's decision:** no-go accepted, in chat, on 2026-11-04.
 
 **What follows**
-- `PRODUCT.md:58` stays: stdlib only, no package manager, framework or build toolchain. No ADR 0005.
+- The stack rule in `PRODUCT.md` ("Capabilities and Constraints", "Stack") stays: stdlib only, no package manager, framework or build toolchain. No ADR 0005.
 - Charts are built as in arm A: small Python modules drawing SVG at build time, with a small script for the tooltip.
 - The frontend plan in the A4 plan (R10 to R16) and outside-voice findings O4 to O11 are not applied. A4 continues as planned, in Python.
 - **Revisit** when a real chart cannot reasonably be hand-drawn. Compare a library then, starting from arms B and C.

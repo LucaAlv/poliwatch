@@ -1017,17 +1017,16 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 ## Publication
 
-### Site hosting plan for the 2.5 GB generated site
+### Site hosting plan
 
-**What:** Make the HTML deployable under a capped static host (e.g. GitHub Pages' 1 GB limit). Measured 2026-09-19: 2.5 GB total; `data/` 1.4 GB (`plenarprotokoll-*.json` 607 MB, `bills.json` 386 MB, `exports/` 91 MB); `protocols/` 584 MB for 285 dossiers. **Without `data/` the site is still 1.11 GB**, so a deploy profile that only excludes `data/` does not fit; the dossiers have to shrink too. Pieces: (a) extend `--data-base-url`-style externalisation to the `data/plenarprotokoll-*.json` links on `puls.html`/dossiers and to `bills.json` (the base-URL pattern exists for the two export files); (b) shrink dossiers — see "Move the hidden dev-view API dump" below: ~952 KB of hidden markup per dossier × 285 ≈ 270 MB, so rendering it into a separate on-demand file roughly halves `protocols/`; (c) or pick a host without the cap.
+**What:** Pick the host and make the pages deployable to it. Decided 2026-11-06 (`docs/plans/v1-scope-review.md` Q8): the pages go to a German host with SSH; the data files go to GitHub Releases, and stable releases also to Zenodo. Open: the provider and plan (check prices on the vendor's own page; scope review E16 lists secondary figures only). Pieces:
+- (a) Pick the provider.
+- (b) The link scheme. `data/` is not deployed wholesale, so every page link into `data/` either points at a release asset or goes. `generation_file_href` changes, because GitHub release assets are flat (see "Write the release script", open decision (b)).
+- (c) The deploy step: copy the output without `data/` to the host, plus the deploy gate below.
 
-**Measured after A3 (2026-10-29, `~/agent-runs/a3/full`, 716 Sitzungen):**
-- 5.4 GB total; `data/` 4.1 GB (store 848 MB, XML 578 MB, `exports/` 426 MB).
-- **Without `data/` the site is 1.35 GB** in 6,750 HTML files: `bills/` 664 MB, `protocols/` 519 MB, `abgeordnete/` 139 MB.
-- Before A3 (`baseline`, 290 Sitzungen): 2.3 GB total and 616 MB without `data/`.
-- The rendered pages have more than doubled, and the cap problem is now about the pages, not only `data/`.
+**Size is no longer the problem.** This item started as fitting a capped static host such as GitHub Pages (1 GB). Measured after A3 (2026-10-29, `~/agent-runs/a3/full`, 716 Sitzungen): 5.4 GB total, `data/` 4.1 GB, and 1.35 GB of pages in 6,750 HTML files (`bills/` 664 MB, `protocols/` 519 MB, `abgeordnete/` 139 MB). Two decisions shrink the pages to about 670 MB (scope review E8): both raw dumps are dropped (Q7, 633 MB) and the restyled pages share one stylesheet instead of inline `<style>` (`docs/plans/render-layer-and-order.md` L2, 96 MB). The only German host the scope review priced, Hetzner Webhosting, offers 10 to 300 GB, with SSH from plan L (E16, secondary figures). So hosting needs no size work, provided the chosen plan has room for about 1 GB.
 
-**Why:** The Daten page and `--data-base-url` make the *data* shippable to a public audience; the *site* itself cannot go to a capped host today. Both outside voices in the `/autoplan` review flagged this; the user's go/no-go framing ("ship to a larger audience in a few weeks") depends on the site being public, not only the download.
+**Why:** The site cannot go public without a host, and the host decides what the Datenschutz page has to say, so it comes before the Impressum and Datenschutz values (scope review Q8).
 
 **Deploy gate (eng review of `docs/plans/impressum-datenschutz-licence.md`, D6, 2026-11-01):** the deploy step this item adds must refuse to publish while any generated page carries `data-operator-missing`, and must name the missing fields. That marker means the Impressum or Datenschutz page still shows "Angabe folgt." where the operator's address, e-mail, host or supervisory authority belongs (§ 18 MStV).
 
@@ -1209,7 +1208,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 Until then both pages render these values as `data-operator-missing` placeholders. Also open for the lawyer: § 25 TDDDG on the two localStorage entries (ADR 0003, question 8).
 
-Done when no generated page carries `data-operator-missing`. The deploy gate in "Site hosting plan for the 2.5 GB generated site" refuses to publish until then.
+Done when no generated page carries `data-operator-missing`. The deploy gate in "Site hosting plan" refuses to publish until then.
 
 **Why:** Name and address are required for any non-private Telemedium (§ 18 Abs. 1 MStV). The DIP terms require naming the source and marking changes on redistribution. Hosting can't ship without either.
 
@@ -1342,7 +1341,7 @@ Since v0.30.0.0 every export carries `LICENSE-DATA.md`, and items 6 and 10 of "R
   - a host the site can link to
 - Open owner decisions:
   - (a) The version scheme is a default. Change `release_version.py` to switch to semver.
-  - (b) The hosting layout. GitHub release assets are flat, but the site links `<base><generation>/<file>`. So no GitHub release URL works as `--data-base-url` until the site's link scheme (`generation_file_href`) or the host changes. The dry run says so. See "Site hosting plan for the 2.5 GB generated site".
+  - (b) The hosting layout. GitHub release assets are flat, but the site links `<base><generation>/<file>`. So no GitHub release URL works as `--data-base-url` until the site's link scheme (`generation_file_href`) or the host changes. The dry run says so. See "Site hosting plan".
   - (c) `docs/designs/daten-page.md` planned `gh release upload --clobber`, which overwrites. This script creates each version once and never overwrites.
 - Only this script enforces immutability. Anyone with write access can still edit a GitHub release.
 
@@ -1350,7 +1349,7 @@ Since v0.30.0.0 every export carries `LICENSE-DATA.md`, and items 6 and 10 of "R
 
 **Effort:** S (the run itself, once the dependencies are settled)
 **Priority:** P1
-**Depends on:** "Settle the roll-call source for redistribution" (before votes are released); a host from "Site hosting plan for the 2.5 GB generated site"
+**Depends on:** "Settle the roll-call source for redistribution" (before votes are released); a host from "Site hosting plan"
 
 ### Release pipeline: deferred /ship review findings (lane/release, 2026-10-31)
 

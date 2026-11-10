@@ -185,7 +185,7 @@ The reviewer reproduced arm A at 620 rows (byte-identical, 407,137 bytes). It al
 Reading:
 - Both arms make escaping the default, which is Jinja's main argument against 597 manual calls.
 - The change task costs the same (2.5 % apart).
-- Jinja2 needs a package install step, against `PRODUCT.md:58` "no package manager", and an exception the owner would have to name. Its other offers, template inheritance and files non-programmers edit, do not apply to one operator and agents.
+- Jinja2 needs a package install step, against `PRODUCT.md` "Stack" ("no package manager"), and an exception the owner would have to name. Its other offers, template inheritance and files non-programmers edit, do not apply to one operator and agents.
 - The entity difference is not a real obstacle, since `finalize=` removes it, so it is no argument either way.
 - The page is flat. Several levels of nested conditions, where Jinja's `{% if %}` reads better than assembling optional fragments, were not tested; the pilot gate checks it.
 
@@ -197,7 +197,7 @@ Reading:
 
 Options:
 - **A (decided).** The stdlib kit, no new dependency.
-- **B.** Jinja2 and MarkupSafe as the first named exception to `PRODUCT.md:58`.
+- **B.** Jinja2 and MarkupSafe as the first named exception to `PRODUCT.md` "Stack".
 - **C.** Python 3.14 template strings (PEP 750). They need the floor raised from 3.11 to 3.14, dropping two CI versions, and they give only a `Template`: the escaping renderer is still ours. Deferred. To keep the move mechanical, every template stays a literal and every value a named keyword argument, so `Template("…{x}").render(x=x)` can later become `html(t"…{x}")`.
 
 **Answer (owner, 2026-11-10):** the delegation quoted under L1. The review agreed with changes, applied above.
