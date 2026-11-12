@@ -204,7 +204,9 @@ class ContributionTests(unittest.TestCase):
             else:
                 top.remove(target)
                 dip.ET.SubElement(root.find('sitzungsverlauf'), 'tagesordnungspunkt').append(target)
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'ID2019101000 marker 2'):
+            # A repeated <rede> id is refused by the raw inventory, before the reply rule reads it.
+            expected = 'ID2019101100 occurs twice' if mutation == 'duplicate' else 'ID2019101000 marker 2'
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, expected):
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_shortened_source_surname_requires_unique_local_candidate(self):
@@ -248,7 +250,9 @@ class ContributionTests(unittest.TestCase):
                 top.remove(target)
                 other = dip.ET.SubElement(root.find('sitzungsverlauf'), 'tagesordnungspunkt', {'top-id': 'other'})
                 other.append(target)
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'ID213505100 marker 2'):
+            # A repeated <rede> id is refused by the raw inventory, before the reply rule reads it.
+            expected = 'ID213505200 occurs twice' if mutation == 'duplicate' else 'ID213505100 marker 2'
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, expected):
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_resumption_cannot_attach_to_an_unrelated_original_speaker(self):

@@ -43,6 +43,22 @@ CONTRIBUTION_KINDS = (
     FRAGESTUNDE_ANTWORT,
 )
 
+#: The status a whole ``<rede>`` of the source takes in the parser's reconciliation
+#: (``validate_dip_protocol.reconcile_reden``) when it is emitted as this kind;
+#: ``None`` is a Rede. Every Kind the parser can make of a whole ``<rede>`` needs a
+#: row here, or the sitting is refused; a new Kind adds its row.
+REDE_STATUS = {
+    None: "speech",
+    KURZINTERVENTION: "beitrag",
+    ERWIDERUNG: "beitrag",
+    BEFRAGUNG_FRAGE: "beitrag",
+    BEFRAGUNG_ANTWORT: "beitrag",
+    ZU_PROTOKOLL: "zu_protokoll",
+}
+#: Kinds that are never a whole ``<rede>``: a marker inside one (Zwischenfrage) or a
+#: Fragestunde turn, which stands outside any ``<rede>``.
+NOT_REDE_KINDS = frozenset({ZWISCHENFRAGE, FRAGESTUNDE_FRAGE, FRAGESTUNDE_ANTWORT})
+
 #: How the pages word a Kind: (singular, plural).
 KIND_LABELS = {
     KURZINTERVENTION: ("Kurzintervention", "Kurzinterventionen"),
@@ -525,7 +541,8 @@ def asker_candidates(redners: Any) -> dict[tuple[str, str], dict[str, ET.Element
     return candidates
 
 
-def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[str, ET.Element]] | None = None) -> tuple[list[Turn], int]:
+def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[str, ET.Element]] | None = None,
+                     counts: dict[str, int] | None = None) -> tuple[list[Turn], int]:
     """The Fragen and Antworten of a Fragestunde, in document order, and the
     number of turns left out because their marker names no one.
 
@@ -539,6 +556,10 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
     A marker with neither ``<rolle>`` nor ``<fraktion>`` names no one the parser
     can place (a guest, say): its paragraphs are no turn, and the caller reports
     how many markers lost text this way so the omission is counted, not silent.
+
+    ``counts``, when given, receives ``markers``, the turns opened by a marker, so
+    the caller can account for every marker of the source. A turn with no paragraph
+    is left out: the source printed a marker with no words.
     """
     items: list[dict[str, Any]] = []  # question blocks and turns, in order
     speaker = "leadership"
@@ -607,4 +628,6 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
                 if len(matches) == 1:
                     item["redner"] = next(iter(matches.values()))
         turns.append(Turn(item["kind"], item["redner"], item.get("announced"), item["paragraphs"]))
+    if counts is not None:
+        counts["markers"] = sum("announcement" not in item for item in items)
     return [turn for turn in turns if turn.paragraphs], unplaced

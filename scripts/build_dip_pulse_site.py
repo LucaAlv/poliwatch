@@ -1984,6 +1984,12 @@ def reparse_cached_xml(
         try:
             parsed = dip.parse_protocol_xml(path.read_text(encoding="utf-8"))
             dip.reparse_report_xml(report, parsed)
+        except dip.ReconciliationError as exc:
+            # Not a corrupt file: the parser left a <rede> of a valid XML without a status.
+            raise CachedReportError(
+                f"rede reconciliation failed for {document_number}: {exc}. The parser left a <rede> of {path} without a status; see docs/data-methods.md",
+                [document_number],
+            ) from exc
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
                 f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again",
