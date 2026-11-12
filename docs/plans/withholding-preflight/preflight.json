@@ -1,0 +1,3111 @@
+{
+  "parser": "/Users/luca/Projects/poliwatch/.claude/worktrees/agent-ad36903a450a80b08/scripts/validate_dip_protocol.py",
+  "parser_sha256": "4b0c6686f5329e868ea23b5d2a14341699395e62f8684dd336c64c433078fcec",
+  "speech_rule_version": 7,
+  "summary": {
+    "status": {
+      "parses once withheld": 71,
+      "parses, no refusal": 13,
+      "fetch failed": 1
+    },
+    "refusal_class": {
+      "located_nested_contribution": 71,
+      "fetch_rejected": 1
+    },
+    "located_markers_by_class": {
+      "located_nested_contribution": 107
+    },
+    "blockers_file": {
+      "rows": 103,
+      "sittings": 69,
+      "sitting_rede_pairs": 87,
+      "distinct_rede_ids": 86,
+      "rede_ids_under_two_sittings": [
+        "ID1802102900"
+      ]
+    },
+    "blockers_listed_sittings": 69,
+    "blockers_listed_parse_once_withheld": 68,
+    "blockers_listed_exact_match": [
+      "18/1",
+      "18/10",
+      "18/11",
+      "18/110",
+      "18/112",
+      "18/113",
+      "18/117",
+      "18/118",
+      "18/127",
+      "18/143",
+      "18/158",
+      "18/159",
+      "18/160",
+      "18/161",
+      "18/171",
+      "18/180",
+      "18/184",
+      "18/193",
+      "18/21",
+      "18/210",
+      "18/215",
+      "18/219",
+      "18/221",
+      "18/241",
+      "18/26",
+      "18/3",
+      "18/36",
+      "18/42",
+      "18/43",
+      "18/50",
+      "18/6",
+      "18/60",
+      "18/63",
+      "18/67",
+      "18/8",
+      "18/82",
+      "18/88",
+      "18/97",
+      "18/98",
+      "19/101",
+      "19/102",
+      "19/12",
+      "19/13",
+      "19/14",
+      "19/158",
+      "19/170",
+      "19/173",
+      "19/18",
+      "19/189",
+      "19/192",
+      "19/193",
+      "19/20",
+      "19/201",
+      "19/215",
+      "19/227",
+      "19/23",
+      "19/239",
+      "19/32",
+      "19/36",
+      "19/40",
+      "19/42",
+      "19/44",
+      "19/47",
+      "19/59",
+      "19/61",
+      "19/68",
+      "19/92"
+    ],
+    "blockers_listed_differ": {
+      "18/20": {
+        "status": "fetch failed",
+        "refusal_class": "fetch_rejected",
+        "blockers": {
+          "expected": 1,
+          "found": 0,
+          "missing": [
+            "ID1802102900 marker 2"
+          ],
+          "not_listed": []
+        }
+      },
+      "18/89": {
+        "status": "parses once withheld",
+        "refusal_class": "located_nested_contribution",
+        "blockers": {
+          "expected": 2,
+          "found": 4,
+          "missing": [],
+          "not_listed": [
+            "ID1808901500 marker 3",
+            "ID1808901500 marker 4"
+          ]
+        }
+      }
+    },
+    "flagged": {
+      "18/124": {
+        "status": "parses once withheld",
+        "refusal_class": "located_nested_contribution",
+        "error": null
+      },
+      "18/173": {
+        "status": "parses once withheld",
+        "refusal_class": "located_nested_contribution",
+        "error": null
+      }
+    },
+    "words_in_reden_parse_once_withheld": 4917684,
+    "withheld_reden": 90,
+    "withheld_words": 94707,
+    "withheld_words_by_year": {
+      "2013": 4714,
+      "2014": 19367,
+      "2015": 21383,
+      "2016": 14889,
+      "2017": 5704,
+      "2018": 14025,
+      "2019": 2311,
+      "2020": 7422,
+      "2021": 3990,
+      "2022": 902
+    },
+    "withheld_words_by_fraktion": {
+      "CDU/CSU": 62046,
+      "BÜNDNIS 90/DIE GRÜNEN": 11264,
+      "SPD": 8326,
+      "DIE LINKE": 6507,
+      "AfD": 3812,
+      "(keine)": 1890,
+      "FDP": 862
+    },
+    "withheld_share_median": 0.0169,
+    "withheld_share_max": 0.0842,
+    "sittings_with_moves_out": []
+  },
+  "sittings": {
+    "18/1": {
+      "date": "22.10.2013",
+      "words_in_reden": 2416,
+      "xml_sha256": "84495960f90626a19413a26c347578402707cbb13ac71f9b7b96a256a0b6869f",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1800100100": {
+          "markers": [
+            2
+          ],
+          "words": 26,
+          "speaker": "Volker Kauder",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/1 Tagesordnungspunkt 2: unresolved nested contribution at ID1800100100 marker 2"
+        }
+      },
+      "withheld_words": 26,
+      "withheld_share": 0.0108,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 11
+      }
+    },
+    "18/2": {
+      "date": "18.11.2013",
+      "words_in_reden": 30567,
+      "xml_sha256": "c0eadd9ee8aa13b2dcc122a1d45e9f81690ea6301d50c4f5b53d5f9400cc762f",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 24,
+        "zwischenfrage": 7
+      }
+    },
+    "18/3": {
+      "date": "28.11.2013",
+      "words_in_reden": 68158,
+      "xml_sha256": "cc21ce4f3c1f1e57b018f5575105f9a4ca34f96139dfc5ade4bbbe993263b463",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1800301600": {
+          "markers": [
+            2,
+            3
+          ],
+          "words": 1981,
+          "speaker": "Dorothee Bär",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/3 Tagesordnungspunkt 3: unresolved nested contribution at ID1800301600 marker 2"
+        },
+        "ID1800305900": {
+          "markers": [
+            3
+          ],
+          "words": 1320,
+          "speaker": "Paul Lehrieder",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/3 Tagesordnungspunkt 9: unresolved nested contribution at ID1800305900 marker 3"
+        }
+      },
+      "withheld_words": 3301,
+      "withheld_share": 0.0484,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 3,
+        "found": 3,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "fragestunde_antwort": 67,
+        "fragestunde_frage": 67,
+        "kurzintervention": 3,
+        "rede": 79,
+        "zwischenfrage": 12
+      }
+    },
+    "18/6": {
+      "date": "19.12.2013",
+      "words_in_reden": 23288,
+      "xml_sha256": "7ac1a6d1b75af2ef89a548acbef05416fa70a4cc62b8f3c66e03a59f6b229958",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1800602300": {
+          "markers": [
+            5
+          ],
+          "words": 1387,
+          "speaker": "Elisabeth Winkelmeier-Becker",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/6 Tagesordnungspunkt 14: unresolved nested contribution at ID1800602300 marker 5"
+        }
+      },
+      "withheld_words": 1387,
+      "withheld_share": 0.0596,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 30,
+        "zwischenfrage": 9
+      }
+    },
+    "18/8": {
+      "date": "16.01.2014",
+      "words_in_reden": 62208,
+      "xml_sha256": "dbbd7f83a6ccdecadd647742a26f062f193c686e7d2ce0690f8c82482fd94c9f",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1800803100": {
+          "markers": [
+            3
+          ],
+          "words": 1094,
+          "speaker": "Sonja Steffen",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/8 Tagesordnungspunkt 5: unresolved nested contribution at ID1800803100 marker 3"
+        }
+      },
+      "withheld_words": 1094,
+      "withheld_share": 0.0176,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 79,
+        "zwischenfrage": 5
+      }
+    },
+    "18/10": {
+      "date": "29.01.2014",
+      "words_in_reden": 57231,
+      "xml_sha256": "e2169bc77888a2898bab3b5098ff7984dd6d6958703461853f149810766f09a1",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1801002600:2": {
+          "markers": [
+            4
+          ],
+          "words": 741,
+          "speaker": "Julia Bartz",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/10 Tagesordnungspunkt 3: unresolved nested contribution at ID1801002600:2 marker 4"
+        }
+      },
+      "withheld_words": 741,
+      "withheld_share": 0.0129,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 44,
+        "zwischenfrage": 8
+      }
+    },
+    "18/11": {
+      "date": "30.01.2014",
+      "words_in_reden": 92194,
+      "xml_sha256": "871cc9fd1b6fd1bfccdbf34190ae83334ced04093fe60cbfa0234677d56e1c73",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1801101700": {
+          "markers": [
+            2
+          ],
+          "words": 187,
+          "speaker": "Hubertus Heil",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/11 Tagesordnungspunkt 1: unresolved nested contribution at ID1801101700 marker 2"
+        },
+        "ID1801105900": {
+          "markers": [
+            3,
+            6
+          ],
+          "words": 1958,
+          "speaker": "Jens Spahn",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/11 Tagesordnungspunkt 1: unresolved nested contribution at ID1801105900 marker 3"
+        }
+      },
+      "withheld_words": 2145,
+      "withheld_share": 0.0233,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 3,
+        "found": 3,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 3,
+        "rede": 92,
+        "zwischenfrage": 13
+      }
+    },
+    "18/20": {
+      "status": "fetch failed",
+      "refusal_class": "fetch_rejected",
+      "error": "not the XML of 18/20: root ('dbtplenarprotokoll', '18', '21')",
+      "blockers": {
+        "expected": 1,
+        "found": 0,
+        "missing": [
+          "ID1802102900 marker 2"
+        ],
+        "not_listed": []
+      }
+    },
+    "18/21": {
+      "date": "14.03.2014",
+      "words_in_reden": 36785,
+      "xml_sha256": "dd65832e189937d8595097643d40088dc7e004a25d666a148869874c7586a874",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1802102900": {
+          "markers": [
+            2
+          ],
+          "words": 325,
+          "speaker": "Matthias W. Birkwald",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/21 Tagesordnungspunkt 13: unresolved nested contribution at ID1802102900 marker 2"
+        }
+      },
+      "withheld_words": 325,
+      "withheld_share": 0.0088,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 3,
+        "rede": 38,
+        "zwischenfrage": 4
+      }
+    },
+    "18/26": {
+      "date": "03.04.2014",
+      "words_in_reden": 85277,
+      "xml_sha256": "5df22bb095add84e2b9de3746d9d3dd7bb7b7c4c488047550730dc3f1d1ab8b8",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1802600400": {
+          "markers": [
+            2
+          ],
+          "words": 1373,
+          "speaker": "Katrin Göring-Eckardt",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/26 Tagesordnungspunkt 3: unresolved nested contribution at ID1802600400 marker 2"
+        },
+        "ID1802603000": {
+          "markers": [
+            2,
+            3
+          ],
+          "words": 1484,
+          "speaker": "Stefan Müller",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/26 Tagesordnungspunkt 5: unresolved nested contribution at ID1802603000 marker 2"
+        },
+        "ID1802610500": {
+          "markers": [
+            2
+          ],
+          "words": 1619,
+          "speaker": "Katharina Dröge",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/26 Tagesordnungspunkt 16: unresolved nested contribution at ID1802610500 marker 2"
+        }
+      },
+      "withheld_words": 4476,
+      "withheld_share": 0.0525,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 4,
+        "found": 4,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "kurzintervention": 1,
+        "rede": 103,
+        "zu_protokoll": 5,
+        "zwischenfrage": 11
+      }
+    },
+    "18/29": {
+      "date": "09.04.2014",
+      "words_in_reden": 63966,
+      "xml_sha256": "c274310c497828f559a43ad52c0b58e65701328f5dd92d9bb4692f2baba74f43",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 47,
+        "zwischenfrage": 2
+      }
+    },
+    "18/36": {
+      "date": "22.05.2014",
+      "words_in_reden": 88597,
+      "xml_sha256": "da152cdc525dca9afe6057747f864e14d12569a93e7d80f1e995692ce568b6e8",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1803601400": {
+          "markers": [
+            8
+          ],
+          "words": 2184,
+          "speaker": "Dr. Joachim Pfeiffer",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/36 Tagesordnungspunkt 4: unresolved nested contribution at ID1803601400 marker 8"
+        }
+      },
+      "withheld_words": 2184,
+      "withheld_share": 0.0247,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 105,
+        "zu_protokoll": 8,
+        "zwischenfrage": 17
+      }
+    },
+    "18/42": {
+      "date": "25.06.2014",
+      "words_in_reden": 89732,
+      "xml_sha256": "15b650e91305a6d2fe71a84cf1080fe4866038f40c7dea42c7d50f3444de5677",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1804202000": {
+          "markers": [
+            2
+          ],
+          "words": 143,
+          "speaker": "Henning Otte",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/42 Tagesordnungspunkt III: unresolved nested contribution at ID1804202000 marker 2"
+        },
+        "ID1804205300": {
+          "markers": [
+            2
+          ],
+          "words": 262,
+          "speaker": "Sibylle Pfeiffer",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/42 Tagesordnungspunkt IV: unresolved nested contribution at ID1804205300 marker 2"
+        }
+      },
+      "withheld_words": 405,
+      "withheld_share": 0.0045,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 5,
+        "rede": 78,
+        "zwischenfrage": 5
+      }
+    },
+    "18/43": {
+      "date": "26.06.2014",
+      "words_in_reden": 61655,
+      "xml_sha256": "36a2336c9448aad4f75891b15caff1da7cb8455037fb5234c2eefffa5eda7a3c",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1804301900:6": {
+          "markers": [
+            2
+          ],
+          "words": 2389,
+          "speaker": "Hubertus Heil",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/43 Tagesordnungspunkt II (Fortsetzung): unresolved nested contribution at ID1804301900:6 marker 2"
+        }
+      },
+      "withheld_words": 2389,
+      "withheld_share": 0.0387,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 55,
+        "zwischenfrage": 8
+      }
+    },
+    "18/50": {
+      "date": "10.09.2014",
+      "words_in_reden": 76669,
+      "xml_sha256": "bc82789eca3b5dd150ff437027f48bb59cea22e9aef39989eda62ce177f90887",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1805001800": {
+          "markers": [
+            4
+          ],
+          "words": 1725,
+          "speaker": "Dr. Michael Fuchs",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/50 Tagesordnungspunkt 1 (Fortsetzung): unresolved nested contribution at ID1805001800 marker 4"
+        }
+      },
+      "withheld_words": 1725,
+      "withheld_share": 0.0225,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 55,
+        "zwischenfrage": 6
+      }
+    },
+    "18/60": {
+      "date": "16.10.2014",
+      "words_in_reden": 92326,
+      "xml_sha256": "8c76b905916fe2fb7d01c824c601e3bfd309b85f638e27d43c4d2a89c30b2426",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1806005000": {
+          "markers": [
+            2
+          ],
+          "words": 1434,
+          "speaker": "Hans-Georg Marwitz",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/60 Tagesordnungspunkt 6: unresolved nested contribution at ID1806005000 marker 2"
+        }
+      },
+      "withheld_words": 1434,
+      "withheld_share": 0.0155,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 2,
+        "rede": 112,
+        "zu_protokoll": 5,
+        "zwischenfrage": 17
+      }
+    },
+    "18/62": {
+      "date": "05.11.2014",
+      "words_in_reden": 13350,
+      "xml_sha256": "83091aff98e6fe44297c5b50946d2366e34b00aff9c22f057763ccb59893bdf2",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 15,
+        "befragung_frage": 15,
+        "fragestunde_antwort": 69,
+        "fragestunde_frage": 62,
+        "rede": 11
+      }
+    },
+    "18/63": {
+      "date": "06.11.2014",
+      "words_in_reden": 84959,
+      "xml_sha256": "5fe24fdca52cbd6c9b92f22986204c5cfc54e1e56345e5c4316fbc9f8f54070e",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1806302300": {
+          "markers": [
+            3
+          ],
+          "words": 1087,
+          "speaker": "Dr. Gerhard Schick",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/63 Tagesordnungspunkt 5: unresolved nested contribution at ID1806302300 marker 3"
+        }
+      },
+      "withheld_words": 1087,
+      "withheld_share": 0.0128,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 95,
+        "zu_protokoll": 64,
+        "zwischenfrage": 9
+      }
+    },
+    "18/67": {
+      "date": "14.11.2014",
+      "words_in_reden": 43883,
+      "xml_sha256": "d4073d7e9c427baa1f0dfe1626cf35e24ebdf989bf314a99625221c0bd890183",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1806700200": {
+          "markers": [
+            2
+          ],
+          "words": 1362,
+          "speaker": "Jörn Wunderlich",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/67 Tagesordnungspunkt 5: unresolved nested contribution at ID1806700200 marker 2"
+        }
+      },
+      "withheld_words": 1362,
+      "withheld_share": 0.031,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 3,
+        "rede": 44,
+        "zwischenfrage": 8
+      }
+    },
+    "18/82": {
+      "date": "29.01.2015",
+      "words_in_reden": 80333,
+      "xml_sha256": "91c566f8dab17dc92ab9ba952f9af68eef65febce2b190f8801e74a2726508c9",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1808200300": {
+          "markers": [
+            3
+          ],
+          "words": 2287,
+          "speaker": "Dr. Michael Fuchs",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/82 Tagesordnungspunkt 3: unresolved nested contribution at ID1808200300 marker 3"
+        },
+        "ID1808201400": {
+          "markers": [
+            12
+          ],
+          "words": 1341,
+          "speaker": "Dirk Becker",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/82 Tagesordnungspunkt 3: unresolved nested contribution at ID1808201400 marker 12"
+        }
+      },
+      "withheld_words": 3628,
+      "withheld_share": 0.0452,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 2,
+        "rede": 93,
+        "zwischenfrage": 6
+      }
+    },
+    "18/83": {
+      "date": "30.01.2015",
+      "words_in_reden": 45385,
+      "xml_sha256": "16821b339530a73bd00c22bad722f6612f5b942325c40df33cf4acb7f56efd84",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 46,
+        "zwischenfrage": 7
+      }
+    },
+    "18/88": {
+      "date": "26.02.2015",
+      "words_in_reden": 83980,
+      "xml_sha256": "7c62a8666dc6df472502d477504abc9feb6f05b3b98d01007b718dd8d5b61651",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1808801500": {
+          "markers": [
+            2
+          ],
+          "words": 166,
+          "speaker": "Dr. Valerie Wilms",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/88 Tagesordnungspunkt 3: unresolved nested contribution at ID1808801500 marker 2"
+        },
+        "ID1808807800": {
+          "markers": [
+            12,
+            17
+          ],
+          "words": 1543,
+          "speaker": "Clemens Binninger",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/88 Tagesordnungspunkt 12: unresolved nested contribution at ID1808807800 marker 12"
+        }
+      },
+      "withheld_words": 1709,
+      "withheld_share": 0.0204,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 3,
+        "found": 3,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "kurzintervention": 2,
+        "rede": 105,
+        "zwischenfrage": 14
+      }
+    },
+    "18/89": {
+      "date": "27.02.2015",
+      "words_in_reden": 50911,
+      "xml_sha256": "b502c47301370ef98401d65a44ba89abf202c395dbf9e3bfc7d4ddc0c04c1f6a",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1808901500": {
+          "markers": [
+            3,
+            4
+          ],
+          "words": 1363,
+          "speaker": "Thorsten Frei",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/89 Zusatztagesordnungspunkt 4: unresolved nested contribution at ID1808901500 marker 3"
+        },
+        "ID1808902100": {
+          "markers": [
+            3,
+            5
+          ],
+          "words": 246,
+          "speaker": "Dirk Becker",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/89 Zusatztagesordnungspunkt 5: unresolved nested contribution at ID1808902100 marker 3"
+        }
+      },
+      "withheld_words": 1609,
+      "withheld_share": 0.0316,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 4,
+        "missing": [],
+        "not_listed": [
+          "ID1808901500 marker 3",
+          "ID1808901500 marker 4"
+        ]
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 3,
+        "rede": 52,
+        "zwischenfrage": 8
+      }
+    },
+    "18/90": {
+      "date": "04.03.2015",
+      "words_in_reden": 14410,
+      "xml_sha256": "cf4e6bd19e39a151e5b65adb1dd097540a29388121bee997a674dc26ff98a632",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 22,
+        "befragung_frage": 20,
+        "fragestunde_antwort": 39,
+        "fragestunde_frage": 39,
+        "rede": 13
+      }
+    },
+    "18/97": {
+      "date": "26.03.2015",
+      "words_in_reden": 77903,
+      "xml_sha256": "8a49d4ffcaa1626385b21c6748604919f383eb0d59f53c95a315a928fdb16e5b",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1809705600": {
+          "markers": [
+            2
+          ],
+          "words": 514,
+          "speaker": "Julia Obermeier",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/97 Tagesordnungspunkt 6: unresolved nested contribution at ID1809705600 marker 2"
+        }
+      },
+      "withheld_words": 514,
+      "withheld_share": 0.0066,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 98,
+        "zu_protokoll": 22,
+        "zwischenfrage": 5
+      }
+    },
+    "18/98": {
+      "date": "27.03.2015",
+      "words_in_reden": 34398,
+      "xml_sha256": "7e4dc7cf1571e9067ec37d9a53bd6b39afc5c7429c21c9c533f6b1db33c4e6cd",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1809802700": {
+          "markers": [
+            2
+          ],
+          "words": 893,
+          "speaker": "Arnold Vaatz",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/98 Tagesordnungspunkt 21: unresolved nested contribution at ID1809802700 marker 2"
+        }
+      },
+      "withheld_words": 893,
+      "withheld_share": 0.026,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 41,
+        "zu_protokoll": 12,
+        "zwischenfrage": 6
+      }
+    },
+    "18/110": {
+      "date": "12.06.2015",
+      "words_in_reden": 48392,
+      "xml_sha256": "080471768fde69f0d6c7353ace72fb69ca3873079b2e715dba44238f0345a14a",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1811002600": {
+          "markers": [
+            3
+          ],
+          "words": 1126,
+          "speaker": "Andreas G. Lämmel",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/110 Tagesordnungspunkt 25: unresolved nested contribution at ID1811002600 marker 3"
+        },
+        "ID1811004200": {
+          "markers": [
+            2
+          ],
+          "words": 292,
+          "speaker": "Frank Schwabe",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/110 Tagesordnungspunkt 27: unresolved nested contribution at ID1811004200 marker 2"
+        }
+      },
+      "withheld_words": 1418,
+      "withheld_share": 0.0293,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 3,
+        "rede": 50,
+        "zwischenfrage": 5
+      }
+    },
+    "18/112": {
+      "date": "18.06.2015",
+      "words_in_reden": 89507,
+      "xml_sha256": "7f1590d193eb187a72324a81a42655694b9686cf3a1df051acd2b49528d06db4",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1811200600": {
+          "markers": [
+            2
+          ],
+          "words": 2243,
+          "speaker": "Volker Kauder",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/112 Tagesordnungspunkt 5: unresolved nested contribution at ID1811200600 marker 2"
+        }
+      },
+      "withheld_words": 2243,
+      "withheld_share": 0.0251,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 3,
+        "rede": 108,
+        "zu_protokoll": 38,
+        "zwischenfrage": 6
+      }
+    },
+    "18/113": {
+      "date": "19.06.2015",
+      "words_in_reden": 36884,
+      "xml_sha256": "3a2bcf5b1bf5b4561ae1da34a8eacdc97df74e6e79fcba1e961e4549ffbf7763",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1811303100": {
+          "markers": [
+            3
+          ],
+          "words": 1428,
+          "speaker": "Friedrich Ostendorff",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/113 Tagesordnungspunkt 32: unresolved nested contribution at ID1811303100 marker 3"
+        }
+      },
+      "withheld_words": 1428,
+      "withheld_share": 0.0387,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 3,
+        "rede": 43,
+        "zwischenfrage": 2
+      }
+    },
+    "18/117": {
+      "date": "17.07.2015",
+      "words_in_reden": 24395,
+      "xml_sha256": "81656e0a652db64851feb057bc04d997926ba9eef68ace2ea3dc39cebe4276ec",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1811702000": {
+          "markers": [
+            2
+          ],
+          "words": 2055,
+          "speaker": "Ralph Brinkhaus",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/117 Tagesordnungspunkt 1: unresolved nested contribution at ID1811702000 marker 2"
+        }
+      },
+      "withheld_words": 2055,
+      "withheld_share": 0.0842,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 18
+      }
+    },
+    "18/118": {
+      "date": "19.08.2015",
+      "words_in_reden": 20909,
+      "xml_sha256": "1ab74d480f575298eb4d53f8626b6c4cdb881ec40d534da5bcd1d1c011f3ac14",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1811801700": {
+          "markers": [
+            2
+          ],
+          "words": 1431,
+          "speaker": "Eckhardt Rehberg",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/118 Tagesordnungspunkt 1: unresolved nested contribution at ID1811801700 marker 2"
+        }
+      },
+      "withheld_words": 1431,
+      "withheld_share": 0.0684,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 17,
+        "zwischenfrage": 3
+      }
+    },
+    "18/124": {
+      "date": "24.09.2015",
+      "words_in_reden": 95383,
+      "xml_sha256": "14347f4ebf18cc3f646939027459027f3f6613c487e49ec8b71b0dbc0b0f1d96",
+      "flag": "not in the blockers file: its role conflict was fixed in round 2, then it refused at a turn (\"unresolved nested contribution\") and stayed listed",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1812400500": {
+          "markers": [
+            2
+          ],
+          "words": 2909,
+          "speaker": "Volker Kauder",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/124 Tagesordnungspunkt 3: unresolved nested contribution at ID1812400500 marker 2"
+        }
+      },
+      "withheld_words": 2909,
+      "withheld_share": 0.0305,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 1,
+        "missing": [],
+        "not_listed": [
+          "ID1812400500 marker 2"
+        ]
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 3,
+        "rede": 111,
+        "zu_protokoll": 20,
+        "zwischenfrage": 8
+      }
+    },
+    "18/127": {
+      "date": "01.10.2015",
+      "words_in_reden": 83478,
+      "xml_sha256": "f69fe878b37cf722e4506eea89524561795f76cf7d7e5f524629c96ecc6cf395",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1812705000": {
+          "markers": [
+            2
+          ],
+          "words": 220,
+          "speaker": "Tino Sorge",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/127 Tagesordnungspunkt 7: unresolved nested contribution at ID1812705000 marker 2"
+        }
+      },
+      "withheld_words": 220,
+      "withheld_share": 0.0026,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 4,
+        "kurzintervention": 5,
+        "rede": 96,
+        "zwischenfrage": 8
+      }
+    },
+    "18/143": {
+      "date": "03.12.2015",
+      "words_in_reden": 87726,
+      "xml_sha256": "244fb452a6f283f154aff8b5b95c231a6831f0fed6c08dcc09ab7f78d0dbf341",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1814305400": {
+          "markers": [
+            4,
+            6,
+            8,
+            10
+          ],
+          "words": 1326,
+          "speaker": "Roderich Kiesewetter",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/143 Tagesordnungspunkt 10: unresolved nested contribution at ID1814305400 marker 4"
+        }
+      },
+      "withheld_words": 1326,
+      "withheld_share": 0.0151,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 4,
+        "found": 4,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 4,
+        "kurzintervention": 4,
+        "rede": 102,
+        "zu_protokoll": 28,
+        "zwischenfrage": 6
+      }
+    },
+    "18/158": {
+      "date": "25.02.2016",
+      "words_in_reden": 99738,
+      "xml_sha256": "56650b65db533187048eac38d14ef25a22ac1c7d5920a07bf84862c6beb5084e",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1815826800": {
+          "markers": [
+            2
+          ],
+          "words": 361,
+          "speaker": "Jutta Krellmann",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/158 Tagesordnungspunkt 8: unresolved nested contribution at ID1815826800 marker 2"
+        },
+        "ID1815828300": {
+          "markers": [
+            2
+          ],
+          "words": 765,
+          "speaker": "Stefan Liebich",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/158 Tagesordnungspunkt 10: unresolved nested contribution at ID1815828300 marker 2"
+        },
+        "ID1815828500": {
+          "markers": [
+            2
+          ],
+          "words": 504,
+          "speaker": "Albert Weiler",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/158 Tagesordnungspunkt 10: unresolved nested contribution at ID1815828500 marker 2"
+        },
+        "ID1815828700": {
+          "markers": [
+            2
+          ],
+          "words": 759,
+          "speaker": "Britta Haßelmann",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/158 Tagesordnungspunkt 10: unresolved nested contribution at ID1815828700 marker 2"
+        }
+      },
+      "withheld_words": 2389,
+      "withheld_share": 0.024,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 4,
+        "found": 4,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 4,
+        "rede": 150,
+        "zu_protokoll": 12,
+        "zwischenfrage": 5
+      }
+    },
+    "18/159": {
+      "date": "26.02.2016",
+      "words_in_reden": 46291,
+      "xml_sha256": "0b2d909d81f0e0c4d9da57506ce92c8d8237e92d406fa93134b3895a30d9234a",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1815914100": {
+          "markers": [
+            2
+          ],
+          "words": 743,
+          "speaker": "Ralph Lenkert",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/159 Tagesordnungspunkt 24: unresolved nested contribution at ID1815914100 marker 2"
+        }
+      },
+      "withheld_words": 743,
+      "withheld_share": 0.0161,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 53
+      }
+    },
+    "18/160": {
+      "date": "16.03.2016",
+      "words_in_reden": 21163,
+      "xml_sha256": "7cc4038b12db91e157e733831c0005924a32f5fce382718a3a3e4bcaf45cafdb",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1816000400": {
+          "markers": [
+            2
+          ],
+          "words": 1103,
+          "speaker": "Heike Hänsel",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/160 Tagesordnungspunkt 1: unresolved nested contribution at ID1816000400 marker 2"
+        }
+      },
+      "withheld_words": 1103,
+      "withheld_share": 0.0521,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 18,
+        "befragung_frage": 19,
+        "fragestunde_antwort": 39,
+        "fragestunde_frage": 41,
+        "rede": 14
+      }
+    },
+    "18/161": {
+      "date": "17.03.2016",
+      "words_in_reden": 83196,
+      "xml_sha256": "5d2962656ed07150a907dbc5169442c940a309521c7053ddd5adf5cea472180d",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1816110600": {
+          "markers": [
+            5
+          ],
+          "words": 867,
+          "speaker": "Markus Kurth",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/161 Tagesordnungspunkt 18: unresolved nested contribution at ID1816110600 marker 5"
+        }
+      },
+      "withheld_words": 867,
+      "withheld_share": 0.0104,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 6,
+        "kurzintervention": 6,
+        "rede": 96,
+        "zwischenfrage": 15
+      }
+    },
+    "18/171": {
+      "date": "13.05.2016",
+      "words_in_reden": 41432,
+      "xml_sha256": "eef995645635932872ce908b19877df9b13a17201d3cec610e50c562a32cc426",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1817101800": {
+          "markers": [
+            8
+          ],
+          "words": 2295,
+          "speaker": "Max Straubinger",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/171 Tagesordnungspunkt 18: unresolved nested contribution at ID1817101800 marker 8"
+        }
+      },
+      "withheld_words": 2295,
+      "withheld_share": 0.0554,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 45,
+        "zwischenfrage": 9
+      }
+    },
+    "18/173": {
+      "date": "02.06.2016",
+      "words_in_reden": 92841,
+      "xml_sha256": "d8917204d8ed53090ea6f9557dd8275e35632834e318c28368c65903cd87f918",
+      "flag": "not in the blockers file: its role conflict was fixed in round 2, then it refused at a turn (\"unresolved nested contribution\") and stayed listed",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1817303100": {
+          "markers": [
+            3
+          ],
+          "words": 1410,
+          "speaker": "Markus Kurth",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/173 Tagesordnungspunkt 6: unresolved nested contribution at ID1817303100 marker 3"
+        }
+      },
+      "withheld_words": 1410,
+      "withheld_share": 0.0152,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 1,
+        "missing": [],
+        "not_listed": [
+          "ID1817303100 marker 3"
+        ]
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 118,
+        "zu_protokoll": 31,
+        "zwischenfrage": 10
+      }
+    },
+    "18/178": {
+      "date": "22.06.2016",
+      "words_in_reden": 12820,
+      "xml_sha256": "7cdb2bac4476b8ec6c6a82204d1bbac2b3036e86770753e05ecfc9779d27fc77",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 22,
+        "befragung_frage": 20,
+        "fragestunde_antwort": 78,
+        "fragestunde_frage": 84,
+        "rede": 10
+      }
+    },
+    "18/180": {
+      "date": "24.06.2016",
+      "words_in_reden": 54550,
+      "xml_sha256": "7062469cd5f59ad0f2bd613f81d1ca57a221133d78ca39180ca3adf6637e56d9",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1818004800": {
+          "markers": [
+            3
+          ],
+          "words": 919,
+          "speaker": "Armin Schuster",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/180 Tagesordnungspunkt 14: unresolved nested contribution at ID1818004800 marker 3"
+        }
+      },
+      "withheld_words": 919,
+      "withheld_share": 0.0168,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 62,
+        "zwischenfrage": 13
+      }
+    },
+    "18/184": {
+      "date": "08.07.2016",
+      "words_in_reden": 42433,
+      "xml_sha256": "38d694f80aacf5cfc37f0cf6c4cf0833d5502341fcd180346030128eb06f9c3c",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1818402200": {
+          "markers": [
+            3
+          ],
+          "words": 1353,
+          "speaker": "Andreas G. Lämmel",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/184 Tagesordnungspunkt 34: unresolved nested contribution at ID1818402200 marker 3"
+        }
+      },
+      "withheld_words": 1353,
+      "withheld_share": 0.0319,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "kurzintervention": 1,
+        "rede": 48,
+        "zwischenfrage": 5
+      }
+    },
+    "18/193": {
+      "date": "29.09.2016",
+      "words_in_reden": 85494,
+      "xml_sha256": "2a18b8e37a264be88bfe36d13a5d4e753b94e834f7899e8900a9330bb9b8846d",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1819306800": {
+          "markers": [
+            6,
+            10
+          ],
+          "words": 1441,
+          "speaker": "Thomas Stritzl",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/193 Tagesordnungspunkt 10: unresolved nested contribution at ID1819306800 marker 6"
+        }
+      },
+      "withheld_words": 1441,
+      "withheld_share": 0.0169,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 103,
+        "zu_protokoll": 25,
+        "zwischenfrage": 9
+      }
+    },
+    "18/210": {
+      "date": "16.12.2016",
+      "words_in_reden": 50593,
+      "xml_sha256": "12790b13149c16f6f95d3dfb0a5c62bd744d7798e2122035b6d60a167044f12a",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1821001700": {
+          "markers": [
+            7
+          ],
+          "words": 2369,
+          "speaker": "Dr. Bernd Fabritius",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/210 Tagesordnungspunkt 28: unresolved nested contribution at ID1821001700 marker 7"
+        }
+      },
+      "withheld_words": 2369,
+      "withheld_share": 0.0468,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 61,
+        "zwischenfrage": 5
+      }
+    },
+    "18/215": {
+      "date": "26.01.2017",
+      "words_in_reden": 84257,
+      "xml_sha256": "1f7337de9abc3ce4e608b97d37affcf75cc870636f7019f493634044283e5695",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1821502200": {
+          "markers": [
+            5
+          ],
+          "words": 880,
+          "speaker": "Alexander Radwan",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/215 Tagesordnungspunkt 4: unresolved nested contribution at ID1821502200 marker 5"
+        }
+      },
+      "withheld_words": 880,
+      "withheld_share": 0.0104,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 105,
+        "zu_protokoll": 45,
+        "zwischenfrage": 8
+      }
+    },
+    "18/219": {
+      "date": "17.02.2017",
+      "words_in_reden": 39931,
+      "xml_sha256": "8b728bffabfe3f1c9ff2a0a9e01196ee487a2179a962d47d72727b3093af8fb9",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1821900300": {
+          "markers": [
+            4
+          ],
+          "words": 1455,
+          "speaker": "Dr. Stephan Harbarth",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/219 Tagesordnungspunkt 21: unresolved nested contribution at ID1821900300 marker 4"
+        },
+        "ID1821904900": {
+          "markers": [
+            2
+          ],
+          "words": 383,
+          "speaker": "Tankred Schipanski",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/219 Tagesordnungspunkt 26: unresolved nested contribution at ID1821904900 marker 2"
+        }
+      },
+      "withheld_words": 1838,
+      "withheld_share": 0.046,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 4,
+        "kurzintervention": 4,
+        "rede": 46,
+        "zwischenfrage": 1
+      }
+    },
+    "18/221": {
+      "date": "09.03.2017",
+      "words_in_reden": 112922,
+      "xml_sha256": "de90661c6a75a014bd989d033f4232cd87b53610cf82503b2d7b9e9089bc0fbd",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1822109800": {
+          "markers": [
+            5,
+            7
+          ],
+          "words": 1256,
+          "speaker": "Christian Kühn",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/221 Tagesordnungspunkt 19: unresolved nested contribution at ID1822109800 marker 5"
+        }
+      },
+      "withheld_words": 1256,
+      "withheld_share": 0.0111,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 136,
+        "zu_protokoll": 118,
+        "zwischenfrage": 4
+      }
+    },
+    "18/223": {
+      "date": "22.03.2017",
+      "words_in_reden": 7102,
+      "xml_sha256": "7282957536cfe7ef482242fc5d13d47e207969b438a7834f651d87c823ce3847",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 4
+      }
+    },
+    "18/241": {
+      "date": "23.06.2017",
+      "words_in_reden": 49774,
+      "xml_sha256": "933b0c2c54a801c25c27b97f4b66c3077f614a7ecb2f400902b846f527af7acf",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1824101400": {
+          "markers": [
+            7
+          ],
+          "words": 1730,
+          "speaker": "Klaus Ernst",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "18/241 Tagesordnungspunkt 30: unresolved nested contribution at ID1824101400 marker 7"
+        }
+      },
+      "withheld_words": 1730,
+      "withheld_share": 0.0348,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 54,
+        "zwischenfrage": 2
+      }
+    },
+    "18/245": {
+      "date": "05.09.2017",
+      "words_in_reden": 30202,
+      "xml_sha256": "66f6f90e8809ac9262afb5d9228781072465d5dd13883031c73fd8dd0c88c876",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 21,
+        "zwischenfrage": 2
+      }
+    },
+    "19/1": {
+      "date": "24.10.2017",
+      "words_in_reden": 6860,
+      "xml_sha256": "511e7d623eb64433811f07cf981fc017442222c596fd37b96de9be55faffaf61",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 19
+      }
+    },
+    "19/9": {
+      "date": "22.01.2018",
+      "words_in_reden": 12756,
+      "xml_sha256": "ba0cf1fa42c186006a758bfdc35e4e4689c96cc15349342167a3254fd4ab9ccf",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 16
+      }
+    },
+    "19/12": {
+      "date": "02.02.2018",
+      "words_in_reden": 38093,
+      "xml_sha256": "c3dcd4c2b5e23ba30115e328f1255c61c713faa354491c2e0a82a83719b4b067",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID191202900": {
+          "markers": [
+            2
+          ],
+          "words": 118,
+          "speaker": "Friedrich Straetmanns",
+          "fraktion": "DIE LINKE",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/12 Tagesordnungspunkt 15: unresolved nested contribution at ID191202900 marker 2"
+        },
+        "ID191203800": {
+          "markers": [
+            3
+          ],
+          "words": 1009,
+          "speaker": "Volkmar Klein",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/12 Zusatzpunkt 8: unresolved nested contribution at ID191203800 marker 3"
+        }
+      },
+      "withheld_words": 1127,
+      "withheld_share": 0.0296,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 2,
+        "rede": 55,
+        "zu_protokoll": 1,
+        "zwischenfrage": 8
+      }
+    },
+    "19/13": {
+      "date": "21.02.2018",
+      "words_in_reden": 14874,
+      "xml_sha256": "6b8f281592c9c0758abfb4d6b6c85688e080a9e25fa5572763650bc0ac823384",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID191304800": {
+          "markers": [
+            2
+          ],
+          "words": 83,
+          "speaker": "Tobias Matthias Peterka",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/13 Tagesordnungspunkt 1: unresolved nested contribution at ID191304800 marker 2"
+        },
+        "ID191305000": {
+          "markers": [
+            2
+          ],
+          "words": 132,
+          "speaker": "Uwe Kekeritz",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/13 Tagesordnungspunkt 1: unresolved nested contribution at ID191305000 marker 2"
+        },
+        "ID191306000": {
+          "markers": [
+            2
+          ],
+          "words": 43,
+          "speaker": "Markus Frohnmaier",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/13 Tagesordnungspunkt 1: unresolved nested contribution at ID191306000 marker 2"
+        }
+      },
+      "withheld_words": 258,
+      "withheld_share": 0.0173,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 3,
+        "found": 3,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "fragestunde_antwort": 63,
+        "fragestunde_frage": 62,
+        "rede": 73,
+        "zwischenfrage": 1
+      }
+    },
+    "19/14": {
+      "date": "22.02.2018",
+      "words_in_reden": 89943,
+      "xml_sha256": "b131ff946ed003164e6fc4d94a1a51b1154ceac55a6f8c8a3f5ec063c1c190fd",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID191411900": {
+          "markers": [
+            2
+          ],
+          "words": 183,
+          "speaker": "Volker Münz",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/14 Tagesordnungspunkt 13: unresolved nested contribution at ID191411900 marker 2"
+        }
+      },
+      "withheld_words": 183,
+      "withheld_share": 0.002,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 2,
+        "rede": 123,
+        "zwischenfrage": 21
+      }
+    },
+    "19/18": {
+      "date": "02.03.2018",
+      "words_in_reden": 40742,
+      "xml_sha256": "5a848741c91dfc5d9cc2f6e3b000924e5d3207a96ef059ad68f86dc126c995e3",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID191806500": {
+          "markers": [
+            5
+          ],
+          "words": 1055,
+          "speaker": "Dr. Heribert Hirte",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/18 Tagesordnungspunkt 14: unresolved nested contribution at ID191806500 marker 5"
+        },
+        "ID191806600": {
+          "markers": [
+            2
+          ],
+          "words": 379,
+          "speaker": "Katharina Dröge",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/18 Tagesordnungspunkt 14: unresolved nested contribution at ID191806600 marker 2"
+        }
+      },
+      "withheld_words": 1434,
+      "withheld_share": 0.0352,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 4,
+        "rede": 58,
+        "zwischenfrage": 12
+      }
+    },
+    "19/19": {
+      "date": "14.03.2018",
+      "words_in_reden": 698,
+      "xml_sha256": "9d60a6fbbff2e58049862ce488b7530297a14f3b59e1624e7ed3ca0696eb9013",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 21
+      }
+    },
+    "19/20": {
+      "date": "15.03.2018",
+      "words_in_reden": 75749,
+      "xml_sha256": "046371450d10df8c56f17550b6615d5349a97836f88d6b47e979b56deeb1c945",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID192001100": {
+          "markers": [
+            2
+          ],
+          "words": 83,
+          "speaker": "Britta Haßelmann",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/20 Tagesordnungspunkt 6: unresolved nested contribution at ID192001100 marker 2"
+        },
+        "ID192003100": {
+          "markers": [
+            2
+          ],
+          "words": 317,
+          "speaker": "Kay Gottschalk",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/20 Tagesordnungspunkt 7: unresolved nested contribution at ID192003100 marker 2"
+        }
+      },
+      "withheld_words": 400,
+      "withheld_share": 0.0053,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 5,
+        "kurzintervention": 9,
+        "rede": 111,
+        "zwischenfrage": 12
+      }
+    },
+    "19/23": {
+      "date": "22.03.2018",
+      "words_in_reden": 92696,
+      "xml_sha256": "f5eb97aab82f88c33b03ca941148e827ec3d60dc474afa40c6f561a8e5f3a08f",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID192304600": {
+          "markers": [
+            6
+          ],
+          "words": 1661,
+          "speaker": "Stephan Stracke",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/23 Tagesordnungspunkt 3: unresolved nested contribution at ID192304600 marker 6"
+        }
+      },
+      "withheld_words": 1661,
+      "withheld_share": 0.0179,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 126,
+        "zwischenfrage": 14
+      }
+    },
+    "19/25": {
+      "date": "18.04.2018",
+      "words_in_reden": 18043,
+      "xml_sha256": "716bd4b86e3c054bd4109fd5344a07b9c76b5c4e81921bbcc10244d21c6516d7",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 29,
+        "befragung_frage": 36,
+        "erwiderung": 1,
+        "fragestunde_antwort": 68,
+        "fragestunde_frage": 65,
+        "kurzintervention": 2,
+        "rede": 15,
+        "zwischenfrage": 1
+      }
+    },
+    "19/32": {
+      "date": "16.05.2018",
+      "words_in_reden": 70028,
+      "xml_sha256": "a3021524d6c86d0c973e3a5d6fc8b224a3c578b626d2dee8cc403f06f7e181d2",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID193207500": {
+          "markers": [
+            3
+          ],
+          "words": 789,
+          "speaker": "Carsten Körber",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/32 Einzelplan 23: unresolved nested contribution at ID193207500 marker 3"
+        }
+      },
+      "withheld_words": 789,
+      "withheld_share": 0.0113,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 4,
+        "rede": 68,
+        "zwischenfrage": 2
+      }
+    },
+    "19/36": {
+      "date": "07.06.2018",
+      "words_in_reden": 113658,
+      "xml_sha256": "04b5cac6ad6a5038340b0bda32812aa310446cd5deb41531e10d589214f55086",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID193612200": {
+          "markers": [
+            6,
+            8
+          ],
+          "words": 1125,
+          "speaker": "Roderich Kiesewetter",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/36 Tagesordnungspunkt 14: unresolved nested contribution at ID193612200 marker 6"
+        }
+      },
+      "withheld_words": 1125,
+      "withheld_share": 0.0099,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 4,
+        "kurzintervention": 4,
+        "rede": 159,
+        "zwischenfrage": 13
+      }
+    },
+    "19/40": {
+      "date": "15.06.2018",
+      "words_in_reden": 56318,
+      "xml_sha256": "e1d9f6ebbb0620afce62b39e47f4aeebeaf0f4cf3e3a3250bfab5817cb412723",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID194002300": {
+          "markers": [
+            2
+          ],
+          "words": 1432,
+          "speaker": "Philipp Amthor",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/40 Tagesordnungspunkt 17: unresolved nested contribution at ID194002300 marker 2"
+        }
+      },
+      "withheld_words": 1432,
+      "withheld_share": 0.0254,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 80,
+        "zwischenfrage": 15
+      }
+    },
+    "19/42": {
+      "date": "28.06.2018",
+      "words_in_reden": 108846,
+      "xml_sha256": "d53fd7dc06c109fb86d329310756aa39ef79ca3539e77ab0c697fad56f05a998",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID194214000": {
+          "markers": [
+            4
+          ],
+          "words": 558,
+          "speaker": "Cansel Kiziltepe",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/42 Zusatzpunkt 6: unresolved nested contribution at ID194214000 marker 4"
+        }
+      },
+      "withheld_words": 558,
+      "withheld_share": 0.0051,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 3,
+        "rede": 156,
+        "zu_protokoll": 28,
+        "zwischenfrage": 14
+      }
+    },
+    "19/44": {
+      "date": "03.07.2018",
+      "words_in_reden": 79902,
+      "xml_sha256": "c6f4622c95b880596280f5ae8e5c61eb046b5f63d4724bf340388a345a4f8a44",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID194407800": {
+          "markers": [
+            3
+          ],
+          "words": 1007,
+          "speaker": "Beatrix von Storch",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/44 Einzelplan 17: unresolved nested contribution at ID194407800 marker 3"
+        }
+      },
+      "withheld_words": 1007,
+      "withheld_share": 0.0126,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 98,
+        "zwischenfrage": 11
+      }
+    },
+    "19/47": {
+      "date": "11.09.2018",
+      "words_in_reden": 59882,
+      "xml_sha256": "1187f2227ddb4056de887d67b03fc9b9e5df5f5160adfd41c792cf624203542a",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID194701300": {
+          "markers": [
+            3
+          ],
+          "words": 862,
+          "speaker": "Christian Dürr",
+          "fraktion": "FDP",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/47 Einzelplan 08: unresolved nested contribution at ID194701300 marker 3"
+        }
+      },
+      "withheld_words": 862,
+      "withheld_share": 0.0144,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 67,
+        "zwischenfrage": 3
+      }
+    },
+    "19/59": {
+      "date": "19.10.2018",
+      "words_in_reden": 52556,
+      "xml_sha256": "c88c5a2e4b6f16b3689f3a264cd31f1965afb486443ee89ba203094910a72607",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID195905700": {
+          "markers": [
+            2
+          ],
+          "words": 312,
+          "speaker": "Kay Gottschalk",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/59 Tagesordnungspunkt 29: unresolved nested contribution at ID195905700 marker 2"
+        }
+      },
+      "withheld_words": 312,
+      "withheld_share": 0.0059,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 2,
+        "rede": 75,
+        "zwischenfrage": 5
+      }
+    },
+    "19/61": {
+      "date": "08.11.2018",
+      "words_in_reden": 104751,
+      "xml_sha256": "7ae45a91d7cd39792abb29836fe7ae76b6f574f3c101b0684e0c16b2c4698612",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID196110900": {
+          "markers": [
+            3
+          ],
+          "words": 742,
+          "speaker": "Jürgen Braun",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/61 Tagesordnungspunkt 27: unresolved nested contribution at ID196110900 marker 3"
+        }
+      },
+      "withheld_words": 742,
+      "withheld_share": 0.0071,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 6,
+        "rede": 156,
+        "zu_protokoll": 31,
+        "zwischenfrage": 10
+      }
+    },
+    "19/68": {
+      "date": "29.11.2018",
+      "words_in_reden": 94212,
+      "xml_sha256": "46523418c136ebb484252172aca1778589da9a1f031938503e2135026ef9e486",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID196811500": {
+          "markers": [
+            3
+          ],
+          "words": 924,
+          "speaker": "Lars Herrmann",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/68 Zusatzpunkt 14: unresolved nested contribution at ID196811500 marker 3"
+        },
+        "ID196811600": {
+          "markers": [
+            3
+          ],
+          "words": 1211,
+          "speaker": "Helge Lindh",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/68 Zusatzpunkt 14: unresolved nested contribution at ID196811600 marker 3"
+        }
+      },
+      "withheld_words": 2135,
+      "withheld_share": 0.0227,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 3,
+        "rede": 145,
+        "zu_protokoll": 38,
+        "zwischenfrage": 7
+      }
+    },
+    "19/73": {
+      "date": "16.01.2019",
+      "words_in_reden": 10048,
+      "xml_sha256": "d3e9465d36ad44a27bc2aad6246a6e41ffcdc8189c9269e630b3d7d7343ff34f",
+      "status": "parses, no refusal",
+      "refusal_class": null,
+      "withheld_reden": {},
+      "withheld_words": 0,
+      "withheld_share": 0.0,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 0,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 29,
+        "befragung_frage": 27,
+        "fragestunde_antwort": 48,
+        "fragestunde_frage": 47,
+        "rede": 2
+      }
+    },
+    "19/92": {
+      "date": "04.04.2019",
+      "words_in_reden": 97936,
+      "xml_sha256": "9cc3c45a615bfc651dbb1d9730e7dffa63223d329543970ffd7eb8856a1e8a7b",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID199211200": {
+          "markers": [
+            11
+          ],
+          "words": 1382,
+          "speaker": "Alexander Hoffmann",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/92 Tagesordnungspunkt 12: unresolved nested contribution at ID199211200 marker 11"
+        }
+      },
+      "withheld_words": 1382,
+      "withheld_share": 0.0141,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 151,
+        "zu_protokoll": 36,
+        "zwischenfrage": 6
+      }
+    },
+    "19/101": {
+      "date": "16.05.2019",
+      "words_in_reden": 101775,
+      "xml_sha256": "249c49e046952829563f3f9358d9896e53ecb4c3503863ae132206222e237a7e",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1910104500": {
+          "markers": [
+            3
+          ],
+          "words": 823,
+          "speaker": "Alexander Throm",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/101 Tagesordnungspunkt 6: unresolved nested contribution at ID1910104500 marker 3"
+        }
+      },
+      "withheld_words": 823,
+      "withheld_share": 0.0081,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "rede": 151,
+        "zu_protokoll": 44,
+        "zwischenfrage": 5
+      }
+    },
+    "19/102": {
+      "date": "17.05.2019",
+      "words_in_reden": 60687,
+      "xml_sha256": "c842a2690a25bfb605f32b0bf91ca804690c79d00aabb8b6ff08cd1299a5e40f",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1910206000": {
+          "markers": [
+            2
+          ],
+          "words": 106,
+          "speaker": "Christian Petry",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/102 Tagesordnungspunkt 29: unresolved nested contribution at ID1910206000 marker 2"
+        }
+      },
+      "withheld_words": 106,
+      "withheld_share": 0.0017,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 91,
+        "zwischenfrage": 5
+      }
+    },
+    "19/158": {
+      "date": "07.05.2020",
+      "words_in_reden": 81549,
+      "xml_sha256": "8deaa7b98a3ea9aa850fd64e0223e972a6be8fd09542a936342fd21bf7ba4b2e",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1915809200": {
+          "markers": [
+            2,
+            4
+          ],
+          "words": 1435,
+          "speaker": "Hubertus Heil",
+          "fraktion": null,
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/158 Tagesordnungspunkt 22: unresolved nested contribution at ID1915809200 marker 2"
+        }
+      },
+      "withheld_words": 1435,
+      "withheld_share": 0.0176,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 3,
+        "rede": 128,
+        "zu_protokoll": 1,
+        "zwischenfrage": 8
+      }
+    },
+    "19/170": {
+      "date": "02.07.2020",
+      "words_in_reden": 101336,
+      "xml_sha256": "af6ccaa8dbdb7cd5a8517801f4ac2b79ce051a9edc0e99f6b47887ae38eb3098",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1917006200": {
+          "markers": [
+            3
+          ],
+          "words": 1431,
+          "speaker": "Max Straubinger",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/170 Tagesordnungspunkt 11: unresolved nested contribution at ID1917006200 marker 3"
+        }
+      },
+      "withheld_words": 1431,
+      "withheld_share": 0.0141,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 158,
+        "zu_protokoll": 15,
+        "zwischenfrage": 8
+      }
+    },
+    "19/173": {
+      "date": "10.09.2020",
+      "words_in_reden": 96627,
+      "xml_sha256": "e38db0df4f3948df1008a31e7d8417b083932d6e30ab7cfdd4c41513c0036c76",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1917304200": {
+          "markers": [
+            11,
+            12
+          ],
+          "words": 1634,
+          "speaker": "Max Straubinger",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/173 Tagesordnungspunkt 10: unresolved nested contribution at ID1917304200 marker 11"
+        }
+      },
+      "withheld_words": 1634,
+      "withheld_share": 0.0169,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 153,
+        "zu_protokoll": 9,
+        "zwischenfrage": 4
+      }
+    },
+    "19/189": {
+      "date": "05.11.2020",
+      "words_in_reden": 95334,
+      "xml_sha256": "987a22ea478b2fe7b936dda35d44a811c9d59c4d11f08dd20d220b6eea8bf8fd",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1918907900": {
+          "markers": [
+            2
+          ],
+          "words": 201,
+          "speaker": "Volker Münz",
+          "fraktion": "AfD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/189 Tagesordnungspunkt 14: unresolved nested contribution at ID1918907900 marker 2"
+        }
+      },
+      "withheld_words": 201,
+      "withheld_share": 0.0021,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 4,
+        "kurzintervention": 4,
+        "rede": 154,
+        "zu_protokoll": 10,
+        "zwischenfrage": 3
+      }
+    },
+    "19/192": {
+      "date": "19.11.2020",
+      "words_in_reden": 90654,
+      "xml_sha256": "380d644ab285b59c45c4cc6a0fdff138abb56c99a1f2f22c3ae25410c09808a4",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1919201800": {
+          "markers": [
+            3,
+            5
+          ],
+          "words": 705,
+          "speaker": "Harald Ebner",
+          "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/192 Zusatzpunkt 7: unresolved nested contribution at ID1919201800 marker 3"
+        }
+      },
+      "withheld_words": 705,
+      "withheld_share": 0.0078,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 2,
+        "found": 2,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 147,
+        "zu_protokoll": 7,
+        "zwischenfrage": 5
+      }
+    },
+    "19/193": {
+      "date": "20.11.2020",
+      "words_in_reden": 52604,
+      "xml_sha256": "c72424a292bacdfdfbd864305cf79965056235cb8cea23b102fdf788392d43e5",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1919306300": {
+          "markers": [
+            2
+          ],
+          "words": 455,
+          "speaker": "Christine Lambrecht",
+          "fraktion": null,
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/193 Tagesordnungspunkt 28: unresolved nested contribution at ID1919306300 marker 2"
+        }
+      },
+      "withheld_words": 455,
+      "withheld_share": 0.0086,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 86,
+        "zwischenfrage": 7
+      }
+    },
+    "19/201": {
+      "date": "16.12.2020",
+      "words_in_reden": 44002,
+      "xml_sha256": "f085a3f99481ef551d16900b92475b1e0203cae37db3d2dea33343142c37a5bb",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1920109100": {
+          "markers": [
+            8,
+            10,
+            12
+          ],
+          "words": 1561,
+          "speaker": "Peter Weiß",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/201 Tagesordnungspunkt 4: unresolved nested contribution at ID1920109100 marker 8"
+        }
+      },
+      "withheld_words": 1561,
+      "withheld_share": 0.0355,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 3,
+        "found": 3,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "befragung_antwort": 37,
+        "befragung_frage": 41,
+        "fragestunde_antwort": 56,
+        "fragestunde_frage": 58,
+        "rede": 58,
+        "zwischenfrage": 3
+      }
+    },
+    "19/215": {
+      "date": "04.03.2021",
+      "words_in_reden": 95183,
+      "xml_sha256": "d7c43641dc881e0712cf08150df3995caae0fe954107b374e14382f70faa159a",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1921513700": {
+          "markers": [
+            4
+          ],
+          "words": 918,
+          "speaker": "Dr. Patrick Sensburg",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/215 Tagesordnungspunkt 17: unresolved nested contribution at ID1921513700 marker 4"
+        }
+      },
+      "withheld_words": 918,
+      "withheld_share": 0.0096,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 3,
+        "kurzintervention": 3,
+        "rede": 155,
+        "zu_protokoll": 12,
+        "zwischenfrage": 4
+      }
+    },
+    "19/227": {
+      "date": "06.05.2021",
+      "words_in_reden": 98025,
+      "xml_sha256": "3f4bbba61ef71f770c5e36286cbd6132ac7a435659388e50f830a83f61cb74e3",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1922705300": {
+          "markers": [
+            4
+          ],
+          "words": 1378,
+          "speaker": "Dr. h. c. (Univ Kyiv) Hans Michelbach",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/227 Tagesordnungspunkt 13: unresolved nested contribution at ID1922705300 marker 4"
+        }
+      },
+      "withheld_words": 1378,
+      "withheld_share": 0.0141,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 169,
+        "zu_protokoll": 29,
+        "zwischenfrage": 9
+      }
+    },
+    "19/239": {
+      "date": "07.09.2021",
+      "words_in_reden": 39156,
+      "xml_sha256": "abee85a3c13a8cd1d6c8d23d39731e9e958b757d07b14201e37325fb36d712d8",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID1923903200": {
+          "markers": [
+            6
+          ],
+          "words": 1694,
+          "speaker": "Thorsten Frei",
+          "fraktion": "CDU/CSU",
+          "refusal_class": "located_nested_contribution",
+          "locator": "19/239 Tagesordnungspunkt 2: unresolved nested contribution at ID1923903200 marker 6"
+        }
+      },
+      "withheld_words": 1694,
+      "withheld_share": 0.0433,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 1,
+        "found": 1,
+        "missing": [],
+        "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 1,
+        "kurzintervention": 1,
+        "rede": 36,
+        "zwischenfrage": 4
+      }
+    },
+    "20/11": {
+      "date": "13.01.2022",
+      "words_in_reden": 86374,
+      "xml_sha256": "0c57e9c28afe154eb20daad27836fb4c3244d6f6e92e944cc1a0c919de2b60fc",
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
+        "ID201100900": {
+          "markers": [
+            2
+          ],
+          "words": 902,
+          "speaker": "Dr. Matthias Miersch",
+          "fraktion": "SPD",
+          "refusal_class": "located_nested_contribution",
+          "locator": "20/11 Tagesordnungspunkt 2: unresolved nested contribution at ID201100900 marker 2"
+        }
+      },
+      "withheld_words": 902,
+      "withheld_share": 0.0104,
+      "moves_out_of_withheld": [],
+      "blockers": {
+        "expected": 0,
+        "found": 1,
+        "missing": [],
+        "not_listed": [
+          "ID201100900 marker 2"
+        ]
+      },
+      "counts": {
+        "erwiderung": 2,
+        "kurzintervention": 2,
+        "rede": 130,
+        "zwischenfrage": 6
+      }
+    }
+  }
+}
