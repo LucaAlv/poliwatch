@@ -1,0 +1,866 @@
+{
+ "commit": "915f303",
+ "started_at": "2026-11-12T18:41:27Z",
+ "finished_at": "2026-11-12T18:42:52Z",
+ "mode": "online",
+ "name_fallback": true,
+ "store": {
+  "path": "~/agent-runs/aw-match/site/data/bundestag-pulse.sqlite",
+  "sha256": "aa245957cb9b6531b1a127a1fd850de7c556e9dbe7ffc9ae2c59d44e97e83f5a"
+ },
+ "person_corrections_sha256": "2c99fe2cb5719b0b60493877469136edfffb78e96bea2cd6c2642d69ce3b3d75",
+ "cache": {
+  "path": "~/agent-runs/aw-match/scratch/aw-cache.json",
+  "seeded_from": null,
+  "ext_id_entries_before": 1021,
+  "answers_started_at": "2026-11-12T18:01:22Z"
+ },
+ "mdb_source": "mdb_zugehoerigkeiten",
+ "stammdaten": {
+  "path": "~/agent-runs/aw-match/.site.private/mdb-stammdaten.zip",
+  "stand": "2026-04-29T08:03:03+00:00",
+  "sha256": "29ae4ba1f5d8b50915a164ce929453b615bb88874ee78e4240f6288268bde460"
+ },
+ "mandate_table_zip_disagreements_wp18_19": [],
+ "sittings": {
+  "18": 194,
+  "19": 206
+ },
+ "sittings_excluded_by_record": [],
+ "sittings_without_xml": [],
+ "requests": {
+  "ext_id_keys": 1021,
+  "ext_id": 0,
+  "name": 11,
+  "unresolved": 0,
+  "api_calls": 0,
+  "throttled": 0,
+  "errors": 0
+ },
+ "figures": {
+  "18": {
+   "redner_ids": 671,
+   "M1": {
+    "ids": 640,
+    "hits": 640,
+    "misses": 0,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 1.0,
+    "bounds": [
+     1.0,
+     1.0
+    ]
+   },
+   "M1a": {
+    "ids": 1,
+    "hits": 1,
+    "misses": 0,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 1.0,
+    "bounds": [
+     1.0,
+     1.0
+    ]
+   },
+   "M1b": {
+    "ids": 30,
+    "hits": 0,
+    "misses": 30,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.0,
+    "bounds": [
+     0.0,
+     0.0
+    ]
+   },
+   "M2": {
+    "reden": 9862,
+    "reden_hit": 9720,
+    "share": 0.9856,
+    "reden_without_redner_id": 1
+   }
+  },
+  "19": {
+   "redner_ids": 781,
+   "M1": {
+    "ids": 727,
+    "hits": 719,
+    "misses": 8,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.989,
+    "bounds": [
+     0.989,
+     0.989
+    ]
+   },
+   "M1a": {
+    "ids": 11,
+    "hits": 8,
+    "misses": 3,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.7273,
+    "bounds": [
+     0.7273,
+     0.7273
+    ]
+   },
+   "M1b": {
+    "ids": 43,
+    "hits": 0,
+    "misses": 43,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.0,
+    "bounds": [
+     0.0,
+     0.0
+    ]
+   },
+   "M2": {
+    "reden": 16852,
+    "reden_hit": 16531,
+    "share": 0.981,
+    "reden_without_redner_id": 1
+   }
+  },
+  "union": {
+   "redner_ids": 1021,
+   "M1": {
+    "ids": 945,
+    "hits": 937,
+    "misses": 8,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.9915,
+    "bounds": [
+     0.9915,
+     0.9915
+    ]
+   },
+   "M1a": {
+    "ids": 7,
+    "hits": 4,
+    "misses": 3,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.5714,
+    "bounds": [
+     0.5714,
+     0.5714
+    ]
+   },
+   "M1b": {
+    "ids": 69,
+    "hits": 0,
+    "misses": 69,
+    "failed": 0,
+    "not_cached": 0,
+    "share": 0.0,
+    "bounds": [
+     0.0,
+     0.0
+    ]
+   },
+   "M2": {
+    "reden": 26714,
+    "reden_hit": 26251,
+    "share": 0.9827,
+    "reden_without_redner_id": 2
+   }
+  }
+ },
+ "m3": {
+  "name_rule": [
+   {
+    "redner_id": "11003130",
+    "wahlperioden": [
+     18
+    ],
+    "printed": [
+     "Wolfgang Gehrcke"
+    ],
+    "fraktionen": [
+     "DIE LINKE"
+    ],
+    "stammdaten": [
+     "Wolfgang Gehrcke"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 119515,
+     "label": "Wolfgang Gehrcke-Reymann",
+     "url": "https://www.abgeordnetenwatch.de/profile/wolfgang-gehrcke-reymann",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; Wolfgang Gehrcke, aw label adds the double surname Gehrcke-Reymann; born 1943 in both"
+   },
+   {
+    "redner_id": "11003781",
+    "wahlperioden": [
+     18
+    ],
+    "printed": [
+     "Franz Josef Jung",
+     "Franz Josef Jung"
+    ],
+    "fraktionen": [
+     "CDU/CSU"
+    ],
+    "stammdaten": [
+     "Franz Josef Jung"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 79270,
+     "label": "Franz-Josef Jung",
+     "url": "https://www.abgeordnetenwatch.de/profile/franz-josef-jung",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; hyphen only (Franz-Josef / Franz Josef); born 1949 in both"
+   },
+   {
+    "redner_id": "11004268",
+    "wahlperioden": [
+     18,
+     19
+    ],
+    "printed": [
+     "Bernd Fabritius"
+    ],
+    "fraktionen": [
+     "CDU/CSU"
+    ],
+    "stammdaten": [
+     "Bernd Fabritius"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 78807,
+     "label": "Bernd-Bernhard Fabritius",
+     "url": "https://www.abgeordnetenwatch.de/profile/bernd-bernhard-fabritius",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; aw adds the first given name (Bernd-Bernhard); born 1965 in both"
+   },
+   {
+    "redner_id": "11004308",
+    "wahlperioden": [
+     18
+    ],
+    "printed": [
+     "Charles M. Huber",
+     "Charles M. Huber"
+    ],
+    "fraktionen": [
+     "CDU/CSU"
+    ],
+    "stammdaten": [
+     "Charles M. Huber"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 79279,
+     "label": "Karl-Heinz (Charles M.) Huber",
+     "url": "https://www.abgeordnetenwatch.de/profile/karl-heinz-charles-m-huber",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; aw prints the civil name Karl-Heinz with the stage name (Charles M.); born 1956 in both"
+   },
+   {
+    "redner_id": "11004394",
+    "wahlperioden": [
+     18
+    ],
+    "printed": [
+     "Hans-Joachim Schabedoth"
+    ],
+    "fraktionen": [
+     "SPD"
+    ],
+    "stammdaten": [
+     "Hans-Joachim Schabedoth"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 79016,
+     "label": "Hans Joachim Schabedoth",
+     "url": "https://www.abgeordnetenwatch.de/profile/hans-joachim-schabedoth",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; hyphen only (Hans Joachim / Hans-Joachim); born 1952 in both"
+   },
+   {
+    "redner_id": "11004735",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Armin-Paulus Hampel"
+    ],
+    "fraktionen": [
+     "AfD"
+    ],
+    "stammdaten": [
+     "Armin-Paulus Hampel"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 29469,
+     "label": "Armin Paul Hampel",
+     "url": "https://www.abgeordnetenwatch.de/profile/armin-paul-hampel",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; Armin Paul / Armin-Paulus spelling; born 1957 in both"
+   },
+   {
+    "redner_id": "11004837",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Zaklin Nastic"
+    ],
+    "fraktionen": [
+     "DIE LINKE"
+    ],
+    "stammdaten": [
+     "Zaklin Nastic"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 66565,
+     "label": "Zaklin Nastić",
+     "url": "https://www.abgeordnetenwatch.de/profile/zaklin-nastic",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; diacritic only (Nastić / Nastic); born 1980 in both"
+   },
+   {
+    "redner_id": "11004941",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Gyde Jensen"
+    ],
+    "fraktionen": [
+     "FDP"
+    ],
+    "stammdaten": [
+     "Gyde Jensen"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 151468,
+     "label": "Gyde Jensen-Bornhöft",
+     "url": "https://www.abgeordnetenwatch.de/profile/gyde-jensen-bornhoeft",
+     "match": "ext_id"
+    },
+    "candidates": 1,
+    "verdict": "right person: the profile carries this ext_id; aw adds the married name Jensen-Bornhöft; born 1989 in both"
+   }
+  ],
+  "several_politicians": [],
+  "one_profile_several_ids": [],
+  "cache_disagrees": [],
+  "m1b_hits_matching_an_mdb_by_name": []
+ },
+ "m4": {
+  "searched": 11,
+  "linked": 11,
+  "unlinked": 0,
+  "failed": 0,
+  "review_sample_seed": null,
+  "review": [
+   {
+    "redner_id": "11002140",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Horst Seehofer"
+    ],
+    "fraktionen": [],
+    "stammdaten": [
+     "Horst Seehofer"
+    ],
+    "category": "M1a",
+    "aw": {
+     "id": 118761,
+     "label": "Horst Seehofer",
+     "url": "https://www.abgeordnetenwatch.de/profile/horst-seehofer",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Horst",
+     "last_name": "Seehofer",
+     "fraktion": null
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Horst Seehofer, born 1949 in both; aw holds no ext_id for him (source gap b); spoke as Bundesminister"
+   },
+   {
+    "redner_id": "11003023",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Annegret Kramp-Karrenbauer"
+    ],
+    "fraktionen": [],
+    "stammdaten": [
+     "Annegret Kramp-Karrenbauer"
+    ],
+    "category": "M1a",
+    "aw": {
+     "id": 138124,
+     "label": "Annegret Kramp-Karrenbauer",
+     "url": "https://www.abgeordnetenwatch.de/profile/annegret-kramp-karrenbauer",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Annegret",
+     "last_name": "Kramp-Karrenbauer",
+     "fraktion": null
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Annegret Kramp-Karrenbauer, born 1962 in both; aw holds no ext_id (source gap b); spoke as Bundesministerin"
+   },
+   {
+    "redner_id": "11003610",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Andreas Pinkwart"
+    ],
+    "fraktionen": [],
+    "stammdaten": [
+     "Andreas Pinkwart"
+    ],
+    "category": "M1a",
+    "aw": {
+     "id": 136896,
+     "label": "Andreas Pinkwart",
+     "url": "https://www.abgeordnetenwatch.de/profile/andreas-pinkwart",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Andreas",
+     "last_name": "Pinkwart",
+     "fraktion": null
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Andreas Pinkwart, born 1960 in both; aw holds no ext_id (source gap b); spoke for a Land"
+   },
+   {
+    "redner_id": "11004664",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Danyal Bayaz"
+    ],
+    "fraktionen": [
+     "BÜNDNIS 90/DIE GRÜNEN"
+    ],
+    "stammdaten": [
+     "Danyal Bayaz"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 121041,
+     "label": "Danyal Bayaz",
+     "url": "https://www.abgeordnetenwatch.de/profile/danyal-bayaz",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Danyal",
+     "last_name": "Bayaz",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Danyal Bayaz, born 1983 in both; aw's ext_id_bundestagsverwaltung reads 2028, not 11004664 (source defect c)"
+   },
+   {
+    "redner_id": "11004668",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Nicola Beer"
+    ],
+    "fraktionen": [
+     "FDP"
+    ],
+    "stammdaten": [
+     "Nicola Beer"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 135393,
+     "label": "Nicola Beer",
+     "url": "https://www.abgeordnetenwatch.de/profile/nicola-beer",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Nicola",
+     "last_name": "Beer",
+     "fraktion": "FDP"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Nicola Beer, born 1970 in both; aw's ext_id reads 2031 (source defect c)"
+   },
+   {
+    "redner_id": "11004725",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Axel Gehrke"
+    ],
+    "fraktionen": [
+     "AfD"
+    ],
+    "stammdaten": [
+     "Axel Gehrke"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 121836,
+     "label": "Axel Gehrke",
+     "url": "https://www.abgeordnetenwatch.de/profile/axel-gehrke",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Axel",
+     "last_name": "Gehrke",
+     "fraktion": "AfD"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Axel Gehrke, born 1942 in both; aw's ext_id reads 2085 (source defect c)"
+   },
+   {
+    "redner_id": "11004740",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Martin Hebner"
+    ],
+    "fraktionen": [
+     "AfD"
+    ],
+    "stammdaten": [
+     "Martin Hebner"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 145811,
+     "label": "Martin Hebner",
+     "url": "https://www.abgeordnetenwatch.de/profile/martin-hebner",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Martin",
+     "last_name": "Hebner",
+     "fraktion": "AfD"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Martin Hebner, born 1959 in both; aw's ext_id reads 2100 (source defect c)"
+   },
+   {
+    "redner_id": "11004769",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Christian Jung"
+    ],
+    "fraktionen": [
+     "FDP"
+    ],
+    "stammdaten": [
+     "Christian Jung"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 146419,
+     "label": "Christian Jung",
+     "url": "https://www.abgeordnetenwatch.de/profile/christian-jung",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Christian",
+     "last_name": "Jung",
+     "fraktion": "FDP"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Christian Jung, born 1977 in both; aw's ext_id reads 2130 (source defect c)"
+   },
+   {
+    "redner_id": "11004775",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Thomas L. Kemmerich"
+    ],
+    "fraktionen": [
+     "FDP"
+    ],
+    "stammdaten": [
+     "Thomas L. Kemmerich"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 32308,
+     "label": "Thomas L. Kemmerich",
+     "url": "https://www.abgeordnetenwatch.de/profile/thomas-l-kemmerich",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Thomas L.",
+     "last_name": "Kemmerich",
+     "fraktion": "FDP"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Thomas L. Kemmerich, born 1965 in both; aw's ext_id reads 2136 (source defect c)"
+   },
+   {
+    "redner_id": "11004805",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Nikolas Löbel"
+    ],
+    "fraktionen": [
+     "CDU/CSU"
+    ],
+    "stammdaten": [
+     "Nikolas Löbel"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 132398,
+     "label": "Nikolas Löbel",
+     "url": "https://www.abgeordnetenwatch.de/profile/nikolas-loebel",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Nikolas",
+     "last_name": "Löbel",
+     "fraktion": "CDU/CSU"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Nikolas Löbel, born 1986 in both; aw's ext_id reads 2165 (source defect c)"
+   },
+   {
+    "redner_id": "11004885",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Manja Schüle"
+    ],
+    "fraktionen": [
+     "SPD"
+    ],
+    "stammdaten": [
+     "Manja Schüle"
+    ],
+    "category": "M1",
+    "aw": {
+     "id": 146790,
+     "label": "Manja Schüle",
+     "url": "https://www.abgeordnetenwatch.de/profile/manja-schuele",
+     "match": "name"
+    },
+    "candidates": 0,
+    "searched": {
+     "first_name": "Manja",
+     "last_name": "Schüle",
+     "fraktion": "SPD"
+    },
+    "name_rule": true,
+    "verdict": "right person (name link): Manja Schüle, born 1976 in both; aw's ext_id reads 2239 (source defect c)"
+   }
+  ],
+  "unlinked_ids": []
+ },
+ "m5": {
+  "partitioned_ids": [
+   {
+    "redner_id": "999990108",
+    "wahlperioden": [
+     18,
+     19
+    ],
+    "printed": [
+     "Anette Kramme",
+     "Maika Friemann-Jennert"
+    ],
+    "fraktionen": [
+     "CDU/CSU"
+    ],
+    "stammdaten": null,
+    "category": "M1b",
+    "aw": null,
+    "candidates": 0,
+    "profile_owner": null,
+    "hit": false
+   },
+   {
+    "redner_id": "999990124",
+    "wahlperioden": [
+     18
+    ],
+    "printed": [
+     "Annette Widmann-Mauz"
+    ],
+    "fraktionen": [],
+    "stammdaten": null,
+    "category": "M1b",
+    "aw": null,
+    "candidates": 0,
+    "profile_owner": null,
+    "hit": false
+   },
+   {
+    "redner_id": "999990127",
+    "wahlperioden": [
+     18
+    ],
+    "printed": [
+     "Enak Ferlemann"
+    ],
+    "fraktionen": [],
+    "stammdaten": null,
+    "category": "M1b",
+    "aw": null,
+    "candidates": 0,
+    "profile_owner": null,
+    "hit": false
+   },
+   {
+    "redner_id": "10000",
+    "wahlperioden": [
+     19
+    ],
+    "printed": [
+     "Marja-Liisa Völlers",
+     "Olaf in der Beek",
+     "Carsten Sieling, Bürgermeister"
+    ],
+    "fraktionen": [
+     "SPD",
+     "FDP",
+     "Bremen"
+    ],
+    "stammdaten": null,
+    "category": "M1b",
+    "aw": null,
+    "candidates": 0,
+    "profile_owner": null,
+    "hit": false
+   }
+  ],
+  "merged_raw_values": [],
+  "merged_hit_by_first_not_by_raw": 0
+ },
+ "m6": {
+  "store_reden": {
+   "19": 16852,
+   "18": 9862
+  },
+  "reden_with_ext_id_profile": {},
+  "ids_with_profile": 0,
+  "wp18_19_mdb_ids_without_a_profile": {
+   "18": 640,
+   "19": 727
+  }
+ },
+ "failures": [],
+ "runs": [
+  {
+   "started_at": "2026-11-12T17:59:57Z",
+   "finished_at": "2026-11-12T18:35:53Z",
+   "requests": {
+    "ext_id_keys": 1021,
+    "ext_id": 0,
+    "name": 11,
+    "unresolved": 0,
+    "api_calls": 1032,
+    "throttled": 0,
+    "errors": 5
+   },
+   "failures": [
+    "11003646",
+    "11003854",
+    "11004260",
+    "11004842",
+    "999990102"
+   ],
+   "cache_ext_id_entries_before": 0,
+   "note": "online, every id asked; the store holds no abgeordnetenwatch cache, so the scratch cache started empty"
+  },
+  {
+   "started_at": "2026-11-12T18:36:10Z",
+   "finished_at": "2026-11-12T18:37:44Z",
+   "requests": {
+    "ext_id_keys": 1021,
+    "ext_id": 0,
+    "name": 11,
+    "unresolved": 0,
+    "api_calls": 5,
+    "throttled": 0,
+    "errors": 0
+   },
+   "failures": [],
+   "note": "online rerun: asked only the five ids that failed"
+  },
+  {
+   "started_at": "2026-11-12T18:41:27Z",
+   "finished_at": "2026-11-12T18:42:52Z",
+   "requests": {
+    "ext_id_keys": 1021,
+    "ext_id": 0,
+    "name": 11,
+    "unresolved": 0,
+    "api_calls": 0,
+    "throttled": 0,
+    "errors": 0
+   },
+   "note": "this receipt: every answer from the answers file and cache (0 requests), with the review verdicts"
+  },
+  {
+   "note": "hand review, outside the script: 33 requests (19 candidacies-mandates, which hold no WP 18/19 Bundestag mandate for these profiles; 3 probes; 11 politicians?id= for the name-found profiles' ext_id and year_of_birth)",
+   "requests": {
+    "api_calls": 33
+   }
+  }
+ ]
+}

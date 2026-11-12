@@ -1,6 +1,6 @@
 # A3 plan item 1.5: the abgeordnetenwatch match share of WP 18/19 Redner
 
-Plan, 2026-11-10, after `/plan-eng-review` (report at the end). Nothing here has run.
+Plan, 2026-11-10, after `/plan-eng-review` (report at the end). **Ran 2026-11-12** on the fresh store of 28799ac; result and deviations in [a3-phase4.md](a3-phase4.md), "Plan item 1.5". Deviations from this plan: requests are paced at 2 s (the API page's fair-use limit of 30 a minute, not 0.5 s); `lookup_ext_id` returns a five-field `ExtIdLookup` (the cached answer beside the fresh one); an answers file beside the scratch cache lets a rerun ask only unanswered ids; the store had no aw cache to seed from, so M3 flag 4 was vacuous; the profile-page mandate check was replaced by the birth year, because the API's `candidacies-mandates` holds no WP 18/19 Bundestag mandate for the reviewed profiles; the abgeordnetenwatch id errors went to TODOS.md, since `docs/source-errors.md` lists Bundestag sources only.
 
 Sources of the item:
 - TODOS.md, "A3 /gstack-ship review: deferred findings", last bullet (P1);

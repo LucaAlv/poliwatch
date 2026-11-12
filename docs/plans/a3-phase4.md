@@ -556,3 +556,54 @@ These figures depend on the registry the A3 store carried forward from earlier b
 The gate's replay raises `persons` from 1,952 to 1,956, while grouping on fresh bindings stays 1,948 on both sides. That belongs to "The carried-forward registry diverges from a fresh build after A3" and to the registry-split plan (`docs/plans/registry-split-koestering-krampe.md`), not to E4.
 
 Not re-measured: `docs/stable-ids.md`'s "five ids out of 2,364 records with a Redner-ID". That count was taken on the A3 store's registry, and this store's reconcile passed with the five reviewed entries in place.
+
+## Plan item 1.5: abgeordnetenwatch match share (2026-11-12)
+
+Plan: [a3-item-1-5-aw-match-share.md](a3-item-1-5-aw-match-share.md). Receipt: [a3-aw-match-share.json](a3-aw-match-share.json), with `$HOME` written as `~` and every review verdict.
+
+- **Object:** an APFS clone (`~/agent-runs/aw-match/site`, with `.site.private`) of the fresh online store built on 28799ac (`.context/dip-pulse-site`): 400 WP 18/19 sittings (194 + 206), 0 of them excluded by the record, all 400 re-parsed from their cached XML. Store sha256 `aa245957…`, the same as the reference store's; nothing under the clone or the reference was written (`find -newer` is empty, the sha256 is unchanged).
+- **Code:** commit 915f303 (`scripts/measure_aw_match_share.py`, `lookup_ext_id` and the `_request` fix). `person_corrections.json` sha256 `2c99fe2c…`.
+- **MdB source:** `mdb_zugehoerigkeiten` for the Mandat rule; names and Stammdaten membership from the store's cached zip (Stand 2026-04-29). The table and the zip agree on every WP 18/19 Mandat (0 disagreements).
+- **Commands**, all through `~/agent-runs/aw-match/run.sh` (`SSL_CERT_FILE` set, scratch cache `~/agent-runs/aw-match/scratch/aw-cache.json`):
+  1. `--offline`: 1,021 distinct Redner-IDs, 0 merged raw values, so 1,021 requests announced; 86 s, 0.3 GB maxrss.
+  2. online `--name-fallback`: 1,032 requests (1,021 ext_id + 11 name searches), 0 HTTP 429, 5 isolated failures (exit 1); 36 min.
+  3. online rerun: asked only the 5 failed ids, 5 requests, 0 failures (exit 0).
+  4. the receipt run with `--verdicts`: 0 requests.
+  - Hand review outside the script: 33 requests. Altogether about 1,070 abgeordnetenwatch requests, 0 DIP requests, 0 store writes.
+- **Pace:** the API page (read 2026-11-12, still CC0 1.0, no key) now asks for at most 30 requests a minute per IP and at most one a second, 60 s after a 429. The resolver's 0.5 s spacing broke that, so 915f303 raises the default to 2.0 s (and the 429 wait to 60 s) for every build, not only this script.
+- **No store cache:** the fresh store holds no `abgeordnetenwatch-cache.json` and no `aw_match` on any of its 6,387 `mps` rows, because it was built without `--enrich aw-profiles`. The scratch cache therefore started empty: M3 flag 4 (cache disagrees) had nothing to compare and is vacuous here, and M6 is 0.
+
+### Figures
+
+A Redner-ID is counted per Wahlperiode it speaks in; the union counts it once, as M1 when it holds a Mandat in a Wahlperiode it spoke in.
+
+| | WP 18 | WP 19 | Union |
+|---|---:|---:|---:|
+| **M1:** MdB ids with a Mandat in the WP, ext_id hit | **640 / 640 (100%)** | **719 / 727 (98.9%)** | **937 / 945 (99.2%)** |
+| M1a: in the Stammdaten, no Mandat in the WP | 1 / 1 | 8 / 11 | 4 / 7 |
+| M1b: not in the Stammdaten (government, Bundesrat, guests) | 0 / 30 | 0 / 43 | 0 / 69 |
+| **M2:** Reden whose speaker's id hit | **9,720 / 9,862 (98.6%)** | **16,531 / 16,852 (98.1%)** | **26,251 / 26,714 (98.3%)** |
+| Reden without a Redner-ID | 1 | 1 | 2 |
+| Failures | 0 | 0 | 0 |
+
+- **M3 precision:** 8 name-rule flags, 0 multi-candidate replies, 0 profiles returned for two Redner-IDs, 0 M1b hits (so no role id of an MdB), flag 4 vacuous (above).
+- **M4 name fallback:** 11 MdB-Stammdaten misses searched by name, 11 linked, 0 unlinked, 0 failed. All 11 reviewed.
+- **M5:** 4 partitioned Redner-IDs speak in WP 18/19 (`999990108`, `999990124`, `999990127`, `10000`); none hits, so a fresh WP 18/19 enrichment creates no `aw:` record under a shared id ("Shared Redner-IDs" item 8 stays unreached). 0 merged raw values in WP 18/19.
+- **M6:** 0 WP 18/19 Reden hold a trusted profile in this store; all 640 + 727 WP 18/19 MdB ids hold none. On this store "the leavers" are every WP 18/19 speaker, not only those who left by 2021, because no aw data reached the store at all.
+
+### Review
+
+- **The 8 name-rule flags are all the right person.** Each profile carries the Redner-ID as its `ext_id_bundestagsverwaltung` (that is how it was found), and the abgeordnetenwatch birth year equals the Stammdaten `GEBURTSDATUM` year in all 8. The labels differ only in spelling: a hyphen (Franz-Josef Jung, Hans Joachim Schabedoth), a diacritic (Zaklin Nastić), an added name (Gehrcke-Reymann, Jensen-Bornhöft, Bernd-Bernhard Fabritius), a civil name beside the stage name (Karl-Heinz (Charles M.) Huber), Armin Paul / Armin-Paulus Hampel. The two-word rule is strict by design; no rule change follows.
+- **The 11 name-found links are all the right person**, by full name and birth year (Stammdaten against abgeordnetenwatch, read with `politicians?id=`). The plan's mandate check on the profile was not possible through the API: `candidacies-mandates?politician=` returns no WP 18/19 Bundestag mandate for these profiles (Franz-Josef Jung: 0 rows; Manja Schüle: only Brandenburg 2024-2029). The birth year stood in for it, at no request cost.
+- **Why the 8 M1 ids miss (all WP 19):** abgeordnetenwatch holds a four-digit `ext_id_bundestagsverwaltung` for them, not the Bundestag id: Danyal Bayaz `2028` (ours `11004664`), Nicola Beer `2031`, Axel Gehrke `2085`, Martin Hebner `2100`, Christian Jung `2130`, Thomas L. Kemmerich `2136`, Nikolas Löbel `2165`, Manja Schüle `2239`. All eight left the Bundestag during WP 19. Our key is the Stammdaten `ID`, which 937 other hits confirm, so this is class (c) on abgeordnetenwatch's side, not a defect of our key. `docs/source-errors.md` lists Bundestag sources only, so it is recorded here and in TODOS.md.
+- **Why the 3 M1a ids miss:** Horst Seehofer, Annegret Kramp-Karrenbauer and Andreas Pinkwart (WP 19, speaking as ministers or for a Land) have no `ext_id_bundestagsverwaltung` on abgeordnetenwatch at all: class (b), a source gap.
+- **M1b:** none of the 69 ids outside the Stammdaten (`9999…` and `10000`) is an abgeordnetenwatch ext id; expected.
+
+**No confirmed defect.** No Redner-ID is linked to the wrong person, by ext_id or by name.
+
+### What it triggers
+
+- M3 clean, M1 high: the ext_id join holds for WP 18/19. Nothing to fix before coverage-gate step 8.
+- The 11 misses would get a name-found link from a build (match `name`, untrusted, but linked on the person page as fact). All 11 are right today; the deferred item "Person pages link name-found profiles" stays open in TODOS.md.
+- The store enrichment decision stays with the owner, now with M6 = every WP 18/19 MdB id (1,367 per-WP ids, 945 distinct MdBs) on this store.
+- Coverage-gate step 7 re-runs the same command on the step 6 output directory; only Redner-IDs new in the 85 sittings cost requests, unless the answers file is deleted to ask every id again.
