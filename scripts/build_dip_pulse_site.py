@@ -1985,9 +1985,9 @@ def reparse_cached_xml(
             parsed = dip.parse_protocol_xml(path.read_text(encoding="utf-8"))
             dip.reparse_report_xml(report, parsed)
         except dip.ReconciliationError as exc:
-            # Not a corrupt file: the parser left a <rede> of a valid XML without a status.
+            # Not a corrupt file: the <rede> elements of a valid XML do not reconcile with the parse.
             raise CachedReportError(
-                f"rede reconciliation failed for {document_number}: {exc}. The parser left a <rede> of {path} without a status; see docs/data-methods.md",
+                f"rede reconciliation failed for {document_number}: {exc}. The <rede> elements of {path} do not reconcile with what the parser read; see docs/data-methods.md",
                 [document_number],
             ) from exc
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
