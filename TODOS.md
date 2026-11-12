@@ -68,6 +68,8 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 
 Also listed with no refusal, and not part of N7: 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 wait on the ADR 0004 item; 18/62 and 18/90 stay out by the owner's round 2 decision.
 
+**21/106 joined the list on 2026-11-12 (owner, during the fresh build).** The parser refuses `21/106 Zusatzpunkt 13: unresolved nested contribution at ID2110609100:4 marker 2`. In Bessin's (AfD) Rede, the chair asks whether she allows a Zwischenfrage from Edis (Die Linke). She says "Selbstverständlich" (marker 2), then answers a heckle from the Regierungsbank in a second turn before Edis is called, and only then does Edis ask. No rule covers a same-speaker turn between the grant and the question. This is a parser gap, not a source defect, so under step 4's bar 21/106 comes back as one withheld Rede (or with a rule) and leaves the list with `--include-document-number 21/106`. It was the first sitting after the old store's 21/103. The list now holds 86.
+
 The implementer must prove:
 - withholding one unit leaves every other unit's id, sequence and text unchanged, although classification carries state across turns and TOPs;
 - each refusal class has a home: Fragestunde markers have no rede id, Befragung turns raise a different error, "conflicting roles" is sitting-wide, and 18/90's defect is outside any `<rede>`. A class that cannot be narrowed stays out under the bar;
