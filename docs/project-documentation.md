@@ -442,7 +442,7 @@ Common options:
 | `--sleep SECONDS` | `0.0` (`2.0` with `--backfill-incomplete`) | Delay between DIP API requests |
 | `--no-abgeordnetenwatch` | deprecated | Explicitly veto profile resolution during the compatibility window |
 | `--abgeordnetenwatch-cache PATH` | `OUTPUT_DIR/data/abgeordnetenwatch-cache.json` | Profile cache location |
-| `--abgeordnetenwatch-sleep SECONDS` | `0.5` | Minimum delay between abgeordnetenwatch API requests |
+| `--abgeordnetenwatch-sleep SECONDS` | `2.0` | Minimum delay between abgeordnetenwatch API requests (its fair-use limit: 30 requests a minute, at most one a second) |
 | `--roster-wahlperiode N` | every period from 18 to the catalog's newest | Legislative period whose full MdB roster `--enrich mp-roster` fetches; repeatable. The Abgeordnete index lists the members of the newest |
 | `--no-roster` | deprecated | Explicitly veto full-roster acquisition during the compatibility window |
 
