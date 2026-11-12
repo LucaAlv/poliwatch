@@ -73,6 +73,15 @@ class PreflightToolTests(unittest.TestCase):
         self.assertEqual(self.rows["18/150"]["status"], "parses, no refusal")
         self.assertEqual(self.rows["18/20"]["refusal_class"], "fetch_rejected")
 
+    # Value: protects=a missing --only-file is a clear refusal; fails_when=the path check is dropped and a traceback returns; why_new=QA capture 002 hit the traceback; seam=none
+    def test_missing_only_file_refuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run([sys.executable, "-I", str(TOOL), str(_support.SCRIPTS), tmp, tmp, "--no-fetch",
+                                     "--only-file", str(Path(tmp) / "missing.txt")], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no such file", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     # Value: protects=B3, a sitting-wide refusal while the tree is built is a row, not the end of the run; fails_when=tree building leaves the try; why_new=it aborted the run before; seam=none
     def test_sitting_wide_refusal_is_recorded(self):
         row = self.rows["18/2"]

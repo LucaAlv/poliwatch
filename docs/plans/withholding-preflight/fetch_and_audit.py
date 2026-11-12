@@ -39,6 +39,8 @@ cli.add_argument("--no-fetch", action="store_true", help="audit only the XML alr
 cli.add_argument("--only", help="comma-separated document numbers instead of the whole exclusion list")
 cli.add_argument("--only-file", type=Path, help="a file with one document number (WP/NR) per line, instead of --only")
 args = cli.parse_args()
+if args.only_file and not args.only_file.is_file():
+    cli.error(f"--only-file {args.only_file}: no such file")
 sys.path.insert(0, str(args.scripts_dir.resolve()))
 
 import audit_offline_turns  # noqa: E402
