@@ -22,7 +22,7 @@ class RegistryFixture:
         # A distinct filename per call: corrections() reads each path once per process.
         self.corrections_written += 1
         path = self.root / f"corrections-{self.corrections_written}.json"
-        path.write_text(json.dumps({"version": 1, "partitions": [], "assignments": [], "merges": [], "splits": [], **data}))
+        path.write_text(json.dumps({"version": 1, "partitions": [], "assignments": [], "merges": [], "splits": [], "dip_successors": [], **data}))
         return mock.patch.object(registry, "CORRECTIONS_PATH", path)
 
     def open_store(self, name="s.sqlite"):

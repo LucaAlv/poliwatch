@@ -120,5 +120,19 @@
   ],
   "assignments": [],
   "merges": [],
-  "splits": []
+  "splits": [],
+  "dip_successors": [
+    {
+      "dip_person_id": "8054",
+      "successor": "8257",
+      "evidence": "Name change Jan Köstering -> Jan Krampe (Die Linke, WP 21). DIP 8054 'Jan Köstering, MdB, DIE LINKE' (aktualisiert 2025-03-11) is listed only by the /person roster; every cached Plenarprotokoll names 8257 'Jan Krampe, MdB, DIE LINKE' for his activities. Redner-ID 11005511 prints both names (21/15 'Jan Köstering'), and bundestag.de member number 1045564 appears under both slugs (koestering_jan, krampe_jan).",
+      "reviewed": "2026-11-12"
+    },
+    {
+      "dip_person_id": "7406",
+      "successor": "8220",
+      "evidence": "Fraktion change of Jan Wenzel Schmidt (WP 20 and 21). DIP 7406 'Jan Wenzel Schmidt, MdB, AfD' (aktualisiert 2025-03-11) is listed only by the /person roster; the cached Plenarprotokolle sample 8220 'Jan Wenzel Schmidt, MdB, fraktionslos' (aktualisiert 2026-04-09), with the same name and Wahlperioden [20, 21]. Redner-ID 11005210 is one speaker.",
+      "reviewed": "2026-11-12"
+    }
+  ]
 }

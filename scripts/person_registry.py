@@ -7,6 +7,7 @@ import fcntl
 import os
 import stat
 from contextlib import contextmanager
+from datetime import date
 from functools import lru_cache
 from collections.abc import Iterator
 import re
@@ -16,7 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 import derive
 import abgeordnetenwatch as aw
-from stable_ids import stable_key
+from stable_ids import canonical_dip_person_id, stable_key
 
 CORRECTIONS_PATH = Path(__file__).with_name("person_corrections.json")
 REGISTRY_TABLES = ("persons", "person_aliases", "person_records", "person_bindings")
@@ -160,7 +161,7 @@ def _load_corrections(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("version") != 1:
             raise ValueError("expected a version 1 object")
-        for name in ("partitions", "assignments", "merges", "splits"):
+        for name in ("partitions", "assignments", "merges", "splits", "dip_successors"):
             if not isinstance(data.get(name), list):
                 raise ValueError(f"{name} must be an array")
         # Records placed on another person (occurrence assignments, splits) are
@@ -222,6 +223,7 @@ def _load_corrections(path: Path) -> dict[str, Any]:
             texts(merge_["persons"], "merge persons")
             if merge_.get("survivor") is not None:
                 text(merge_["survivor"], "merge survivor")
+        _validate_dip_successors(data["dip_successors"], text)
         # corrected_speaker replaces a shared id once: an own id that is itself
         # shared would land on a partition its printed name was never reviewed for.
         for partition in data["partitions"]:
@@ -231,6 +233,65 @@ def _load_corrections(path: Path) -> dict[str, Any]:
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RegistryError(f"Unreadable person corrections {path}: {exc}") from exc
+
+_SUCCESSOR_FIELDS = {"dip_person_id", "successor", "evidence", "reviewed"}
+_REVIEWED_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _validate_dip_successors(entries: list[Any], text: Any) -> None:
+    """A re-issued DIP person record names its successor: both ids in the
+    canonical form, no self-successor, no duplicate, no chain (so no cycle)."""
+    successor_of: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict) or set(entry) != _SUCCESSOR_FIELDS:
+            raise ValueError(f"dip_successors[{index}] requires exactly {', '.join(sorted(_SUCCESSOR_FIELDS))}")
+        old, new = (text(entry[field], f"dip_successors[{index}] {field}") for field in ("dip_person_id", "successor"))
+        for value in (old, new):
+            if canonical_dip_person_id(value) != value:
+                raise ValueError(f"dip_successors[{index}]: DIP id {value!r} is not in canonical form")
+        text(entry["evidence"], f"dip_successors[{index}] evidence")
+        reviewed = text(entry["reviewed"], f"dip_successors[{index}] reviewed")
+        try:
+            if not _REVIEWED_DATE.fullmatch(reviewed):
+                raise ValueError
+            date.fromisoformat(reviewed)
+        except ValueError:
+            raise ValueError(f"dip_successors[{index}] reviewed must read YYYY-MM-DD") from None
+        if old == new:
+            raise ValueError(f"dip_successors[{index}]: DIP id {old} cannot succeed itself")
+        if old in successor_of:
+            raise ValueError(f"DIP id {old} is listed twice in dip_successors; use one entry")
+        successor_of[old] = new
+    for old, new in successor_of.items():
+        if new in successor_of:
+            raise ValueError(f"dip_successors: successor {new} of DIP id {old} is itself superseded; name the last record")
+
+
+def dip_successors() -> dict[str, str]:
+    """Re-issued DIP person records (scripts/person_corrections.json): old id ->
+    the record DIP now keeps for the same person."""
+    return {entry["dip_person_id"]: entry["successor"] for entry in corrections()["dip_successors"]}
+
+
+def current_dip_person_id(value: Any) -> str | None:
+    """A DIP person id in canonical form, a superseded id replaced by its successor."""
+    canonical = canonical_dip_person_id(value)
+    return dip_successors().get(canonical, canonical) if canonical else None
+
+
+def superseded_dip_person(evidence: dict[str, Any]) -> bool:
+    """Whether a record's DIP id is a re-issued record's old id: its successor
+    speaks for the person, so the old record grants no page and joins no one."""
+    return canonical_dip_person_id(evidence.get("dip_person_id")) in dip_successors()
+
+
+def roster_member(evidence: dict[str, Any]) -> bool:
+    """A former or current roster (DIP person) record, the evidence that gives a
+    person a page and lets a stale record join its speaker: not vacated (the
+    source said the evidence was someone else's) and not superseded."""
+    return bool((evidence.get("ever_mdb") or evidence.get("is_mdb")) and not evidence.get("vacated")
+                and not superseded_dip_person(evidence))
+
 
 def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -> dict[str, Any]:
     speaker = dict(speaker)
@@ -568,7 +629,9 @@ def bind(
             previous = {}
         else:
             previous.setdefault("identities", [row["identity_key"]])
-        evidence["ever_mdb"] = bool(evidence.get("ever_mdb") or was_mdb)
+        # A re-issued DIP record is no MdB evidence of its own (dip_successors), also
+        # when an earlier build stored it as one: the replay agrees with a fresh build.
+        evidence["ever_mdb"] = bool(evidence.get("ever_mdb") or was_mdb) and not superseded_dip_person(evidence)
         previous.pop("vacated", None)
         evidence = _fold(previous, evidence)
     else:
@@ -658,12 +721,14 @@ def mp_keys(row: dict[str, Any]) -> list[str]:
     """Personenkennungen of an MP row, used to link rows that describe the same
     person across sources (DIP roster vs. protocol speaker). An abgeordnetenwatch
     id counts only when it was looked up by the Redner-ID (match kind ext_id); one
-    found by searching a name is a Namensabgleich and links nothing."""
+    found by searching a name is a Namensabgleich and links nothing. A re-issued
+    DIP record's id reads as its successor's (``current_dip_person_id``)."""
     keys: list[str] = []
     if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         keys.append(f"aw:{row['aw_politician_id']}")
-    if row.get("dip_person_id"):
-        keys.append(f"dip:{row['dip_person_id']}:{row['partition']}" if row.get("partition") else f"dip:{row['dip_person_id']}")
+    dip = current_dip_person_id(row.get("dip_person_id"))
+    if dip:
+        keys.append(f"dip:{dip}:{row['partition']}" if row.get("partition") else f"dip:{dip}")
     for xml_id in sorted(_redner_ids(row)):
         keys.append(f"xml:{xml_id}:{row['partition']}" if row.get("partition") else f"xml:{xml_id}")
     return keys
@@ -709,8 +774,9 @@ def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
     ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
     if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         ids["aw"].add(str(row["aw_politician_id"]))
-    if row.get("dip_person_id"):
-        ids["dip"].add(str(row["dip_person_id"]))
+    dip = current_dip_person_id(row.get("dip_person_id"))
+    if dip:
+        ids["dip"].add(dip)
     ids["xml"].update(_redner_ids(row))
     if row.get("profile_url"):
         url = str(row["profile_url"])
@@ -1122,9 +1188,8 @@ def _assign(conn: sqlite3.Connection, record: str, person: str) -> None:
 def is_stale_roster_partner(evidence: dict[str, Any]) -> bool:
     """A former roster (DIP person) record this build did not list again: its
     biography stays published, so it may still join the speaker it belongs to.
-    A vacated record is not one: the source said its evidence was someone else's."""
-    return bool((evidence.get("ever_mdb") or evidence.get("is_mdb")) and not evidence.get("xml_redner_id")
-                and not evidence.get("vacated"))
+    A vacated or superseded record is not one (``roster_member``)."""
+    return roster_member(evidence) and not evidence.get("xml_redner_id")
 
 
 def _stale_roster_partners(
@@ -1159,7 +1224,7 @@ def _stale_roster_partners(
             continue  # its person already lives in another live person
         if not any(member.get("xml_redner_id") for member in members):
             continue
-        if any((member.get("ever_mdb") or member.get("is_mdb")) and not member.get("xml_redner_id") for member in members):
+        if any(roster_member(member) and not member.get("xml_redner_id") for member in members):
             continue  # the person was listed again under another roster record
         partitions = {member.get("partition") for member in [*members, row] if member.get("partition")}
         if len(partitions) > 1 or _external_ids_conflict(_merge_external_ids([row]), _merge_external_ids(members)):

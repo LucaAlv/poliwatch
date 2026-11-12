@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sqlite3
 import tempfile
@@ -99,6 +101,76 @@ class GroupingFingerprintTest(unittest.TestCase):
             live = gate.binding_ids(fresh)
             self.assertNotEqual(gate.grouping_fingerprint(replayed), gate.grouping_fingerprint(fresh))
             self.assertEqual(gate.grouping_fingerprint(replayed, only=live), gate.grouping_fingerprint(fresh))
+
+
+class ReplayVsInputTest(unittest.TestCase):
+    """The gate compares its replay with the input store it replayed."""
+
+    def build(self, root: Path) -> Path:
+        from test_registry_contracts import dip_person, report_with_vote, roster_client
+
+        database = root / "store.sqlite"
+        report = report_with_vote(member="Voter, Bo", url="https://www.bundestag.de/abgeordnete/biografien/V/voter_bo-123")
+        entries = [{"report": report, "report_path": root / "s1.json"}]
+        with contextlib.redirect_stderr(io.StringIO()):
+            site.rebuild_database_from_entries(
+                database, entries, preserve_roster=False,
+                roster_ingest=lambda staged: site.ingest_mdb_roster(
+                    roster_client(dip_person("5", "Bo Voter")), staged, wahlperioden=[21]))
+        return database
+
+    def snapshot(self, database: Path) -> dict:
+        return {"bindings": gate.binding_ids(database), "grouping": gate.grouping_fingerprint(database),
+                "pages": gate.person_pages(database)}
+
+    # Value: protects=an unchanged replay passes, and one that moves a roster MdB's Stimmen to a
+    #   pageless roll-call person fails with the moved counts in the receipt (the 227 Stimmen the
+    #   fresh store lost in a replay at 34a4615); fails_when=the check compares only the bindings
+    #   a store-less build holds, or only person counts, as replayed_store_groups_like_fresh did;
+    #   why_new=replay_vs_input is new; seam=none; no_claim=the full-data run
+    def test_a_replay_that_moves_stimmen_off_a_page_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.build(Path(tmp))
+            before = self.snapshot(database)
+            self.assertTrue(gate.replay_vs_input(before, database)["equal"])
+            bo = {page["name"]: page for page in before["pages"].values()}["Bo Voter"]
+            self.assertEqual((bo["stimmen"], bo["reden"]), (1, 0))
+
+            conn = sqlite3.connect(database)
+            voter = conn.execute("SELECT id FROM mps WHERE identity_key LIKE 'profile:%'").fetchone()[0]
+            alone = conn.execute("SELECT person_id FROM mps WHERE identity_key LIKE 'xml:%'").fetchone()[0]
+            for table, column in (("mps", "id"), ("person_records", "id"), ("person_bindings", "record_id")):
+                conn.execute(f"UPDATE {table} SET person_id = ? WHERE {column} = ?", (alone, voter))
+            conn.commit()
+            conn.close()
+            result = gate.replay_vs_input(before, database)
+
+        self.assertFalse(result["equal"])
+        self.assertNotEqual(result["grouping_before"], result["grouping_after"])
+        pages = result["pages"]
+        self.assertEqual((pages["totals"]["before"]["stimmen"], pages["totals"]["after"]["stimmen"]), (1, 1))
+        self.assertEqual(pages["lost_count"] + pages["changed_count"], 2)
+        lost_names = {page["name"] for page in pages["lost"]}
+        self.assertIn("Bo Voter", lost_names)
+
+    # Value: protects=pages compare by their binding sets and counts, so the same pages under other
+    #   person keys are equal, and each kind of difference is counted; fails_when=compare_pages keys
+    #   on person ids or drops a changed count; why_new=compare_pages is new; seam=none
+    def test_compare_pages_counts_lost_gained_and_changed_pages(self) -> None:
+        page = lambda pid, stimmen: {"id": pid, "name": pid, "reden": 1, "beitraege": 0, "stimmen": stimmen}
+        before = {"a": page("p1", 2), "b": page("p2", 3)}
+        self.assertTrue(gate.compare_pages(before, {"a": page("x1", 2), "b": page("x2", 3)})["equal"])
+        result = gate.compare_pages(before, {"a": page("p1", 1), "c": page("p3", 3)})
+        self.assertFalse(result["equal"])
+        self.assertEqual((result["lost_count"], result["gained_count"], result["changed_count"]), (1, 1, 1))
+        self.assertEqual((result["totals"]["before"]["stimmen"], result["totals"]["after"]["stimmen"]), (5, 4))
+
+    # Value: protects=a gate run without an input store cannot pass the replay comparison;
+    #   fails_when=a missing snapshot reads as equal; why_new=replay_vs_input is new; seam=none
+    def test_no_input_store_fails_the_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = gate.replay_vs_input(None, Path(tmp) / "missing.sqlite")
+        self.assertEqual(result, {"equal": False, "reason": "no input store to compare the replay with"})
 
 
 class IntegrityTest(unittest.TestCase):

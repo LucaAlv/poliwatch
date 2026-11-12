@@ -10,6 +10,9 @@ checks, in order:
 
 1. ``--offline --repersist`` of OUTPUT_DIR (exit code, timing, whether the store
    was replaced), then ``PRAGMA integrity_check`` and ``foreign_key_check``.
+   The replayed store must group the input store's bindings into persons as the
+   input did and render the same Personenseiten with the same Reden, Beiträge
+   and Stimmen (``replay_vs_input``).
 2. Order independence: a fresh store from all cached reports, and a store built
    from every other report and then replayed with all of them, must group the
    person bindings into persons identically (``grouping_fingerprint``). Both
@@ -94,6 +97,54 @@ def grouping_fingerprint(database_path: Path, *, only: set[str] | None = None) -
         "groups": len(groups),
         "bindings": sum(len(ids) for ids in groups.values()),
     }
+
+
+def _group_key(binding_ids: list[str]) -> str:
+    return hashlib.sha256("\x1f".join(sorted(binding_ids)).encode("utf-8")).hexdigest()
+
+
+def person_pages(database_path: Path) -> dict[str, dict[str, Any]]:
+    """Every person with a Personenseite and its Reden, Beiträge and Stimmen, as
+    ``collect_abgeordnete`` pools them, keyed by the person's binding ids (not its
+    person id), so two stores compare person by person whatever keys they minted."""
+    import build_dip_pulse_site as site
+
+    conn = _open_readonly(database_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        bindings: dict[str, list[str]] = {}
+        for binding_id, person_id in conn.execute("SELECT id, person_id FROM person_bindings"):
+            bindings.setdefault(person_id, []).append(binding_id)
+        mps, _lookup = site.collect_abgeordnete(conn)
+    finally:
+        conn.close()
+    pages: dict[str, dict[str, Any]] = {}
+    for mp in mps:
+        if site.has_abgeordnete_page(mp):
+            pages[_group_key(bindings.get(mp["id"], [mp["id"]]))] = {
+                "id": mp["id"], "name": mp["name"], "reden": mp["speech_count"],
+                "beitraege": mp["contribution_count"], "stimmen": len(mp["votes"]),
+            }
+    return pages
+
+
+_COUNTS = ("reden", "beitraege", "stimmen")
+
+
+def compare_pages(before: dict[str, dict[str, Any]], after: dict[str, dict[str, Any]], *, limit: int = 50) -> dict[str, Any]:
+    """Which Personenseiten a replay lost, gained or changed the counts of, with
+    the page and count totals on each side."""
+    def label(page: dict[str, Any]) -> dict[str, Any]:
+        return {key: page[key] for key in ("id", "name", *_COUNTS)}
+
+    lost = [label(before[key]) for key in sorted(before.keys() - after.keys())]
+    gained = [label(after[key]) for key in sorted(after.keys() - before.keys())]
+    changed = [{"before": label(before[key]), "after": label(after[key])} for key in sorted(before.keys() & after.keys())
+               if any(before[key][count] != after[key][count] for count in _COUNTS)]
+    totals = {side: {"pages": len(pages), **{count: sum(page[count] for page in pages.values()) for count in _COUNTS}}
+              for side, pages in (("before", before), ("after", after))}
+    return {"equal": not (lost or gained or changed), "totals": totals, "lost_count": len(lost), "gained_count": len(gained),
+            "changed_count": len(changed), "lost": lost[:limit], "gained": gained[:limit], "changed": changed[:limit]}
 
 
 def _ids(path: Path, cache: dict[Path, set[str]]) -> set[str]:
@@ -309,6 +360,20 @@ def order_independence(output_dir: Path, scratch: Path, today: str) -> dict[str,
     return result
 
 
+def replay_vs_input(input_store: dict[str, Any] | None, database_path: Path) -> dict[str, Any]:
+    """The replayed store against the input store it replayed: the same grouping of
+    the input's bindings into persons, and the same Personenseiten with the same
+    Reden, Beiträge and Stimmen. The input is the reference (a fresh online build or
+    an earlier replay of one), so any difference is the replay's doing; a branch
+    that moves persons on purpose shows its moves here."""
+    if input_store is None:
+        return {"equal": False, "reason": "no input store to compare the replay with"}
+    grouping = grouping_fingerprint(database_path, only=input_store["bindings"])
+    pages = compare_pages(input_store["pages"], person_pages(database_path))
+    return {"equal": grouping == input_store["grouping"] and pages["equal"],
+            "grouping_before": input_store["grouping"], "grouping_after": grouping, "pages": pages}
+
+
 def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
     output_dir = output_dir.resolve()
     scratch = scratch.resolve()
@@ -328,8 +393,15 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         "xml_files": len(list((output_dir / "data" / "xml").glob("*.xml"))),
     }
     database_path = output_dir / STORE
+    input_store: dict[str, Any] | None = None
     if database_path.exists():
         receipt["counts_before"] = store_counts(database_path)
+        # The input store as the replay finds it: an unchanged replay must
+        # reproduce its grouping and every page's counts.
+        started_snapshot = time.monotonic()
+        input_store = {"bindings": binding_ids(database_path), "grouping": grouping_fingerprint(database_path),
+                       "pages": person_pages(database_path)}
+        receipt["input_snapshot_seconds"] = round(time.monotonic() - started_snapshot, 1)
     checks: dict[str, bool] = {}
 
     receipt["replay"] = replay(output_dir, today, scratch / "replay.log")
@@ -345,18 +417,19 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         }
         receipt["grouping"] = grouping_fingerprint(database_path)
 
+    if checks["replay_exit_0"]:
+        receipt["replay_vs_input"] = replay_vs_input(input_store, database_path)
+        checks["replay_keeps_input_grouping_and_pages"] = receipt["replay_vs_input"]["equal"]
+
     receipt["order_independence"] = order_independence(output_dir, scratch, today)
     checks["half_then_full_groups_like_fresh"] = receipt["order_independence"]["equal"]
     if checks["replay_exit_0"] and "grouping" in receipt["order_independence"]["fresh"]:
-        # Not a plan check: the replayed store carries its registry forward, so it
-        # is compared on the bindings a fresh store holds, and the bindings it
-        # keeps for retired occurrences are counted.
+        # Reported, not checked: a store-less build has no roster, so it lacks the
+        # roster bindings no cached report samples. Comparing only on its bindings
+        # hid a replay that moved those records (replay_vs_input checks them).
         live = binding_ids(scratch / "fresh" / STORE)
         receipt["grouping_on_fresh_bindings"] = grouping_fingerprint(database_path, only=live)
         receipt["bindings_of_retired_occurrences"] = len(binding_ids(database_path) - live)
-        checks["replayed_store_groups_like_fresh"] = (
-            receipt["grouping_on_fresh_bindings"] == receipt["order_independence"]["fresh"]["grouping"]
-        )
 
     if checks["replay_exit_0"]:
         before = _store_identity(database_path)

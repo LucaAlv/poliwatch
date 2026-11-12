@@ -37,6 +37,36 @@ def report(pid="s1", names=("Ada Example",), rede_ids=None):
             "agenda_items": [{"index": 1, "heading": "Debatte", "xml_speakers": speakers}]}
 
 
+def report_with_vote(member, url, party="SPD"):
+    """A sitting with one roll call whose only member is ``member`` (a vote-only
+    record: no Rede, no DIP id)."""
+    r = report(names=("Ada Example",))
+    r["agenda_items"][0]["votes"] = [{
+        "id": "vote-1", "date": "2026-06-10", "title": "Namentliche Abstimmung",
+        "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1",
+        "total": {"yes": 1, "no": 0, "abstain": 0, "absent": 0},
+        "members": [{"name": member, "faction": party, "vote": "yes", "profile_url": url}],
+    }]
+    return r
+
+
+def successor(old, new, *, evidence="One person: the old record's name and party are printed for the new one.", reviewed="2026-11-12"):
+    entry = {"dip_person_id": old, "successor": new, "evidence": evidence, "reviewed": reviewed}
+    return {key: value for key, value in entry.items() if value is not None}
+
+
+def roster_client(*persons):
+    client = mock.Mock()
+    client.list_all.return_value = list(persons)
+    return client
+
+
+def dip_person(pid, name, party="SPD"):
+    first, last = name.split(" ", 1)
+    return {"id": pid, "titel": f"{name}, MdB, {party}", "vorname": first, "nachname": last,
+            "fraktion": [party], "funktion": ["MdB"], "wahlperiode": 21}
+
+
 class RegistryContractTests(RegistryFixture, unittest.TestCase):
     def rebuild(self, reports, **kwargs):
         entries = [{"report": r, "report_path": self.root / f'{r["protocol"]["id"]}.json'} for r in reports]
@@ -161,34 +191,154 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual((adas[0]["id"], adas[0]["speech_count"], adas[0]["wahlperioden"]), (person, 1, [21]))
         self.assertEqual(lookup["dip:dip-7"], person)
 
-    # Value: protects=offline replay keeps a renamed speaker joined while retaining retired roster keys and biographies; fails_when=preserved roster rows become live matching evidence; why_new=prior roster tests never replayed an obsolete DIP id beside a renamed speaker and replacement id; seam=none; no_claim=full-data store gate.
-    def test_preserved_roster_does_not_reactivate_retired_matching_evidence(self):
-        old = {"id": "7", "titel": "Ada Earlier", "vorname": "Ada", "nachname": "Earlier",
-               "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
-        first = report(names=("Ada Earlier",))
-        client = mock.Mock()
-        client.list_all.return_value = [old]
-        self.rebuild([first], preserve_roster=False,
-                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[21]))
-        retired = roster_occurrence_id("7")
-        issued = {r["identity_key"]: r["home_person_id"] for r in self.rows("person_records")}["dip:7"]
+    def binding_groups(self):
+        """The partition of bindings into persons, independent of the person keys."""
+        groups = {}
+        for binding in self.rows("person_bindings"):
+            groups.setdefault(binding["person_id"], set()).add(binding["id"])
+        return sorted(sorted(group) for group in groups.values())
 
+    def pages(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.row_factory = sqlite3.Row
+            mps, lookup = build.collect_abgeordnete(conn)
+        return [mp for mp in mps if build.has_abgeordnete_page(mp)], lookup
+
+    def renamed_speaker_report(self):
+        """One Redner-ID printed under an earlier and a current name; the sitting's
+        DIP activities name only the current DIP record (Köstering/Krampe, 21/15)."""
         current = report(names=("Ada Earlier", "Ada Current"))
         for speaker in current["agenda_items"][0]["xml_speakers"]:
             speaker["speaker"]["xml_redner_id"] = "1"
-        current["sampled_people"] = [{"id": "9", "titel": "Ada Current", "fraktion": ["SPD"],
+        current["sampled_people"] = [{"id": "9", "titel": "Ada Current, MdB, SPD", "fraktion": ["SPD"],
                                       "funktion": ["MdB"], "wahlperiode": 21}]
-        live = {stable_key("speech", "s1", "s1-r0"), stable_key("speech", "s1", "s1-r1"),
-                roster_occurrence_id("9")}
+        return current
+
+    def roster_of(self, *persons):
+        return lambda staged: build.ingest_mdb_roster(roster_client(*persons), staged, wahlperioden=[21])
+
+    # Value: protects=an offline replay groups a roster MdB whom no cached report samples with
+    #   the roll-call person it joined in the online build, so the page keeps its Stimmen (Gamanov,
+    #   Schulz, Schavan, Alpers, Pofalla, Foullong: 312 Stimmen on the fresh store);
+    #   fails_when=the replay takes preserved roster rows out of matching again; why_new=no test
+    #   replayed a roster record whose only partner is a vote-only person; seam=none;
+    #   no_claim=full-data gate (replay_keeps_input_grouping_and_pages)
+    def test_a_replay_keeps_a_roster_member_with_the_roll_call_person_it_joined_online(self):
+        r = report_with_vote(member="Voter, Bo", url="https://www.bundestag.de/abgeordnete/biografien/V/voter_bo-123")
+        self.rebuild([r], preserve_roster=False, roster_ingest=self.roster_of(dip_person("5", "Bo Voter")))
+        online = self.binding_groups()
+        roster = roster_occurrence_id("5")
+        self.assertTrue(any(roster in group and len(group) == 2 for group in online))
         for _ in range(2):
-            self.rebuild([current])
-            bindings = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}
-            self.assertEqual(len({bindings[b] for b in live}), 1)
-            self.assertEqual(bindings[retired], issued)
-            with sqlite3.connect(self.db) as conn:
-                conn.row_factory = sqlite3.Row
-                pages, _ = build.collect_abgeordnete(conn)
-            self.assertTrue(any(p["id"] == issued and p["is_mdb"] for p in pages))
+            self.rebuild([r])
+            self.assertEqual(self.binding_groups(), online)
+            pages, _ = self.pages()
+            bos = [page for page in pages if page["name"] == "Bo Voter"]
+            self.assertEqual([(len(page["votes"]), page["is_mdb"]) for page in bos], [(1, True)])
+
+    # Value: protects=without a reviewed successor an obsolete DIP record the roster still lists
+    #   keeps the online build's grouping in a replay: the renamed speaker joins neither roster
+    #   record, as in the fresh online build; fails_when=the replay groups differently from the online
+    #   build it replays; why_new=replaces the pin that a replay joined what the online build kept
+    #   apart; seam=none; no_claim=whether the split is right (dip_successors decides it)
+    def test_an_unreviewed_re_issued_dip_record_replays_like_the_online_build(self):
+        roster = self.roster_of(dip_person("7", "Ada Earlier"), dip_person("9", "Ada Current"))
+        self.rebuild([self.renamed_speaker_report()], preserve_roster=False, roster_ingest=roster)
+        online = self.binding_groups()
+        speeches = {stable_key("speech", "s1", "s1-r0"), stable_key("speech", "s1", "s1-r1")}
+        self.assertIn(sorted(speeches), online)  # the speaker alone: two roster partners, no unique one
+        for _ in range(2):
+            self.rebuild([self.renamed_speaker_report()])
+            self.assertEqual(self.binding_groups(), online)
+
+    # Value: protects=a reviewed dip_successors entry joins a re-issued DIP record, its successor
+    #   and the renamed speaker into one person, online and in every replay, named after the
+    #   successor, with the old record giving no page or biography of its own and a link carrying
+    #   the old DIP id reaching the page (Köstering 8054 -> Krampe 8257); fails_when=the old id
+    #   stays a Personenkennung of its own, keeps is_mdb, or a replay regroups; why_new=dip_successors
+    #   is new; seam=none; no_claim=which DIP records are re-issued (reviewed in person_corrections.json)
+    def test_a_reviewed_successor_joins_the_re_issued_record_online_and_in_every_replay(self):
+        roster = self.roster_of(dip_person("7", "Ada Earlier"), dip_person("9", "Ada Current"))
+        live = {stable_key("speech", "s1", "s1-r0"), stable_key("speech", "s1", "s1-r1"),
+                roster_occurrence_id("7"), roster_occurrence_id("9")}
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            self.rebuild([self.renamed_speaker_report()], preserve_roster=False, roster_ingest=roster)
+            online = self.binding_groups()
+            self.assertIn(sorted(live), online)
+            mps = {m["dip_person_id"]: m for m in self.rows("mps") if m["dip_person_id"]}
+            self.assertEqual((mps["7"]["is_mdb"], mps["9"]["is_mdb"]), (0, 1))
+            evidence = {r["identity_key"]: json.loads(r["evidence_json"]) for r in self.rows("person_records")}
+            self.assertEqual((evidence["dip:7"]["ever_mdb"], evidence["dip:9"]["ever_mdb"]), (False, True))
+            for _ in range(2):
+                self.rebuild([self.renamed_speaker_report()])
+                self.assertEqual(self.binding_groups(), online)
+                pages, lookup = self.pages()
+                adas = [page for page in pages if page["name"].startswith("Ada")]
+                self.assertEqual([(page["name"], page["speech_count"], page["roster_wahlperioden"]) for page in adas],
+                                 [("Ada Current", 2, [21])])
+                self.assertEqual(lookup["dip:7"], adas[0]["id"])
+                self.assertEqual(lookup["dip:9"], adas[0]["id"])
+
+    # Value: protects=a store written before the dip_successors entry existed, where the old
+    #   record is an MdB roster record with ever_mdb, replays with the entry into the grouping and
+    #   evidence of a fresh build with it (Köstering 8054 on the 2026-11-12 reference store);
+    #   fails_when=the old record keeps sticky ever_mdb or is_mdb, or the replay groups unlike the
+    #   fresh build; why_new=dip_successors is new; seam=none
+    def test_a_store_from_before_the_entry_replays_like_a_fresh_build_with_it(self):
+        roster = self.roster_of(dip_person("7", "Ada Earlier"), dip_person("9", "Ada Current"))
+        self.rebuild([self.renamed_speaker_report()], preserve_roster=False, roster_ingest=roster)
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            self.rebuild([self.renamed_speaker_report()])
+            replayed = (self.binding_groups(), sorted((r["identity_key"], r["evidence_json"]) for r in self.rows("person_records")),
+                        sorted((m["identity_key"], m["is_mdb"]) for m in self.rows("mps")))
+            self.db.unlink()
+            self.rebuild([self.renamed_speaker_report()], preserve_roster=False, roster_ingest=roster)
+            fresh = (self.binding_groups(), sorted((r["identity_key"], r["evidence_json"]) for r in self.rows("person_records")),
+                     sorted((m["identity_key"], m["is_mdb"]) for m in self.rows("mps")))
+        self.assertEqual(replayed, fresh)
+
+    # Value: protects=a successor whose Fraktion differs from the old record joins the speaker
+    #   through the old record's name and party (Jan Wenzel Schmidt, AfD 7406 -> fraktionslos 8220):
+    #   one person with one page, the successor's party and biography; fails_when=the superseded
+    #   record is dropped at ingest instead of read as the successor's Personenkennung, which leaves
+    #   the successor apart with an empty page; why_new=dip_successors is new; seam=none
+    def test_a_successor_with_another_party_joins_through_the_old_record(self):
+        speech = report(names=("Jan Example",))
+        roster = self.roster_of(dip_person("7", "Jan Example", "SPD"), dip_person("9", "Jan Example", "fraktionslos"))
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            self.rebuild([speech], preserve_roster=False, roster_ingest=roster)
+            online = self.binding_groups()
+            self.rebuild([speech])
+            self.assertEqual(self.binding_groups(), online)
+            pages, _ = self.pages()
+        jans = [page for page in pages if page["name"] == "Jan Example"]
+        self.assertEqual([(page["speech_count"], page["party"], page["is_mdb"]) for page in jans], [(1, "fraktionslos", True)])
+
+    # Value: protects=a superseded DIP id is read as its successor for matching only: the old
+    #   record keeps its own identity key and source id, so mps.dip_person_id stays unique and
+    #   nothing is renamed; fails_when=current_dip_person_id leaks into identity keys or the stored
+    #   id; why_new=dip_successors is new; seam=none
+    def test_a_superseded_dip_id_keeps_its_record_and_reads_as_the_successor_key(self):
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            self.assertEqual(registry.mp_keys({"dip_person_id": " 07 ", "partition": None}), ["dip:9"])
+            self.assertEqual(registry.current_dip_person_id("9"), "9")
+            self.assertIsNone(registry.current_dip_person_id(""))
+            conn = self.open_store()
+            registry.begin_build(conn)
+            record = self.up(conn, roster_occurrence_id("7"), "dip:7", "Ada Earlier, MdB, SPD", dip="7", mdb=True, party="SPD")
+            row = conn.execute("SELECT identity_key, dip_person_id, is_mdb FROM mps WHERE id=?", (record,)).fetchone()
+            self.assertEqual(tuple(row), ("dip:7", "7", 0))
+            evidence = json.loads(conn.execute("SELECT evidence_json FROM person_records WHERE id=?", (record,)).fetchone()[0])
+            self.assertFalse(registry.roster_member({**evidence, "ever_mdb": True}))
+
+    # Value: protects=a vacated roster record grants no page and joins no one as a stale partner,
+    #   whatever its ever_mdb says; fails_when=page eligibility reads ever_mdb without
+    #   roster_member; why_new=collect_abgeordnete ignored vacated; seam=none
+    def test_a_vacated_roster_record_is_no_roster_member(self):
+        self.assertTrue(registry.roster_member({"ever_mdb": True}))
+        self.assertFalse(registry.roster_member({"ever_mdb": True, "vacated": True}))
+        self.assertFalse(registry.is_stale_roster_partner({"ever_mdb": True, "vacated": True}))
+        self.assertFalse(registry.roster_member({"is_mdb": False, "ever_mdb": False}))
 
     # Value: protects=WP 18-20 leavers keep roster pages and the former table labels stored Fraktion without claiming recency;
     #   fails_when=the roster union drops leavers or the former header says Fraktion (zuletzt);
@@ -302,6 +452,23 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             ("profile_owner outside labels", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "profile_owner": "c"}]}, "profile_owner 'c' is not one of its label owners"),
             ("redner id partitioned twice", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}}, {"xml_redner_id": "9", "labels": {"c": "d"}}]}, "Redner-ID 9 is partitioned twice"),
             ("one name for two owners", {"partitions": [{"xml_redner_id": "9", "labels": {"Ada Example": "ada-a", "Dr. Ada Example": "ada-b"}}]}, "labels for 'ada example' name two owners"),
+            # Value: protects=a dip_successors entry the registry cannot apply as one reviewed
+            #   Personenkennung (not canonical, self, chained, listed twice, a missing or unknown
+            #   field, no evidence, a bad review date) aborts before any write; fails_when=the loader
+            #   accepts it and mp_keys reads a wrong or cyclic successor; why_new=dip_successors is
+            #   new; seam=none
+            ("successors not an array", {"dip_successors": {}}, "dip_successors must be an array"),
+            ("successor missing a field", {"dip_successors": [successor("7", "9", reviewed=None)]}, r"dip_successors\[0\] requires exactly"),
+            ("successor with an unknown field", {"dip_successors": [{**successor("7", "9"), "note": "x"}]}, r"dip_successors\[0\] requires exactly"),
+            ("successor id not canonical", {"dip_successors": [successor("07", "9")]}, "DIP id '07' is not in canonical form"),
+            ("successor id not a string", {"dip_successors": [successor(7, "9")]}, "dip_person_id must be a nonempty string"),
+            ("successor of itself", {"dip_successors": [successor("7", "7")]}, "DIP id 7 cannot succeed itself"),
+            ("successor listed twice", {"dip_successors": [successor("7", "9"), successor("7", "8")]}, "DIP id 7 is listed twice"),
+            ("successor chain", {"dip_successors": [successor("7", "8"), successor("8", "9")]}, "successor 8 of DIP id 7 is itself superseded"),
+            ("successor cycle", {"dip_successors": [successor("7", "8"), successor("8", "7")]}, "is itself superseded"),
+            ("successor without evidence", {"dip_successors": [successor("7", "9", evidence="")]}, "evidence must be a nonempty string"),
+            ("successor review date", {"dip_successors": [successor("7", "9", reviewed="12.11.2026")]}, "reviewed must read YYYY-MM-DD"),
+            ("successor review date out of range", {"dip_successors": [successor("7", "9", reviewed="2026-13-40")]}, "reviewed must read YYYY-MM-DD"),
         ]
         before = self.db.read_bytes()
         for label, data, diagnostic in cases:

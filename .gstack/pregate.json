@@ -66,7 +66,8 @@
     "tests/votes_archive_browser_fixture.py": ["tests/test_politikfelder.py"],
     "scripts/build_demo_site.py": ["tests/test_demo_site.py"],
     "scripts/features/facts.py": ["tests/test_features.py", "tests/test_build_dip_pulse_site.py"],
-    "tests/_site_store_fixture.py": ["tests/test_build_dip_pulse_site.py"]
+    "tests/_site_store_fixture.py": ["tests/test_build_dip_pulse_site.py"],
+    "tests/_registry_fixture.py": ["tests/test_registry_contracts.py", "tests/test_registry_evidence.py", "tests/test_registry_invariants.py", "tests/test_shared_redner_ids.py", "tests/test_private_staging.py"]
   },
   "empty_lanes": ["docs/plans/*.json", "docs/plans/*.txt", "docs/plans/*.tsv", "docs/plans/*.patch"]
 }

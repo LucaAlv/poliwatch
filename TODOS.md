@@ -16,7 +16,6 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 1. "Coverage gate before the first data release". Today 716 of 801 sittings: WP 18 79%, WP 19 86%.
 2. Correctness P1s:
    - "Correct the WP 19/20 roll-call group misattributions (E4)", merged as #138; the repersist is owed.
-   - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
    - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
    - Plan item 1.5 of "A3 /gstack-ship review: deferred findings".
    - "Check that vote links are right".
@@ -851,35 +850,34 @@ Done when:
 **Priority:** P2
 **Depends on:** None
 
-### The carried-forward registry diverges from a fresh build after A3
+### Roster MdB records that never join their speaker: 56 empty duplicate Personenseiten
 
-**What:** The A3 Phase 4 gate failed `replayed_store_groups_like_fresh` on a clone of `~/agent-runs/a3/full` (4,168 vs. 4,165 groups on the fresh store's bindings). Details are in [the Phase 4 record](docs/plans/a3-phase4.md), Step 1. There are two parts:
-1. **Köstering/Krampe split.** One person, Jan Krampe (formerly Köstering, Die Linke, WP 21), is a single person with 121 bindings in a fresh build. In the replayed store he is four persons: `dip:8257`, `aw:178656`, and the profiles `koestering_jan-1045564` and `krampe_jan-1045564`. `baseline` had `aw:178656` and the Köstering profile as one person. So A3 newly separates his speeches from his votes, and a replay does not heal it. `full` shows the same split. The cause is not the URL rule. DIP holds two person records for him (8054 Köstering, 8257 Krampe), and the store keeps `dip:8054` as a roster record. An in-memory `match_rows` on `full` joins all five records once `dip:8054` is stale. Why a replay still matches it is untraced. It is part 2's defect.
-2. **Orphan persons.** 295 persons hold only retired bindings. Each holds one `roster-v1-…` binding of a `dip:` record that the roster no longer produces: 295 of the 307 retired roster bindings. The other 12, and the 187 retired contribution bindings of speech rule v6, sit on persons that also hold live bindings. 282 of the orphans render an Abgeordnete page and are listed on the index. They raise the store's person count from 4,165 (fresh) to 4,463.
+**What:** On the fresh reference store (2026-11-12, 28799ac plus the registry fix of `docs/plans/registry-split-koestering-krampe.md`) 56 Personenseiten show 0 Reden, 0 Beiträge and 0 Stimmen. Each is a DIP roster record (exact "MdB" funktion) that pass 2 of `person_registry.match_rows` did not join to the speaker and roll-call person of the same human being. 54 of them have a twin page with activity under the same name once titles, accents and a bracketed Wahlkreis are ignored, for example:
+- "Achim Post (Minden)" beside "Achim Post" (35 Reden, 534 Stimmen);
+- "Aniko Glogowski-Merten" beside "Anikó Glogowski-Merten" (25 Reden, 187 Stimmen);
+- "Anita Schäfer (Saalstadt)", "Axel E. Fischer (Karlsruhe-Land)", "Axel Schäfer (Bochum)", "Carsten Müller (Braunschweig)": DIP's `titel` carries the Wahlkreis in brackets, the Plenarprotokoll does not;
+- "Alexander Bartz", "Bela Bach": the same printed name on both sides, so the block is elsewhere (the party, or a second name+party bucket).
 
-**Re-measured at the branch tip, 2026-10-31** (the "Gate at the branch tip" section of the [Phase 4 record](docs/plans/a3-phase4.md); rule C plus 0f59729 and a508cfa):
-- **Part 1 is healed.** The replayed store groups like the fresh one: 1,942 = 1,942 persons on live bindings, the same fingerprint. Krampe is one live person.
-- **Part 2 is open:**
-  - 302 persons hold only retired bindings, and 289 of them render a page with no Reden and no votes.
-  - The index links only 8 of them, down from 282.
-  - 281 of the 302 are Bundesrat members. So the fix likely goes with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia Heller" (printed "Uda Heller"). The real page then lacks the roster biography (`is_mdb` false, no Wahlperioden from the roster), and the duplicate is listed on the index.
 
-**Re-measured on the merged tree, 2026-11-01** (09b7c5d, A3 plus main v0.26.0.0; complete gate, `all_passed`; "Gate on the merged tree" in the [Phase 4 record](docs/plans/a3-phase4.md)): unchanged.
-- Replayed 1,942 = fresh 1,942 on live bindings, the same fingerprint.
-- The replayed store has 2,244 persons.
-- 302 persons are retired-only, 289 of them with a page, 8 of those linked from the index.
-- 494 retired bindings (307 roster / 187 contribution).
+**Why:** Two pages for one MdB, one of them empty; the page with the Reden does not say the person is an MdB.
 
-**Re-measured on e7b06f3, 2026-11-05** (E4 plus main v0.33.0.0; complete gate, `all_passed`): unchanged, the same 1,942 = 1,942, 2,244, 302, 289 and 494. A store-less `--offline --repersist` of the same reports has 1,577 Personenseiten against the upgraded store's 2,005. The +428 are the 289 retired-only pages plus 139 on live persons: 68 roster MdBs who have a page only because the roster exists, and 71 persons holding only a roster binding, all with `ever_mdb` evidence, many of them Bundesrat or Land office holders. So those 71 belong with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
-
-Decide whether retired-only persons render a page. Report persons and pages old/new.
-
-**Owner decision, 2026-11-01:** A3 ships with part 2 open. It is fixed after the merge, likely together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
-
-**Why:** 289 pages for persons with no live occurrence, reachable by URL.
+**Context:** Found while measuring the registry fix (step 0). Not a replay/fresh divergence: the fresh online build and its replay agree. The fix is a normalisation of the DIP `titel` name (bracketed Wahlkreis, accents) before `name_party_keys`, or a reviewed list; registry territory, needs the namesake guard checked.
 
 **Effort:** M
 **Priority:** P1
+**Depends on:** None
+
+### Government-office DIP records: a second person without a page
+
+**What:** DIP issued five MdBs a new person record for a government office and keeps the old MdB record on the roster: Linnemann 1173 → 8250, Otte 615 → 8226, Steiniger 1624 → 8255, Castellucci 1537 → 8247, Bilger 1013 → 8251 (2026-11-12 store). The new record is a person of its own with no Reden, no Stimmen and no page; the MdB page is complete. They are not in `dip_successors`, because there the old record would lose `is_mdb` and the page its biography.
+
+**Why:** The published registry tables count each of them as two persons. No page or figure on a page moves.
+
+**Context:** A `dip_successors` entry in the other direction (new → old), or a reviewed merge, would join them. Decide when the registry tables are first published.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### Group MP pages by Wahlperiode and write abgeordnete.json without indent
@@ -918,23 +916,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** None
-
-### Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs
-
-**What:** Before 2026-10-30 the roster ingest flagged every DIP person whose `funktion` contained "MdB" as an MdB, which matched "MdBR" and "Stellv. MdBR" (151 Bundesrat members for WP 21). `person_registry.bind` records that as sticky `ever_mdb` evidence (`person_registry.py`, `evidence["ever_mdb"]`, `was_mdb`), so the registry still treats them as former roster persons: they stay page-eligible and `is_stale_roster_partner` can apply to them. Decide whether `ever_mdb` is re-derived from the exact rule (`derive.is_mdb_funktion`) or reset once for records whose only roster evidence is a Bundesrat funktion.
-
-**Why:** No page now calls them Abgeordnete (the Personenseite derives "Mitglied des Bundestages laut Plenarprotokoll" from Reden, not from `ever_mdb`), but the evidence says something false about 151 people and feeds identity decisions.
-
-**Context:** A.2 registry territory: needs a registry reviewer. Measure first how many person records carry `ever_mdb` with only Bundesrat funktion evidence on the reference store.
-
-**Measured on the A3 merged-tree gate store, 2026-11-01:**
-- `mps` rows with `is_mdb = 1`: 1,360. The 352 Bundesrat roster rows dropped on repersist.
-- The registry still holds 302 retired-only persons. 281 of them are Bundesrat members ("MdBR" in the display name), and 289 of the 302 render a page with no Reden and no votes. Only 8 are linked from the index.
-- These are the persons this evidence most likely keeps page-eligible. See "The carried-forward registry diverges from a fresh build after A3".
-
-**Effort:** S
-**Priority:** P3
 **Depends on:** None
 
 ### Apply the voter-link patch after refetching the WP 18/19 roll-call lists
@@ -1900,6 +1881,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- The carried-forward registry diverges from a fresh build, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs": closed 2026-11-12, `docs/plans/registry-split-koestering-krampe.md`. The fresh store has no Bundesrat `ever_mdb` record; an offline replay keeps preserved roster rows live, and `dip_successors` joins Köstering/Krampe and Jan Wenzel Schmidt. Persons 1,952 (replay 1,956) → 1,946, Stimmen on pages 417,934 (replay 417,707) → 418,104; the gate checks the replay against its input store
 - Reden the parser drops without refusing: v0.36.0.0, 2026-11-10, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
 - Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
