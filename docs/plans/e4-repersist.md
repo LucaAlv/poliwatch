@@ -1,6 +1,38 @@
 # E4 repersist: bring the A3 store up to main v0.36
 
-Status: **plan, 2026-11-10.** Not run. Roadmap Stage 1, item 2, first bullet: "Correct the WP 19/20 roll-call group misattributions (E4), merged as #138; the repersist is owed."
+Status: **superseded, 2026-11-12.** The repersist was never run: a fresh online build replaced it (see "Outcome" below). The rest of this file is the plan of 2026-11-10, kept as written. Roadmap Stage 1, item 2, first bullet: "Correct the WP 19/20 roll-call group misattributions (E4), merged as #138; the repersist is owed."
+
+## Outcome (2026-11-12)
+
+**Why the plan did not run.** `~/agent-runs/a3/full` never came over from the old machine, so decision D1 (transfer it) fell away. The owner instead built a new store online into `.context/dip-pulse-site`, from main at 28799ac. That commit's data equals v0.36.0.0. The build ran `~/agent-runs/fresh/run.sh` (the a3-phase3 recipe) with the Stand 2026-04-29 Stammdaten in `.context/.dip-pulse-site.private` (D2 held). A fresh build holds E4 and every v0.33 to v0.36 change by construction, so steps 0 to 7 were not needed. The store gate ran on an APFS clone of the store and of its private directory, and all 11 checks pass (step 4). This store is the new reference store. It is recorded in `docs/plans/a3-phase4.md`, "Fresh reference store on main 28799ac", with the receipt in `fresh-store-gate.json`.
+
+**What was checked (step 5, read-only on the store):**
+- **E4, by group.** `e4-refiled-votes-old-new.tsv` was regenerated over all 619 votes, with the old columns taken from the cached reports' page `fractions` and the new ones from `vote_fractions`. It equals the committed file byte for byte: 146 rows in 55 votes.
+- **E4, by member.** 100 rows have `listed_party_id` ≠ `party_id`: Kamann 38, Bülow 36, Pasemann 10, Witt 7, Huber 7, Heßenkemper 2. No other name appears, and each move falls in its window in `docs/source-errors.md` E4.
+- **E4, the other figures.** All match their records:
+  - the replay log's `refile: 100 Stimmen in 55 Abstimmungen` line;
+  - the seat cross-check, 606 agree and 0 `shift_between_groups`;
+  - Abweichungen 3,720 and r3 1,390;
+  - unmatched names: 27 with 3,073 rows, and 10 with 927;
+  - export format 16 and schema 11.
+- **#143, on the 716 sittings the A3 store had.** The store also holds 21/104 and 21/105. Every figure equals its record:
+  - Reden 54,747, Beiträge 42,484, zu Protokoll 3,342, Zwischenfragen 3,061;
+  - agenda items 7,135 and Politikfeld rows 11,465;
+  - Reden per Fraktion: CDU/CSU 14,963, SPD 11,620, Grüne 7,643, Linke 5,616;
+  - the `speeches.char_count` sum, 253,528,378;
+  - speech rule 7 on all 718 sittings.
+- **#141.** All 15 `neu` rows of `shared-redner-ids-old-new.tsv` match, and so do the five `erste-reden` values.
+- **#140.** `inverted` is 95 and includes all six votes. 990 is `proposition`.
+
+**Mismatch, recorded as a finding.** `result_scope = application` is 34, not the 24 #140 recorded. This store fetched every roll-call page again, and the scope is read at fetch time. Without the A3 store it is unknown which 10 votes are new and why. See TODOS.md, "Vote direction: what the 2026-11-07 fix left open", item 18, and `docs/source-errors.md` E6.
+
+**Not comparable, re-measured instead.** A fresh build has none of the A3 lineage's carried-forward registry, so these figures differ from the A3 records without a defect: `mps` 6,387 (7,451), Personen after Zusammenführung 2,042 (2,287), Personenseiten 1,661 (1,999), store persons 1,952 (2,244). The gate's replay raises `persons` from 1,952 to 1,956. That belongs to the registry-split plan (TODOS.md, "The carried-forward registry diverges from a fresh build after A3"), not to E4.
+
+**Steps that no longer apply:** step 6 (old→new against the 2026-10-28 store, which is not on this machine) and step 7 (the in-place repersist and its determinism check; the gate's unchanged replay kept the store byte for byte). Step 8's browser checks were not run in this docs pass. Step 9 was done as these docs changes, with two exceptions:
+- `AGENTS.md`'s interpreter line (D9) was left for the owner, because it is agent configuration.
+- `docs/stable-ids.md`'s 2,364 is a dated A3 figure and was not re-measured.
+
+D8 was applied: "Owner checks after the v0.28.0.0 merge", item 2, is closed.
 
 ## What "the repersist is owed" means
 
