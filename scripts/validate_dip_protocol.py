@@ -863,6 +863,8 @@ def procedural_candidate(text: str, heading: str, preceding: str) -> str | None:
     if text == "Ja." and (re.search(r"\bWahl\b", heading) or re.search(r"\bWahl an\b|\bannehmen\b", preceding)):
         return "election acceptance"
     return None
+
+
 # The chair gives the floor in the form of the Rednerliste, and the turn opens
 # like a Rede (6c).
 NESTED_REDE_FLOOR = re.compile(
