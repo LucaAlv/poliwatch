@@ -59,6 +59,7 @@ REFUSAL_CLASSES = [  # (text in the error, class); the first match wins
     ("conflicting roles at redner", "conflicting_roles"),
     ("nested contribution needs a source rede id", "nested_needs_source_id"),
     ("stands outside any TOP", "outside_top"),
+    ("rede reconciliation", "rede_reconciliation"),  # #147: a <rede> left without exactly one status
 ]
 BLOCKERS = Path(__file__).resolve().parent.parent / "a3-wp18-19-round2-blockers.tsv"
 FLAGGED = {  # listed, but in no group of the T3 review's finding 8 (a3-wp18-19-round2-result.md:211)
