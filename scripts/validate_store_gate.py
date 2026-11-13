@@ -15,8 +15,14 @@ checks, in order:
    and Stimmen (``replay_vs_input``).
 2. Order independence: a fresh store from all cached reports, and a store built
    from every other report and then replayed with all of them, must group the
-   person bindings into persons identically (``grouping_fingerprint``). Both
-   run database-only on clones of ``data/`` under SCRATCH.
+   person bindings into persons identically (``grouping_fingerprint``). All three
+   run database-only on clones of ``data/`` under SCRATCH, each as an online build
+   with ``--enrich mp-roster`` would, the DIP roster answered from
+   ``data/dip-person-cache.json`` (``CachedRoster``). The fresh store must list the
+   input store's roster records, and the replayed store must group the fresh
+   store's bindings and render its Personenseiten as the fresh store does
+   (``replay_vs_fresh``): a replay carries the registry and the preserved roster
+   rows forward, while the fresh build starts from neither and ingests the roster.
 3. A second unchanged replay must keep the store file as it is (same bytes and
    modification time) and say so.
 4. A link audit over the rendered pages: every local ``href``/``src`` names an
@@ -54,6 +60,10 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from dip_cache import PERSON_FILENAME  # noqa: E402
+from stable_ids import key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
 STORE = Path("data") / "bundestag-pulse.sqlite"
 # The figures of the last combined A1/A2 run (docs/plans/a1-scratch-validation.json,
@@ -99,14 +109,31 @@ def grouping_fingerprint(database_path: Path, *, only: set[str] | None = None) -
     }
 
 
+def dip_person_occurrences(database_path: Path) -> set[tuple[str, int]]:
+    """The DIP person occurrences (roster rows and the people a report samples)
+    of the store's current records, each with its record's ``mps.is_mdb``: which
+    DIP persons the build saw and which of them the roster listed as MdBs. A
+    record of this build has an ``mps`` row; a retired one keeps only its binding."""
+    prefix = key_prefix("roster")
+    conn = _open_readonly(database_path)
+    try:
+        return {(row[0], int(row[1])) for row in conn.execute(
+            "SELECT b.id, m.is_mdb FROM person_bindings b JOIN mps m ON m.id = b.record_id WHERE substr(b.id, 1, ?) = ?",
+            (len(prefix), prefix))}
+    finally:
+        conn.close()
+
+
 def _group_key(binding_ids: list[str]) -> str:
     return hashlib.sha256("\x1f".join(sorted(binding_ids)).encode("utf-8")).hexdigest()
 
 
-def person_pages(database_path: Path) -> dict[str, dict[str, Any]]:
+def person_pages(database_path: Path, *, only: set[str] | None = None) -> dict[str, dict[str, Any]]:
     """Every person with a Personenseite and its Reden, Beiträge and Stimmen, as
     ``collect_abgeordnete`` pools them, keyed by the person's binding ids (not its
-    person id), so two stores compare person by person whatever keys they minted."""
+    person id), so two stores compare person by person whatever keys they minted.
+    ``only`` keys each person on those of its bindings (as ``grouping_fingerprint``
+    restricts them); a person holding none of them keys on all of its own."""
     import build_dip_pulse_site as site
 
     conn = _open_readonly(database_path)
@@ -121,7 +148,9 @@ def person_pages(database_path: Path) -> dict[str, dict[str, Any]]:
     pages: dict[str, dict[str, Any]] = {}
     for mp in mps:
         if site.has_abgeordnete_page(mp):
-            pages[_group_key(bindings.get(mp["id"], [mp["id"]]))] = {
+            own = bindings.get(mp["id"], [mp["id"]])
+            kept = [binding for binding in own if only is None or binding in only]
+            pages[_group_key(kept or own)] = {
                 "id": mp["id"], "name": mp["name"], "reden": mp["speech_count"],
                 "beitraege": mp["contribution_count"], "stimmen": len(mp["votes"]),
             }
@@ -294,18 +323,62 @@ def replay(output_dir: Path, today: str, log_path: Path) -> dict[str, Any]:
                  "--today", today], log_path)
 
 
+class CachedRoster:
+    """The DIP /person roster answered from the cached /person records, the only
+    request ``ingest_mdb_roster`` makes: a record is listed for every Wahlperiode
+    it names, as DIP's ``f.wahlperiode`` filter lists it."""
+
+    def __init__(self, records: list[dict[str, Any]]) -> None:
+        self.records = records
+
+    def list_all(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        if path != "/person" or set(params) != {"f.wahlperiode"}:
+            raise ValueError(f"the cached roster answers only /person by f.wahlperiode, not {path} {sorted(params)}")
+        return [record for record in self.records if params["f.wahlperiode"] in _wahlperioden(record)]
+
+
+def _wahlperioden(record: dict[str, Any]) -> set[int]:
+    value = record.get("wahlperiode")
+    values = value if isinstance(value, list) else [value]
+    return {int(number) for number in values if isinstance(number, int) or (isinstance(number, str) and number.isdigit())}
+
+
+def cached_roster(output_dir: Path) -> CachedRoster:
+    """Every /person record ``data/dip-person-cache.json`` holds, whatever its age
+    (the gate rebuilds a store from them, it fetches nothing). Raises ValueError
+    when the file is missing or not a person cache."""
+    path = output_dir / "data" / PERSON_FILENAME
+    try:
+        persons = json.loads(path.read_text(encoding="utf-8")).get("persons")
+    except (OSError, ValueError, AttributeError) as exc:
+        raise ValueError(f"no readable DIP person cache at {path}: {exc}") from None
+    if not isinstance(persons, dict):
+        raise ValueError(f"{path} holds no persons object")
+    return CachedRoster([entry["record"] for _key, entry in sorted(persons.items())
+                         if isinstance(entry, dict) and isinstance(entry.get("record"), dict)])
+
+
 def persist_only(output_dir: Path, today: str) -> None:
-    """The database half of ``--offline --repersist``, without the render or the
-    export: what the order-independence clones need."""
+    """The database half of an online build with ``--enrich mp-roster``, offline:
+    the cached reports, and the roster answered from the person cache. What the
+    order-independence clones need; nothing is fetched, rendered or exported."""
     import build_dip_pulse_site as site
     import antrag_text
     import politikfelder
 
+    roster = cached_roster(output_dir)
     database_path = output_dir / STORE
+    protocols = site.load_cached_protocols(output_dir)
+    periods = site.roster_periods(None, protocols)
     vorgang_cache = politikfelder.load_cache(output_dir)
     vorgang_cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(output_dir)
+
+    def ingest(staged: sqlite3.Connection) -> None:
+        stats = site.ingest_mdb_roster(roster, staged, wahlperioden=periods)
+        print(f"roster (cached): {stats}", file=sys.stderr)
+
     site.repersist_cached_reports(
-        output_dir, database_path, site.load_cached_protocols(output_dir), preserve_roster=True,
+        output_dir, database_path, protocols, preserve_roster=False, roster_ingest=ingest,
         today=date.fromisoformat(today), vorgang_cache=vorgang_cache,
     )
 
@@ -369,9 +442,29 @@ def replay_vs_input(input_store: dict[str, Any] | None, database_path: Path) -> 
     if input_store is None:
         return {"equal": False, "reason": "no input store to compare the replay with"}
     grouping = grouping_fingerprint(database_path, only=input_store["bindings"])
-    pages = compare_pages(input_store["pages"], person_pages(database_path))
+    pages = compare_pages(input_store["pages"], person_pages(database_path, only=input_store["bindings"]))
     return {"equal": grouping == input_store["grouping"] and pages["equal"],
             "grouping_before": input_store["grouping"], "grouping_after": grouping, "pages": pages}
+
+
+def replay_vs_fresh(fresh_path: Path, database_path: Path, input_roster: set[tuple[str, int]] | None) -> dict[str, Any]:
+    """The replayed store against a fresh build of the same reports and roster:
+    the replay must group the fresh store's bindings and render its Personenseiten
+    as the fresh build does. Unlike ``replay_vs_input`` this holds when the input
+    was itself a replay. The fresh build counts as that reference only when it
+    lists the input store's DIP persons as the input did (the person cache may
+    lack a roster record)."""
+    fresh_roster = dip_person_occurrences(fresh_path)
+    roster = {"input": len(input_roster) if input_roster is not None else None, "fresh": len(fresh_roster),
+              "missing_from_fresh": len(input_roster - fresh_roster) if input_roster is not None else None,
+              "only_in_fresh": len(fresh_roster - input_roster) if input_roster is not None else None}
+    roster["equal"] = input_roster is not None and input_roster == fresh_roster
+    live = binding_ids(fresh_path)
+    grouping = {"fresh": grouping_fingerprint(fresh_path), "replay": grouping_fingerprint(database_path, only=live)}
+    pages = compare_pages(person_pages(fresh_path), person_pages(database_path, only=live))
+    return {"equal": grouping["fresh"] == grouping["replay"] and pages["equal"], "roster": roster,
+            "grouping": grouping, "pages": pages,
+            "bindings_of_retired_occurrences": len(binding_ids(database_path) - live)}
 
 
 def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
@@ -400,7 +493,7 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         # reproduce its grouping and every page's counts.
         started_snapshot = time.monotonic()
         input_store = {"bindings": binding_ids(database_path), "grouping": grouping_fingerprint(database_path),
-                       "pages": person_pages(database_path)}
+                       "pages": person_pages(database_path), "roster": dip_person_occurrences(database_path)}
         receipt["input_snapshot_seconds"] = round(time.monotonic() - started_snapshot, 1)
     checks: dict[str, bool] = {}
 
@@ -423,13 +516,17 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
 
     receipt["order_independence"] = order_independence(output_dir, scratch, today)
     checks["half_then_full_groups_like_fresh"] = receipt["order_independence"]["equal"]
-    if checks["replay_exit_0"] and "grouping" in receipt["order_independence"]["fresh"]:
-        # Reported, not checked: a store-less build has no roster, so it lacks the
-        # roster bindings no cached report samples. Comparing only on its bindings
-        # hid a replay that moved those records (replay_vs_input checks them).
-        live = binding_ids(scratch / "fresh" / STORE)
-        receipt["grouping_on_fresh_bindings"] = grouping_fingerprint(database_path, only=live)
-        receipt["bindings_of_retired_occurrences"] = len(binding_ids(database_path) - live)
+    if checks["replay_exit_0"]:
+        # replay_vs_input compares with the input, which may itself be a replay;
+        # this compares with a fresh build of the same reports and roster.
+        if "grouping" in receipt["order_independence"]["fresh"]:
+            receipt["replay_vs_fresh"] = replay_vs_fresh(
+                scratch / "fresh" / STORE, database_path, input_store["roster"] if input_store else None)
+        else:
+            receipt["replay_vs_fresh"] = {"equal": False, "roster": {"equal": False},
+                                          "reason": "the fresh build failed (order_independence.fresh)"}
+        checks["fresh_build_lists_the_input_roster"] = receipt["replay_vs_fresh"]["roster"]["equal"]
+        checks["replay_groups_like_fresh"] = receipt["replay_vs_fresh"]["equal"]
 
     if checks["replay_exit_0"]:
         before = _store_identity(database_path)
@@ -479,7 +576,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR [gate]: {output_dir} has no data/ directory", file=sys.stderr)
         return 2
     if args.persist_only:
-        persist_only(output_dir, args.today)
+        try:
+            persist_only(output_dir, args.today)
+        except ValueError as exc:
+            print(f"ERROR [gate]: {exc}", file=sys.stderr)
+            return 2
         return 0
     if args.receipt is None:
         print("ERROR [gate]: --receipt is required", file=sys.stderr)

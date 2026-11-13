@@ -880,6 +880,19 @@ The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia He
 **Priority:** P3
 **Depends on:** None
 
+### Registry fix review (dip_successors, live preserved roster rows): deferred findings (2026-11-13)
+
+**What:** Non-correctness findings from the `code-review high` of the registry fix (`docs/plans/registry-split-koestering-krampe.md`). None moves a figure on the 2026-11-12 reference store. The review's one gate gap (no hard replay-vs-fresh check once the input is itself a replay) was fixed in the same branch with `replay_vs_fresh`, and so was the page keying of `person_pages` (a person with a binding the input lacks showed as lost plus gained instead of changed).
+- (a) **A `dip_successors` entry cannot be withdrawn in a replay.** Pass 1 joins the old and new records durably (the retired person key stays an alias), and the old row is stored with `is_mdb = 0` and no `ever_mdb`. Deleting or correcting the entry therefore leaves the merge in place. `_read_roster_rows` then keeps the old row only through `is_mdb`, `roster_member` or `superseded_dip_person`, and all three are false, so every offline replay drops the record until the next `--enrich mp-roster` build. A wrong entry needs a `splits` entry, and the removal needs the old row to come back from the roster. Latent: both entries are reviewed.
+- (b) **A successor the roster stops listing.** `ingest_mdb_roster` warns when the roster lists a superseded id without its successor, but `upsert_mp` still stores the old record as a non-MdB, so the person has no roster MdB record at all. If DIP dropped 8257 and kept 8054, Krampe's page would lose `is_mdb`, the roster Wahlperioden and the biography until the entry is edited. Consider keeping `is_mdb` on the old record when its successor is not on this roster, or refusing the build. Latent.
+- (c) **The gate's input snapshot runs current code on an un-migrated store.** `person_pages` (and so `collect_abgeordnete`) reads the input store read-only before the replay upgrades it. A store from an older schema that lacks a column the current code reads raises `sqlite3.OperationalError` and the gate writes no receipt. Catch it and record the snapshot as unavailable (then `replay_keeps_input_grouping_and_pages` fails with a reason). Not reproduced.
+- (d) **Test gap:** no test drives `run_gate` with the new checks (`replay_keeps_input_grouping_and_pages`, `fresh_build_lists_the_input_roster`, `replay_groups_like_fresh`): the snapshot taken before the replay, and the fresh store passed to `replay_vs_fresh`. A refactor that snapshots after the replay would pass every unit test. Only the full-data receipt shows the checks working.
+- (e) **Efficiency:** `person_registry.dip_successors()` builds its dict from `corrections()` on every call: once per occurrence in `bind` (about 524k on the reference store), per row in `mp_keys` and `_mp_external_ids`, per record in `roster_member`. Compute it once in `_load_corrections`.
+
+**Effort:** S each
+**Priority:** P3 ((a) and (b) P2 if an entry is ever revised)
+**Depends on:** None
+
 ### Group MP pages by Wahlperiode and write abgeordnete.json without indent
 
 **What:** Group or page the speech and vote rows on each MP page by Wahlperiode, and write `data/abgeordnete.json` without `indent=2`.
@@ -1881,7 +1894,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
-- The carried-forward registry diverges from a fresh build, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs": closed 2026-11-12, `docs/plans/registry-split-koestering-krampe.md`. The fresh store has no Bundesrat `ever_mdb` record; an offline replay keeps preserved roster rows live, and `dip_successors` joins Köstering/Krampe and Jan Wenzel Schmidt. Persons 1,952 (replay 1,956) → 1,946, Stimmen on pages 417,934 (replay 417,707) → 418,104; the gate checks the replay against its input store
+- The carried-forward registry diverges from a fresh build, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs": closed 2026-11-12, `docs/plans/registry-split-koestering-krampe.md`. The fresh store has no Bundesrat `ever_mdb` record; an offline replay keeps preserved roster rows live, and `dip_successors` joins Köstering/Krampe and Jan Wenzel Schmidt. Persons 1,952 (replay 1,956) → 1,946, Stimmen on pages 417,934 (replay 417,707) → 418,104; the gate checks the replay against its input store and against a fresh build that ingests the cached roster
 - Reden the parser drops without refusing: v0.36.0.0, 2026-11-10, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
 - Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0

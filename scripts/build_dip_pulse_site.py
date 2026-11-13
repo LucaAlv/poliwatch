@@ -2523,6 +2523,7 @@ def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
     today: date | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    roster_ingest: Callable[[sqlite3.Connection], None] | None = None,
 ) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -2540,6 +2541,7 @@ def repersist_cached_reports(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
         today=today, upgrade=True, vorgang_cache=vorgang_cache, excluded_document_numbers=recorded,
+        roster_ingest=roster_ingest,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
