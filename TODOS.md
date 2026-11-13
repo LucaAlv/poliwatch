@@ -17,7 +17,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 2. Correctness P1s:
    - ~~"Correct the WP 19/20 roll-call group misattributions (E4)", merged as #138; the repersist is owed.~~ **Done 2026-11-12:** the owner rebuilt the store online from 28799ac instead of repersisting it. The new reference store, `.context/dip-pulse-site`, holds the E4 correction exactly as recorded: 100 Stimmen, 55 roll-calls, the six MdBs and the committed TSV byte for byte (`docs/plans/e4-repersist.md`, "Outcome").
    - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
-   - "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". The kinds are decided.
+   - ADR 0004 kinds: built (see Completed); the owner decisions left are in "ADR 0004 follow-ups".
    - ~~Plan item 1.5 of "A3 /gstack-ship review: deferred findings".~~ Measured 2026-11-12: 937 of 945 WP 18/19 MdB ids find their abgeordnetenwatch profile, no wrong person ([a3-phase4.md](docs/plans/a3-phase4.md), "Plan item 1.5"). Follow-ups: "abgeordnetenwatch profiles for WP 18/19: what item 1.5 leaves open".
    - "Check that vote links are right".
 3. "Main and stable releases": the review checklist, the stability policy in `CLAUDE.md`.
@@ -81,7 +81,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 - N7 A: 18/2, 18/29, 18/83 and 19/25 have known wrong units and no refusal, so step 1 alone does not reach them. They come back with a reviewed list of single units to withhold, each with a reason, in the same withheld state as step 1.
 - N8 A: restored sittings get the same merge and attribution review as the 400 kept sittings, about human ~3 days / CC ~half a day [estimated]. Any wrong unit goes on that withheld list with a reason. The gate in step 8 does not pass until this review has.
 
-Also listed with no refusal, and not part of N7: 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 wait on the ADR 0004 item; 18/62 and 18/90 stay out by the owner's round 2 decision.
+Also listed with no refusal, and not part of N7: 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 parse with their ADR 0004 kinds since that build and leave the list in step 6's fetch, after the N8 review; 18/1 parses too since its nested acceptance is read (6d); 18/62 and 18/90 stay out by the owner's round 2 decision.
 
 **21/106 joined the list on 2026-11-12 (owner, during the fresh build).** The parser refuses `21/106 Zusatzpunkt 13: unresolved nested contribution at ID2110609100:4 marker 2`. In Bessin's (AfD) Rede, the chair asks whether she allows a Zwischenfrage from Edis (Die Linke). She says "Selbstverständlich" (marker 2), then answers a heckle from the Regierungsbank in a second turn before Edis is called, and only then does Edis ask. No rule covers a same-speaker turn between the grant and the question. This is a parser gap, not a source defect, so under step 4's bar 21/106 comes back as one withheld Rede (or with a rule) and leaves the list with `--include-document-number 21/106`. It is one of three sittings with XML after the old store's 21/103. The other two, 21/104 and 21/105, are in the fresh store; 21/107 to 21/109 had no XML on 2026-11-12. The list now holds 86.
 
@@ -532,19 +532,25 @@ Found while fixing how vote pages state the outcome of a Beschlussempfehlung to 
 **Priority:** P2 (1 and 2 first: a real rejection reads without its direction)
 **Depends on:** None
 
-### Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)
+### ADR 0004 follow-ups (owner decisions and deferred findings)
 
-**What:** Detect and treat a turn given on behalf of the Bundestag or in exercise of the Sitzungsleitung when the XML gives it a `<rede>` of its own with a presidium `rolle_lang` (Präsident, Vizepräsident(in), Alterspräsident). Today such a `<rede>` is counted as a Rede of the speaker's Zusammenschluss. Found in the WP 18/19 rule-5 work ([validation record](docs/plans/a3-rule5-validation.md)):
-- 19/1: the Alterspräsident's Sitzungsleitung Reden (ID19100100, ID19100200, ID19101000, ID19101200) and Schäuble's inaugural address as the new Präsident (ID19101300), and his Sitzungsleitung ID19101900.
-- 18/1: the inaugural address after "ich nehme die Wahl an" (still refused at an earlier turn).
-- 18/245: Vizepräsidentin Bulmahn's farewell address (ID1824501400) and Vizepräsident Singhammer's announcement of an election result (ID1824502300).
+**What:** The ADR 0004 build (`docs/plans/adr-0004-presidium-kinds.md`) took every choice the plan auto-decided and left these:
+- **Owner decisions.** O13: the nominations printed as a `<rede>` (20/1 `ID20100700` Mützenich, 21/1 `ID21101200` Merz, kept; 18/1 `ID1800100100`, 19/1 `ID19100900`, excluded) still count as Reden (option A, status quo); option B, procedural by list entry, moves Reden 54,855 → 54,853, CDU/CSU and SPD −1 each. To confirm: O1–O12 and O14–O18, and the hard cases H2 (19/1's empty `<rede>`, built as Sitzungsleitung), H3 (18/245 Singhammer, built as Ansprache), H4 (18/173 Lammert, built as Ansprache), H5 (18/1 Hintze, built as procedural with the chair's announcement printed under him; check the PDF page).
+- **H1, O18: 19/1 Schäuble's address carries Solms's Redner-ID 11002190.** The list entry names the id as printed. The `person_corrections.json` entry that binds the Ansprache to Schäuble (11001938) is not written: a partition of 11002190 puts every Solms record under review, so it belongs to the step that admits 19/1 (coverage gate step 6), with its own replay.
+- **H7: 18/113 marker 3**, Pau's 1,897-character contribution as an Antrag's author, dropped by 6d inside another Redner's `<rede>`. Goes with the 18/96 / 18/109 rule below.
+- **18/96 and 18/109** (`a3-pilot.md:207-208`): a Vizepräsidentin's Befragung Nachfrage dropped inside de Maizière's answer, and Bulmahn's closing text after another chair's marker. Pre-existing misses on kept sittings; they need their own rule and owner decision. Check first whether 5cc5982 already restored 18/109's closing text.
+- **Speakers printed as `<name>` who are not the chair** (census finding 8): Wanka 39 turns, Maas 4, Schwesig 2, Biermann 2, Woidke, Ramelow, Bentele and about 40 MdBs in WP 18/19 kept sittings are read as chair text and counted nowhere. In 18/4 this is why Maas's, Schwesig's and Wanka's oath answers were never counted. Needs its own measurement and rule.
+- **Display gaps, no figure:** addresses a WP 20/21 protocol prints as `<name>` chair text are not shown as Ansprachen; Solms's 19/1 opening address is loose `<p>` text after the empty `ID19100200`; an Ansprache's `char_count` and text can include chairing (whole-`<rede>` grain, O2).
+- **A stored role for Ansprachen** (O10): the Dossier card's "Ansprache · Präsident" comes from the report. The A4 slice that moves the Dossier onto the store must persist the role (schema bump) or drop the suffix; add it to that slice's requirements in `docs/plans/a4-site-from-release.md`.
+- **Guest person pages** (risk 4): a guest bound by Redner-ID gets an `mps` row and a page, as Bundesrat members do. Decide whether a non-MdB guest gets a page under `abgeordnete/`.
+- **Census re-run** before step 6 admits the excluded sittings and before each data release: `docs/plans/adr-0004-census/census.py` and `review.py`; a row `review.py` cannot place is a new case for the owner. 18/20 is not in the census (W1's fetch failed for it).
+- **The "Ja." acceptance test** (`validate_dip_protocol.procedural_candidate`) reads only the TOP heading and the previous `<rede>`'s trailing chair text; a "Ja." under a prompt printed elsewhere is counted as a Rede, caught only by the census re-run.
+- **AGENTS.md interpreter path** `/opt/miniconda3/bin/python3.13` does not exist on the current machine.
 
-Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidium marker, 6d), an official address (its own kind, not a Fraktionsrede), or a debate Rede of an MdB who holds the office (counts for the Fraktion, ADR 0004). Until then 18/1 and 19/1 are excluded sittings (`--exclude-document-number`, owner decision 2026-10-20).
+**Why:** the build is fail-closed for presidium `<rede>`s, oath answers and acceptances; these are the decisions and gaps it did not settle.
 
-**Why:** ADR 0004 says Sitzungsleitung is never a Rede and official addresses are not counted as Fraktionsreden automatically; the parser has the nested half of that (6d) but not the `<rede>` half.
-
-**Priority:** P1 (blocks counting 18/1 and 19/1, and moves 18/245)
-**Depends on:** an owner decision on the kinds; the full WP 18/19 download to list every case.
+**Priority:** P2 (O13 and H1 before the first data release; the display gaps after)
+**Depends on:** the owner for the decisions; coverage gate step 6 for H1.
 
 ### WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns (rule 5, a later round)
 

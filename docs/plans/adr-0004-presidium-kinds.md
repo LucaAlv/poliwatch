@@ -1,6 +1,6 @@
 # ADR 0004 kinds: Ansprache, Sitzungsleitung, Fraktionsrede
 
-Plan for TODOS.md roadmap Stage 1, item 2, "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". Written 2026-11-10 on `claude/correctness-gate-fixes-b22045` (main at 28799ac, v0.36.0.0). Plan only: nothing here is built. Steps 0 and 1 (census and measurement) ran on 2026-11-12, read-only; see "Census and measurements".
+Plan for TODOS.md roadmap Stage 1, item 2, "Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)". Written 2026-11-10 on `claude/correctness-gate-fixes-b22045` (main at 28799ac, v0.36.0.0). Steps 0 and 1 (census and measurement) ran on 2026-11-12, read-only; see "Census and measurements". Steps 2-6 were built on 2026-11-13; see "Build notes" at the end for where the build departs from this text.
 
 ## Binding decisions
 
@@ -710,3 +710,16 @@ Codex (`codex exec`, read-only, 2026-11-12) on the revised plan and census tooli
 - O13 nominations printed as `<rede>` (H6): keep as Reden or procedural; not auto-decided because it is outside ADR 0004's wording (2 kept Reden).
 - O14-O18 (auto-decided 2026-11-12) need confirmation: 18/173 as Ansprache (H4), P2's name-stripped role test, no `marker`, the `procedural` list kind, Schäuble's 19/1 binding (H1).
 - Hard cases H2 (19/1's empty `<rede>` and Solms's loose opening address), H3 (18/245 Singhammer: Ansprache or Sitzungsleitung), H5 (18/1 Hintze, check the PDF page), H7 (18/113 Pau, deferred).
+
+## Build notes (2026-11-13)
+
+Built on `claude/dreamy-rosalind-cec12d` (main 36bfd08 plus this plan). Where the build departs from the text above:
+
+- **O13 built as option A** (nominations stay Reden): the owner has not decided, and A moves no figure. B is two list entries.
+- **O18's person correction is not written.** The list entry carries 11002190 as printed. A `person_corrections.json` partition of Solms's id puts every Solms record under review (`person_registry._on_shared_id`), a figure move in the kept store that belongs with the step that admits 19/1. TODOS.md "ADR 0004 follow-ups".
+- **P4 and P5 test whole `<rede>`s only** (see P5), never nested turns: no entry can name a nested marker.
+- **An empty listed `<rede>`** (19/1 `ID19100200`) leaves no diagnostic: `speech_segments` drops a turn without words. Its reconciliation status is still `procedural`.
+- **Tests use synthetic XML** modelled on the real excerpts, plus T23's replay over the reference store's cached XML (skipped when absent); no new XML fixtures. Test XML reuses real sitting numbers, so `tests/_support.py` installs an empty reviewed list and a test of a real listed sitting installs the shipped one (`shipped_reviewed_units`).
+- **The loader is `speech_kinds.reviewed_units()`**, called first by `build_dip_pulse_site.main`, `validate_dip_protocol.main` and `extract_demo_fixture.main` (`ERROR [reviewed-units]`, exit 1), and again by the parser per sitting (cached), so `audit_offline_turns.py` and the preflight script get the same list.
+- **P2's typed refusal** is `validate_dip_protocol.UnreviewedUnitError(ValueError)` with `rede_id`; the unlisted P4/P5 candidate raises it too (O6 is W3's).
+- **A presidium role on a Rede at persist** raises `derive.PresidiumRoleError`, a `SprechrolleError`, so every caller that stops on an unmapped role stops on it.
