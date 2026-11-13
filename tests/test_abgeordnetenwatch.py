@@ -47,6 +47,207 @@ class AbgeordnetenwatchCacheTests(unittest.TestCase):
             self.assertEqual(reloaded.stats["ext_id"], 1)
 
 
+def _politician(politician_id: int, label: str) -> dict:
+    return {"id": politician_id, "label": label, "abgeordnetenwatch_url": f"https://aw.example/{politician_id}"}
+
+
+class _Reply:
+    """A urlopen result whose body is ``payload`` as JSON."""
+
+    def __init__(self, payload: object) -> None:
+        self.body = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self) -> "_Reply":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body
+
+
+class LookupExtIdTests(unittest.TestCase):
+    # Value (A3 item 1.5): protects=the measured ext_id match share counts an API
+    # error as no answer, never as "no match", and a build caches no false
+    # negative; fails_when=a non-ok reply or a stopped resolver reads as a miss, or
+    # refresh serves the cache; seam=lookup_ext_id over _request; no_claim=the
+    # live API's reply shapes.
+    def resolver(self) -> aw.AbgeordnetenwatchResolver:
+        return aw.AbgeordnetenwatchResolver(sleep_seconds=0)
+
+    def test_each_state(self) -> None:
+        resolver = self.resolver()
+        with mock.patch.object(resolver, "_get", return_value=[_politician(7, "Ada Lovelace")]):
+            hit = resolver.lookup_ext_id("11001")
+        self.assertEqual((hit.state, hit.profile["id"], hit.profile["match"], hit.candidates), ("hit", 7, "ext_id", 1))
+        self.assertEqual(hit.cached_state, "not_cached")
+        with mock.patch.object(resolver, "_get", return_value=[]):
+            miss = resolver.lookup_ext_id("11002")
+        self.assertEqual((miss.state, miss.profile, miss.candidates), ("miss", None, 0))
+        with mock.patch.object(resolver, "_get", return_value=None):
+            failed = resolver.lookup_ext_id("11003")
+        self.assertEqual((failed.state, failed.profile), ("failed", None))
+        self.assertNotIn("11003", resolver._by_ext_id)
+        with mock.patch.object(resolver, "_get") as get:
+            self.assertEqual(resolver.lookup_ext_id("11004", network=False).state, "not_cached")
+            self.assertEqual(resolver.lookup_ext_id("11001", network=False).state, "hit")
+            self.assertEqual(resolver.lookup_ext_id("11002").state, "miss")
+        get.assert_not_called()
+        with self.assertRaises(ValueError):
+            resolver.lookup_ext_id(" ")
+
+    def test_several_politicians_take_the_first_and_report_the_count(self) -> None:
+        resolver = self.resolver()
+        reply = [_politician(7, "Ada Lovelace"), _politician(8, "Ada Byron")]
+        with mock.patch.object(resolver, "_get", return_value=reply):
+            found = resolver.lookup_ext_id("11001")
+        self.assertEqual((found.state, found.profile["id"], found.candidates), ("hit", 7, 2))
+
+    def test_refresh_asks_again_and_reports_the_cached_answer(self) -> None:
+        resolver = self.resolver()
+        resolver._by_ext_id.update({"11001": {"id": 7, "match": "ext_id"}, "11002": None})
+        with mock.patch.object(resolver, "_get", return_value=[_politician(9, "Grace Hopper")]) as get:
+            changed = resolver.lookup_ext_id("11001", refresh=True)
+            filled = resolver.lookup_ext_id("11002", refresh=True)
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual((changed.state, changed.profile["id"], changed.cached_state, changed.cached_profile["id"]),
+                         ("hit", 9, "hit", 7))
+        self.assertEqual((filled.state, filled.cached_state, filled.cached_profile), ("hit", "miss", None))
+        self.assertEqual(resolver._by_ext_id["11002"]["id"], 9)
+        # A failed refresh keeps the cached answer.
+        with mock.patch.object(resolver, "_get", return_value=None):
+            failed = resolver.lookup_ext_id("11001", refresh=True)
+        self.assertEqual((failed.state, failed.cached_profile["id"]), ("failed", 9))
+        self.assertEqual(resolver._by_ext_id["11001"]["id"], 9)
+        with mock.patch.object(resolver, "_get") as get:
+            self.assertEqual(resolver.lookup_ext_id("11001", network=False, refresh=True).state, "hit")
+        get.assert_not_called()
+
+    def test_network_false_sends_nothing(self) -> None:
+        resolver = self.resolver()
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            self.assertEqual(resolver.lookup_ext_id("11001", network=False).state, "not_cached")
+        urlopen.assert_not_called()
+        self.assertEqual(resolver.stats["api_calls"], 0)
+
+    def test_the_failure_cut_off_gives_failed_not_miss(self) -> None:
+        resolver = self.resolver()
+        error = aw.urllib.error.URLError("down")
+        with mock.patch("urllib.request.urlopen", side_effect=error) as urlopen:
+            states = [resolver.lookup_ext_id(str(11000 + n)).state for n in range(aw.MAX_CONSECUTIVE_FAILURES + 2)]
+        self.assertEqual(set(states), {"failed"})
+        self.assertEqual(urlopen.call_count, aw.MAX_CONSECUTIVE_FAILURES)
+        self.assertEqual(resolver._by_ext_id, {})
+
+    def test_a_non_ok_reply_is_a_failure_and_caches_nothing(self) -> None:
+        for payload in ({"meta": {"status": "error"}, "data": []}, {"meta": None}, ["not", "an", "object"]):
+            with self.subTest(payload=payload):
+                resolver = self.resolver()
+                with mock.patch("urllib.request.urlopen", return_value=_Reply(payload)):
+                    self.assertEqual(resolver.lookup_ext_id("11001").state, "failed")
+                    # resolve: no cached negative, and the name search's own
+                    # error reply caches nothing either.
+                    self.assertIsNone(resolver.resolve(ext_id="11002", first_name="Ada", last_name="Lovelace"))
+                self.assertEqual(resolver._by_ext_id, {})
+                self.assertEqual(resolver._by_name, {})
+                self.assertEqual(resolver.stats["errors"], 3)
+
+    def test_error_replies_count_toward_the_cut_off(self) -> None:
+        resolver = self.resolver()
+        reply = {"meta": {"status": "error"}, "data": []}
+        with mock.patch("urllib.request.urlopen", side_effect=lambda *a, **k: _Reply(reply)) as urlopen:
+            states = [resolver.lookup_ext_id(str(11000 + n)).state for n in range(aw.MAX_CONSECUTIVE_FAILURES + 2)]
+        self.assertEqual(set(states), {"failed"})
+        self.assertEqual(urlopen.call_count, aw.MAX_CONSECUTIVE_FAILURES)
+        self.assertTrue(resolver.last_error.startswith("not asked"))
+        resolver = self.resolver()
+        with mock.patch("urllib.request.urlopen", return_value=_Reply(reply)):
+            resolver.lookup_ext_id("11001")
+        self.assertEqual(resolver.last_error, "reply status 'error'")
+        # An answer in between resets the count.
+        resolver = self.resolver()
+        replies = [_Reply(reply)] * (aw.MAX_CONSECUTIVE_FAILURES - 1) + [_Reply({"meta": {"status": "ok"}, "data": []})] + [_Reply(reply)] * 2
+        with mock.patch("urllib.request.urlopen", side_effect=replies) as urlopen:
+            for n in range(len(replies)):
+                resolver.lookup_ext_id(str(12000 + n))
+        self.assertEqual(urlopen.call_count, len(replies))
+
+    # Value: protects=an HTTP 429 or 500 or a non-JSON body is no answer: never cached as a miss, and only the body failure counts toward the cut-off; fails_when=a 429 loses its 60 s wait, a 500 trips the cut-off, or a bad body reads as a miss; why_new=_request's HTTP and JSON branches had no test; seam=none; no_claim=the live API's rate limits. Generated by gstack /ship coverage pass
+    def test_http_errors_and_bad_bodies_are_failures_that_cache_nothing(self) -> None:
+        ok = _Reply({"meta": {"status": "ok"}, "data": [_politician(7, "Ada Lovelace")]})
+
+        def http(code: int) -> aw.urllib.error.HTTPError:
+            return aw.urllib.error.HTTPError("https://aw.example", code, "x", {}, None)
+
+        bad_body = _Reply({})
+        bad_body.body = b"<html>"
+        cases = [
+            ("429 then success", [http(429), ok], "hit", None, 0, [aw.BACKOFF_BASE_SECONDS], 2),
+            ("429 every retry", [http(429)] * (aw.MAX_RETRIES + 1), "failed", "HTTP 429", 0,
+             [min(aw.BACKOFF_BASE_SECONDS * 2 ** n, aw.MAX_BACKOFF_SECONDS) for n in range(aw.MAX_RETRIES)],
+             aw.MAX_RETRIES + 1),
+            ("HTTP 500", [http(500)], "failed", "HTTP 500", 0, [], 1),
+            ("invalid JSON", [bad_body], "failed", None, 1, [], 1),
+        ]
+        for name, replies, state, error, counted, sleeps, calls in cases:
+            with self.subTest(name):
+                resolver = self.resolver()
+                with mock.patch("urllib.request.urlopen", side_effect=replies) as urlopen, \
+                        mock.patch.object(aw.time, "sleep") as sleep:
+                    found = resolver.lookup_ext_id("11001")
+                self.assertEqual(found.state, state)
+                self.assertEqual(urlopen.call_count, calls)
+                self.assertEqual([c.args[0] for c in sleep.call_args_list], sleeps)
+                self.assertEqual(resolver._consecutive_failures, counted)
+                if state == "hit":
+                    self.assertEqual(found.profile["id"], 7)
+                    self.assertEqual(resolver.stats["errors"], 0)
+                    continue
+                self.assertEqual(resolver._by_ext_id, {})
+                self.assertEqual(resolver.stats["errors"], 1)
+                if error:
+                    self.assertEqual(resolver.last_error, error)
+                else:
+                    self.assertTrue(resolver.last_error.startswith("JSONDecodeError"), resolver.last_error)
+
+    def test_a_save_cut_short_keeps_the_previous_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "aw-cache.json"
+            resolver = aw.AbgeordnetenwatchResolver(path, sleep_seconds=0)
+            resolver._by_ext_id["11001"] = {"id": 7, "match": "ext_id"}
+            resolver._dirty = True
+            resolver.save()
+            resolver._by_ext_id["11002"] = None
+            resolver._dirty = True
+            with mock.patch.object(Path, "replace", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+                resolver.save()
+            self.assertEqual(aw.AbgeordnetenwatchResolver(path)._by_ext_id, {"11001": {"id": 7, "match": "ext_id"}})
+
+    def test_an_ok_reply_without_politicians_is_a_cached_miss(self) -> None:
+        resolver = self.resolver()
+        with mock.patch("urllib.request.urlopen", return_value=_Reply({"meta": {"status": "ok"}, "data": []})):
+            self.assertEqual(resolver.lookup_ext_id("11001").state, "miss")
+        self.assertEqual(resolver._by_ext_id, {"11001": None})
+        self.assertEqual(resolver.stats["errors"], 0)
+
+    def test_resolve_uses_the_lookup_and_falls_back_to_the_name(self) -> None:
+        resolver = self.resolver()
+        replies = {"ext_id_bundestagsverwaltung": [], "last_name": [_politician(5, "Ada Lovelace")]}
+
+        def get(params: dict) -> list:
+            return replies["last_name" if "last_name" in params else "ext_id_bundestagsverwaltung"]
+
+        with mock.patch.object(resolver, "_get", side_effect=get):
+            profile = resolver.resolve(ext_id="11001", first_name="Ada", last_name="Lovelace", fraktion="SPD")
+        self.assertEqual((profile["id"], profile["match"]), (5, "name"))
+        self.assertEqual(resolver._by_ext_id, {"11001": None})
+        resolver._by_ext_id["11003"] = {"id": 6, "match": "ext_id"}
+        with mock.patch.object(resolver, "_get") as request:
+            self.assertEqual(resolver.resolve(ext_id="11003")["id"], 6)
+        request.assert_not_called()
+
+
 def _mandate(period_id: int, period_label: str, constituency: str, electoral_list: str) -> dict:
     return {
         "parliament_period": {"id": period_id, "label": period_label},

@@ -13814,7 +13814,7 @@ def parse_args() -> argparse.Namespace:
         "--abgeordnetenwatch-sleep",
         type=float,
         default=None,
-        help="Minimum delay in seconds between abgeordnetenwatch API requests (default 0.5 to stay under its rate limit).",
+        help="Minimum delay in seconds between abgeordnetenwatch API requests (default 2.0: its fair-use limit is 30 requests a minute).",
     )
     parser.add_argument(
         "--roster-wahlperiode",
