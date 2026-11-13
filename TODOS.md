@@ -308,6 +308,16 @@ Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay
 **Priority:** P3
 **Depends on:** None
 
+### Coverage gate PR 2: the pre-gate has no lane for eight touched files
+
+`gstack-checks run` against origin/main reports `UNMAPPED` for files the PR touched, so ship's pregate stays red until `.gstack/pregate.json` maps them. CI runs the full suite (2,244 tests, green at e18b40f), so only the local gate is affected. What each needs, from a grep of the test imports:
+- `scripts/check_withhold_one.py`, `scripts/reviewed_units.py`: `tests/test_withholding.py`.
+- `scripts/stable_ids.py`: `tests/test_stable_ids.py`, plus the eleven test files that import it (`test_repersist.py`, `test_daten_export.py`, `test_registry_*.py` and others).
+- `scripts/extract_demo_fixture.py`: `tests/test_demo_site.py`.
+- `tests/_facts_fixture.py`: `test_facts.py`, `test_backfill.py`, `test_a1_followups.py`, `test_review_fixes.py`.
+- `tests/withheld_assert.py`: `test_a1_followups.py`, `test_a3_rule5.py`, `test_a3_round2.py`.
+- `scripts/audit_offline_turns.py` and `docs/plans/withholding-preflight/fetch_and_audit.py` are deleted, but `.gstack/pregate.json` still lists them (lines 265 and 268). Drop both keys.
+
 ### A repeated Inhaltsverzeichnis title loses the page of Reden
 
 **What:** `parse_toc` keys blocks by title, so of two blocks with one title only the last survives and the first block's `rid_pages` are lost. 87 of the 716 XML files repeat a title. 1,459 of 54,718 stored Reden in 36 sittings have no `source_page` [measured on the A3 reports, 2026-11-07]; the mechanism was read on 18/44, where 13 Reden of "Tagesordnungspunkt II (Fortsetzung)" have none, and the other sittings were not checked one by one.
