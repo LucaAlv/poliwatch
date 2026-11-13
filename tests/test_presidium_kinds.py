@@ -469,6 +469,151 @@ class ReconciliationTests(unittest.TestCase):
                 sk.validate_kind(internal)
 
 
+def store_report(number, speakers, contributions=()):
+    from test_sprechrolle import report
+    data = report(number, *speakers)
+    data['agenda_items'][0]['xml_contributions'] = [
+        {'kind': kind, 'rede_id': f'IDC{index}', 'parent_rede_id': None, 'sequence': 100 + index,
+         'speaker': speaker, 'paragraph_count': 1, 'char_count': 50, 'text': 'Ansprache', 'snippet': 'Ansprache'}
+        for index, (kind, speaker) in enumerate(contributions, 1)]
+    return data
+
+
+LAMMERT = {'xml_redner_id': '11001274', 'display_name': 'Dr. Norbert Lammert', 'first_name': 'Norbert',
+           'last_name': 'Lammert', 'fraktion': 'CDU/CSU', 'role': 'Präsident'}
+DREYER = {'xml_redner_id': '11009999', 'display_name': 'Malu Dreyer', 'role': 'Präsidentin des Bundesrates'}
+ADA = {'xml_redner_id': '5', 'display_name': 'Ada Lovelace', 'fraktion': 'SPD'}
+
+
+class RoleCheckTests(unittest.TestCase):
+    def test_a_listed_guest_or_presidium_ansprache_passes_and_an_unlisted_guest_role_still_fails(self):
+        # T14.
+        self.assertEqual(derive.find_unmapped_sprechrollen(
+            [store_report('18/223', [ADA], [('ansprache', DREYER), ('ansprache', LAMMERT)])]), {})
+        derive.check_sprechrollen([store_report('18/223', [ADA], [('ansprache', DREYER)])])
+        self.assertEqual(derive.find_unmapped_sprechrollen([store_report('18/223', [DREYER])]),
+                         {'Präsidentin des Bundesrates': ['18/223 ID1822301']})
+        self.assertEqual(derive.find_unmapped_sprechrollen([store_report('18/223', [ADA], [('kurzintervention', DREYER)])]),
+                         {'Präsidentin des Bundesrates': ['18/223 IDC1']})
+
+    def test_a_presidium_role_on_a_rede_raises_the_adr_0004_error(self):
+        # T15, with the role printed with the name (18/178).
+        for speaker in [LAMMERT, {**LAMMERT, 'role': 'Präsident Dr. Norbert Lammert'},
+                        {**LAMMERT, 'role': 'Vizepräsident in'}]:
+            with self.subTest(role=speaker['role']):
+                with self.assertRaises(derive.PresidiumRoleError) as caught:
+                    derive.check_sprechrollen([store_report('18/178', [ADA, speaker])])
+                self.assertIn('18/178 ID1817802', str(caught.exception))
+                self.assertIn('ADR 0004', str(caught.exception))
+                self.assertIsInstance(caught.exception, derive.SprechrolleError)
+
+
+class PersistTests(unittest.TestCase):
+    def test_an_ansprache_row(self):
+        # T16: sprechrolle NULL, fraktion as printed, the person bound; no Reden figure moves.
+        import persist_dip_pulse_store as pulse_store
+        conn = pulse_store.connect(Path(tempfile.mkdtemp()) / 'store.sqlite')
+        self.addCleanup(conn.close)
+        pulse_store.persist_report(conn, store_report('18/178', [ADA], [('ansprache', LAMMERT), ('ansprache', DREYER)]))
+        rows = {row[0]: row[1:] for row in conn.execute(
+            'SELECT m.display_name, c.kind, c.fraktion, c.sprechrolle, c.mp_id IS NOT NULL '
+            'FROM contributions c JOIN mps m ON m.id = c.mp_id')}
+        self.assertEqual(rows, {'Dr. Norbert Lammert': ('ansprache', 'CDU/CSU', None, 1),
+                                'Malu Dreyer': ('ansprache', None, None, 1)})
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM speeches').fetchone()[0], 1)
+        recipe = __import__('build_dip_pulse_site').RECIPES_BY_ID['r2-textanteil-fraktion']
+        self.assertEqual([(r['fraktion'], r['reden']) for r in conn.execute(recipe['sql'])], [('SPD', 1)])
+
+
+def site_report(xml, entries, number):
+    sk.use_reviewed_units(list(entries))
+    try:
+        parsed = dip.parse_protocol_xml(xml)
+    finally:
+        sk.use_reviewed_units([])
+    return {'protocol': {'id': number, 'dokumentnummer': number, 'datum': '2025-05-06',
+                         'pdf_url': 'https://dserver.bundestag.de/btp/21/21002.pdf'},
+            'agenda_items': [dict(index=t['index'], **dip.xml_top_fields(t)) for t in parsed['agenda_items']],
+            'xml_contributions': parsed.get('sitting_contributions', []),
+            'validation_summary': dip.contribution_summary(parsed['agenda_items'], parsed.get('sitting_contributions'))}
+
+
+class SiteTests(unittest.TestCase):
+    def build(self, report):
+        import build_dip_pulse_site as build
+        import persist_dip_pulse_store as pulse_store
+        import render_dip_pulse_html as html
+        tmp = Path(tempfile.mkdtemp())
+        path = tmp / 'store.sqlite'
+        self.assertTrue(build.rebuild_database_from_entries(path, [{'report': report}]).replaced)
+        conn = pulse_store.connect(path)
+        self.addCleanup(conn.close)
+        people, lookup = build.collect_abgeordnete(conn)
+        return conn, people, html.render_html(report, mp_lookup=lookup)
+
+    def test_the_dossier_and_the_person_page_show_an_ansprache(self):
+        # T17.
+        import build_dip_pulse_site as build
+        xml = sitting(rede('ID1', SCHAEUBLE, '<p>Liebe Kolleginnen und Kollegen, ich danke Ihnen.</p>'
+                           '<name>Präsident Dr. Wolfgang Schäuble:</name><p>Das Wort hat die Kollegin Meier.</p>')
+                      + rede('ID2', MEMBER_A, DEBATE), wp=19, nr=73)
+        conn, people, page = self.build(site_report(xml, [entry('ID1', '11001938', 'ansprache', '19/73')], '19/73'))
+        self.assertIn('Weitere Beiträge, keine Reden und nicht mitgezählt: 1 Ansprache.', page)
+        self.assertIn('<em>Ansprache · Präsident</em>', page)
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM speeches').fetchone()[0], 1)
+        schaeuble = next(p for p in people if (p.get('contribution_counts') or {}).get('ansprache'))
+        panel = build.render_contributions_panel(schaeuble)
+        self.assertIn('<span>Ansprachen</span><strong>1</strong>', panel)
+        self.assertIn('Erwiderungen, Ansprachen sowie Fragen und Antworten zählen gesondert.', panel)
+        # The role printed with the name (18/178) is shown without it.
+        import render_dip_pulse_html as html
+        card = html.render_contribution_details({'index': 1, 'xml_contributions': [{
+            'kind': 'ansprache', 'sequence': 1, 'rede_id': 'ID1', 'text': 'Gedenkworte.',
+            'speaker': {'display_name': 'Dr. Norbert Lammert', 'first_name': 'Norbert', 'last_name': 'Lammert',
+                        'role': 'Präsident Dr. Norbert Lammert'}}]}, {'id': '18/178'})
+        self.assertIn('<em>Ansprache · Präsident</em>', card)
+
+    def test_a_sitting_whose_every_rede_is_procedural(self):
+        # T21: 18/4, 20/5, 21/2's shape. 0 Reden is a real zero, not an extraction gap.
+        import build_dip_pulse_site as build
+        minister = redner('11000003', 'Ministerin', role='Bundesministerin für Bildung', first='Eva')
+        xml = sitting(rede('ID1', MEMBER_A, '<p>Ich nehme die Wahl an.</p>')
+                      + rede('ID2', minister, '<p>Ich schwöre es, so wahr mir Gott helfe.</p>'),
+                      wp=21, nr=2, heading='Wahl des Bundeskanzlers')
+        report = site_report(xml, [entry('ID1', '11000001', 'procedural', '21/2', 'acceptance'),
+                                   entry('ID2', '11000003', 'procedural', '21/2', 'oath answer')], '21/2')
+        conn, _people, page = self.build(report)
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM speeches').fetchone()[0], 0)
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM contributions').fetchone()[0], 0)
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM protocols').fetchone()[0], 1)
+        self.assertNotIn('Keine Reden im XML', page)
+        self.assertNotIn('0 von 0', page)
+        self.assertNotIn('Redeanteil <strong>', page)
+        self.assertIn('Keine Reden in dieser Sitzung: Was das Protokoll als Rede druckt, sind Verfahrensschritte '
+                      '(Annahme einer Wahl, Eid, Sitzungsleitung) – kein Ranking möglich.', page)
+        self.assertIn('Keine Reden in dieser Sitzung, daher kein Rede- und kein Textanteil.', page)
+        self.assertIn('Keine Reden: Was das Protokoll hier als Rede druckt, sind Verfahrensschritte '
+                      '(Annahme einer Wahl, Eid, Sitzungsleitung), die nicht als Rede zählen.', page)
+        for recipe_id in ('r2-textanteil-fraktion', 'r5-vorgaenge-meiste-reden'):  # r1 needs the export's mp_canonical
+            recipe = build.RECIPES_BY_ID[recipe_id]
+            with self.subTest(recipe=recipe_id):
+                self.assertEqual(conn.execute(recipe['sql']).fetchall(), [])
+
+
+class KindListTests(unittest.TestCase):
+    def test_every_kind_has_a_label_and_is_in_contexts_beitrag_list(self):
+        # T18, derived from the code: no hand-synced list.
+        import re
+        context = (_support.ROOT / 'CONTEXT.md').read_text(encoding='utf-8')
+        beitrag = next(line for line in context.splitlines() if line.startswith('Something said in a Sitzung'))
+        listed = re.search(r'Each has a Kind \(([^)]*)\)', beitrag).group(1)
+        self.assertEqual(sorted(re.findall(r'`([a-z_]+)`', listed)), sorted(sk.CONTRIBUTION_KINDS))
+        for kind in sk.CONTRIBUTION_KINDS:
+            self.assertIn(kind, sk.KIND_LABELS)
+            self.assertIn(kind, sk.REDE_STATUS.keys() | sk.NOT_REDE_KINDS)
+        self.assertEqual(derive.SIDELESS_KINDS, {sk.ANSPRACHE})
+
+
 STORE_XML = Path('/Users/luca/Projects/poliwatch/.context/dip-pulse-site/data/xml')
 CENSUS = _support.ROOT / 'docs' / 'plans' / 'adr-0004-census.tsv'
 

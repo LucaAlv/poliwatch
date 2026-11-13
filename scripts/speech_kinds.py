@@ -310,24 +310,14 @@ def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
     return (long, short) if structured else (printed, None)
 
 
-#: The presidium (ADR 0004), matched against a role with whitespace removed
-#: ("Vizepräsident in").
-PRESIDIUM_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
+PRESIDIUM_ROLE = derive.PRESIDIUM_ROLE
 
 
 def presidium_role(role: str | None, redner: ET.Element | None = None) -> bool:
-    """Whether ``role`` is the presidium's. 18/178, 19/9 and 19/73 print the role
-    with the speaker's name ("Präsident Dr. Norbert Lammert"): the name parts of
-    ``redner`` are removed first. A guest's role ("Präsidentin des Bundesrates")
-    is none."""
-    role = role or ""
-    if redner is not None:
-        name = redner.find("name")
-        for tag in ("titel", "vorname", "namenszusatz", "nachname"):
-            part = _text(name.find(tag)) if name is not None else ""
-            for token in part.split():
-                role = re.sub(rf"(?<![\w.-]){re.escape(token)}(?![\w-])", " ", role)
-    return bool(PRESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", role)))
+    """``derive.is_presidium_role`` with the printed name parts of ``redner``."""
+    name = redner.find("name") if redner is not None else None
+    parts = [_text(name.find(tag)) for tag in ("titel", "vorname", "namenszusatz", "nachname")] if name is not None else []
+    return derive.is_presidium_role(role, parts)
 
 
 def presidium_owner(rede: ET.Element) -> bool:

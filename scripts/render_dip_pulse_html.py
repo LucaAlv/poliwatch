@@ -1865,7 +1865,13 @@ def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], 
         person = (mp_lookup or {}).get(key)
         if person:
             name = f'<a href="../abgeordnete/{esc(person)}.html">{name}</a>'
-        label = esc(speech_kinds.KIND_LABELS[c["kind"]][0])
+        label = speech_kinds.KIND_LABELS[c["kind"]][0]
+        if c["kind"] == speech_kinds.ANSPRACHE:
+            # ADR 0004: the card names in what capacity the address was given.
+            role = derive.role_without_name(derive.role_text(speaker), (
+                speaker.get("display_name"), speaker.get("first_name"), speaker.get("last_name")))
+            label = f"{label} · {role}" if role else label
+        label = esc(label)
         page = (c.get("source_page") or {}).get("page")
         pdf = safe_href(protocol.get("pdf_url"))
         start_page = (protocol.get("xml_header") or {}).get("start_page")
@@ -1932,6 +1938,19 @@ def render_top_withheld(item: dict[str, Any]) -> str:
         f'<p class="top-contributions top-withheld">Zurückgehalten, nicht mitgezählt ({format_int(len(rows))} {noun}): '
         f"{esc('; '.join(parts))}. Text und Grund in withheld_units.</p>"
     )
+
+
+#: The parser's evidence on a reviewed procedural or Sitzungsleitung <rede> (ADR 0004).
+REVIEWED_PROCEDURAL_EVIDENCE = ("procedural (reviewed)", "Sitzungsleitung (reviewed)")
+NO_REDEN_PROCEDURAL = ("Keine Reden: Was das Protokoll hier als Rede druckt, sind Verfahrensschritte "
+                       "(Annahme einer Wahl, Eid, Sitzungsleitung), die nicht als Rede zählen.")
+
+
+def reviewed_procedural(item: dict[str, Any]) -> bool:
+    """Whether the agenda item held a <rede> the reviewed list reads as a
+    procedural step or Sitzungsleitung (not stored, not counted)."""
+    return any(str(d.get("evidence") or "").startswith(REVIEWED_PROCEDURAL_EVIDENCE)
+               for d in item.get("xml_turn_diagnostics") or [])
 
 
 def contribution_counts(item: dict[str, Any]) -> dict[str, int]:
@@ -3077,6 +3096,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
             return '<span class="muted">Keine gezählten Reden; zurückgehaltene Reden siehe oben</span>'
         if item.get("xml_contributions"):
             return '<span class="muted">Keine Reden; weitere Beiträge siehe oben</span>'
+        if reviewed_procedural(item):
+            return f'<span class="muted">{esc(NO_REDEN_PROCEDURAL)}</span>'
         return '<span class="muted">Keine Reden im XML</span>'
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
@@ -3170,6 +3191,9 @@ def render_html(
     has_ranking = bool(items) and total_speeches > 0
     if not items:
         ranking_body = '<p class="ranking-empty">Keine Tagesordnungspunkte im XML-Protokoll gefunden.</p>'
+    elif not has_ranking and any(reviewed_procedural(item) for item in items):
+        ranking_body = ('<p class="ranking-empty">Keine Reden in dieser Sitzung: Was das Protokoll als Rede druckt, '
+                        'sind Verfahrensschritte (Annahme einer Wahl, Eid, Sitzungsleitung) – kein Ranking möglich.</p>')
     elif not has_ranking:
         ranking_body = '<p class="ranking-empty">Keine Reden im XML extrahiert – kein Ranking möglich.</p>'
     else:
@@ -3240,6 +3264,24 @@ def render_html(
             if "dev-view" in components
             else ""
         )
+        if total_speeches:
+            top_bars = f"""
+              <div class="top-bars">
+                <div>
+                  <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
+                  <div class="bar" title="{stats['speech_count']} von {total_speeches} Reden in dieser Sitzung"><span style="width:{speech_share:.2f}%"></span></div>
+                  <p>{stats['speech_count']} von {total_speeches} extrahierten Reden gehören zu diesem Tagesordnungspunkt.</p>
+                </div>
+                <div>
+                  <label>Textumfang <strong>{format_percent(text_share)}</strong></label>
+                  <div class="bar alt" title="{stats['total_chars']} von {total_chars} extrahierten Redezeichen in dieser Sitzung"><span style="width:{text_share:.2f}%"></span></div>
+                  <p>{format_int(stats['total_chars'])} Zeichen Redetext, {format_percent(text_share)} des aus XML extrahierten Sitzungsprotokolls.</p>
+                </div>
+              </div>"""
+        else:
+            # A sitting with no Rede at all (18/4, 20/5: only the election, the
+            # acceptance and the oaths) has no share to show, not 0 %.
+            top_bars = '<p class="top-contributions">Keine Reden in dieser Sitzung, daher kein Rede- und kein Textanteil.</p>'
         top_sections.append(
             f"""
             <article class="top-card" id="top-{esc(source_index(item['index']))}">
@@ -3259,18 +3301,7 @@ def render_html(
               {render_top_contributions(item)}
               {render_top_withheld(item)}
               {render_contribution_details(item, protocol, mp_lookup)}
-              <div class="top-bars">
-                <div>
-                  <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
-                  <div class="bar" title="{stats['speech_count']} von {total_speeches} Reden in dieser Sitzung"><span style="width:{speech_share:.2f}%"></span></div>
-                  <p>{stats['speech_count']} von {total_speeches} extrahierten Reden gehören zu diesem Tagesordnungspunkt.</p>
-                </div>
-                <div>
-                  <label>Textumfang <strong>{format_percent(text_share)}</strong></label>
-                  <div class="bar alt" title="{stats['total_chars']} von {total_chars} extrahierten Redezeichen in dieser Sitzung"><span style="width:{text_share:.2f}%"></span></div>
-                  <p>{format_int(stats['total_chars'])} Zeichen Redetext, {format_percent(text_share)} des aus XML extrahierten Sitzungsprotokolls.</p>
-                </div>
-              </div>
+              {top_bars}
               <div class="party-block">
                 {render_party_stack(stats['party_counts'], party_total)}
                 <div class="party-labels">{render_badges(party_labels)}</div>

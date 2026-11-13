@@ -199,8 +199,8 @@
           "license": "dip"
         },
         "kind": {
-          "meaning": "Regelbasierte Klassifikation des nicht als Rede gespeicherten Beitrags, z. B. Kurzintervention, Erwiderung, Frage oder Antwort.",
-          "unit": "Einer der festgelegten Beitragsart-Codes (z. B. kurzintervention, erwiderung, befragung_frage).",
+          "meaning": "Regelbasierte Klassifikation des nicht als Rede gespeicherten Beitrags, z. B. Kurzintervention, Erwiderung, Frage oder Antwort; eine Ansprache des Präsidiums oder eines Gastes (ansprache) ordnet eine geprüfte Liste zu (scripts/reviewed_units.json, ADR 0004).",
+          "unit": "Einer der festgelegten Beitragsart-Codes (z. B. kurzintervention, erwiderung, befragung_frage, ansprache).",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "eigene-auswertung"
         },
@@ -242,7 +242,7 @@
         },
         "sprechrolle": {
           "meaning": "Bei diesem einzelnen Beitrag festgestellte Rolle (Bundesregierung, Bundesrat, weitere Rolle); keine Personeneigenschaft.",
-          "unit": "Rollen-Code bundesregierung, bundesrat oder weitere; sonst NULL.",
+          "unit": "Rollen-Code bundesregierung, bundesrat oder weitere; sonst NULL; bei ansprache immer NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "eigene-auswertung"
         },

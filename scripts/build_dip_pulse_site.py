@@ -158,7 +158,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
     "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung und sind keiner Person zugeordnet; nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
-    "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
+    "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
@@ -9876,7 +9876,7 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     return (
         '<section class="panel">'
         "<h2>Weitere Beiträge (keine Reden)</h2>"
-        "<p>Zwischenfragen, schriftliche Beiträge, Kurzinterventionen, Erwiderungen sowie Fragen und Antworten zählen gesondert.</p>"
+        "<p>Zwischenfragen, schriftliche Beiträge, Kurzinterventionen, Erwiderungen, Ansprachen sowie Fragen und Antworten zählen gesondert.</p>"
         f'<div class="field-grid">{fields}</div><ul>{links}</ul>'
         "</section>"
     )
@@ -10849,7 +10849,10 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
         zählen nur Reden. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der
         Befragung der Bundesregierung und der Fragestunde sind keine Reden; sie werden als eigene
         Beiträge erfasst und in keiner dieser Kennzahlen mitgezählt. Die Eingangsberichte einer
-        Befragung sind Reden.</span></li>
+        Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden
+        oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion.
+        Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso
+        wenig die Annahme einer Wahl und die Antwort auf einen Eid.</span></li>
       </ol>
     </section>
     <section>
@@ -12631,7 +12634,7 @@ def render_sources_page(
         <h2>Wie die Seite sie nutzt</h2>
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
-          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
+          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion. Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso wenig die Annahme einer Wahl und die Antwort auf einen Eid. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
           <li><strong>Meiste Reden</strong><span>Tagesordnungspunkte nach Anzahl der extrahierten Reden sortiert. Die Balken zeigen Redeanteil und Textanteil an der gesamten Sitzung. Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
