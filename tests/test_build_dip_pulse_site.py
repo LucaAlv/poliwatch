@@ -3337,7 +3337,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
     def test_homepage_latest_generated_sitting_and_plain_semantics(self) -> None:
         old = self._entry("2026-05-20", "21/70", [])
         newest = self._entry("2026-06-12", "21/84", [])
-        markup = build_dip_pulse_site.render_landing_page([old, newest], today=date(2026, 6, 16))
+        markup = build_dip_pulse_site.render_landing_page([old, newest], today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 a date (2026-06-16), not the export format
         sitting = self._home_section(markup, "latest-sitting")
         self.assertIn('href="protocols/plenarprotokoll-21-84.html">Sitzungsprotokoll öffnen', sitting)
         self.assertIn('Zuletzt verfügbar · Protokoll 21/84', sitting)
@@ -3383,14 +3383,14 @@ class BuildClockAndWeekTests(unittest.TestCase):
             if gap is not None:
                 entries.append(self._entry((date(2026, 6, 12) - timedelta(weeks=gap)).isoformat(), "21/70", []))
             with self.subTest(gap=gap):
-                home = build_dip_pulse_site.render_landing_page(entries, today=date(2026, 6, 16))
+                home = build_dip_pulse_site.render_landing_page(entries, today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
                 weekly = self._home_section(home, "selected-week")
                 eligible = gap == 12
                 self.assertEqual('mit Vergleich zur vorherigen erfassten Woche' in weekly, eligible)
                 self.assertEqual('Wochenübersicht und Vergleich öffnen' in weekly, eligible)
                 if not eligible:
                     self.assertIn('Wochenübersicht öffnen', weekly)
-                pulse = build_dip_pulse_site.render_front_page(entries, today=date(2026, 6, 16))
+                pulse = build_dip_pulse_site.render_front_page(entries, today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
                 self.assertIn('id="wochenvergleich"', pulse)
                 self.assertEqual('Noch keine Vergleichswoche' not in pulse, eligible)
 
@@ -3406,13 +3406,13 @@ class BuildClockAndWeekTests(unittest.TestCase):
 
     # Value: protects=optional Daten link and escaped manifest label; fails_when=link gating or HTML escaping is removed; why_new=homepage tests cover periods and core routes, not manifest-driven content; seam=none
     def test_homepage_data_link_is_optional_and_manifest_label_is_escaped(self) -> None:
-        plain = build_dip_pulse_site.render_landing_page([], today=date(2026, 6, 16))
+        plain = build_dip_pulse_site.render_landing_page([], today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         source_data = self._home_section(plain, "sources-data")
         self.assertNotIn('href="database.html"', source_data)
         self.assertNotIn(">Daten</a>", source_data)
 
         linked = build_dip_pulse_site.render_landing_page(
-            [], database_page_href="database.html", data_stand="Stand <aktuell>", today=date(2026, 6, 16)
+            [], database_page_href="database.html", data_stand="Stand <aktuell>", today=date(2026, 6, 16)  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         )
         source_data = self._home_section(linked, "sources-data")
         self.assertIn('<a href="database.html">Daten</a>', source_data)
@@ -3548,7 +3548,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1789453800"}):
             via_epoch = build_dip_pulse_site.render_front_page(entries, database_href=None, week=(2026, 24))
         self.assertEqual(pinned, via_epoch)
-        other_day = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 6, 16), week=(2026, 24))
+        other_day = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 6, 16), week=(2026, 24))  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         other_week = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 21))
         self.assertNotEqual(pinned, other_day)
         self.assertIn("Stand: 1 Sitzung", other_day)
@@ -4080,7 +4080,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             second = self._cache_second_sitting(output_dir)
             _site_store_fixture.build_site_store(output_dir, [{"report": first}, {"report": second}])
             (output_dir / "data" / "coverage-exclusions.json").write_text(
-                json.dumps({"exclusions": [{"document_number": "20/998", "reason": "excluded"}]}), encoding="utf-8"
+                json.dumps({"exclusions": [{"document_number": "20/998", "reason": "source_defect", "reason_detail": "test fixture"}]}), encoding="utf-8"
             )
             code, stderr = self._build(output_dir)
             self.assertEqual(code, 1, stderr)
@@ -4100,8 +4100,13 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             "a list": "[]",
             "no list": '{"exclusions": {}}',
             "entry not an object": '{"exclusions": ["20/998"]}',
-            "entry without number": '{"exclusions": [{"reason": "excluded"}]}',
+            "entry without number": '{"exclusions": [{"reason": "source_defect", "reason_detail": "test fixture"}]}',
             "blank number": '{"exclusions": [{"document_number": " "}]}',
+            # Gate step 4: a bare "excluded", an unknown code or no detail says nothing about why.
+            "bare excluded": '{"exclusions": [{"document_number": "20/998", "reason": "excluded"}]}',
+            "reason not text": '{"exclusions": [{"document_number": "20/998", "reason": ["source_defect"], "reason_detail": "x"}]}',
+            "unknown reason": '{"exclusions": [{"document_number": "20/998", "reason": "other", "reason_detail": "x"}]}',
+            "no detail": '{"exclusions": [{"document_number": "20/998", "reason": "source_defect", "reason_detail": " "}]}',
         }
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._seed(tmp)
@@ -4114,7 +4119,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
                         self.assertEqual(code, 1, stderr)
                         self.assertNotIn("Traceback", stderr)
                         self.assertIn(f"error: {record}", stderr)
-                        self.assertIn('{"exclusions": [{"document_number": "21/7", ...}, ...]}', stderr)
+                        self.assertIn('{"exclusions": [{"document_number": "21/7", "reason": "<code>", "reason_detail": "<why>", ...}, ...]}', stderr)
                         self.assertIn("Fix: repair the file, then re-run.", stderr)
                         self.assertFalse((output_dir / "puls.html").exists())
 
@@ -4347,13 +4352,13 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertNotIn("Datenstand", header)
 
     def test_header_past_week_within_one_iso_week(self) -> None:
-        markup = self._render(today=date(2026, 6, 16))
+        markup = self._render(today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
         self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
         self.assertIn("<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>", header)
         self.assertIn(
             "29 Reden in 9 Tagesordnungspunkten · Stand: 3 Sitzungen, letztes Protokoll 21/84 vom "
-            '<time datetime="2026-06-12">12.06.2026</time> · Auswertung vom <time datetime="2026-06-16">16.06.2026</time>',
+            '<time datetime="2026-06-12">12.06.2026</time> · Auswertung vom <time datetime="2026-06-16">16.06.2026</time>',  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
             header,
         )
 
@@ -4384,13 +4389,13 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertTrue(facts_line.startswith("29 Reden in 9 Tagesordnungspunkten · 3 Sitzungen, letztes Protokoll"))
         self.assertNotIn("vor 5 Wochen", facts_line)
         self.assertIn(".stale-flag {", stale)
-        for today in (date(2026, 6, 11), date(2026, 6, 16), date(2026, 7, 7)):
+        for today in (date(2026, 6, 11), date(2026, 6, 16), date(2026, 7, 7)):  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
             self.assertNotIn('class="stale-flag"', self._render(today=today), msg=today)
 
     def test_header_uses_verteildatum_when_the_newest_protocol_has_one(self) -> None:
         entries = self._week()
         entries[0]["report"]["protocol"]["verteildatum"] = "2026-06-15T00:00:00"
-        markup = self._render(entries, today=date(2026, 6, 16))
+        markup = self._render(entries, today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         self.assertIn('letztes Protokoll 21/84 verteilt am <time datetime="2026-06-15">15.06.2026</time>', markup)
 
     def test_sitting_chips_in_date_order_with_stem_fallback(self) -> None:
@@ -4820,7 +4825,7 @@ def write_week_comparison_browser_fixture(output: Path) -> None:
     with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
         for name, entries in (("current-only", current), ("comparison", comparison)):
             markup = build_dip_pulse_site.render_front_page(
-                entries, features=default_selection(), today=date(2026, 6, 16)
+                entries, features=default_selection(), today=date(2026, 6, 16)  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
             )
             (output / f"{name}.html").write_text(markup, encoding="utf-8")
 

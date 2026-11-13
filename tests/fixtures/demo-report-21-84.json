@@ -78,9 +78,9 @@
             "Ist Ihnen bekannt, dass wir sehr viel Strom brauchen für KI? Und dann frage ich Sie: Wie wollen Sie ohne Kernkraft, wie wollen Sie mit diesen teuren Strompreisen ein KI-Projekt in Deutschland in großem Maß aufziehen? Nur Geld alleine wird es dafür nicht geben, weil die Randbedingungen einfach keine erfolgreiche KI zulassen."
           ],
           "snippet": "Vielen Dank, Herr Präsident, dass Sie diese Kurzintervention zulassen. Lieber Kollege von der SPD, Sie haben gerade erzählt, Sie wollen Geld einsammeln, Sie wollen hier in Deutschland auf die Art und Weise die KI ankurbeln. Sie meinen, dass",
+          "sequence": 15,
           "kind": "kurzintervention",
-          "parent_rede_id": "ID218403300",
-          "sequence": 15
+          "parent_rede_id": "ID218403300"
         },
         {
           "rede_id": "ID218403500",
@@ -109,9 +109,9 @@
             "All das, was Sie tun, hindert uns daran, eine zukunftsfähige Wirtschaft aufzubauen. Ihre Politik schadet Deutschland. Sie schadet unserer Wirtschaft. Sie schadet den Menschen. Ich habe eine Empfehlung: Wandern Sie doch nach Russland aus! Dann haben wir alle was davon."
           ],
           "snippet": "Zur Frage, ob mir bekannt ist, dass Rechenzentren Strom brauchen: Ja, das ist mir tatsächlich bekannt. Was mir aber auch bekannt ist: Um hier in Deutschland und in Europa eine zukunftsfähige KI-Industrie aufzubauen, brauchen wir Rahmenbedin",
+          "sequence": 16,
           "kind": "erwiderung",
-          "parent_rede_id": "ID218403300",
-          "sequence": 16
+          "parent_rede_id": "ID218403300"
         },
         {
           "kind": "zwischenfrage",
@@ -143,9 +143,11 @@
           "unattributed_char_count": 0
         }
       ],
+      "xml_withheld": [],
       "xml_speakers": [
         {
           "rede_id": "ID218402000",
+          "sequence": 1,
           "source_page": {
             "page": 10237,
             "quadrant": "B"
@@ -188,6 +190,7 @@
         },
         {
           "rede_id": "ID218402100",
+          "sequence": 2,
           "source_page": {
             "page": 10238,
             "quadrant": "D"
@@ -236,6 +239,7 @@
         },
         {
           "rede_id": "ID218402200",
+          "sequence": 3,
           "source_page": {
             "page": 10240,
             "quadrant": "A"
@@ -284,6 +288,7 @@
         },
         {
           "rede_id": "ID218402300",
+          "sequence": 4,
           "source_page": {
             "page": 10241,
             "quadrant": "B"
@@ -326,6 +331,7 @@
         },
         {
           "rede_id": "ID218402400",
+          "sequence": 5,
           "source_page": {
             "page": 10242,
             "quadrant": "B"
@@ -360,6 +366,7 @@
         },
         {
           "rede_id": "ID218402500",
+          "sequence": 6,
           "source_page": {
             "page": 10243,
             "quadrant": "A"
@@ -396,6 +403,7 @@
         },
         {
           "rede_id": "ID218402600",
+          "sequence": 7,
           "source_page": {
             "page": 10244,
             "quadrant": "A"
@@ -444,6 +452,7 @@
         },
         {
           "rede_id": "ID218402700",
+          "sequence": 8,
           "source_page": {
             "page": 10245,
             "quadrant": "C"
@@ -494,6 +503,7 @@
         },
         {
           "rede_id": "ID218402800",
+          "sequence": 9,
           "source_page": {
             "page": 10247,
             "quadrant": "B"
@@ -531,6 +541,7 @@
         },
         {
           "rede_id": "ID218402900",
+          "sequence": 10,
           "source_page": {
             "page": 10248,
             "quadrant": "B"
@@ -562,6 +573,7 @@
         },
         {
           "rede_id": "ID218403000",
+          "sequence": 11,
           "source_page": {
             "page": 10248,
             "quadrant": "D"
@@ -601,6 +613,7 @@
         },
         {
           "rede_id": "ID218403100",
+          "sequence": 12,
           "source_page": {
             "page": 10249,
             "quadrant": "D"
@@ -636,6 +649,7 @@
         },
         {
           "rede_id": "ID218403200",
+          "sequence": 13,
           "source_page": {
             "page": 10250,
             "quadrant": "C"
@@ -668,6 +682,7 @@
         },
         {
           "rede_id": "ID218403300",
+          "sequence": 14,
           "source_page": {
             "page": 10251,
             "quadrant": "C"
@@ -857,13 +872,15 @@
   "warnings": [],
   "validation_summary": {
     "xml_top_count": 1,
-    "speech_kinds_version": 7,
+    "speech_kinds_version": 8,
     "xml_speech_count": 14,
     "xml_contribution_counts": {
       "erwiderung": 1,
       "kurzintervention": 1,
       "zwischenfrage": 1
     },
+    "withheld_rede_count": 0,
+    "withheld_word_count": 0,
     "fragestunde_questions_without_person": 0,
     "fragestunde_unplaced_turns": 0,
     "xml_drucksache_count": 2,

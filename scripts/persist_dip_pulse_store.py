@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
+import reviewed_units
 import speech_kinds
 import derive
 import dip_text
@@ -29,10 +30,11 @@ from stable_ids import (
     canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
     document_number as document_number_canonical,
     roster_occurrence_id, source_index, speech_occurrence_id, speech_rede_id, stable_key,
+    withheld_occurrence_id, withheld_turn_id,
 )
 
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -62,6 +64,11 @@ def require_current_schema(conn):
         # Schema 9: no link and fraction order, no per-item Drucksache url, and a
         # missing vote total stored as 0. None of it can be derived from the
         # store, so the cached reports are persisted again.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    rule_inputs = {row[1] for row in conn.execute("PRAGMA table_info(speech_rule_inputs)")}
+    if rule_inputs and "reviewed_digest" not in rule_inputs:
+        # Schema 11: no withheld Reden (ADR 0005), and speeches.sequence counted
+        # stored speeches instead of the source position; the cached XML is re-read.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     vote_members = {row[1] for row in conn.execute("PRAGMA table_info(vote_members)")}
     if vote_members and "listed_party_id" not in vote_members:
@@ -94,6 +101,19 @@ def require_current_speech_rules(conn: sqlite3.Connection) -> None:
         ).fetchone())
     if invalid:
         raise RuntimeError(f"Missing/stale persisted speech rules (required {speech_kinds.VERSION}). "
+                           "Run --offline --repersist with the complete cached XML/reports before facts, export or rendering.")
+    # The reviewed list changes what a parse emits, so a sitting persisted under
+    # other entries than the file holds now is stale too (R3).
+    stale_reviewed = sorted(
+        str(document_number or protocol_id)
+        for protocol_id, document_number, stored in conn.execute(
+            "SELECT p.id, p.document_number, r.reviewed_digest FROM protocols p "
+            "JOIN speech_rule_inputs r ON r.protocol_id = p.id")
+        if stored != reviewed_units.sitting_digest(str(document_number or ""))
+    ) if exists else []
+    if stale_reviewed:
+        shown = ", ".join(stale_reviewed[:5]) + (f" and {len(stale_reviewed) - 5} more" if len(stale_reviewed) > 5 else "")
+        raise RuntimeError(f"Persisted Reden of {shown} predate the current scripts/reviewed_units.json. "
                            "Run --offline --repersist with the complete cached XML/reports before facts, export or rendering.")
     # The Antrag passages are a persisted input too: a store persisted by another
     # extractor holds passages the pages would no longer quote.
@@ -328,7 +348,52 @@ def initialize(conn: sqlite3.Connection) -> None:
         -- asker never speaks has no mp_id and keeps the announced name.
         CREATE TABLE IF NOT EXISTS speech_rule_inputs (
           protocol_id TEXT PRIMARY KEY NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
-          version INTEGER
+          version INTEGER,
+          -- reviewed_units.digest of the reviewed-list entries the parse applied
+          reviewed_digest TEXT
+        );
+
+        -- Reden the parser withheld (ADR 0005): a refused Rede, or one on the
+        -- reviewed list. Outside every count; no person bound. speeches and
+        -- contributions never hold them.
+        CREATE TABLE IF NOT EXISTS withheld_units (
+          id TEXT PRIMARY KEY NOT NULL,
+          protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+          agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+          rede_id TEXT NOT NULL,
+          sequence INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          reason_detail TEXT NOT NULL,
+          xml_redner_id TEXT,
+          speaker_name TEXT,
+          fraktion TEXT,
+          page INTEGER,
+          page_quadrant TEXT,
+          char_count INTEGER NOT NULL DEFAULT 0,
+          word_count INTEGER NOT NULL DEFAULT 0,
+          nested_word_count INTEGER NOT NULL DEFAULT 0,
+          text TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(protocol_id, rede_id),
+          UNIQUE(agenda_item_id, sequence)
+        );
+
+        -- Turns of other speakers inside a withheld Rede, in marker order.
+        CREATE TABLE IF NOT EXISTS withheld_turns (
+          id TEXT PRIMARY KEY NOT NULL,
+          withheld_unit_id TEXT NOT NULL REFERENCES withheld_units(id) ON DELETE CASCADE,
+          protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+          marker INTEGER NOT NULL,
+          xml_redner_id TEXT,
+          speaker_name TEXT,
+          fraktion TEXT,
+          char_count INTEGER NOT NULL DEFAULT 0,
+          word_count INTEGER NOT NULL DEFAULT 0,
+          text TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(withheld_unit_id, marker)
         );
 
         CREATE TABLE IF NOT EXISTS contributions (
@@ -1258,7 +1323,12 @@ def persist_speeches(
     now: str,
     protocol: dict[str, Any] | None = None,
 ) -> None:
-    for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
+    for position, speech in enumerate(item.get("xml_speakers") or [], start=1):
+        # The Rede's position among the TOP's <rede> elements (D3, ADR 0005),
+        # which a withheld or procedural neighbour leaves in place. Every report
+        # of speech rule 8 carries it; one without it predates rule 8, and its
+        # stored version is refused by require_current_speech_rules downstream.
+        sequence = int(speech.get("sequence") or position)
         rede_id = speech_rede_id(protocol_id, source_index(item.get("index")), sequence, speech.get("rede_id"))
         speech_id = speech_occurrence_id(protocol_id, rede_id)
         mp_id, speech_fraktion, sprechrolle = resolve_speaker(
@@ -1351,6 +1421,54 @@ def persist_contributions(
                 now,
             ),
         )
+
+
+def persist_withheld(
+    conn: sqlite3.Connection, protocol_id: str, item: dict[str, Any], agenda_item_id: str, now: str
+) -> None:
+    """The Reden the parser withheld in this item (ADR 0005), with the other
+    speakers' turns inside them. The speaker is kept as printed and bound to no
+    person: a withheld Rede adds nothing to a person, a Fraktion or a count."""
+    for unit in item.get("xml_withheld") or []:
+        rede_id = clean(unit.get("rede_id"))
+        unit_id = withheld_occurrence_id(protocol_id, rede_id)
+        speaker = unit.get("speaker") or {}
+        page, quadrant = source_page_ref(unit.get("source_page"))
+        conn.execute(
+            """
+            INSERT INTO withheld_units(
+              id, protocol_id, agenda_item_id, rede_id, sequence, reason, reason_detail,
+              xml_redner_id, speaker_name, fraktion, page, page_quadrant, char_count, word_count,
+              nested_word_count, text, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                unit_id, protocol_id, agenda_item_id, rede_id, int(unit["sequence"]),
+                unit["reason"], unit["reason_detail"],
+                derive.first_redner_id(speaker.get("xml_redner_id")),
+                clean(derive.undouble(speaker.get("display_name"))), clean(speaker.get("fraktion")),
+                page, quadrant, int(unit.get("char_count") or 0), int(unit.get("word_count") or 0),
+                int(unit.get("nested_word_count") or 0), clean(unit.get("text")), now, now,
+            ),
+        )
+        for turn in unit.get("nested_turns") or []:
+            turn_speaker = turn.get("speaker") or {}
+            conn.execute(
+                """
+                INSERT INTO withheld_turns(
+                  id, withheld_unit_id, protocol_id, marker, xml_redner_id, speaker_name, fraktion,
+                  char_count, word_count, text, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    withheld_turn_id(protocol_id, rede_id, turn["marker"]), unit_id, protocol_id, int(turn["marker"]),
+                    derive.first_redner_id(turn_speaker.get("xml_redner_id")),
+                    clean(derive.undouble(turn_speaker.get("display_name"))), clean(turn_speaker.get("fraktion")),
+                    int(turn.get("char_count") or 0), int(turn.get("word_count") or 0), clean(turn.get("text")), now, now,
+                ),
+            )
 
 
 def _vote_id(vote: dict[str, Any]) -> str:
@@ -1746,8 +1864,12 @@ def persist_report(
     _warn_merged_redner_ids(report)
     with conn:
         replace_protocol(conn, report, now)
-        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs(protocol_id, version) VALUES (?, ?)",
-                     (protocol_id, (report.get("validation_summary") or {}).get("speech_kinds_version")))
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs(protocol_id, version, reviewed_digest) VALUES (?, ?, ?)",
+                     (protocol_id, (report.get("validation_summary") or {}).get("speech_kinds_version"),
+                      # Every parse records the entries it applied; a report
+                      # without the key predates rule 8 and is refused by version.
+                      protocol["reviewed_digest"] if "reviewed_digest" in protocol
+                      else reviewed_units.sitting_digest(str(protocol.get("dokumentnummer") or ""))))
         persist_sampled_people(conn, report, now)
         persist_contributions(conn, protocol_id, {"index": 0, "xml_contributions": report.get("xml_contributions") or []}, None, now, protocol)
         # The report is a complete snapshot for this sitting. Remove old votes
@@ -1769,6 +1891,7 @@ def persist_report(
             persist_agenda_documents(conn, item, agenda_item_id, now)
             persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_contributions(conn, protocol_id, item, agenda_item_id, now, protocol)
+            persist_withheld(conn, protocol_id, item, agenda_item_id, now)
         for item, vote in report_vote_pairs:
             agenda_item_id = None
             if item is not None:

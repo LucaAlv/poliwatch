@@ -15,6 +15,7 @@ import build_dip_pulse_site as site
 import persist_dip_pulse_store as pulse_store
 import politikfelder
 import speech_kinds
+import validate_dip_protocol as dip
 import validate_store_gate as gate
 from test_antrag_text import DEMANDS, OPENING, cache as antrag_cache, report as antrag_report
 
@@ -120,6 +121,33 @@ class IntegrityTest(unittest.TestCase):
 
         self.assertTrue(result["integrity_ok"])
         self.assertEqual(result["foreign_key_violations"], 1)
+
+
+class WithheldGateTest(unittest.TestCase):
+    # Value: protects=the gate flags a withheld Rede whose rede_id is also a stored Rede; fails_when=a withheld Rede reaches speeches unnoticed or the check is dropped; why_new=the withheld tables are new in schema 12; seam=none; no_claim=store_counts' withheld totals (needs a full store)
+    def test_flags_a_withheld_rede_that_is_also_counted(self) -> None:
+        refused = (
+            '<rede id="R2"><p klasse="redner"><redner id="R2-r"><name><nachname>Zwei</nachname><fraktion>SPD</fraktion></name></redner></p>'
+            '<p klasse="J">Rede von Zwei.</p><p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>Grüne</fraktion></name></redner></p>'
+            '<p>Herzlichen Dank, dass Sie die Frage nicht zulassen. Eine Bemerkung</p></rede>'
+        )
+        kept = '<rede id="R1"><p klasse="redner"><redner id="R1-r"><name><nachname>Eins</nachname><fraktion>SPD</fraktion></name></redner></p><p klasse="J">Rede.</p></rede>'
+        xml = ('<dbtplenarprotokoll wahlperiode="18" sitzung-nr="7"><sitzungsverlauf><tagesordnungspunkt top-id="T1">'
+               f'<p klasse="T_NaS">Beratung</p>{kept}{refused}</tagesordnungspunkt></sitzungsverlauf><anlagen/></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml, reviewed=[])
+        report = {"protocol": {"id": "18/7", "dokumentnummer": "18/7", "datum": "2015-04-23", "reviewed_digest": parsed["reviewed_digest"]},
+                  "agenda_items": [dict(index=t["index"], **dip.xml_top_fields(t)) for t in parsed["agenda_items"]],
+                  "xml_contributions": [], "validation_summary": dip.contribution_summary(parsed["agenda_items"])}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.sqlite"
+            conn = pulse_store.connect(path)
+            pulse_store.persist_report(conn, report)
+            conn.commit()
+            self.assertEqual(gate.withheld_also_counted(path), [])
+            conn.execute("UPDATE withheld_units SET rede_id = 'R1'")
+            conn.commit()
+            conn.close()
+            self.assertEqual(gate.withheld_also_counted(path), ["18/7 R1"])
 
 
 class ClonePathSafetyTest(unittest.TestCase):

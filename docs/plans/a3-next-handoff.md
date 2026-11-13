@@ -1,5 +1,7 @@
 # Handoff: WP 18/19 download, counting audit, pilot re-run (A3, next session)
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 Read this whole file first, then [a3-rule5-validation.md](a3-rule5-validation.md). Read [a3-pilot.md](a3-pilot.md) only for Finding 2 (request rate) and "What is open before Phase 3", and [a3-coverage.md](a3-coverage.md) only for Phase 1 when you reach the pilot re-run.
 
 ## State (2026-10-20)

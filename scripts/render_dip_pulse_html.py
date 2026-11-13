@@ -1912,6 +1912,28 @@ def render_top_contributions(item: dict[str, Any]) -> str:
     )
 
 
+def render_top_withheld(item: dict[str, Any]) -> str:
+    """The Reden of one agenda item the parser withheld (ADR 0005): who, and
+    why, without the text. They count nowhere, so the page says so instead of
+    leaving a speaker out silently. Empty when there are none."""
+    rows = item.get("xml_withheld") or []
+    if not rows:
+        return ""
+    parts = []
+    for row in rows:
+        speaker = row.get("speaker") or {}
+        name = speaker.get("display_name") or "Unbekannter Redner"
+        if speaker.get("fraktion"):
+            name = f"{name} ({speaker['fraktion']})"
+        label = speech_kinds.WITHHELD_REASONS.get(row.get("reason"), (row.get("reason") or "", ""))[0]
+        parts.append(f"{name}: {label}")
+    noun = "Rede" if len(rows) == 1 else "Reden"
+    return (
+        f'<p class="top-contributions top-withheld">Zurückgehalten, nicht mitgezählt ({format_int(len(rows))} {noun}): '
+        f"{esc('; '.join(parts))}. Text und Grund in withheld_units.</p>"
+    )
+
+
 def contribution_counts(item: dict[str, Any]) -> dict[str, int]:
     """The agenda item's Beiträge per kind."""
     return speech_kinds.kind_counts(item.get("xml_contributions") or [])
@@ -3051,6 +3073,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
             """
         )
     if not cards:
+        if item.get("xml_withheld"):
+            return '<span class="muted">Keine gezählten Reden; zurückgehaltene Reden siehe oben</span>'
         if item.get("xml_contributions"):
             return '<span class="muted">Keine Reden; weitere Beiträge siehe oben</span>'
         return '<span class="muted">Keine Reden im XML</span>'
@@ -3082,8 +3106,9 @@ def render_html(
     items = []
     for item in report.get("agenda_items") or []:
         speeches = []
-        for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-            rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
+        for position, speech in enumerate(item.get("xml_speakers") or [], start=1):
+            # The carried source position (rule 8); a hand-built report may lack it.
+            rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), speech.get("sequence") or position, speech.get("rede_id"))
             speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
             speaker["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
             speeches.append({**speech, "speaker": speaker})
@@ -3232,6 +3257,7 @@ def render_html(
               </div>
               {top_documents_html}
               {render_top_contributions(item)}
+              {render_top_withheld(item)}
               {render_contribution_details(item, protocol, mp_lookup)}
               <div class="top-bars">
                 <div>

@@ -118,6 +118,10 @@ class Measured:
     reden_by_sprechrolle: dict[tuple[str, str], int] | None = None
     #: (document_number, kind) -> Beiträge (contributions): what is spoken and is no Rede.
     contributions_by_kind: dict[tuple[str, str], int] | None = None
+    #: (document_number, reason) -> withheld Reden (ADR 0005); outside every count above.
+    withheld_by_reason: dict[tuple[str, str], int] | None = None
+    #: (document_number, rede_id) -> (reason, own words) of each withheld Rede.
+    withheld_units: dict[tuple[str, str], tuple[str, int]] | None = None
     #: (document_number, "current party" | "no Zusammenschluss") -> Reden that name
     #: none in the Plenarprotokoll and are no Rede in a Sprechrolle.
     reden_without_fraktion: dict[tuple[str, str], int] | None = None
@@ -239,6 +243,16 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
                 "JOIN protocols p ON p.id = c.protocol_id GROUP BY p.document_number, c.kind"
             )
         }
+
+    if store.has("withheld_units", "reason", "word_count"):
+        rows = conn.execute(
+            "SELECT p.document_number, w.rede_id, w.reason, w.word_count FROM withheld_units w "
+            "JOIN protocols p ON p.id = w.protocol_id"
+        ).fetchall()
+        measured.withheld_units = {(str(number), str(rede_id)): (str(reason), int(words)) for number, rede_id, reason, words in rows}
+        measured.withheld_by_reason = {}
+        for (number, _rede_id), (reason, _words) in measured.withheld_units.items():
+            measured.withheld_by_reason[(number, reason)] = measured.withheld_by_reason.get((number, reason), 0) + 1
 
     if store.has("speeches", "sprechrolle", "fraktion") and store.has("mps", "party_id"):
         # ADR 0001: a Rede whose protocol names no Zusammenschluss counts for the
@@ -591,6 +605,15 @@ def compare(
         _collapse(new.contributions_by_kind, scope),
     )
 
+    report.heading(f"withheld Reden (ADR 0005, outside every count) per reason [{cohort}]")
+    _compare_maps(
+        report,
+        _collapse(old.withheld_by_reason, scope),
+        _collapse(new.withheld_by_reason, scope),
+    )
+    report.heading(f"withheld Reden added, released or changed (protocol, rede_id: reason, own words) [{cohort}]")
+    _withheld_rows(report, old.withheld_units, new.withheld_units, scope)
+
     report.heading(f"Redeanteil: Reden and share per Zusammenschluss and Sprechrolle [{cohort}]")
     _share_rows(report, _collapse(old.reden_by_group, scope), _collapse(new.reden_by_group, scope))
 
@@ -628,6 +651,33 @@ def compare(
     report.heading("stored facts [whole store]")
     _facts_rows(report, old, new)
     _fact_value_rows(report, old, new)
+
+
+def _withheld_rows(
+    report: Report,
+    old: dict[tuple[str, str], tuple[str, int]] | None,
+    new: dict[tuple[str, str], tuple[str, int]] | None,
+    scope: set[str] | None,
+    limit: int = 40,
+) -> None:
+    """Each withheld Rede one side holds and the other does not, or holds with
+    another reason or word count; nothing when both sides agree."""
+    if old is None and new is None:
+        report.row("(all)", None, None)
+        return
+    keys = sorted(key for key in set(old or {}) | set(new or {}) if _in(scope, key[0]))
+    changed = [key for key in keys if (old or {}).get(key) != (new or {}).get(key)]
+    for number, rede_id in changed[:limit]:
+        was, now = (old or {}).get((number, rede_id)), (new or {}).get((number, rede_id))
+        report.line(f"{number} {rede_id}: {_withheld_text(was)} -> {_withheld_text(now)}")
+    if len(changed) > limit:
+        report.line(f"... {len(changed) - limit} more changed")
+    if not changed:
+        report.line("(none changed)")
+
+
+def _withheld_text(value: tuple[str, int] | None) -> str:
+    return "not withheld" if value is None else f"{value[0]}, {value[1]} words"
 
 
 def _party_rows(report: Report, old: Measured, new: Measured) -> None:

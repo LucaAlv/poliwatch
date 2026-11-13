@@ -1,5 +1,7 @@
 # Offline rule-5 validation (2026-10-06)
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 Completed on `fix/offline-preview-rule-v5`, based on PR #86 at `2842ec0`. Existing first-pass changes were preserved and extended. Schema 3, key version 1, speech rule version 5, native identities, raw marker ordinals, nested keys and the A1/A2 registry boundary are unchanged. Rule 5 remains an unpublished follow-up; rule-4 certification does not certify it. No fetching, cache deletion, actual repersistence, database replacement, promotion, publishing or pushing was performed.
 
 **Final read-only audit: 290 accepted / 0 rejected files, 0 unresolved markers, across the same 290 cached XML snapshots.** The direct rule-4 baseline is 249 accepted / 41 rejected. The historical report's 257/33 was not reproduced on this cache. The first rule-5 pass was 277/13 with 17 unresolved markers; its counts, parser hash and unresolved evidence are retained under `first_pass` in [the machine audit](offline-v5-audit.json). Every input source hash was checked against that first pass.

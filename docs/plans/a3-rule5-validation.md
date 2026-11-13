@@ -1,5 +1,7 @@
 # Speech rule 5 for WP 18/19 XML: validation record
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 This file records the check of sub-rules 6a–6d ([a3-rule5-wp18-19.md](a3-rule5-wp18-19.md)), which the owner approved on 2026-10-20. Each sub-rule was built test-first and is its own commit:
 
 | Sub-rule | Commit | What it does |

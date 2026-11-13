@@ -1,5 +1,7 @@
 # Speech rule 5 for WP 18/19 XML: sub-rules for sign-off
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 The owner decided on 2026-10-20 to extend speech rule 5 to the WP 18/19 encodings ([a3-pilot.md](a3-pilot.md), Finding 1). [ADR 0004](../adr/0004-presidium-counts-for-the-fraktion.md) settles the presidium. This file proposes the sub-rules. Nothing below is implemented; each one needs a yes before it goes in.
 
 ## Evidence

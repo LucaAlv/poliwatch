@@ -4,6 +4,7 @@ import unittest
 import _support  # noqa: F401
 import derive
 import validate_dip_protocol as dip
+from withheld_assert import assert_withheld
 
 
 def role_redner(long='', short='', printed=''):
@@ -133,7 +134,7 @@ class MiddleInitialTests(unittest.TestCase):
         self.assertEqual(top['contributions'][0]['speaker']['last_name'], 'W. Birkwald')
 
     def test_another_surname_is_still_a_mismatch(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(self.body('W. Birkholz'))
 
 
@@ -195,7 +196,7 @@ class ConsentAndOfferTests(unittest.TestCase):
         self.assertEqual(contributions, [('zwischenfrage', 'Ich halte das für falsch.')])
 
     def assert_refused(self, offer, consent, asker='Konrad'):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(self.body(offer, consent, asker))
 
     def test_a_short_turn_after_the_offer_is_consent(self):
@@ -236,7 +237,7 @@ class ConsentAndOfferTests(unittest.TestCase):
                 + redner('B', 'Konrad', 'FDP') + '<p>Ich halte das für falsch.</p>'
                 + redner('A', 'Haupt', 'CDU/CSU') + '<p>Weiter.</p>'
                 + redner('C', 'Meier', 'SPD') + '<p>Das ist doch so.</p></rede>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(body)
 
 
@@ -278,7 +279,7 @@ class RolelessChairTests(unittest.TestCase):
         self.assertEqual(contributions, [('zwischenfrage', 'Herr Renner, habe ich Sie richtig verstanden, dass Sie zustimmen würden?')])
 
     def test_a_namesake_of_the_chair_is_not_the_chair(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.OPENING + '<rede id="R">' + person('A', 'Martin', 'Renner', 'AfD') + '<p>Rede.</p>'
                   + person('O', 'Dagmar', 'Ortleb')
                   + '<p>Herr Kollege Renner, erlauben Sie eine Zwischenfrage der Kollegin Gast.</p></rede>')
