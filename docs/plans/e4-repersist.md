@@ -28,9 +28,7 @@ Status: **superseded, 2026-11-12.** The repersist was never run: a fresh online 
 
 **Not comparable, re-measured instead.** A fresh build has none of the A3 lineage's carried-forward registry, so these figures differ from the A3 records without a defect: `mps` 6,387 (7,451), Personen after Zusammenführung 2,042 (2,287), Personenseiten 1,661 (1,999), store persons 1,952 (2,244). The gate's replay raises `persons` from 1,952 to 1,956. That belongs to the registry-split plan (TODOS.md, "The carried-forward registry diverges from a fresh build after A3"), not to E4.
 
-**Steps that no longer apply:** step 6 (old→new against the 2026-10-28 store, which is not on this machine) and step 7 (the in-place repersist and its determinism check; the gate's unchanged replay kept the store byte for byte). Step 8's browser checks were not run in this docs pass. Step 9 was done as these docs changes, with two exceptions:
-- `AGENTS.md`'s interpreter line (D9) was left for the owner, because it is agent configuration.
-- `docs/stable-ids.md`'s 2,364 is a dated A3 figure and was not re-measured.
+**Steps that no longer apply:** step 6 (old→new against the 2026-10-28 store, which is not on this machine) and step 7 (the in-place repersist and its determinism check; the gate's unchanged replay kept the store byte for byte). Step 8's browser checks were not run in this docs pass. Step 9 was done as these docs changes, except that `docs/stable-ids.md`'s 2,364 is a dated A3 figure and was not re-measured. `AGENTS.md`'s interpreter line (D9) was left out of this docs pass; #147 (v0.37.0.0) then replaced it with uv's CPython 3.13.18.
 
 D8 was applied: "Owner checks after the v0.28.0.0 merge", item 2, is closed.
 

@@ -9,10 +9,12 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 `.context/` is gitignored: it is build output and cache, never source.
 
-**Covered range (v1):** every Sitzung of Wahlperiode 18 to 21 that the DIP catalog lists with Plenarprotokoll XML, from 18/1 (2013-10-22) on. As measured on 2026-11-12 that is 718 Sitzungen: 194 of 245 in WP 18, 206 of 239 in WP 19, 213 of 214 in WP 20 and 105 of 106 in WP 21. The 86 not covered are on the reviewed exclusion list (`data/coverage-exclusions.json`). Their XML files do one of three things:
-- nest turns the parser does not yet take apart, or would count wrongly (WP 18/19);
-- misfile a chair exchange (20/11; `docs/source-errors.md` E1);
-- have a speaker talk again between granting a Zwischenfrage and the question (21/106).
+**Covered range (v1):** every Sitzung of Wahlperiode 18 to 21 that the DIP catalog lists with Plenarprotokoll XML, from 18/1 (2013-10-22) on. As measured on 2026-11-12 that is 718 Sitzungen: 194 of 245 in WP 18, 206 of 239 in WP 19, 213 of 214 in WP 20 and 105 of 106 in WP 21. The 86 not covered are on the reviewed exclusion list (`data/coverage-exclusions.json`), for these reasons:
+- 70 in WP 18/19 nest turns the parser does not yet take apart, or would count wrongly;
+- 20/11 misfiles a chair exchange (`docs/source-errors.md` E1);
+- in 21/106 a speaker talks again between granting a Zwischenfrage and the question;
+- 13 in WP 18/19 parse without a refusal but stay out for known wrong units, for the ADR 0004 kinds of Rede, or by the owner's decision (TODOS.md, "Coverage gate before the first data release");
+- 18/20's file holds another sitting.
 
 Wahlperioden 1–17 have no structured XML in the catalog and come after v1 (PRODUCT.md).
 
