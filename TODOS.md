@@ -625,17 +625,24 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 
 ### A3 item 1.5 review (2026-11-13): deferred findings
 
-**What:** `/code-review high` of the item 1.5 branch. Findings 1–4 were fixed in fab68ca. These five are not correctness defects in any current figure:
+**What:** `/code-review high` and the `/ship` review of the item 1.5 branch. The review's findings 1–4 were fixed in 96d4b02 (fab68ca before the rebase); ship fixed the M2 share with unanswered ids and the `--json` overwrite (0641dc6, 5045c2d). These are not correctness defects in any current figure:
 1. **The 2 s pace and the 60 s 429 wait apply to every build** (`abgeordnetenwatch.DEFAULT_MIN_INTERVAL`, `BACKOFF_BASE_SECONDS`). A cold-cache `--enrich aw-profiles` run, about 1,300 roster name searches and `fetch_bio` calls, takes about 43 min instead of about 11. A 429 does not count toward the cut-off, so a run of them costs up to 4 × 60 s per request with no overall limit. The build's `--abgeordnetenwatch-sleep` accepts values below 2.0, while the script refuses them. The owner should confirm the fair-use reading of the API page (2026-11-12) and the cost.
 2. **A failed ext_id lookup leaves a name-found link that later builds never retry** (predates item 1.5). `resolve` falls through to the name search after a `failed` lookup. The `match = 'name'` profile is then stored in the report, and `enrich_report_with_profiles` skips any speaker that already holds an `abgeordnetenwatch` key, so a transient error gives that speaker an untrusted link in that report for good.
-3. **No test covers a sitting the exclusion record lists** (`load_report` → `without_recorded_exclusions`, the receipt's `sittings_excluded_by_record`). The plan asked for one, and coverage-gate step 7 depends on it.
+3. ~~**No test covers a sitting the exclusion record lists.**~~ **Done** in 8f76d50 (`test_a_sitting_in_the_exclusion_record_is_skipped_and_reported`).
 4. **`lookup_ext_id` ignores `enabled`.** `resolve` and `fetch_bio` return early for a disabled resolver; a direct caller of `lookup_ext_id` would still send requests. Latent: no such caller exists.
-5. **Dead exponential back-off.** `min(BACKOFF_BASE_SECONDS * 2 ** attempt, MAX_BACKOFF_SECONDS)` is always 60. Use one constant, or honour `Retry-After`.
+5. **Dead exponential back-off.** `min(BACKOFF_BASE_SECONDS * 2 ** attempt, MAX_BACKOFF_SECONDS)` is always 60. Use one constant, or honour `Retry-After`. Also dead: the `_note_failure("HTTP 429 after every retry")` line after the retry loop never runs, because the last 429 takes the `HTTPError` branch and records "HTTP 429".
+6. **A dropped connection or read timeout ends a run with a traceback** (predates item 1.5). `_request` catches `URLError`, `JSONDecodeError` and `ValueError`; `TimeoutError`, `http.client.RemoteDisconnected`, `ConnectionResetError` and `IncompleteRead` raised by `getresponse()` or `read()` escape, skip the cut-off and abort an `--enrich aw-profiles` build or a measurement run. The script keeps its ext_id answers (`lookup_all` saves in `finally`), but `name_fallback` has no `finally`, so its answered name searches are asked again. Catch `OSError` and `http.client.HTTPException` as a counted failure and save in `name_fallback`'s `finally`.
+7. **`--offline` exits 0 while ids are unanswered,** although `--help` says 0 is a complete result. The shares print as bounds, so no figure is wrong; only automation reading the exit status is misled. Return a distinct code, or document offline as always 0.
+8. **A malformed entry inside the answers file gives a traceback** (`earlier["state"]` in `lookup_all`) instead of the exit-2 message a corrupt file gets. Validate each entry's type and `state`.
+9. **A partial `mdb_zugehoerigkeiten` table is used whole.** `mdb_sources` takes the table as the Mandat source if it holds any row; a store built with `--roster-wahlperiode 21` only would push WP 18/19 MdBs from M1 to M1a/M1b and shift the M1 share, visible only as zip disagreements. Fall back to the zip, or refuse, when the table has no WP 18 or WP 19 row. Check before the coverage-gate step 7 re-run on a new store.
+10. **An answer is reused by state alone.** `lookup_all` reuses an earlier answer when the cache still holds the same state, not the same profile; a cache re-seeded from an enriched store could pair one run's candidate count with another profile. Store the profile id in the answer and require it to match.
+11. **`save()` uses a fixed `<cache>.tmp` name,** so two processes writing one cache collide (one `replace` fails with `FileNotFoundError`). Use a unique temporary file in the same directory. No two writers share a cache today.
+12. **The store guard misses a symlinked `OUTPUT_DIR/data`.** `run()` protects the resolved OUTPUT_DIR and private directory; if `data` links outside OUTPUT_DIR, `--json` at the store path resolves outside both and would overwrite it. Add the resolved store path's directory to the protected roots.
 
-**Why:** 1 is a build-time cost and a policy reading; 2 is a latent untrusted link; 3–5 are test and code hygiene.
+**Why:** 1 is a build-time cost and a policy reading; 2 is a latent untrusted link; 6 and 9 can end or skew a future run; the rest are hygiene or latent.
 
 **Effort:** S each
-**Priority:** P2 (1, 2); P3 for the rest
+**Priority:** P2 (1, 2, 6, 9); P3 for the rest
 **Depends on:** 1 on the owner
 
 ### Refuse a render when the Vorgang cache is newer than the store

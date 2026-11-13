@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.38.0.0] - 2026-11-13
+
+How many WP 18 and 19 speakers can carry a trusted abgeordnetenwatch profile is now measured: 937 of the 945 distinct MdB Redner-IDs (99.2%) find their profile by their Bundestag id, and every hit a precision review had to see was checked by hand and is the right person. No page, figure or export changes in this release.
+
+### Added
+
+- **A read-only script measures the abgeordnetenwatch match share of the WP 18/19 Redner.** `scripts/measure_aw_match_share.py OUTPUT_DIR --cache PATH` counts the build's own speaker set, splits MdBs by their Mandat in each Wahlperiode, and writes a receipt listing every hit a reviewer must look at. It never writes the store or its private directory, sends nothing with `--offline`, and a rerun asks only the ids that had no answer. A share stays a range while any id is unanswered.
+- **The result:** 640 of 640 MdB ids in WP 18 and 719 of 727 in WP 19 find their profile; 98.3% of Reden (26,251 of 26,714) are by a speaker who does. The 8 WP 19 misses are wrong ids at abgeordnetenwatch (four-digit Bundestag ids), not parser errors.
+
+### Changed
+
+- **Builds ask abgeordnetenwatch at most once every 2 seconds** (was 0.5 s) and wait 60 s after a rate-limit reply, following the API's fair-use limit of 30 requests a minute. The abgeordnetenwatch part of an `--enrich aw-profiles` run takes up to four times as long.
+- **An error reply from abgeordnetenwatch is no longer stored as "no profile".** It counts as a failed lookup and is asked again next time; after eight connection failures or error replies in a row a run stops asking. A cache write that is cut short keeps the previous cache.
+
+Measured on an APFS clone of the store built on 2026-11-12 (400 WP 18/19 sittings): about 1,070 abgeordnetenwatch requests, 0 DIP requests, 0 store writes. The committed receipt was regenerated from the same answers with the network blocked, and every figure is identical.
+
 ## [0.37.0.0] - 2026-11-12
 
 A sitting can no longer lose a Rede without the build saying so. Every `<rede>` of a Plenarprotokoll now ends as a stored Rede or Beitrag, a zu Protokoll gegebener Beitrag, a Verfahrensbeitrag, or an exclusion under a named rule; a sitting where one does not is refused. No figure moves: all 718 held sittings parse exactly as before.
