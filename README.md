@@ -9,7 +9,14 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 `.context/` is gitignored: it is build output and cache, never source.
 
-**Covered range (v1):** every Sitzung of Wahlperiode 18 to 21 that the DIP catalog lists with Plenarprotokoll XML, from 18/1 (2013-10-22) on. As measured on 2026-10-29 that is 716 Sitzungen: 194 of 245 in WP 18, 206 of 239 in WP 19, 213 of 214 in WP 20, 103 of 103 in WP 21. The 85 not covered are on the reviewed exclusion list (`data/coverage-exclusions.json`), because their XML files nest turns the parser does not yet take apart or would count wrongly (WP 18/19) or misfile a chair exchange (20/11; `docs/source-errors.md` E1). Wahlperioden 1–17 have no structured XML in the catalog and come after v1 (PRODUCT.md).
+**Covered range (v1):** every Sitzung of Wahlperiode 18 to 21 that the DIP catalog lists with Plenarprotokoll XML, from 18/1 (2013-10-22) on. As measured on 2026-11-12 that is 718 Sitzungen: 194 of 245 in WP 18, 206 of 239 in WP 19, 213 of 214 in WP 20 and 105 of 106 in WP 21. The 86 not covered are on the reviewed exclusion list (`data/coverage-exclusions.json`), for these reasons:
+- 70 in WP 18/19 nest turns the parser does not yet take apart, or would count wrongly;
+- 20/11 misfiles a chair exchange (`docs/source-errors.md` E1);
+- in 21/106 a speaker talks again between granting a Zwischenfrage and the question;
+- 13 in WP 18/19 parse without a refusal but stay out for known wrong units, for the ADR 0004 kinds of Rede, or by the owner's decision (TODOS.md, "Coverage gate before the first data release");
+- 18/20's file holds another sitting.
+
+Wahlperioden 1–17 have no structured XML in the catalog and come after v1 (PRODUCT.md).
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
@@ -113,7 +120,7 @@ Run every command from the repository root. The preview script `cd`s there itsel
 scripts/preview_dip_pulse_site.sh        # offline rebuild from cache + serve
 ```
 
-The default mode is offline: it re-renders all HTML from cached JSON/SQLite and makes zero API calls, which is what makes it the right command for UI and rendering work. It is not instant: on the reference store (290 Sitzungen, 2026-10-20) a plain `--offline` render took 335 s and peaked at 1.5 GB, and `--offline --repersist` 453 s and 2.6 GB (A3 pilot record, `docs/plans/a3-pilot.md`); both grow with the number of Sitzungen (a repersist with render and export took 1,650 s on the 716-Sitzungen store, `docs/plans/a3-phase4.md`). For a single dossier, build into a scratch directory (below). The Daten export (`data/exports/`) re-runs only when its inputs changed (the store, the recipes, the export format, the tag/licence/issues-URL flags, or the catalog/dossier/Baustein coverage it reports).
+The default mode is offline: it re-renders all HTML from cached JSON/SQLite and makes zero API calls, which is what makes it the right command for UI and rendering work. It is not instant. On the 290-Sitzungen pilot store (2026-10-20), a plain `--offline` render took 335 s and peaked at 1.5 GB, and `--offline --repersist` took 453 s and 2.6 GB (A3 pilot record, `docs/plans/a3-pilot.md`). Both grow with the number of Sitzungen. A repersist with render and export took 1,650 s on the 716-Sitzungen A3 store, and 356 s on the 718-Sitzungen reference store (2026-11-12, on a faster machine; `docs/plans/a3-phase4.md`). For a single dossier, build into a scratch directory (below). The Daten export (`data/exports/`) re-runs only when its inputs changed (the store, the recipes, the export format, the tag/licence/issues-URL flags, or the catalog/dossier/Baustein coverage it reports).
 
 ```bash
 scripts/preview_dip_pulse_site.sh stop   # stop the background server
