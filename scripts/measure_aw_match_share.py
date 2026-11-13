@@ -20,7 +20,8 @@ Each distinct Redner-ID (``derive.first_redner_id``) is looked up with
 online run sends; an online run asks again about every id, cached answers
 included, so the figure is as of the run date and a changed cached hit shows
 up. Answers are kept in ``<cache>.answers.json`` beside the cache, so a rerun
-after failures asks only about the ids not yet answered. ``--name-fallback``
+after failures asks only about the ids not yet answered, or whose answer the
+cache no longer holds. ``--name-fallback``
 also runs the build's name search for every MdB-Stammdaten id that missed.
 
 "MdB in WP n" means a Mandat in WP n, by the store's ``mdb_zugehoerigkeiten``
@@ -320,8 +321,11 @@ def lookup_all(resolver: aw.AbgeordnetenwatchResolver, keys: list[str], cache: P
             earlier = answers["answers"].get(key)
             if earlier and earlier["state"] != "failed":
                 current = resolver.lookup_ext_id(key, network=False)
-                found[key] = {**earlier, "profile": current.profile}
-                continue
+                if current.state == earlier["state"]:
+                    found[key] = {**earlier, "profile": current.profile}
+                    continue
+                # The cache no longer holds this answer (deleted, dropped by a
+                # format change or unreadable), so the profile is gone: ask again.
             if offline:
                 result = resolver.lookup_ext_id(key, network=False)
                 found[key] = {"state": result.state, "candidates": None, "cached_state": result.cached_state,
@@ -329,13 +333,15 @@ def lookup_all(resolver: aw.AbgeordnetenwatchResolver, keys: list[str], cache: P
                 continue
             if failed_in_a_row >= MAX_FAILED_IN_A_ROW:
                 found[key] = {"state": "failed", "candidates": None, "cached_state": None, "cached_id": None,
-                              "profile": None, "not_asked": True}
+                              "profile": None, "error": f"not asked: stopped after {MAX_FAILED_IN_A_ROW} failures in a row"}
                 continue
             result = resolver.lookup_ext_id(key, refresh=True)
             asked += 1
             failed_in_a_row = failed_in_a_row + 1 if result.state == "failed" else 0
             answer = {"state": result.state, "candidates": result.candidates, "cached_state": result.cached_state,
                       "cached_id": (result.cached_profile or {}).get("id")}
+            if result.state == "failed":
+                answer["error"] = resolver.last_error
             answers["answers"][key] = answer
             found[key] = {**answer, "profile": result.profile}
             if asked % SAVE_EVERY == 0:
@@ -355,10 +361,16 @@ def name_fallback(resolver: aw.AbgeordnetenwatchResolver, ids: dict[str, Any], m
     for redner_id in misses:
         (first, last), _ = ids[redner_id]["names"].most_common(1)[0]
         fraktion = ids[redner_id]["fraktionen"].most_common(1)[0][0] if ids[redner_id]["fraktionen"] else None
+        searched = {"first_name": first, "last_name": last, "fraktion": fraktion}
+        if resolver._network_disabled:
+            # resolve() would answer None without asking: no answer, not a miss.
+            found[redner_id] = {"state": "failed", "profile": None, "searched": searched, "error": resolver.last_error}
+            continue
         errors = resolver.stats["errors"]
         profile = resolver.resolve(first_name=first or None, last_name=last or None, fraktion=fraktion)
-        state = "failed" if profile is None and resolver.stats["errors"] > errors else ("hit" if profile else "miss")
-        found[redner_id] = {"state": state, "profile": profile, "searched": {"first_name": first, "last_name": last, "fraktion": fraktion}}
+        failed = profile is None and resolver.stats["errors"] > errors
+        found[redner_id] = {"state": "failed" if failed else ("hit" if profile else "miss"), "profile": profile,
+                            "searched": searched, **({"error": resolver.last_error} if failed else {})}
     resolver.save()
     return found
 
@@ -489,6 +501,9 @@ def measure(collected: dict[str, Any], found: dict[str, Any], mdb: dict[str, Any
             for wp in WAHLPERIODEN}},
         "failures": sorted(key for key, answer in found.items() if answer["state"] == "failed")
                     + sorted(f"name:{rid}" for rid, answer in (fallback or {}).items() if answer["state"] == "failed"),
+        "failure_reasons": {**{key: answer.get("error") for key, answer in sorted(found.items()) if answer["state"] == "failed"},
+                            **{f"name:{rid}": answer.get("error") for rid, answer in sorted((fallback or {}).items())
+                               if answer["state"] == "failed"}},
     }
 
 

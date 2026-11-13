@@ -111,6 +111,7 @@ def fake_get(api: dict, names: dict | None = None, fail: set | None = None):
         if key in (fail or set()):
             self._call_failed = True
             self.stats["errors"] += 1
+            self.last_error = "stub failure"
             return None
         self._call_failed = False
         if "ext_id_bundestagsverwaltung" in params:
@@ -297,12 +298,44 @@ class MeasureTests(unittest.TestCase):
         code, receipt, _ = fixture.run(fail={"11000006"})
         self.assertEqual(code, 1)
         self.assertEqual(receipt["failures"], ["11000006"])
+        self.assertEqual(receipt["failure_reasons"], {"11000006": "stub failure"})
         m1 = receipt["figures"]["19"]["M1"]
         self.assertEqual((m1["failed"], m1["misses"], m1["share"]), (1, 0, None))
         code, receipt, calls = fixture.run()
         self.assertEqual((code, receipt["failures"]), (0, []))
         self.assertEqual(calls, [{"ext_id_bundestagsverwaltung": "11000006"}])
         self.assertEqual(receipt["figures"]["19"]["M1"]["share"], 1.0)
+
+    def test_an_answer_the_cache_lost_is_asked_again(self) -> None:
+        # The answers file says an id was answered, but the cache no longer holds
+        # the profile: deleted, dropped by a format change, or unreadable.
+        for damage in ("deleted", "other version", "unreadable"):
+            with self.subTest(damage=damage):
+                fixture = Fixture(self.root / damage)
+                code, first, _ = fixture.run()
+                self.assertEqual(code, 0)
+                if damage == "deleted":
+                    fixture.cache.unlink()
+                elif damage == "other version":
+                    fixture.cache.write_text(json.dumps({"version": aw.CACHE_VERSION + 1, "by_ext_id": {}}), encoding="utf-8")
+                else:
+                    fixture.cache.write_text('{"version": 2, "by_ext_id": {"110', encoding="utf-8")
+                code, again, calls = fixture.run()
+                self.assertEqual(code, 0)
+                # Every answer the cache lost is asked again, the misses included.
+                self.assertEqual(len(calls), first["requests"]["ext_id_keys"])
+                self.assertEqual(again["figures"], first["figures"])
+                self.assertEqual(again["m3"]["name_rule"], first["m3"]["name_rule"])
+
+    def test_a_name_search_the_stopped_resolver_never_sends_is_a_failure(self) -> None:
+        resolver = aw.AbgeordnetenwatchResolver(sleep_seconds=0)
+        resolver._network_disabled = True
+        resolver.last_error = "not asked: stopped"
+        ids = {"11000002": {"names": share.Counter({("Bob", "Builder"): 1}), "fraktionen": share.Counter()}}
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            found = share.name_fallback(resolver, ids, ["11000002"])
+        urlopen.assert_not_called()
+        self.assertEqual((found["11000002"]["state"], found["11000002"]["error"]), ("failed", "not asked: stopped"))
 
     def test_repeated_failures_stop_asking(self) -> None:
         fixture = Fixture(self.root)

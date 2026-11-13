@@ -153,6 +153,39 @@ class LookupExtIdTests(unittest.TestCase):
                 self.assertEqual(resolver._by_name, {})
                 self.assertEqual(resolver.stats["errors"], 3)
 
+    def test_error_replies_count_toward_the_cut_off(self) -> None:
+        resolver = self.resolver()
+        reply = {"meta": {"status": "error"}, "data": []}
+        with mock.patch("urllib.request.urlopen", side_effect=lambda *a, **k: _Reply(reply)) as urlopen:
+            states = [resolver.lookup_ext_id(str(11000 + n)).state for n in range(aw.MAX_CONSECUTIVE_FAILURES + 2)]
+        self.assertEqual(set(states), {"failed"})
+        self.assertEqual(urlopen.call_count, aw.MAX_CONSECUTIVE_FAILURES)
+        self.assertTrue(resolver.last_error.startswith("not asked"))
+        resolver = self.resolver()
+        with mock.patch("urllib.request.urlopen", return_value=_Reply(reply)):
+            resolver.lookup_ext_id("11001")
+        self.assertEqual(resolver.last_error, "reply status 'error'")
+        # An answer in between resets the count.
+        resolver = self.resolver()
+        replies = [_Reply(reply)] * (aw.MAX_CONSECUTIVE_FAILURES - 1) + [_Reply({"meta": {"status": "ok"}, "data": []})] + [_Reply(reply)] * 2
+        with mock.patch("urllib.request.urlopen", side_effect=replies) as urlopen:
+            for n in range(len(replies)):
+                resolver.lookup_ext_id(str(12000 + n))
+        self.assertEqual(urlopen.call_count, len(replies))
+
+    def test_a_save_cut_short_keeps_the_previous_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "aw-cache.json"
+            resolver = aw.AbgeordnetenwatchResolver(path, sleep_seconds=0)
+            resolver._by_ext_id["11001"] = {"id": 7, "match": "ext_id"}
+            resolver._dirty = True
+            resolver.save()
+            resolver._by_ext_id["11002"] = None
+            resolver._dirty = True
+            with mock.patch.object(Path, "replace", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+                resolver.save()
+            self.assertEqual(aw.AbgeordnetenwatchResolver(path)._by_ext_id, {"11001": {"id": 7, "match": "ext_id"}})
+
     def test_an_ok_reply_without_politicians_is_a_cached_miss(self) -> None:
         resolver = self.resolver()
         with mock.patch("urllib.request.urlopen", return_value=_Reply({"meta": {"status": "ok"}, "data": []})):

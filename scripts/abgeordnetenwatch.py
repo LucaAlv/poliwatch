@@ -50,8 +50,9 @@ MAX_RETRIES = 4
 BACKOFF_BASE_SECONDS = 60.0
 MAX_BACKOFF_SECONDS = 60.0
 
-# Give up entirely after this many consecutive *connection* failures so a real
-# outage does not stall the build. HTTP 429 does not count — the API is up.
+# Give up entirely after this many consecutive connection failures or error
+# replies, so a real outage, or an API that answers every query with an error,
+# does not stall the build. HTTP 429 and other HTTP errors do not count.
 MAX_CONSECUTIVE_FAILURES = 8
 
 
@@ -220,6 +221,8 @@ class AbgeordnetenwatchResolver:
         self._consecutive_failures = 0
         self._network_disabled = False
         self._call_failed = False
+        #: Why the last failed request failed (for a caller's record).
+        self.last_error: str | None = None
         self._last_request_ts = 0.0
         self.stats = {
             "ext_id": 0,
@@ -257,10 +260,14 @@ class AbgeordnetenwatchResolver:
             "by_name": self._by_name,
             "by_bio": self._by_bio,
         }
-        self.cache_path.write_text(
+        # Written beside the cache and renamed over it: a run stopped mid-write
+        # leaves the previous cache, never a truncated one that loads as empty.
+        temporary = self.cache_path.with_name(self.cache_path.name + ".tmp")
+        temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        temporary.replace(self.cache_path)
         self._dirty = False
 
     # -- API -----------------------------------------------------------------
@@ -272,10 +279,12 @@ class AbgeordnetenwatchResolver:
                 time.sleep(wait)
         self._last_request_ts = time.monotonic()
 
-    def _note_failure(self, *, connection: bool) -> None:
+    def _note_failure(self, reason: str, *, counts: bool) -> None:
+        """Record a request with no answer; ``counts`` toward the cut-off."""
         self.stats["errors"] += 1
         self._call_failed = True
-        if connection:
+        self.last_error = reason
+        if counts:
             self._consecutive_failures += 1
             if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                 self._network_disabled = True
@@ -293,6 +302,7 @@ class AbgeordnetenwatchResolver:
         self._call_failed = False
         if self._network_disabled:
             self._call_failed = True
+            self.last_error = f"not asked: stopped after {MAX_CONSECUTIVE_FAILURES} failures in a row"
             return None
         for attempt in range(MAX_RETRIES + 1):
             self._throttle()
@@ -308,17 +318,20 @@ class AbgeordnetenwatchResolver:
                     self.stats["throttled"] += 1
                     time.sleep(min(BACKOFF_BASE_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS))
                     continue
-                return self._note_failure(connection=False)
-            except (urllib.error.URLError, json.JSONDecodeError, ValueError):
-                return self._note_failure(connection=True)
-            self._consecutive_failures = 0
+                return self._note_failure(f"HTTP {exc.code}", counts=False)
+            except (urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+                return self._note_failure(f"{type(exc).__name__}: {exc}", counts=True)
             meta = payload.get("meta") if isinstance(payload, dict) else None
             if not isinstance(meta, dict) or meta.get("status") != "ok":
-                # An error reply is no answer: a caller must not cache it as "no match".
-                return self._note_failure(connection=False)
+                # An error reply is no answer: a caller must not cache it as "no
+                # match". It counts toward the cut-off, so an API that rejects every
+                # query stops being asked instead of being asked once per id.
+                status = meta.get("status") if isinstance(meta, dict) else None
+                return self._note_failure(f"reply status {status!r}", counts=True)
+            self._consecutive_failures = 0
             data = payload.get("data")
             return data if isinstance(data, list) else []
-        return self._note_failure(connection=False)
+        return self._note_failure("HTTP 429 after every retry", counts=False)
 
     def _resolve_by_name(
         self, first_name: str | None, last_name: str | None, fraktion: Any
