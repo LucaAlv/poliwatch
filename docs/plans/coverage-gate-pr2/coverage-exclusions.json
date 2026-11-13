@@ -438,8 +438,8 @@
       "document_number": "19/36",
       "date": "2018-06-07",
       "recorded_at": "2026-11-10T15:14:06Z",
-      "reason": "awaiting_rule",
-      "reason_detail": "Die <rede> ID193616800 (Stamm-Fibich, eine zu Protokoll gegebene Rede) steht in einem zweiten Anlagenblock mit dem Titel „Liste der entschuldigten Abgeordneten“; der Redenabgleich verweigert sie, bis eine benannte Anlagenregel den Block liest oder ausnimmt."
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID193612200 zurückgehalten wird (ADR 0005, XML aus W1); ihre Anlage 2 wird als zu Protokoll gegebene Fortsetzung gelesen (docs/source-errors.md, E8). Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
     },
     {
       "document_number": "19/40",

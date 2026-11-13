@@ -211,8 +211,9 @@ class ReviewedListTests(unittest.TestCase):
         for row in entries:
             by_reason.setdefault(row["reason"], []).append(row["document_number"])
         self.assertEqual(by_reason["source_defect"], ["18/20"])
-        self.assertEqual(len(by_reason["awaiting_rule"]), 13)
-        self.assertIn("19/36", by_reason["awaiting_rule"])
+        self.assertEqual(len(by_reason["awaiting_rule"]), 12)
+        self.assertEqual(len(by_reason["awaiting_acquisition"]), 73)
+        self.assertIn("19/36", by_reason["awaiting_acquisition"])
 
     # Value: protects=the committed list loads and each N7 entry names its sitting's real unit (W8);
     #   fails_when=an entry is malformed or its owner drifts; why_new=new entries; seam=none

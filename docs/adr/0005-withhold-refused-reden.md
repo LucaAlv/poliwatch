@@ -58,6 +58,6 @@ Decided by the owner as N1 B on 2026-11-07. The build's shape was settled in the
 ## Consequences
 
 - **Speech rule 8, store schema 12, export format 17.**
-- **`audit_offline_turns.py` is retired (D10).** The parser now withholds by itself. The W1 preflight tool that used it is kept in git history at a4acab0.
-- **The 85 Sitzungen stay on the exclusion record until T4** acquires their votes, Tagesordnungspunkte and links. At the W1 XML, 70 parse once their refused Reden are withheld (89 Reden), and 4 parse with their reviewed entries applied. Twelve wait on ADR 0004's kinds for presidium and guest Reden. One, 19/36, waits on an annex rule, and 18/20 is a source defect.
+- **`audit_offline_turns.py` is retired (D10).** The parser now withholds by itself. The W1 preflight tool that used it is kept in git history at 36bfd08.
+- **The 85 Sitzungen stay on the exclusion record until T4** acquires their votes, Tagesordnungspunkte and links. At the W1 XML, 71 parse once their refused Reden are withheld (90 Reden), and 4 parse with their reviewed entries applied. Twelve wait on ADR 0004's kinds for presidium and guest Reden, and 18/20 is a source defect.
 - **ADR 0004's presidium kinds land after this decision** and extend it. Their refusal for an unreviewed presidium `<rede>` becomes a third located class. Their kinds join `reviewed_units.json`. Their statuses join the reconciliation.

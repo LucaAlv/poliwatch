@@ -168,7 +168,7 @@ Where the build departs from the plan above, or found something it did not expec
 - **Fallbacks for hand-built reports.** Persist and the readers take `speech["sequence"]` and `protocol["reviewed_digest"]` when present. When absent they fall back to the enumerate position and the current file's digest. Every rule-8 parse sets both, and a report without them carries rule 7, which `require_current_speech_rules` refuses downstream. So the fallback reaches no store a reader may use. It spares about 100 hand-built test reports.
 - **`reviewed_units.ReviewedUnitsError` covers both a malformed file and a stale entry.** Neither is a `ValueError`, so neither reads as a refused source on the online or offline path (outside voice 3).
 - **The release cap is a function**, `publish_dip_pulse_data.withheld_cap_problem`, so it is tested apart from a real release directory.
-- **19/36 newly refuses for reconciliation.** Once its located refusal is withheld, PR 1's reconciliation reaches an unread `<rede>`: the Zu-Protokoll Rede `ID193616800` in a second annex block titled „Liste der entschuldigten Abgeordneten“. W1 could not see it behind the earlier refusal. It is a source shape for a named annex rule, which needs the owner's yes, so 19/36 stays out with `awaiting_rule` (TODOS.md).
+- **19/36 newly refuses for reconciliation.** Once its located refusal is withheld, PR 1's reconciliation reaches an unread `<rede>`: the Zu-Protokoll Rede `ID193616800` in a second annex block titled „Liste der entschuldigten Abgeordneten“. W1 could not see it behind the earlier refusal. It is a source shape for a named annex rule, which needs the owner's yes, so 19/36 first stayed out with `awaiting_rule`. **Resolved by #150** (merged into this branch before ship): the parser reads that block as the Zu-Protokoll continuation its heading names (`docs/source-errors.md` E8), so 19/36 parses once withheld and its record entry reads `awaiting_acquisition`.
 - **18/173 and 18/193 also wait on ADR 0004.** They parse once withheld, but each holds a presidium `<rede>` ("Präsident", no Fraktion) that `check_sprechrollen` refuses at persist, like 18/215. The parse-level check ran `derive.check_sprechrollen` on all 84 W1 reports.
 - **The 18/10 fixture** (`tests/fixtures/withholding/18-10-top3.xml`) is the one TOP of the official 18/10 XML that holds `ID1801002600`. It is the real case of a refused split part (D4), since no existing fixture has one.
 
@@ -194,22 +194,22 @@ Where the build departs from the plan above, or found something it did not expec
 
 **Withhold-one (D6).** `scripts/check_withhold_one.py` ran on all 718 sittings, not only WP 18/19. It withheld 5,719 middle Reden, 960 Kurzinterventionen, 871 Erwiderungen and the one resumed pair (21/43, both sides), each pick set in a parse of its own, with 1 Rede per TOP. Failed checks: **0**.
 
-**W1's 84 XML at the tip** (`~/agent-runs/w1/xml`):
+**W1's 84 XML at the tip** (`~/agent-runs/w1/xml`). The first column is W1's audit script; the second is this branch's parser before main's #150 was merged in; the third is the branch tip with #150 (re-parsed 2026-11-13 at ship).
 
-| | W1 preflight (28799ac, audit script) | PR 2 tip (parser) |
-| --- | ---: | ---: |
-| Parse once Reden are withheld | 71 | 70 |
-| Located Reden withheld | 90 | 89 |
-| Words withheld (own + nested) | 94,707 | 93,572 (own 72,272, nested 21,300) |
-| Parse with no located refusal | 13 | 13 (N7's four now withhold 5 reviewed units: 3,701 own and 4,079 nested words) |
-| Refused | 18/20 not fetched | 19/36 (reconciliation) |
+| | W1 preflight (28799ac, audit script) | PR 2 before #150 | PR 2 tip with #150 |
+| --- | ---: | ---: | ---: |
+| Parse once Reden are withheld | 71 | 70 | 71 |
+| Located Reden withheld | 90 | 89 | 90 |
+| Words withheld (own + nested) | 94,707 | 93,572 (own 72,272, nested 21,300) | 94,697 (own 73,226, nested 21,471) |
+| Parse with no located refusal | 13 | 13 | 13 (N7's four withhold 5 reviewed units: 3,701 own and 4,079 nested words) |
+| Refused | 18/20 not fetched | 19/36 (reconciliation) | none of the 84 |
 
 The differences, each explained:
-- **19/36 (−1 sitting, −1 Rede, −1,125 words):** behind its located refusal, the reconciliation now reaches the unread annex `<rede>` (Build notes).
+- **19/36:** before #150, the reconciliation reached the unread annex `<rede>` behind its located refusal (Build notes) and refused the sitting (−1 sitting, −1 Rede, −1,125 words). With #150 the annex block is read, and 19/36 withholds `ID193612200` (954 own and 171 nested words) like W1 did. Only 19/36's report differs between the two parser runs.
 - **−10 words:** 18/10 `ID1801002600:2` holds a 10-word Sitzungsleitung segment. W1 counted every segment; the withheld record leaves out what pass 1 rules procedural (plan, W3).
-- **89 of the 90 Reden match W1 by id**, and 88 match it word for word.
+- **89 of the 90 Reden match W1 by id**, and 88 match it word for word (counted before #150; 19/36's Rede is the 90th).
 
-**Persist check for T4.** `derive.check_sprechrollen` ran on the 84 tip reports. Twelve sittings stop at persist on an unmapped presidium or guest role: ADR 0004's seven, 18/62, 18/90, 18/215, 18/173 and 18/193. So T4 can restore 71 of the 85 plus 21/106.
+**Persist check for T4.** The persist role check (`derive.side_of_role` on every speech and contribution speaker, the rule `check_sprechrollen` applies) ran on the 84 tip reports with #150. Twelve sittings stop at persist on an unmapped presidium or guest role: ADR 0004's seven, 18/62, 18/90, 18/215, 18/173 and 18/193. 19/36 passes. So T4 can restore 72 of the 85 plus 21/106.
 
 ## Eng review (2026-11-13)
 
