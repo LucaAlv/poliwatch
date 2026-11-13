@@ -312,6 +312,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         year = next(row for row in manifest["coverage"]["withheld"]["by_year"] if row["year"] == "2015")
         self.assertEqual((year["reden_withheld"], year["words_withheld"]), (1, 3))
         self.assertEqual([row["document_number"] for row in manifest["coverage"]["withheld"]["by_sitting"]], ["18/7"])
+        self.assertEqual([(r["year"], r["fraktion"], r["reden_withheld"], r["words_withheld"], r["words_stored"]) for r in manifest["coverage"]["withheld"]["by_fraktion"]],
+                         [("2015", "SPD", 1, 3, 3)])
         gen_dir = self.exports_dir / manifest["generation"]
         with gzip.open(gen_dir / "withheld_units-local.csv.gz", "rt", encoding="utf-8") as handle:
             self.assertEqual(len(handle.read().strip().splitlines()), 2)

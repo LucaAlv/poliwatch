@@ -230,6 +230,19 @@ class ReviewedListTests(unittest.TestCase):
         self.assertNotEqual(reviewed_units.digest([]), reviewed_units.digest([a]))
 
 
+    # Value: protects=R3 offline: a cached report parsed under other reviewed entries than the file holds for its sitting is re-read from XML, one under the current entries is not;
+    #   fails_when=unparsed_reports ignores reviewed_digest (a list edit leaves a published Rede counted) or flags every report; why_new=test_a_changed_reviewed_list covers the store, not the cache; seam=none
+    def test_a_cached_report_under_other_reviewed_entries_is_reread(self):
+        def cached(number, digest, version=sk.VERSION):
+            return {"report": {"protocol": {"dokumentnummer": number, "reviewed_digest": digest}, "validation_summary": {"speech_kinds_version": version}}}
+        listed, unlisted = "18/2", "18/7"
+        fresh = [cached(listed, reviewed_units.sitting_digest(listed)), cached(unlisted, reviewed_units.digest([]))]
+        self.assertEqual(build.unparsed_reports(fresh), [])
+        stale = [cached(listed, reviewed_units.digest([])), cached(unlisted, reviewed_units.digest([entry("R1")])),
+                 cached(unlisted, reviewed_units.digest([]), version=sk.VERSION - 1)]
+        self.assertEqual(build.unparsed_reports(stale), stale)
+
+
 class StoreTests(unittest.TestCase):
     def persisted(self, xml, reviewed=None, number="18/7"):
         tmp = tempfile.TemporaryDirectory()
@@ -263,6 +276,15 @@ class StoreTests(unittest.TestCase):
             store.require_current_speech_rules(conn)
         conn.execute("UPDATE speech_rule_inputs SET reviewed_digest = ?", (reviewed_units.sitting_digest("18/2"),))
         store.require_current_speech_rules(conn)
+
+    # Value: protects=a schema 11 store (speech_rule_inputs without reviewed_digest) is refused with the repersist instruction, never stamped 12 with no withheld Reden;
+    #   fails_when=require_current_schema stops checking reviewed_digest; why_new=schema 12 is new; seam=none
+    def test_a_schema_11_store_without_reviewed_digest_is_refused(self):
+        conn = self.persisted(sitting(rede("R1")), reviewed=[])
+        store.require_current_schema(conn)
+        conn.execute("ALTER TABLE speech_rule_inputs DROP COLUMN reviewed_digest")
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema.*--offline --repersist"):
+            store.require_current_schema(conn)
 
     # Value: protects=D5: the run summary names every withheld Rede the new store adds, and the ones it releases;
     #   fails_when=a new withheld Rede passes silently; why_new=D5; seam=none

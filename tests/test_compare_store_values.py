@@ -368,6 +368,35 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertEqual(line_of(out, "Regierung (Reden)", section), "Regierung (Reden) 1 -> 0 -1")
         self.assertEqual(line_of(out, "Sprechrolle bundesregierung (Reden)", section), "Sprechrolle bundesregierung (Reden) 0 -> 1 +1")
 
+    # Value: protects=the comparison lists each withheld Rede a new store adds, releases or re-words, and says "unavailable" for a store before schema 12;
+    #   fails_when=measure() drops withheld_units or the per-reason and per-Rede sections stop printing old -> new; why_new=withheld tables are new in schema 12
+    #   and no compare test touched them; seam=none; no_claim=the real store (tiny fixture stores)
+    def test_withheld_reden_are_compared_per_reason_and_per_rede(self) -> None:
+        protocols = {"21/1": [("R1", "SPD", 100, None)]}
+        old = make_output(self.tmp / "o", protocols=protocols)
+        new = make_output(self.tmp / "n", protocols=protocols)
+        for root, rows in ((old, [("R9", "reviewed", 50)]), (new, [("R9", "reviewed", 70), ("R8", "refused_nested_contribution", 30)])):
+            conn = sqlite3.connect(root / "data" / "bundestag-pulse.sqlite")
+            try:
+                item = conn.execute("SELECT id FROM agenda_items").fetchone()[0]
+                for sequence, (rede_id, reason, words) in enumerate(rows, start=5):
+                    conn.execute(
+                        "INSERT INTO withheld_units(id, protocol_id, agenda_item_id, rede_id, sequence, reason, reason_detail, word_count, "
+                        "created_at, updated_at) VALUES (?, 'p-21/1', ?, ?, ?, ?, 'x', ?, ?, ?)",
+                        (f"w-{rede_id}", item, rede_id, sequence, reason, words, NOW, NOW))
+                conn.commit()
+            finally:
+                conn.close()
+        _, out, _ = run(old, new)
+        reasons = out.split("== withheld Reden (ADR 0005, outside every count) per reason", 1)[1].split("\n== ", 1)[0]
+        self.assertIn("refused_nested_contribution 0 -> 1 +1", re.sub(r"[ \t]+", " ", reasons))
+        units = out.split("== withheld Reden added, released or changed", 1)[1].split("\n== ", 1)[0]
+        self.assertIn("21/1 R9: reviewed, 50 words -> reviewed, 70 words", units)
+        self.assertIn("21/1 R8: not withheld -> refused_nested_contribution, 30 words", units)
+        # Unchanged withheld Reden are not listed.
+        _, same, _ = run(new, new)
+        self.assertIn("(none changed)", same)
+
     # Value: protects=the per-kind Beiträge section reports old->new counts on the cohort and shows an older store without the table as unavailable; fails_when=measure or the section drops contributions; why_new=no test read the contributions table; seam=none
     def test_contributions_per_kind_are_compared_and_an_older_store_is_unavailable(self) -> None:
         heading = "== contributions (Beiträge that are no Rede) per kind"
