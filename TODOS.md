@@ -131,8 +131,8 @@ Withholding works on the whole `<rede>`, as decided. After round 2's rules that 
 
 **Check thoroughly before implementing:**
 - **Redistribution:** whether the raw pages may be kept and published. Until "Settle the roll-call source for redistribution" is answered, they stay in `.OUTPUT.private/`, never in the published tree.
-- **Disk:** measure the size of the 619 vote pages and the DIP records. Not measured; expected small next to the 5.5 GB store.
-- **Requests:** what re-fetching all 619 vote pages once costs, so existing sittings get their raw page too. Without it they only get one on their next online fetch. Such a re-fetch would also settle the 34 vs 24.
+- **Disk:** measure the size of the 619 vote pages and the DIP records. Not measured; expected small next to the 5.5 GB store directory.
+- **Requests:** what re-fetching all 619 vote pages once costs, so existing sittings get their raw page too. Without it they only get one on their next online fetch. A re-fetch cannot settle the 34 vs 24: the fresh build already fetched every page and the old store is gone. It gives a kept baseline from which a later change can be told.
 - **Coverage:** which values in a report come only from a fetch (official result, scope, page counts, anything else), measured from the code, not assumed.
 - **Parser:** whether the vote-page parser can re-read a stored page without its fetch context (URL, date, the TOP it was matched to).
 - **Refusal:** how a re-persist treats a vote with no raw page, and how a store moves from today's reports to raw pages without a mixed state.
