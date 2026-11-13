@@ -108,6 +108,10 @@ _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redne
 Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Zwischenfrage, a written submission, a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde. Each has a Kind (`zwischenfrage`, `zu_protokoll`, `kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
 _Avoid_: Wortmeldung, counting a Beitrag as a Rede, adding Beiträge to a Person's Reden
 
+**Zurückgehaltene Rede**:
+A Rede the parser cannot read without guessing, because a turn of another Redner inside it matches no reviewed rule, or a Rede the owner has put on the reviewed list with a reason. It is held back, not dropped: it keeps its text and reason in `withheld_units` (other Redner's turns inside it in `withheld_turns`) and counts nowhere, not as a Rede, not as a Beitrag, not for a Person or a Zusammenschluss. Its Sitzung keeps everything else (ADR 0005). The grain is the unit the parser emits, so a split part `ID…:n` can be withheld while its outer Rede is stored.
+_Avoid_: excluded (that is a whole Sitzung), dropped, refused (the Sitzung is not), confusing it with a **zurückgehaltener Fakt** (`facts.withheld`, a Fakt held back because a Sitzung is missing)
+
 **Zwischenfrage**:
 A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner. A separately marked nested speaker segment is stored as a Beitrag with its own source identity and a link to the containing Rede or Beitrag. In a Befragung, nested official answers remain answers of that format.
 _Avoid_: counting it as part of the Rede
@@ -391,4 +395,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 11 / export format 16 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 12 / export format 17 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

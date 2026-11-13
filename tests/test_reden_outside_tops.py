@@ -8,7 +8,6 @@ import tempfile
 import unittest
 
 import _support
-import audit_offline_turns
 import build_dip_pulse_site as site
 import validate_dip_protocol as dip
 
@@ -85,10 +84,6 @@ class AdoptedTopTests(unittest.TestCase):
         verlauf.insert(list(verlauf).index(verlauf.find("tagesordnungspunkt")) + 1, rede)
         with self.assertRaisesRegex(ValueError, "18/49: Rede ID1804902600 .*after a TOP"):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding="unicode"))
-
-    def test_the_offline_audit_counts_them(self):
-        audited = audit_offline_turns.audit(dip, FIXTURES / "18-49.xml")
-        self.assertEqual(audited["counts"]["rede"], 51)
 
 
 class ReplayTests(unittest.TestCase):

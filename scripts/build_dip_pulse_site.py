@@ -108,6 +108,7 @@ import validate_dip_protocol as dip
 import dip_cache
 import abgeordnetenwatch as aw
 import derive
+import reviewed_units
 import speech_kinds
 import stammdaten
 import publication_state as publication
@@ -116,6 +117,7 @@ import politikfelder
 import antrag_text
 import person_registry as registry
 import build_revision
+import release_changes
 import release_version
 import sitzungskalender
 import week_radar_feed
@@ -153,7 +155,9 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden; forderung ist bei Anträgen, die eine namentliche Abstimmung ohne DIP-Zusammenfassung betreffen, der wörtliche Forderungsteil aus dem DIP-Volltext der Drucksache (nur Layout bereinigt), forderung_state sagt, ob er gefunden wurde (extracted), fehlt (no_passage) oder der Text nicht abgerufen ist (not_fetched), forderung_version ist die Version der Extraktionsregel.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
-    "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
+    "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
+    "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung und sind keiner Person zugeordnet; nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
+    "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
@@ -658,6 +662,17 @@ def backfill_scope_lines(
 
 COVERAGE_EXCLUSIONS_FILENAME = "coverage-exclusions.json"
 
+#: Why a sitting stays out whole (gate step 4, ADR 0005), with the German text
+#: DATA.md and the Daten page give. Under the bar only a source defect or a
+#: defect that cannot be narrowed to single Reden keeps a sitting out for good;
+#: the two awaiting codes name sittings on their way back.
+EXCLUSION_REASONS: dict[str, str] = {
+    "source_defect": "Fehler der Quelle, der die ganze Sitzung betrifft",
+    "not_narrowable": "Ein Fehler, der sich nicht auf einzelne Reden eingrenzen lässt",
+    "awaiting_rule": "Wartet auf eine vom Eigentümer bestätigte Parserregel",
+    "awaiting_acquisition": "Wartet auf den Abruf ihrer DIP-Daten (Abstimmungen, Tagesordnungspunkte, Verknüpfungen)",
+}
+
 
 class CoverageExclusionsError(Exception):
     """The exclusion record (D2) cannot be read. ``main`` reads it before any
@@ -679,9 +694,12 @@ def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     """The reviewed sittings of ``--exclude-document-number`` kept out of the
     store (D2), oldest first; empty when the record does not exist. Raises
     CoverageExclusionsError for a record that is not ``{"exclusions": [...]}``
-    with a ``document_number`` on every entry."""
+    with a ``document_number``, a ``reason`` from ``EXCLUSION_REASONS`` and a
+    nonblank ``reason_detail`` on every entry (gate step 4: a bare "excluded"
+    says nothing about why a sitting is missing)."""
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
-    shape = 'it must read {"exclusions": [{"document_number": "21/7", ...}, ...]}'
+    shape = ('it must read {"exclusions": [{"document_number": "21/7", "reason": "<code>", "reason_detail": "<why>", ...}, ...]} '
+             f"with reason one of {', '.join(EXCLUSION_REASONS)} (docs/adr/0005-withhold-refused-reden.md)")
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -696,6 +714,12 @@ def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
         number = entry.get("document_number") if isinstance(entry, dict) else None
         if not isinstance(number, str) or not number.strip():
             raise CoverageExclusionsError(f"{path}: exclusion {position} has no document_number; {shape}")
+        reason = entry.get("reason")
+        if not isinstance(reason, str) or reason not in EXCLUSION_REASONS:
+            raise CoverageExclusionsError(f"{path}: exclusion {number} has reason {entry.get('reason')!r}; {shape}")
+        detail = entry.get("reason_detail")
+        if not isinstance(detail, str) or not detail.strip():
+            raise CoverageExclusionsError(f"{path}: exclusion {number} has no reason_detail; {shape}")
     return entries
 
 
@@ -782,7 +806,8 @@ def store_coverage_gap(
 
 
 def update_coverage_exclusions(
-    output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]], *, included: set[str] = frozenset()
+    output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]], *, included: set[str] = frozenset(),
+    reason: str | None = None, reason_detail: str | None = None,
 ) -> None:
     """Record each sitting this run excluded (D2) and drop a sitting the run
     took back with --include-document-number or the store now holds. Untouched
@@ -797,10 +822,14 @@ def update_coverage_exclusions(
     for protocol in excluded:
         number = normalized_document_number(protocol.get("dokumentnummer"))
         if number not in entries:
+            if reason not in EXCLUSION_REASONS or not (reason_detail or "").strip():
+                raise CoverageExclusionsError(
+                    f"exclusion {number} needs --exclusion-reason (one of {', '.join(EXCLUSION_REASONS)}) and --exclusion-detail")
             entries[number] = {
                 "document_number": number,
                 "date": str(protocol.get("datum") or "")[:10],
-                "reason": "excluded",
+                "reason": reason,
+                "reason_detail": reason_detail.strip(),
                 "recorded_at": dip.utc_now(),
             }
     if entries == before:
@@ -1898,17 +1927,64 @@ def _rebuild_database_from_entries(
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
         return Rebuilt(replaced=False, facts_report=report)
+    for line in newly_withheld_lines(database_path, temp_path):
+        print(line, file=sys.stderr)
     _replace_store(database_path, temp_path)
     return Rebuilt(replaced=True, facts_report=report)
 
 
+def _withheld_rows(path: Path) -> dict[tuple[str, str], tuple[str, str, str]]:
+    """(document_number, rede_id) -> (speaker, reason, detail) of each withheld
+    Rede a store holds; empty for a missing store or one before schema 12."""
+    if not path.exists():
+        return {}
+    conn = facts.open_readonly(path)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'withheld_units'").fetchone():
+            return {}
+        return {
+            (str(number), str(rede_id)): (str(speaker or "?") + (f" ({fraktion})" if fraktion else ""), str(reason), str(detail))
+            for number, rede_id, speaker, fraktion, reason, detail in conn.execute(
+                "SELECT p.document_number, w.rede_id, w.speaker_name, w.fraktion, w.reason, w.reason_detail "
+                "FROM withheld_units w JOIN protocols p ON p.id = w.protocol_id")
+        }
+    finally:
+        conn.close()
+
+
+def newly_withheld_lines(previous_path: Path, staged_path: Path) -> list[str]:
+    """The run summary of D5 (ADR 0005): every withheld Rede the new store holds
+    and the store it replaces did not, with its reason, and the ones no longer
+    withheld. Nothing when the two agree."""
+    before, after = _withheld_rows(previous_path), _withheld_rows(staged_path)
+    added = sorted(after.keys() - before.keys(), key=lambda key: (_document_number_order(key[0]), key[1]))
+    released = sorted(before.keys() - after.keys(), key=lambda key: (_document_number_order(key[0]), key[1]))
+    lines = []
+    if added:
+        lines.append(f"[summary] {len(added)} newly withheld Rede(n), outside every count (ADR 0005; "
+                     f"a release adding more than {release_changes.WITHHELD_CAP} needs --confirm-withheld):")
+        lines += [f"  {number} {rede_id}, {after[(number, rede_id)][0]}: {after[(number, rede_id)][1]}: {after[(number, rede_id)][2]}"
+                  for number, rede_id in added]
+    if released:
+        lines.append(f"[summary] {len(released)} Rede(n) no longer withheld: " + ", ".join(f"{n} {r}" for n, r in released))
+    return lines
+
+
 def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Cached reports with missing or older speech-counting rule provenance."""
-    return [
-        entry
-        for entry in entries
-        if (entry["report"].get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION
-    ]
+    """Cached reports with missing or older speech-counting rule provenance, or
+    parsed under other reviewed-list entries than scripts/reviewed_units.json
+    holds now for their sitting (R3): both are re-read from their XML."""
+    def stale(report: dict[str, Any]) -> bool:
+        if (report.get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION:
+            return True
+        protocol = report.get("protocol") or {}
+        if "reviewed_digest" not in protocol:
+            # Every rule-8 parse records it (persist reads the same rule).
+            return False
+        number = normalized_document_number(protocol.get("dokumentnummer")) or ""
+        return protocol["reviewed_digest"] != reviewed_units.sitting_digest(number)
+
+    return [entry for entry in entries if stale(entry["report"])]
 
 
 def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
@@ -3360,7 +3436,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 16
+EXPORT_FORMAT = 17
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3811,7 +3887,7 @@ def _inputs_hash(
     catalog_count: int = 0,
     dossier_count: int = 0,
     readiness: dict[str, str] | None = None,
-    excluded_sittings: list[str] | tuple[str, ...] = (),
+    excluded_sittings: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     commit: str | None = None,
     codebook_sha256: dict[str, str] | None = None,
 ) -> str:
@@ -3832,7 +3908,7 @@ def _inputs_hash(
         "issues_url": issues_url,
         "catalog_count": catalog_count,
         "dossier_count": dossier_count,
-        "excluded": sorted(excluded_sittings),
+        "excluded": _excluded_coverage(excluded_sittings),
         "readiness": {
             feature_id: (readiness or {}).get(feature_id, "unavailable") for feature_id in ("votes", "aw-profiles", "mp-roster")
         },
@@ -4212,6 +4288,84 @@ def _snapshot_coverage(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+def _document_number_order(number: str) -> list[int]:
+    return [int(part) for part in str(number).split("/") if part.isdigit()]
+
+
+def _excluded_coverage(entries: Collection[dict[str, Any]]) -> list[dict[str, str]]:
+    """The exclusion record as the manifest carries it: number, reason code
+    and detail, in sitting order."""
+    rows = [
+        {"document_number": normalized_document_number(entry.get("document_number")) or str(entry.get("document_number")),
+         "reason": str(entry.get("reason") or ""), "reason_detail": str(entry.get("reason_detail") or "")}
+        for entry in entries
+    ]
+    return sorted(rows, key=lambda row: _document_number_order(row["document_number"]))
+
+
+def _share(withheld: int, stored: int) -> float | None:
+    """Withheld own words as a share of all own words of Reden, stored or withheld."""
+    total = withheld + stored
+    return round(withheld / total, 4) if total else None
+
+
+def _withheld_coverage(conn: sqlite3.Connection) -> dict[str, Any]:
+    """N9 (ADR 0005): how much of the Reden is withheld, by own words. Stored
+    words are the whitespace tokens of ``speeches.text``, the count
+    ``withheld_units.word_count`` uses; the other speakers' words inside a
+    withheld Rede (``withheld_turns``) are not in the share."""
+    sittings_by_year: dict[str, int] = {}
+    for year, n in conn.execute("SELECT substr(date, 1, 4), COUNT(*) FROM protocols GROUP BY 1"):
+        sittings_by_year[str(year or "unbekannt")] = int(n)
+    stored: dict[tuple[str, str], list[int]] = {}
+    stored_by_protocol: dict[str, int] = {}
+    for year, fraktion, number, text in conn.execute(
+        "SELECT substr(p.date, 1, 4), s.fraktion, p.document_number, s.text FROM speeches s JOIN protocols p ON p.id = s.protocol_id"
+    ):
+        words = len(dip.WORD_RE.findall(text or ""))
+        cell = stored.setdefault((str(year or "unbekannt"), fraktion or "(keine)"), [0, 0])
+        cell[0] += 1
+        cell[1] += words
+        stored_by_protocol[number] = stored_by_protocol.get(number, 0) + words
+    withheld: dict[tuple[str, str], list[int]] = {}
+    sittings: dict[str, dict[str, Any]] = {}
+    units = []
+    has_table = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'withheld_units'").fetchone()
+    for year, number, date_text, fraktion, words, rede_id, reason in conn.execute(
+        "SELECT substr(p.date, 1, 4), p.document_number, p.date, w.fraktion, w.word_count, w.rede_id, w.reason "
+        "FROM withheld_units w JOIN protocols p ON p.id = w.protocol_id"
+    ) if has_table else ():
+        # The label persist gives a stored Rede of the same Sitzung (speeches.fraktion),
+        # so a WP 20 "Die Linke" after the Fraktion ended meets Gruppe Die Linke's words.
+        label = derive.speech_zusammenschluss({"fraktion": fraktion}, {"dokumentnummer": number, "datum": date_text}) or "(keine)"
+        cell = withheld.setdefault((str(year or "unbekannt"), label), [0, 0])
+        cell[0] += 1
+        cell[1] += int(words)
+        row = sittings.setdefault(number, {"document_number": number, "date": date_text, "reden_withheld": 0, "words_withheld": 0})
+        row["reden_withheld"] += 1
+        row["words_withheld"] += int(words)
+        units.append({"document_number": number, "rede_id": rede_id, "reason": reason})
+    by_year = []
+    for year in sorted(sittings_by_year):
+        reden = sum(v[0] for (y, _f), v in stored.items() if y == year)
+        words = sum(v[1] for (y, _f), v in stored.items() if y == year)
+        held = sum(v[0] for (y, _f), v in withheld.items() if y == year)
+        held_words = sum(v[1] for (y, _f), v in withheld.items() if y == year)
+        by_year.append({"year": year, "sittings": sittings_by_year[year], "reden_stored": reden, "reden_withheld": held,
+                        "words_stored": words, "words_withheld": held_words, "share": _share(held_words, words)})
+    by_fraktion = [
+        {"year": year, "fraktion": label, "reden_withheld": cell[0], "words_withheld": cell[1],
+         "words_stored": stored.get((year, label), [0, 0])[1], "share": _share(cell[1], stored.get((year, label), [0, 0])[1])}
+        for (year, label), cell in sorted(withheld.items())
+    ]
+    by_sitting = [
+        {**row, "words_stored": stored_by_protocol.get(number, 0), "share": _share(row["words_withheld"], stored_by_protocol.get(number, 0))}
+        for number, row in sorted(sittings.items(), key=lambda item: _document_number_order(item[0]))
+    ]
+    units.sort(key=lambda unit: (_document_number_order(unit["document_number"]), unit["rede_id"]))
+    return {"by_year": by_year, "by_fraktion": by_fraktion, "by_sitting": by_sitting, "units": units}
+
+
 # Each column's DATA.md licence layer must fit the source tag datenstand.json
 # ships for it, so the two files never give one column different terms.
 def _check_license_layers(manifest_tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> None:
@@ -4318,6 +4472,62 @@ def _codebook_coverage(coverage: dict[str, Any]) -> list[str]:
     bausteine = "; ".join(f"{BAUSTEINE_LABELS[key]} {value}" for key, value in coverage["bausteine"].items()) or "keine"
     lines += ["", f"Separater Build-Kontext (nicht WP-Abdeckung): Katalog {coverage['catalog_count']}, Dossiers {coverage['dossier_count']}; Bausteine: {_md_cell(bausteine)}.",
               f"In diesem Snapshot nachgewiesen: {coverage['synthetic_rede_ids']} synthetische Rede-IDs; {coverage['conflicting_votes']} Person/Abstimmung-Paare mit widersprüchlichen Stimmen."]
+    return lines + _codebook_withheld(coverage)
+
+
+def _pct(share: float | None) -> str:
+    return "unbekannt" if share is None else f"{share * 100:.2f} %"
+
+
+def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
+    """N9 (ADR 0005): coverage by sittings and by Reden, the withheld share by
+    own words per year, Fraktion and sitting, and the sittings kept out."""
+    withheld = coverage.get("withheld") or {"by_year": [], "by_fraktion": [], "by_sitting": []}
+    lines = ["", "## Abdeckung nach Jahr und zurückgehaltene Reden", "",
+             "**Zurückgehaltene Rede:** eine Rede, die der Parser wegen eines Beitrags eines anderen Redners nicht "
+             "eindeutig lesen kann, oder eine Rede auf der geprüften Liste (`scripts/reviewed_units.json`). Die Sitzung "
+             "bleibt mit allen übrigen Reden, Tagesordnungspunkten und Abstimmungen erhalten; die Rede steht mit Grund und "
+             "Text in `withheld_units` (die Beiträge anderer Redner darin in `withheld_turns`) und in keiner Zählung, weder "
+             "als Rede noch als Beitrag noch für eine Person oder Fraktion. Nicht zu verwechseln mit einem "
+             "**zurückgehaltenen Fakt** (`facts.withheld`): einem Fakt, der wegen einer fehlenden Sitzung nicht "
+             "veröffentlicht wird.", "",
+             "Anteil = zurückgehaltene eigene Wörter / (eigene Wörter gespeicherter Reden + zurückgehaltene eigene "
+             "Wörter); Wörter sind durch Leerraum getrennte Tokens. Beiträge anderer Redner in einer zurückgehaltenen "
+             "Rede zählen nicht mit. `speeches.sequence` ist die Stelle der Rede im Tagesordnungspunkt; eine "
+             "zurückgehaltene Rede hinterlässt dort eine Lücke.", ""]
+    if withheld["by_year"]:
+        lines += ["| Jahr | Sitzungen | Reden gespeichert | Reden zurückgehalten | Wörter gespeichert | Wörter zurückgehalten | Anteil |",
+                  "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+        for row in withheld["by_year"]:
+            lines.append(f"| {row['year']} | {row['sittings']} | {row['reden_stored']} | {row['reden_withheld']} | "
+                         f"{row['words_stored']} | {row['words_withheld']} | {_pct(row['share'])} |")
+    else:
+        lines.append("Leerer Datenbestand: keine gespeicherten Sitzungen.")
+    if withheld["by_fraktion"]:
+        lines += ["", "Nach Jahr und Fraktion (nur Zeilen mit zurückgehaltenen Reden; Fraktion wie gedruckt, vereinheitlicht):", "",
+                  "| Jahr | Fraktion | Reden zurückgehalten | Wörter zurückgehalten | Wörter gespeichert | Anteil |",
+                  "| --- | --- | ---: | ---: | ---: | ---: |"]
+        for row in withheld["by_fraktion"]:
+            lines.append(f"| {row['year']} | {_md_cell(row['fraktion'])} | {row['reden_withheld']} | {row['words_withheld']} | "
+                         f"{row['words_stored']} | {_pct(row['share'])} |")
+        lines += ["", "Je Sitzung mit zurückgehaltenen Reden:", "",
+                  "| Sitzung | Datum | Reden zurückgehalten | Wörter zurückgehalten | Wörter gespeichert | Anteil |",
+                  "| --- | --- | ---: | ---: | ---: | ---: |"]
+        for row in withheld["by_sitting"]:
+            lines.append(f"| {row['document_number']} | {row['date'] or 'unbekannt'} | {row['reden_withheld']} | "
+                         f"{row['words_withheld']} | {row['words_stored']} | {_pct(row['share'])} |")
+    else:
+        lines += ["", "In diesem Datenbestand ist keine Rede zurückgehalten."]
+    excluded = coverage.get("excluded") or []
+    lines += ["", "### Ausgeschlossene Sitzungen", "",
+              "Eine Sitzung bleibt nur ganz draußen, wenn ihre Quelle fehlerhaft ist oder sich ein Fehler nicht auf einzelne "
+              "Reden eingrenzen lässt; die beiden „wartet“-Gründe nennen Sitzungen auf dem Rückweg.", ""]
+    if excluded:
+        lines += ["| Sitzung | Grund | Erläuterung |", "| --- | --- | --- |"]
+        for row in excluded:
+            lines.append(f"| {row['document_number']} | {_md_cell(EXCLUSION_REASONS.get(row['reason'], row['reason']))} | {_md_cell(row['reason_detail'])} |")
+    else:
+        lines.append("Keine.")
     return lines
 
 
@@ -4427,10 +4637,10 @@ def export_distribution_data(
     issues_url: str | None = None,
     commit: str | None = None,
     force: bool = False,
-    excluded_sittings: list[str] | tuple[str, ...] = (),
+    excluded_sittings: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
-    """``excluded_sittings``: the reviewed exclusions of
-    coverage-exclusions.json, counted as nicht erfasst (ausgeschlossen)."""
+    """``excluded_sittings``: the entries of coverage-exclusions.json (number,
+    reason, detail), counted as nicht erfasst (ausgeschlossen)."""
     if sqlite3.sqlite_version_info < (3, 35, 0):
         raise DataExportUnavailable(
             f"data export needs SQLite 3.35+ (found {sqlite3.sqlite_version}); "
@@ -4586,7 +4796,7 @@ def _run_export(
     readiness: dict[str, str],
     catalog_count: int,
     dossier_count: int,
-    excluded_sittings: list[str] | tuple[str, ...],
+    excluded_sittings: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     tag: str,
     license_text: str,
     issues_url: str | None,
@@ -4837,6 +5047,7 @@ def _run_export(
         relationships_count = sum(len(table["foreign_keys"]) for table in tables_info)
         total_rows = sum(table["row_count"] for table in tables_info)
         wahlperioden = _snapshot_coverage(snapshot_conn)
+        withheld_coverage = _withheld_coverage(snapshot_conn)
     finally:
         snapshot_conn.close()
     vacuum_path.unlink()
@@ -4892,9 +5103,14 @@ def _run_export(
             "synthetic_rede_ids": synthetic_rede_ids,
             "split_rede_ids": split_rede_ids,
             "conflicting_votes": conflicting_votes,
-            "excluded": sorted(excluded_sittings, key=lambda number: [int(part) for part in number.split("/") if part.isdigit()]),
+            "excluded": _excluded_coverage(excluded_sittings),
             "wahlperioden": wahlperioden,
+            # N9 (ADR 0005): the withheld share by own words, per year, per
+            # Fraktion and year, and per sitting with a withheld Rede.
+            "withheld": withheld_coverage,
         },
+        # Every withheld Rede by key, so a release names the ones it adds (D5, D9).
+        "withheld_reden": withheld_coverage.pop("units"),
     }
     # The bytes _read_codebook_inputs hashed, so the listed sha256 equals
     # codebook_inputs["LICENSE-DATA.md"], which a release checks against its
@@ -5063,7 +5279,19 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     if excluded:
         coverage_line += (
             f" &middot; {pulse_html.format_int(len(excluded))} nicht erfasst (ausgeschlossen): "
-            + pulse_html.esc(", ".join(excluded))
+            + pulse_html.esc("; ".join(
+                f"{row['document_number']} ({EXCLUSION_REASONS.get(row['reason'], row['reason'])}: {row['reason_detail']})"
+                for row in excluded))
+        )
+    withheld_rows = (coverage.get("withheld") or {}).get("by_year") or []
+    held = sum(row["reden_withheld"] for row in withheld_rows)
+    if held:
+        held_words = sum(row["words_withheld"] for row in withheld_rows)
+        stored_words = sum(row["words_stored"] for row in withheld_rows)
+        share = _share(held_words, stored_words) or 0
+        coverage_line += (
+            f" &middot; {pulse_html.format_int(held)} {'Rede' if held == 1 else 'Reden'} zurückgehalten ({pulse_html.format_int(held_words)} Wörter, "
+            f"{share * 100:.2f} % der Redewörter; nicht mitgezählt, Text in withheld_units)"
         )
     scope_exceptions = ", bis auf die ausgeschlossenen Sitzungen (unten)" if excluded else ""
     bausteine_line = " &middot; ".join(
@@ -7868,9 +8096,10 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                 # the speaker to their Abgeordnete profile.
                 speaker_bucket = speaker_counts.setdefault(key, {})
                 for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
+                    # The carried source position (rule 8); a hand-built report may lack it.
                     # The reviewed speaker, as on the protocol page: a shared
                     # Redner-ID's occurrences are tallied under their own person.
-                    rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
+                    rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), speech.get("sequence") or sequence, speech.get("rede_id"))
                     speech_href = f"{protocol_href}#{pulse_html.speech_anchor(item, speech, sequence - 1)}"
                     # Several DIP positions can repeat the same bill's agenda item.
                     seen = seen_speeches.setdefault(key, set())
@@ -13707,6 +13936,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--exclusion-reason",
+        choices=sorted(EXCLUSION_REASONS),
+        help="Why the sittings of --exclude-document-number stay out (required with it): " + "; ".join(
+            f"{code}: {text}" for code, text in EXCLUSION_REASONS.items()) + ". Recorded with each sitting.",
+    )
+    parser.add_argument(
+        "--exclusion-detail",
+        metavar="TEXT",
+        help="The defect in one sentence, recorded with each sitting of --exclude-document-number (required with it).",
+    )
+    parser.add_argument(
         "--include-document-number",
         action="append",
         default=[],
@@ -13922,6 +14162,10 @@ def parse_args() -> argparse.Namespace:
             "--exclude-document-number records a sitting in the exclusion list from an online build; "
             "it cannot be combined with --offline or --fetch-xml, which read the list but never write it"
         )
+    if args.exclude_document_number and not (args.exclusion_reason and (args.exclusion_detail or "").strip()):
+        parser.error("--exclude-document-number needs --exclusion-reason and --exclusion-detail: the record says why a sitting is missing")
+    if (args.exclusion_reason or args.exclusion_detail) and not args.exclude_document_number:
+        parser.error("--exclusion-reason and --exclusion-detail only describe the sittings of --exclude-document-number")
     both = {normalized_document_number(n) for n in args.include_document_number} & {
         normalized_document_number(n) for n in args.exclude_document_number
     }
@@ -14253,7 +14497,7 @@ def run_data_pipeline(
                 readiness=readiness,
                 catalog_count=len(protocols),
                 dossier_count=len(entries),
-                excluded_sittings=[entry["document_number"] for entry in load_coverage_exclusions(output_dir)],
+                excluded_sittings=load_coverage_exclusions(output_dir),
                 license_text=license_text,
                 issues_url=issues_url,
                 tag=tag,
@@ -14290,6 +14534,13 @@ def main() -> int:
     args = parse_args()
     args.include_dev_view = bool(getattr(args, "include_dev_view", False))
     args.summary_mode = getattr(args, "summary_mode", "reuse")
+    # The reviewed list is read and checked before any sitting is touched: a
+    # malformed file stops the run here, never halfway through a build.
+    try:
+        reviewed_units.load()
+    except reviewed_units.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 1
 
     if getattr(args, "validate_publication", None):
         try:
@@ -14849,7 +15100,8 @@ def main() -> int:
             # excluded sitting beside counts that include it. The Daten export,
             # its only later reader, runs after the swap.
             update_coverage_exclusions(
-                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
+                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included,
+                reason=getattr(args, "exclusion_reason", None), reason_detail=getattr(args, "exclusion_detail", None)
             )
             # Read only: the published store is written by a staged rebuild alone.
             store = facts.open_readonly(database_path)

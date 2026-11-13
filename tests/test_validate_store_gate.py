@@ -15,6 +15,7 @@ import build_dip_pulse_site as site
 import persist_dip_pulse_store as pulse_store
 import politikfelder
 import speech_kinds
+import validate_dip_protocol as dip
 import validate_store_gate as gate
 from test_antrag_text import DEMANDS, OPENING, cache as antrag_cache, report as antrag_report
 
@@ -120,6 +121,59 @@ class IntegrityTest(unittest.TestCase):
 
         self.assertTrue(result["integrity_ok"])
         self.assertEqual(result["foreign_key_violations"], 1)
+
+
+class WithheldGateTest(unittest.TestCase):
+    def persisted_store(self, tmp: str) -> Path:
+        """A one-sitting schema 12 store with R1 stored and R2 withheld."""
+        refused = (
+            '<rede id="R2"><p klasse="redner"><redner id="R2-r"><name><nachname>Zwei</nachname><fraktion>SPD</fraktion></name></redner></p>'
+            '<p klasse="J">Rede von Zwei.</p><p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>Grüne</fraktion></name></redner></p>'
+            '<p>Herzlichen Dank, dass Sie die Frage nicht zulassen. Eine Bemerkung</p></rede>'
+        )
+        kept = '<rede id="R1"><p klasse="redner"><redner id="R1-r"><name><nachname>Eins</nachname><fraktion>SPD</fraktion></name></redner></p><p klasse="J">Rede.</p></rede>'
+        xml = ('<dbtplenarprotokoll wahlperiode="18" sitzung-nr="7"><sitzungsverlauf><tagesordnungspunkt top-id="T1">'
+               f'<p klasse="T_NaS">Beratung</p>{kept}{refused}</tagesordnungspunkt></sitzungsverlauf><anlagen/></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml, reviewed=[])
+        report = {"protocol": {"id": "18/7", "dokumentnummer": "18/7", "datum": "2015-04-23", "reviewed_digest": parsed["reviewed_digest"]},
+                  "agenda_items": [dict(index=t["index"], **dip.xml_top_fields(t)) for t in parsed["agenda_items"]],
+                  "xml_contributions": [], "validation_summary": dip.contribution_summary(parsed["agenda_items"])}
+        path = Path(tmp) / "store.sqlite"
+        conn = pulse_store.connect(path)
+        pulse_store.persist_report(conn, report)
+        conn.execute("CREATE TABLE IF NOT EXISTS facts (id TEXT)")  # the facts engine's table, which persist alone leaves out
+        conn.commit()
+        conn.close()
+        return path
+
+    # Value: protects=the gate flags a withheld Rede whose rede_id is also a stored Rede; fails_when=a withheld Rede reaches speeches unnoticed or the check is dropped; why_new=the withheld tables are new in schema 12; seam=none
+    def test_flags_a_withheld_rede_that_is_also_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.persisted_store(tmp)
+            self.assertEqual(gate.withheld_also_counted(path), [])
+            conn = sqlite3.connect(path)
+            conn.execute("UPDATE withheld_units SET rede_id = 'R1'")
+            conn.commit()
+            conn.close()
+            self.assertEqual(gate.withheld_also_counted(path), ["18/7 R1"])
+
+    # Value: protects=run_gate counts the owner's store before the replay that upgrades it, so store_counts reads a store
+    #   without the schema 12 withheld tables as None instead of crashing, and counts them once present;
+    #   fails_when=store_counts queries withheld_units unconditionally (OperationalError on a schema 11 store, Codex P1 at ship);
+    #   why_new=no test counted a store from before schema 12; seam=none
+    def test_counts_a_store_from_before_the_withheld_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.persisted_store(tmp)
+            counts = gate.store_counts(path)
+            self.assertEqual((counts["withheld_units"], counts["withheld_reasons"]), (1, {"refused_nested_contribution": 1}))
+            self.assertGreater(counts["withheld_words"], 0)
+            conn = sqlite3.connect(path)
+            conn.executescript("DROP TABLE withheld_turns; DROP TABLE withheld_units;")
+            conn.close()
+            counts = gate.store_counts(path)
+        self.assertEqual([counts[key] for key in ("withheld_units", "withheld_turns", "withheld_reasons", "withheld_words")],
+                         [None, None, None, None])
+        self.assertEqual(counts["speeches"], 1)
 
 
 class ClonePathSafetyTest(unittest.TestCase):

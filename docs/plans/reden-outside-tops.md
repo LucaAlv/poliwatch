@@ -1,5 +1,7 @@
 # Reden the parser drops without refusing
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 Fixes the TODOS.md item of the same name (P1), filed 2026-11-07 on `claude/strange-germain-01ea7e` after the CPP-BT cross-check. Measured on the A3 store's 716 XML files (`~/agent-runs/a3/full/data/xml`).
 
 ## What the source shows

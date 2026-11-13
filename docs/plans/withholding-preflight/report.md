@@ -1,5 +1,7 @@
 # Withholding preflight: the 85 sittings (W1, 2026-11-12)
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `fetch_and_audit.py`, which produced `preflight.json`, and `scripts/audit_offline_turns.py`, which it imported, are deleted; both are in git history up to 36bfd08. The parser now withholds refused Reden itself ([ADR 0005](../../adr/0005-withhold-refused-reden.md)). PR 2's re-measure of these numbers at its tip is in [coverage-gate-pr2.md](../coverage-gate-pr2.md), "Replay".
+
 Fetched from dserver.bundestag.de on 2026-11-12, after the fresh store rebuild had finished its downloads, and audited with `fetch_and_audit.py`. Re-audited twice on 2026-11-13 from the same XML. The second run, at main a4acab0 after #147's Rede reconciliation (parser `deb0cb17c87e…`), refused 19/36 as `rede_reconciliation`. The third, with the parser reading 19/36's Anlage 2 by its own heading (parser sha256 `73a82fa5c4bd…`), counts it as parsing once withheld again (see "19/36" below); its figures match the first run, at main 28799ac plus the W1 fixes (parser `4b0c6686f532…`), which predates #147. 18/20 was fetched again and is again rejected. Sittings: the 84 of `a3-wp18-19-round2-result.md:234` plus 20/11 (`sittings-85.txt`). The data is in `preflight.json` beside this file.
 
 ## Result

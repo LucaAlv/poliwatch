@@ -1,0 +1,39 @@
+{
+  "entries": [
+    {
+      "sitting": "18/2",
+      "rede_id": "ID1800202300",
+      "redner_id": "11004010",
+      "kind": "withhold",
+      "reason": "Holds two whole Reden counted as Zwischenfragen: Britta Haßelmann (4,209 chars) and Jan Korte (5,099), nested in Peter Beyer's Rede (a3-wp18-19-round2-result.md:109, N7)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802902700:2",
+      "redner_id": "11004047",
+      "kind": "withhold",
+      "reason": "Annette Groth's part is a Mündliche Erklärung gem. § 31 GO (DIP 2384D), not a Rede; split off as one (a3-wp18-19-round2-result.md:104, N7)"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "ID1808301300:3",
+      "redner_id": "11004088",
+      "kind": "withhold",
+      "reason": "Holds Marcus Weinberg's whole Rede (11,401 chars) counted as a Zwischenfrage in Caren Lay's Rede (a3-wp18-19-round2-result.md:110, N7)"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "ID1808302100:2:2:2",
+      "redner_id": "11003589",
+      "kind": "withhold",
+      "reason": "Frank Tempel's chair-granted Kurzintervention is merged into his Zwischenbemerkung in Stephan Mayer's Rede (a3-wp18-19-round2-result.md:80, N7)"
+    },
+    {
+      "sitting": "19/25",
+      "rede_id": "ID192507100",
+      "redner_id": "11004067",
+      "kind": "withhold",
+      "reason": "The XML gives this <rede> to Katja Keul, whose Zwischenfrage opens it; Norbert Röttgen's Rede (4,459 chars) is nested inside, so the two are swapped (a3-wp18-19-round2-result.md:111, N7)"
+    }
+  ]
+}

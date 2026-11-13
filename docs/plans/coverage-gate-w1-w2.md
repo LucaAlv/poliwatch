@@ -1,5 +1,7 @@
 # Coverage gate: W1 (fetch and audit the 85) and W2 (PR 1, inventory and reconciliation)
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 **Status:** plan, 2026-11-10. Not built. Reviewed under `/plan-eng-review` below.
 **Parent:** `TODOS.md` "Coverage gate before the first data release"; `docs/plans/v1-scope-review.md`, "Eng review: the withholding build, T3" (decisions D1-D10, tasks W1-W8). Those decisions are settled and are not reopened here unless the review names a new risk.
 **Base:** main 28799ac (after #143, the Reden fix, and #145). Line numbers below are on that commit; the T3 review's numbers predate #141 and #143.

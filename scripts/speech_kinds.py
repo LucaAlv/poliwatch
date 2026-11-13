@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 7
+VERSION = 8
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -55,6 +55,29 @@ REDE_STATUS = {
     BEFRAGUNG_ANTWORT: "beitrag",
     ZU_PROTOKOLL: "zu_protokoll",
 }
+#: Why a Rede is withheld (``withheld_units.reason``, ADR 0005): the short label
+#: the Dossier shows, and the German text the data dictionary and DATA.md give.
+#: The data dictionary must list exactly these codes.
+WITHHELD_REASONS: dict[str, tuple[str, str]] = {
+    "refused_nested_contribution": (
+        "ein Beitrag eines anderen Redners darin ist keiner Regel zuzuordnen",
+        "Ein Beitrag eines anderen Redners in dieser Rede passt zu keiner geprüften Regel "
+        "(Zwischenfrage, Kurzintervention, Sitzungsleitung); die Rede wird zurückgehalten.",
+    ),
+    "refused_nested_question_speaker": (
+        "ein Redner darin ist weder Fragesteller noch Antwortender",
+        "In einer Befragung der Bundesregierung ist ein Redner in dieser Rede weder als "
+        "Fragesteller noch als Antwortender erkennbar; die Rede wird zurückgehalten.",
+    ),
+    "reviewed": (
+        "auf der geprüften Liste",
+        "Auf der geprüften Liste (scripts/reviewed_units.json) mit Begründung zurückgehalten, etwa weil eine "
+        "ganze Rede als Zwischenfrage gelesen würde.",
+    ),
+}
+#: The status of a ``<rede>`` the parser withholds (ADR 0005): stored in
+#: ``withheld_units``, outside every count, instead of under one of the kinds above.
+WITHHELD_STATUS = "withheld"
 #: Kinds that are never a whole ``<rede>``: a marker inside one (Zwischenfrage) or a
 #: Fragestunde turn, which stands outside any ``<rede>``.
 NOT_REDE_KINDS = frozenset({ZWISCHENFRAGE, FRAGESTUNDE_FRAGE, FRAGESTUNDE_ANTWORT})

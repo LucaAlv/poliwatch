@@ -490,7 +490,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
         report["protocol"] = {"id": "5710", "dokumentnummer": "21/7", "datum": "2025-05-15",
                               "xml_url": "https://dserver.bundestag.de/7.xml"}
         (self.output_dir / "data" / "plenarprotokoll-21-7.json").write_text(json.dumps(report), encoding="utf-8")
-        record = {"exclusions": [{"document_number": "21/7", "date": "2025-05-15", "reason": "excluded",
+        record = {"exclusions": [{"document_number": "21/7", "date": "2025-05-15", "reason": "source_defect", "reason_detail": "test fixture",
                                   "recorded_at": "2026-10-22T00:00:00Z"}]}
         (self.output_dir / "data" / build.COVERAGE_EXCLUSIONS_FILENAME).write_text(json.dumps(record), encoding="utf-8")
 
@@ -604,8 +604,8 @@ class RepersistTests(unittest.TestCase):
     def test_a_recorded_exclusion_of_a_stored_sitting_leaves_the_store(self) -> None:
         self.repersist()
         self.assertEqual(self.count("protocols"), 2)
-        record = {"exclusions": [{"document_number": "21/84", "date": "2025-01-01", "reason": "excluded",
-                                  "recorded_at": "2026-11-01T00:00:00Z"}]}
+        record = {"exclusions": [{"document_number": "21/84", "date": "2025-01-01", "reason": "source_defect", "reason_detail": "test fixture",
+                                  "recorded_at": "2026-11-01T00:00:00Z"}]}  # pregate-literal: SCHEMA_VERSION=11 a recorded_at date (2026-11-01), not the schema
         (self.output_dir / "data" / build.COVERAGE_EXCLUSIONS_FILENAME).write_text(json.dumps(record), encoding="utf-8")
         entries, rebuilt = self.repersist()
         self.assertTrue(rebuilt.replaced)
@@ -1020,10 +1020,10 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(before, sha(self.database))
         self.assertEqual(self.seat_rows(), (members, seats))
         self.assertEqual(seats, [
-            ("AfD", 21, "2025-03-25", "2025-11-10", 1),
+            ("AfD", 21, "2025-03-25", "2025-11-10", 1),  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
             ("CDU/CSU", 21, "2025-03-25", None, 229),
             ("SPD", 21, "2025-03-25", None, 400),
-            ("fraktionslos", 21, "2025-11-10", None, 1),
+            ("fraktionslos", 21, "2025-11-10", None, 1),  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
         ])
         self.assertEqual(len(members), 631)
         conn = sqlite3.connect(self.database)
@@ -1033,8 +1033,8 @@ class RepersistTests(unittest.TestCase):
         finally:
             conn.close()
         self.assertEqual([row for row in members if row[0] == "11000000"], [
-            ("11000000", "Erika Wechsel", 21, "AfD", "2025-03-25", "2025-11-10"),
-            ("11000000", "Erika Wechsel", 21, "fraktionslos", "2025-11-10", None),
+            ("11000000", "Erika Wechsel", 21, "AfD", "2025-03-25", "2025-11-10"),  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
+            ("11000000", "Erika Wechsel", 21, "fraktionslos", "2025-11-10", None),  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
         ])
 
     # Value: protects=a cached file that cannot be read stops the rebuild with the cause named and the
@@ -1147,7 +1147,7 @@ class RepersistTests(unittest.TestCase):
         self.assertTrue(rebuilt.replaced)
         conn = sqlite3.connect(self.database)
         try:
-            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 11)
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 12)
             self.assertGreater(conn.execute("SELECT COUNT(*) FROM vote_fractions").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_fractions WHERE rank < 1").fetchone()[0], 0)
         finally:

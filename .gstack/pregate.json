@@ -67,7 +67,18 @@
     "tests/votes_archive_browser_fixture.py": ["tests/test_politikfelder.py"],
     "scripts/build_demo_site.py": ["tests/test_demo_site.py"],
     "scripts/features/facts.py": ["tests/test_features.py", "tests/test_build_dip_pulse_site.py"],
-    "tests/_site_store_fixture.py": ["tests/test_build_dip_pulse_site.py"]
+    "tests/_site_store_fixture.py": ["tests/test_build_dip_pulse_site.py"],
+    "scripts/reviewed_units.py": ["tests/test_withholding.py"],
+    "scripts/reviewed_units.json": ["tests/test_withholding.py"],
+    "scripts/check_withhold_one.py": ["tests/test_withholding.py"],
+    "scripts/stable_ids.py": ["tests/test_stable_ids.py", "tests/test_withholding.py"],
+    "scripts/extract_demo_fixture.py": ["tests/test_demo_site.py"],
+    "tests/_facts_fixture.py": ["tests/test_facts.py"],
+    "tests/withheld_assert.py": ["tests/test_a1_followups.py", "tests/test_a3_round2.py", "tests/test_a3_rule5.py"],
+    "tests/fixtures/withholding/**": ["tests/test_withholding.py"],
+    "docs/plans/coverage-gate-pr2/coverage-exclusions.json": ["tests/test_withholding.py"],
+    "scripts/audit_offline_turns.py": ["tests/test_withholding.py"],
+    "docs/plans/withholding-preflight/fetch_and_audit.py": ["tests/test_withholding.py"]
   },
   "empty_lanes": ["docs/plans/*.json", "docs/plans/*.txt", "docs/plans/*.tsv", "docs/plans/*.patch"]
 }

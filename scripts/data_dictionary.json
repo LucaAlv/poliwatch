@@ -211,13 +211,13 @@
           "license": "dip"
         },
         "parent_rede_id": {
-          "meaning": "Kennung der Rede/des Beitrags, in dessen Zusammenhang dieser Beitrag steht.",
+          "meaning": "Kennung der Rede/des Beitrags, in dessen Zusammenhang dieser Beitrag steht. Kann eine zurückgehaltene Rede nennen; sie steht dann in withheld_units.",
           "unit": "Protokollinterne Kennung der zugehörigen Rede als Text.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "eigene-auswertung"
         },
         "sequence": {
-          "meaning": "Quell-/Parserreihenfolge des Rede- oder Beitragsmarkers innerhalb der Sitzung/Tagesordnung.",
+          "meaning": "Quell-/Parserreihenfolge innerhalb des Tagesordnungspunkts. Redebasierte Beiträge (Kurzintervention, Erwiderung, Befragung) tragen wie speeches.sequence die Stelle ihres <rede>-Elements; eingebettete Beiträge (nested:…) und Zu-Protokoll-Beiträge folgen danach und können sich verschieben, wenn eine Rede zurückgehalten wird (ihre Kennung bleibt).",
           "unit": "Ordnungszahl als Ganzzahl.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
@@ -1292,7 +1292,7 @@
       }
     },
     "speech_rule_inputs": {
-      "meaning": "Protokollbezogene Version der angewendeten Rede-/Beitragsklassifikation.",
+      "meaning": "Protokollbezogene Version der angewendeten Rede-/Beitragsklassifikation und Prüfsumme der angewendeten Einträge der geprüften Liste.",
       "columns": {
         "protocol_id": {
           "meaning": "Kennung des Plenarprotokolls, dessen Rede-/Beitragsklassifikation versioniert wird.",
@@ -1304,6 +1304,12 @@
           "meaning": "Versionsnummer der Parserregeln, mit denen die Rede-/Beitragsgrenze für dieses Protokoll festgestellt wurde.",
           "unit": "Versionsnummer als nichtnegative Ganzzahl.",
           "source": "Projektbuchhaltung: scripts/speech_kinds.py-Regelversion je Protokoll, gespeichert beim Persistieren.",
+          "license": "eigene-auswertung"
+        },
+        "reviewed_digest": {
+          "meaning": "SHA-256 der Einträge von scripts/reviewed_units.json für diese Sitzung, mit denen das Protokoll gelesen wurde (auch ohne Einträge gesetzt). Weicht sie von der aktuellen Liste ab, verweigern Fakten, Export und Seiten den Bestand bis zum Replay.",
+          "unit": "SHA-256 als 64 Hexadezimalzeichen.",
+          "source": "Projektbuchhaltung: scripts/reviewed_units.py, gespeichert beim Persistieren.",
           "license": "eigene-auswertung"
         }
       }
@@ -1336,8 +1342,8 @@
           "license": "dip"
         },
         "sequence": {
-          "meaning": "Reihenfolge des erhaltenen Redeneintrags innerhalb des Tagesordnungspunkts beim Persistieren, ab 1.",
-          "unit": "Ordnungszahl als Ganzzahl.",
+          "meaning": "Stelle der Rede unter den <rede>-Elementen des Tagesordnungspunkts (nach der Abtrennung eingebetteter Reden), ab 1. Eine zurückgehaltene oder als Verfahren gewertete Nachbarrede verschiebt sie nicht; deshalb hat die Folge Lücken. Gleicher Zahlenraum wie contributions.sequence redebasierter Beiträge.",
+          "unit": "Ordnungszahl als Ganzzahl (Quellposition).",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
         },
@@ -1529,6 +1535,35 @@
           "unit": "Textcode yes, no, abstain, absent oder unknown.",
           "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
+        }
+      }
+    },
+    "vote_passages": {
+      "meaning": "Antrag- und Entschließungsantrag-Drucksachen, die die Regel für eine namentliche Abstimmung als Zitatquelle prüft, je mit dem Vorgang ohne DIP-Zusammenfassung, für den sie stehen; zitiert wird nur ein Dokument mit documents.forderung_state extracted.",
+      "columns": {
+        "vote_id": {
+          "meaning": "Kennung der Abstimmung, deren Kontext aus diesem Antrag zitiert werden kann.",
+          "unit": "Kennung der Abstimmung als Text.",
+          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
+          "license": "eigene-auswertung"
+        },
+        "document_id": {
+          "meaning": "Kennung der geprüften Antrag- oder Entschließungsantrag-Drucksache (documents.id); ihr Zitat steht in documents.forderung.",
+          "unit": "Projektkennung des Dokuments als Text.",
+          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
+          "license": "eigene-auswertung"
+        },
+        "proceeding_id": {
+          "meaning": "DIP-Kennung des Vorgangs ohne Zusammenfassung, für den der Antrag zitiert wird.",
+          "unit": "DIP-Vorgangskennung als Text.",
+          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
+          "license": "eigene-auswertung"
+        },
+        "rank": {
+          "meaning": "Reihenfolge der Anträge innerhalb der Abstimmung, über alle ihre Vorgänge hinweg; 1 ist der erste.",
+          "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
+          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
+          "license": "eigene-auswertung"
         }
       }
     },
@@ -1733,32 +1768,193 @@
         }
       }
     },
-    "vote_passages": {
-      "meaning": "Antrag- und Entschließungsantrag-Drucksachen, die die Regel für eine namentliche Abstimmung als Zitatquelle prüft, je mit dem Vorgang ohne DIP-Zusammenfassung, für den sie stehen; zitiert wird nur ein Dokument mit documents.forderung_state extracted.",
+    "withheld_turns": {
+      "meaning": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge. Getrennt von withheld_units.text, damit kein Wort unter falschem Namen steht. Abschnitte, die die Regeln als Sitzungsleitung oder Verfahren werten oder an eine andere Rede angehängt haben, fehlen.",
       "columns": {
-        "vote_id": {
-          "meaning": "Kennung der Abstimmung, deren Kontext aus diesem Antrag zitiert werden kann.",
-          "unit": "Kennung der Abstimmung als Text.",
-          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
-          "license": "eigene-auswertung"
+        "id": {
+          "meaning": "Projektseitige Kennung aus Protokollkennung, Rede-ID und Marker.",
+          "unit": "Stabiler Projektschlüssel als Text.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
         },
-        "document_id": {
-          "meaning": "Kennung der geprüften Antrag- oder Entschließungsantrag-Drucksache (documents.id); ihr Zitat steht in documents.forderung.",
-          "unit": "Projektkennung des Dokuments als Text.",
-          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
-          "license": "eigene-auswertung"
+        "withheld_unit_id": {
+          "meaning": "Kennung der zurückgehaltenen Rede (withheld_units.id).",
+          "unit": "Projektschlüssel als Text.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
         },
-        "proceeding_id": {
-          "meaning": "DIP-Kennung des Vorgangs ohne Zusammenfassung, für den der Antrag zitiert wird.",
-          "unit": "DIP-Vorgangskennung als Text.",
-          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
-          "license": "eigene-auswertung"
+        "protocol_id": {
+          "meaning": "Kennung des Plenarprotokolls.",
+          "unit": "DIP-Protokollkennung als Text.",
+          "source": "DIP-API-Protokollkennung des übergeordneten Sitzungsdatensatzes.",
+          "license": "dip"
         },
-        "rank": {
-          "meaning": "Reihenfolge der Anträge innerhalb der Abstimmung, über alle ihre Vorgänge hinweg; 1 ist der erste.",
-          "unit": "Ganzzahliger Rang ab 1, aufsteigend.",
-          "source": "scripts/persist_dip_pulse_store.py (persist_vote_passages) aus scripts/antrag_text.py: Antrag- und Entschließungsantrag-Drucksachen der Abstimmung, deren Vorgang keine DIP-Zusammenfassung hat.",
-          "license": "eigene-auswertung"
+        "marker": {
+          "meaning": "Ordnungszahl des Rednermarkers innerhalb der Rede (alle Marker gezählt).",
+          "unit": "Ordnungszahl als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "xml_redner_id": {
+          "meaning": "Redner-ID der Quelle, wie gedruckt; keine Personenzuordnung.",
+          "unit": "Quellkennung als Text oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "speaker_name": {
+          "meaning": "Name des Redners, wie gedruckt.",
+          "unit": "Text wie gedruckt oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "fraktion": {
+          "meaning": "Fraktion des Redners, wie gedruckt (nicht vereinheitlicht).",
+          "unit": "Text wie gedruckt oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "char_count": {
+          "meaning": "Zeichen des Beitrags.",
+          "unit": "Anzahl Zeichen als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "word_count": {
+          "meaning": "Wörter des Beitrags als durch Leerraum getrennte Tokens.",
+          "unit": "Anzahl Wörter als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "text": {
+          "meaning": "Wortlaut des Beitrags.",
+          "unit": "Normalisierter Wortlaut als Text oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "created_at": {
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; ein --repersist ohne Inhaltsänderung behält den bisherigen Store samt Zeitpunkten; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
+          "source": "Lokale Projektbuchhaltung: agenda_items.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
+          "license": "eigene-metadaten"
+        },
+        "updated_at": {
+          "meaning": "Zeitpunkt der letzten Speicherung/Änderung dieses Datensatzes im Projekt; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt.",
+          "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
+          "source": "Lokale Projektbuchhaltung: agenda_items.updated_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
+          "license": "eigene-metadaten"
+        }
+      }
+    },
+    "withheld_units": {
+      "meaning": "Zurückgehaltene Reden (ADR 0005): eine Rede, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder eine Rede auf der geprüften Liste. Sie steht in keiner Zählung, weder als Rede noch als Beitrag, und ist keiner Person zugeordnet; Text und Grund bleiben hier erhalten. Nicht zu verwechseln mit facts.withheld (ein Fakt, der wegen einer fehlenden Sitzung zurückgehalten wird).",
+      "columns": {
+        "id": {
+          "meaning": "Projektseitige Kennung aus Protokollkennung und Rede-ID.",
+          "unit": "Stabiler Projektschlüssel als Text.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "protocol_id": {
+          "meaning": "Kennung des Plenarprotokolls.",
+          "unit": "DIP-Protokollkennung als Text.",
+          "source": "DIP-API-Protokollkennung des übergeordneten Sitzungsdatensatzes.",
+          "license": "dip"
+        },
+        "agenda_item_id": {
+          "meaning": "Kennung des Tagesordnungspunkts, in dem die Rede steht.",
+          "unit": "Projektschlüssel als Text.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "rede_id": {
+          "meaning": "Rede-ID der Quelle, bei einer abgetrennten eingebetteten Rede mit :N (Teil der äußeren Rede). Nie zugleich in speeches oder contributions.",
+          "unit": "Quellkennung als Text.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "sequence": {
+          "meaning": "Stelle der Rede unter den <rede>-Elementen des Tagesordnungspunkts, im selben Zahlenraum wie speeches.sequence.",
+          "unit": "Ordnungszahl als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "reason": {
+          "meaning": "Grund des Zurückhaltens als Code. refused_nested_contribution: Ein Beitrag eines anderen Redners in dieser Rede passt zu keiner geprüften Regel (Zwischenfrage, Kurzintervention, Sitzungsleitung); die Rede wird zurückgehalten.; refused_nested_question_speaker: In einer Befragung der Bundesregierung ist ein Redner in dieser Rede weder als Fragesteller noch als Antwortender erkennbar; die Rede wird zurückgehalten.; reviewed: Auf der geprüften Liste (scripts/reviewed_units.json) mit Begründung zurückgehalten, etwa weil eine ganze Rede als Zwischenfrage gelesen würde.",
+          "unit": "Einer der Codes refused_nested_contribution, refused_nested_question_speaker, reviewed.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "reason_detail": {
+          "meaning": "Wortlaut der Parserverweigerung (mit Marker) oder die Begründung des Eintrags der geprüften Liste.",
+          "unit": "Meldungs- oder Begründungstext.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "xml_redner_id": {
+          "meaning": "Redner-ID der Quelle für den Redner der Rede, wie gedruckt; keine Personenzuordnung.",
+          "unit": "Quellkennung als Text oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "speaker_name": {
+          "meaning": "Name des Redners, wie gedruckt.",
+          "unit": "Text wie gedruckt oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "fraktion": {
+          "meaning": "Fraktion des Redners, wie gedruckt (nicht vereinheitlicht).",
+          "unit": "Text wie gedruckt oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "page": {
+          "meaning": "Druckseite, auf der die Rede beginnt.",
+          "unit": "Seitenzahl als Ganzzahl oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "page_quadrant": {
+          "meaning": "Seitenviertel (A–D) des Redebeginns.",
+          "unit": "Buchstabe oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "char_count": {
+          "meaning": "Zeichen der eigenen Worte des Redners (text).",
+          "unit": "Anzahl Zeichen als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "word_count": {
+          "meaning": "Wörter der eigenen Worte des Redners (text), als durch Leerraum getrennte Tokens; Grundlage der Anteile zurückgehaltener Wörter.",
+          "unit": "Anzahl Wörter als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "nested_word_count": {
+          "meaning": "Wörter der Beiträge anderer Redner in dieser Rede (withheld_turns), nicht in word_count.",
+          "unit": "Anzahl Wörter als Ganzzahl.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "text": {
+          "meaning": "Eigene Worte des Redners, wie speeches.text gebildet (einschließlich Text, den die Regeln an diese Rede angehängt haben). Beiträge anderer Redner stehen in withheld_turns.",
+          "unit": "Normalisierter Wortlaut als Text oder NULL.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
+          "license": "dip"
+        },
+        "created_at": {
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; ein --repersist ohne Inhaltsänderung behält den bisherigen Store samt Zeitpunkten; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
+          "source": "Lokale Projektbuchhaltung: agenda_items.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
+          "license": "eigene-metadaten"
+        },
+        "updated_at": {
+          "meaning": "Zeitpunkt der letzten Speicherung/Änderung dieses Datensatzes im Projekt; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt.",
+          "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
+          "source": "Lokale Projektbuchhaltung: agenda_items.updated_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
+          "license": "eigene-metadaten"
         }
       }
     }

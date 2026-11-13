@@ -93,6 +93,23 @@ def previous_manifest_problem(previous: Any) -> str | None:
     return f"is not a usable datenstand.json: {'; '.join(problems)}" if problems else None
 
 
+def withheld_cap_problem(changes: dict[str, Any], confirmed: list[str]) -> str | None:
+    """D9 (ADR 0005): why a release that adds more than ``WITHHELD_CAP`` newly
+    withheld Reden may not go out, or None. A pile-up is parser drift until the
+    owner has read each one and names it (``WP/NR:REDE_ID``); the initial
+    release has no previous one to drift from."""
+    added = changes["withheld_reden_added"]
+    if changes["initial_release"] or len(added) <= release_changes.WITHHELD_CAP:
+        return None
+    named = {value.replace(":", " ", 1).strip() for value in confirmed}
+    missing = [f"{unit['document_number']}:{unit['rede_id']}" for unit in added
+               if f"{unit['document_number']} {unit['rede_id']}" not in named]
+    if not missing:
+        return None
+    return (f"this release adds {len(added)} newly withheld Reden, more than {release_changes.WITHHELD_CAP} (ADR 0005): "
+            f"read each in withheld_units, then confirm with --confirm-withheld for: {', '.join(missing)}")
+
+
 def local_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
     """Versions of the data-* tags this clone knows (a clone that has not fetched misses remote ones)."""
     result = run(["git", "tag", "--list", f"{release_version.TAG_PREFIX}*"], cwd=repo_root, env=build_revision.clean_env(), capture_output=True, text=True)
@@ -205,6 +222,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--initial", action="store_true", help="This is the first data release.")
     parser.add_argument("--previous-manifest", type=Path, help="datenstand.json of the previous release (for the changelog).")
     parser.add_argument("--changes", type=Path, help="Authored changes file (docs/data-changelog.md); required for every release but the first.")
+    parser.add_argument(
+        "--confirm-withheld", action="append", default=[], metavar="WP/NR:REDE_ID",
+        help=f"Confirm one newly withheld Rede (repeatable, e.g. 18/1:ID1800100100) after reading it: a release that adds "
+             f"more than {release_changes.WITHHELD_CAP} is refused unless every one of them is confirmed (ADR 0005).",
+    )
     parser.add_argument("--publish", action="store_true", help="Create the release through gh. Refuses an export without a licence string (ADR 0003).")
     return parser.parse_args(argv)
 
@@ -248,6 +270,9 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             raise ReleaseError(f"the previous manifest {args.previous_manifest} {problem}")
     authored = release_changes.load_authored(args.changes) if args.changes else None
     changes = release_changes.assemble(version=version, released=today, manifest=manifest, previous_manifest=previous, authored=authored)
+    problem = withheld_cap_problem(changes, args.confirm_withheld)
+    if problem:
+        raise ReleaseError(problem)
     release_dir = build_release_directory(
         exports_dir=args.exports_dir, manifest=manifest, version=version, changes=changes, output_dir=args.output_dir,
     )

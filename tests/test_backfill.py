@@ -29,6 +29,8 @@ import speech_kinds
 from test_facts import StoreCase, week_specs
 
 STAMP = "2026-09-28T10:00:00Z"
+#: What every --exclude-document-number run must say about why (gate step 4).
+EXCLUSION_FLAGS = ("--exclusion-reason", "source_defect", "--exclusion-detail", "test fixture")
 
 
 def setUpModule() -> None:
@@ -480,7 +482,8 @@ class BackfillSelectionTests(unittest.TestCase):
         self.assertIn("1 not acquirable yet (DIP has no XML): 21/3", stderr.getvalue())
 
     def run_backfill_main(self, output_dir: Path, catalog: list[dict], *extra: str):
-        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir), *extra]
+        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir), *extra,
+                *EXCLUSION_FLAGS * ("--exclude-document-number" in extra)]
         with (
             mock.patch.object(sys, "argv", argv),
             mock.patch.object(build, "fetch_protocols", return_value=catalog),
@@ -589,7 +592,8 @@ class BackfillSelectionTests(unittest.TestCase):
             def run(*extra):
                 written.clear()
                 argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
-                        "--backfill-incomplete", "--sleep", "0", *extra]
+                        "--backfill-incomplete", "--sleep", "0", *extra,
+                        *EXCLUSION_FLAGS * ("--exclude-document-number" in extra)]
                 with (
                     mock.patch.object(sys, "argv", argv),
                     mock.patch.object(build, "fetch_protocols", side_effect=lambda *_a: copy.deepcopy(catalog)),
@@ -636,8 +640,8 @@ class BackfillSelectionTests(unittest.TestCase):
             self.assertEqual(excluded_for_rebuild, ["21/1", "21/2", "21/3"])
             entries = json.loads(record.read_text(encoding="utf-8"))["exclusions"]
             self.assertEqual([(e["document_number"], e["date"], e["reason"]) for e in entries],
-                             [("21/1", "2026-06-11", "excluded"), ("21/2", "2026-06-12", "excluded"),
-                              ("21/3", "2026-06-13", "excluded")])
+                             [("21/1", "2026-06-11", "source_defect"), ("21/2", "2026-06-12", "source_defect"),
+                              ("21/3", "2026-06-13", "source_defect")])
             self.assertIn("excluded: 21/3, 21/2, 21/1", stderr)
 
             # The record is the durable list (owner decision 2026-10-23, option A): a run that
@@ -673,7 +677,8 @@ class BackfillSelectionTests(unittest.TestCase):
             return SimpleNamespace(facts_report=None)
 
         argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
-                "--backfill-incomplete", "--sleep", "0", *extra]
+                "--backfill-incomplete", "--sleep", "0", *extra,
+                *EXCLUSION_FLAGS * ("--exclude-document-number" in extra)]
         with (
             mock.patch.object(sys, "argv", argv),
             mock.patch.object(build, "fetch_protocols", side_effect=lambda *_a: copy.deepcopy(catalog)),
@@ -723,7 +728,7 @@ class BackfillSelectionTests(unittest.TestCase):
                     self.assertTrue(called)
                     self.assertFalse(record.exists(), "a failed rebuild must not record the exclusion")
             # The symmetric direction: an inclusion leaves the record only when the store holds the sitting.
-            before = {"exclusions": [{"document_number": "21/2", "date": "2026-06-12", "reason": "excluded",
+            before = {"exclusions": [{"document_number": "21/2", "date": "2026-06-12", "reason": "source_defect", "reason_detail": "test fixture",
                                       "recorded_at": STAMP}]}
             record.write_text(json.dumps(before), encoding="utf-8")
             code, stderr, seen, _ = self.run_exclusion_main(
@@ -1101,7 +1106,7 @@ class GapPrimitiveTests(unittest.TestCase):
         {"document_number": "21/1", "date": "2025-01-02"},
         {"document_number": "21/2", "date": "2025-01-09"},
     ]
-    LISTED = PERSISTED + [{"document_number": "21/3", "date": "2025-01-16"}]
+    LISTED = PERSISTED + [{"document_number": "21/3", "date": "2025-01-16"}]  # pregate-literal: EXPORT_FORMAT=16 a sitting date (2025-01-16), not the export format
 
     @staticmethod
     def state(votes: bool, speeches: bool = True, reason: str | None = None) -> dict:
@@ -1116,7 +1121,7 @@ class GapPrimitiveTests(unittest.TestCase):
         self.assertEqual(list(gaps), ["21/1", "21/2", "21/3"])
         self.assertEqual(gaps["21/1"]["reasons"], {"votes": "votes partial (scan_budget_exhausted)"})
         self.assertEqual(gaps["21/2"]["reasons"], {"dossier": "no_report"})
-        self.assertEqual(gaps["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})
+        self.assertEqual(gaps["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
 
     # Value (CRITICAL, D3): protects=Fakt completeness keeps one meaning whatever the backfill
     # floor; fails_when=the floor leaks into expected_sittings/build_periods; seam=facts.
@@ -1126,7 +1131,7 @@ class GapPrimitiveTests(unittest.TestCase):
         self.assertNotIn("18/1", facts.sitting_gaps(self.PERSISTED, self.completeness(), catalog))
         floored = facts.sitting_gaps(self.PERSISTED, self.completeness(), catalog, lower_bound="2013-10-22")
         self.assertEqual(floored["18/1"], {"date": "2013-10-22", "reasons": {"dossier": "not_persisted"}})
-        self.assertEqual(floored["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})
+        self.assertEqual(floored["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         weeks, months = facts.build_periods(self.PERSISTED, catalog)
         self.assertEqual(min(week.key for week in weeks), (2025, 1))
         self.assertEqual(min(month.key for month in months), (2025, 1))
