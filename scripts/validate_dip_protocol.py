@@ -1358,8 +1358,37 @@ ANNEX_EXCLUSIONS: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 
 
+#: A block printed under the wrong ``anlagen-typ`` and read by its own first
+#: ``Anlage_3`` heading: (title pattern, heading pattern). 19/36's Anlage 2 repeats
+#: Anlage 1's title "Liste der entschuldigten Abgeordneten" but holds no list: its
+#: heading is "Zu Protokoll gegebene Fortsetzung des abgebrochenen Redebeitrages der
+#: Abgeordneten Martina Stamm-Fibich (SPD)", as the protocol's Inhaltsverzeichnis
+#: lists it (docs/source-errors.md). Of the 356 blocks under that exact title in
+#: the 802 WP 18/19 sittings held (and the 799 under any "entschuldigt" title), it
+#: is the only one holding a ``<rede>`` or such a heading, so a real list never
+#: matches; the block is read only when both title and heading match.
+MISTITLED_ZU_PROTOKOLL = (re.compile(r"liste der entschuldigten abgeordneten"),
+                          re.compile(r"zu protokoll gegebene (?:reden?|fortsetzung)\b.*"))
+
+#: A TOP reference that also names the page of the Rede it continues, as 19/36's
+#: "(Tagesordnungspunkt 5, Seite 3370 C)": the page is not part of the TOP id.
+TOP_REF_PAGE = re.compile(r",\s*Seite\s+\d+.*")
+
+
 def annex_title(block: ET.Element) -> str:
     return clean_text(block.get("anlagen-typ") or "").casefold()
+
+
+def zu_protokoll_annex_type(block: ET.Element) -> str | None:
+    """What a block of written submissions is called, or None for any other block:
+    its ``anlagen-typ``, or for a ``MISTITLED_ZU_PROTOKOLL`` block its own heading."""
+    if ZU_PROTOKOLL_ANNEX.fullmatch(annex_title(block)):
+        return block.get("anlagen-typ")
+    title, heading_pattern = MISTITLED_ZU_PROTOKOLL
+    if not title.fullmatch(annex_title(block)):
+        return None
+    heading = elem_text(next((p for p in block if p.tag == "p" and p.get("klasse") == "Anlage_3"), None))
+    return heading if heading_pattern.fullmatch(heading.casefold()) else None
 
 
 def annex_exclusion(block: ET.Element) -> str | None:
@@ -1387,7 +1416,8 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
     for top in agenda_items:
         tops_by_id.setdefault(clean_text(top.get("top_id") or ""), []).append(top)
     for annex_index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1):
-        if not ZU_PROTOKOLL_ANNEX.fullmatch(annex_title(block)):
+        annex_type = zu_protokoll_annex_type(block)
+        if annex_type is None:
             rule = annex_exclusion(block)
             if statuses is not None and rule is not None:
                 for sequence, rede in enumerate(block.findall("rede"), 1):
@@ -1410,7 +1440,8 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                 refs = re.findall(r"\(Tagesordnungspunkt\s+([^()]+)\)", text)
                 if refs:
                     association_evidence = text
-                    candidates = tops_by_id.get("Tagesordnungspunkt " + clean_text(refs[0]), []) if len(refs) == 1 else []
+                    top_id = "Tagesordnungspunkt " + clean_text(TOP_REF_PAGE.sub("", refs[0]))
+                    candidates = tops_by_id.get(top_id, []) if len(refs) == 1 else []
                     target = candidates[0] if len(candidates) == 1 else None
                 elif child.get("klasse") in {"Anlage_2", "Anlage_3", "Anlage_Strich"}:
                     # A new annex heading starts a new local context; a later TOP
@@ -1428,7 +1459,7 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
             unit = contribution_unit(speech_kinds.ZU_PROTOKOLL, rid, None, sequence,
                                      parse_redner(child.find("./p[@klasse='redner']/redner")),
                                      own.paragraphs, rid_pages.get(rid) or annex_pages.get(rid))
-            unit["annex_type"] = block.get("anlagen-typ")
+            unit["annex_type"] = annex_type
             unit["top_association_evidence"] = association_evidence
             if target is not None:
                 unit["sequence"] = max((c["sequence"] for c in target["contributions"]), default=0) + 1

@@ -75,6 +75,30 @@ class SourceShapeTests(unittest.TestCase):
         # A block with no <rede> is no matter for the reconciliation.
         dip.parse_protocol_xml(sitting(anlagen=annex("Anlage ohne Regel", '<p klasse="J">Liste</p>')))
 
+    # Value: protects=19/36's Anlage 2, a Zu-Protokoll continuation under Anlage 1's title "Liste der entschuldigten
+    #   Abgeordneten", is read by its own heading and joins TOP 5, while that title without the heading, or the heading
+    #   under another unnamed title, still refuses; fails_when=MISTITLED_ZU_PROTOKOLL is dropped, widened to any title or
+    #   heading, or the page in "(Tagesordnungspunkt 5, Seite 3370 C)" breaks the TOP match; why_new=19/36 refused; seam=none
+    def test_a_zu_protokoll_block_under_the_absentee_list_title_is_read_by_its_heading(self):
+        title = "Liste der entschuldigten Abgeordneten"
+        heading = ('<p klasse="Anlage_2">Anlage 2</p><p klasse="Anlage_3">Zu Protokoll gegebene Fortsetzung des abgebrochenen '
+                   'Redebeitrages der Abgeordneten Martina Stamm-Fibich (SPD)</p>')
+        top_ref = '<p klasse="Anlage_3">(Tagesordnungspunkt 5, Seite 3370 C)</p>'
+        top5 = f'<tagesordnungspunkt top-id="Tagesordnungspunkt 5">{rede("R5")}</tagesordnungspunkt>'
+        listing = annex(title, f'<p klasse="Anlage_2">{title}</p><p klasse="J">Albani, Stephan</p>')
+        parsed = dip.parse_protocol_xml(sitting(verlauf=top5, anlagen=listing + annex(title, heading + top_ref + rede("A1", "Stamm-Fibich"))))
+        top = next(t for t in parsed["agenda_items"] if t["top_id"] == "Tagesordnungspunkt 5")
+        [unit] = [c for c in top["contributions"] if c["rede_id"] == "A1"]
+        self.assertEqual(unit["kind"], sk.ZU_PROTOKOLL)
+        self.assertTrue(unit["annex_type"].startswith("Zu Protokoll gegebene Fortsetzung"))
+        self.assertEqual(parsed["sitting_contributions"], [])
+        for other_title, body in [(title, top_ref + rede("A1")),  # the list title alone reads nothing
+                                  (title, '<p klasse="Anlage_3">Abgeordnete im Mutterschutz</p>' + rede("A1")),
+                                  ("Anlage ohne Regel", heading + rede("A1"))]:  # the heading alone reads nothing
+            with self.subTest(title=other_title, body=body[:40]), self.assertRaises(dip.ReconciliationError) as raised:
+                dip.parse_protocol_xml(sitting(verlauf=top5, anlagen=annex(other_title, body)))
+            self.assertIn("A1", str(raised.exception))
+
     # Value: protects=one id is one <rede>, and a <rede> outside an annex has an id;
     #   fails_when=the by_id dict silently keeps the last of two Reden again (validate_dip_protocol parse loop); why_new=nothing checked uniqueness; seam=none
     def test_a_repeated_or_missing_rede_id_refuses(self):

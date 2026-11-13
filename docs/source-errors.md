@@ -133,6 +133,15 @@ A list of places where an official source file says something wrong or files con
 - **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
 - **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored.
 
+### E8. 19/36: a Zu-Protokoll continuation filed under the title of the absentee list
+
+- **Status:** verified 2026-11-13, on the XML fetched 2026-11-12.
+- **Source:** `https://dserver.bundestag.de/btp/19/19036.xml`, `<anlage>` "Anlage 2": `<anlagen-text anlagen-typ="Liste der entschuldigten Abgeordneten">`, holding `<rede id="ID193616800">` (Martina Stamm-Fibich, SPD).
+- **What is wrong:** the `anlagen-typ` repeats the title of Anlage 1, the real list of absent members. Anlage 2 holds no list. Its own headings read "Zu Protokoll gegebene Fortsetzung des abgebrochenen Redebeitrages der Abgeordneten Martina Stamm-Fibich (SPD)" and "(Tagesordnungspunkt 5, Seite 3370 C)". In TOP 5 (`ID193602600`) Stamm-Fibich breaks off her speech for her voice, the chair offers to take the rest zu Protokoll, and a footnote points to Anlage 2. The protocol's Inhaltsverzeichnis lists Anlage 2 under the same heading.
+- **What it should be:** an `anlagen-typ` for a written submission, as "Zu Protokoll gegebene Rede".
+- **Scale:** of the 799 annex blocks with an "entschuldigt" title in the 802 WP 18/19 sittings held (718 in the A3 store, 84 of the excluded sittings), this is the only one holding a `<rede>`, and the only block in the 802 with a Zu-Protokoll heading under another title.
+- **Our side:** fixed 2026-11-13. `scripts/validate_dip_protocol.py` reads a block under that title by its first `Anlage_3` heading when the heading says "Zu Protokoll gegebene Rede(n)" or "… Fortsetzung" (`MISTITLED_ZU_PROTOKOLL`), so the text is a `zu_protokoll` Beitrag under TOP 5. Before #147 the parser dropped it without a word; from #147 until this fix the sitting refused (`docs/plans/withholding-preflight/report.md`, "19/36").
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
