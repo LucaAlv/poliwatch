@@ -45,6 +45,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- release_version.py           # calendar version YYYY.MM.DD[.N] and tag data-<version>
     |-- stammdaten.py                # MdB-Stammdaten (C1): private cache, reader, seat cross-check
     |-- abgeordnetenwatch.py
+    |-- measure_aw_match_share.py    # read-only: the abgeordnetenwatch ext_id match share of WP 18/19 Redner
     `-- features/
         |-- __init__.py
         |-- loader.py
@@ -298,6 +299,21 @@ python3 scripts/facts.py --replay 30 --cards /tmp/fakt-cards \
 Profile resolver for linking Bundestag speakers and roll-call vote members to abgeordnetenwatch.de politician profiles. It first tries the exact Bundestagsverwaltung speaker id (`ext_id_bundestagsverwaltung`) when available, then falls back to name plus party disambiguation.
 
 It uses a disk cache so repeat builds do not keep querying the API. Network failures degrade gracefully: the build continues without profile links instead of failing the whole site.
+
+Requests keep to the API's fair-use limit: a 2.0 s minimum interval by default (`--abgeordnetenwatch-sleep`), and an HTTP 429 waits 60 s before the retry. Only an answer is cached. A request that gets no answer (a connection error, an HTTP error, or an error reply from the API) is counted and never cached as "no match"; after 8 connection failures or error replies in a row the resolver stops asking for the rest of the run. The cache is written to a temporary file and renamed over the old one, so a run stopped mid-write keeps the previous cache.
+
+### `scripts/measure_aw_match_share.py`
+
+A read-only measurement of how many WP 18/19 Redner an abgeordnetenwatch `ext_id_bundestagsverwaltung` lookup matches (A3 plan item 1.5, `docs/plans/a3-item-1-5-aw-match-share.md`). It opens the store in `OUTPUT_DIR` read-only, re-parses the cached XML of its WP 18/19 sittings in memory, and looks each distinct Redner-ID up through `AbgeordnetenwatchResolver.lookup_ext_id` against a scratch cache given with `--cache`, which a first run seeds from the store's own cache. It writes nothing under `OUTPUT_DIR` or in the store's private directory beside it, and refuses a `--cache` or `--json` path there, or a `--json` path that would overwrite one of its inputs.
+
+```bash
+python3 scripts/measure_aw_match_share.py .context/dip-pulse-site \
+  --cache .context/scratch/aw-cache.json --offline        # bounds and the request count, no requests
+python3 scripts/measure_aw_match_share.py .context/dip-pulse-site \
+  --cache .context/scratch/aw-cache.json --json .context/scratch/aw-share.json
+```
+
+The first online run asks about every id, so the figure is as of that run; answers are kept in `<cache>.answers.json`, and a rerun asks only about the ids not yet answered. Requests go to abgeordnetenwatch at the pace of `--sleep` (default the resolver's 2.0 s; a smaller value is refused as faster than the fair-use limit). While any id is unanswered, each share is reported as a range (`bounds`), not a figure. Other options: `--stammdaten ZIP`, `--name-fallback`, `--verdicts JSON`. Exit code 0 is a complete result, 1 a lookup had no answer (rerun asks only about the ids not yet answered), 2 bad input. Tests are in `tests/test_measure_aw_match_share.py`.
 
 Direct usage:
 
@@ -786,7 +802,7 @@ Useful speed levers:
 
 ### abgeordnetenwatch rate limits or outages
 
-The resolver throttles requests and retries HTTP 429s. If profile links are not needed for a debug run, skip them:
+The resolver keeps to a 2.0 s interval between requests and waits 60 s before retrying an HTTP 429. If profile links are not needed for a debug run, skip them:
 
 ```bash
 scripts/preview_dip_pulse_site.sh update --document-number 21/87
