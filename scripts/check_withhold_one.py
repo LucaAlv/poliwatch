@@ -99,9 +99,12 @@ def compare(base: dict[str, Any], forced: dict[str, Any], withheld: dict[int, st
         index, label = top["index"], top["top_id"]
         other = forced_tops[index]
         rid = withheld.get(index)
-        got = [w["rede_id"] for w in other["withheld"]]
-        if got != ([rid] if rid else []):
-            problems.append(f"{label}: withheld {got}, picked {rid}")
+        # The forced parse withholds what the plain parse already withheld (a
+        # located refusal) plus the pick, and nothing else.
+        got = sorted(w["rede_id"] for w in other["withheld"])
+        already = [w["rede_id"] for w in top["withheld"]]
+        if got != sorted(already + ([rid] if rid else [])):
+            problems.append(f"{label}: withheld {got}, picked {rid}, withheld before {already}")
         before, after = _rede_units(top), _rede_units(other)
         expected = {key: unit for key, unit in before.items() if key != rid}
         for key in sorted(set(expected) | set(after)):

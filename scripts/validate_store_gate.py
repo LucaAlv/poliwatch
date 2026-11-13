@@ -182,17 +182,24 @@ def check_export(output_dir: Path) -> dict[str, Any]:
 
 
 def store_counts(database_path: Path) -> dict[str, Any]:
-    """The row counts the receipt records, plus Beiträge per kind."""
+    """The row counts the receipt records, plus Beiträge per kind. The withheld
+    tables (schema 12, ADR 0005) read as None in a store from before them: the
+    gate counts the owner's store before the replay that upgrades it."""
     conn = _open_readonly(database_path)
     try:
         counts = {
             table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             for table in ("protocols", "agenda_items", "speeches", "contributions", "mps", "person_records",
-                          "person_bindings", "person_aliases", "documents", "votes", "vote_members", "facts",
-                          "withheld_units", "withheld_turns")
+                          "person_bindings", "person_aliases", "documents", "votes", "vote_members", "facts")
         }
-        counts["withheld_reasons"] = dict(conn.execute("SELECT reason, COUNT(*) FROM withheld_units GROUP BY reason ORDER BY reason"))
-        counts["withheld_words"] = conn.execute("SELECT COALESCE(SUM(word_count), 0) FROM withheld_units").fetchone()[0]
+        has_withheld = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'withheld_units'").fetchone() is not None
+        for table in ("withheld_units", "withheld_turns"):
+            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] if has_withheld else None
+        counts["withheld_reasons"] = dict(conn.execute(
+            "SELECT reason, COUNT(*) FROM withheld_units GROUP BY reason ORDER BY reason")) if has_withheld else None
+        counts["withheld_words"] = conn.execute(
+            "SELECT COALESCE(SUM(word_count), 0) FROM withheld_units").fetchone()[0] if has_withheld else None
         counts["persons"] = conn.execute("SELECT COUNT(DISTINCT person_id) FROM person_records").fetchone()[0]
         # Schema 10 stores a total the source did not give as NULL, not 0.
         counts["votes_without_total"] = conn.execute(

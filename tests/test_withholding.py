@@ -378,6 +378,21 @@ class WithholdOneTests(unittest.TestCase):
         forced["agenda_items"][0]["speeches"][0]["text"] = "verändert"
         self.assertEqual(check_withhold_one.compare(base, forced, {1: "R2"}), ["T1 R1: text changed"])
 
+    # Value: protects=the D6 check passes a sitting that already withholds a Rede (a located refusal) when the pick
+    #   is withheld beside it, and still flags a Rede withheld beyond those two;
+    #   fails_when=compare() expects the pick alone (false failures on every T4 sitting, Codex at ship); why_new=the 718
+    #   replay had no baseline withholding; seam=none
+    def test_compare_keeps_what_the_plain_parse_already_withheld(self):
+        xml = sitting(rede("R1"), rede("R2", "Zwei", REFUSED), rede("R3", "Drei"), rede("R4", "Vier"))
+        result = check_withhold_one.check_sitting(xml)
+        self.assertEqual(result["middle"], {"withheld": 1, "problems": []})
+        real = check_withhold_one.check_sitting((_support.ROOT / "tests/fixtures/withholding/18-10-top3.xml").read_text(encoding="utf-8"))
+        self.assertTrue(real and all(row["problems"] == [] for row in real.values()), real)
+        base = dip.parse_protocol_xml(xml, reviewed=[])
+        forced = dip.parse_protocol_xml(xml, reviewed=[entry("R3"), entry("R4")])
+        self.assertIn("T1: withheld ['R2', 'R3', 'R4'], picked R3, withheld before ['R2']",
+                      check_withhold_one.compare(base, forced, {1: "R3"}))
+
 
 if __name__ == "__main__":
     unittest.main()
