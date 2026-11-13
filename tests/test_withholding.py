@@ -78,8 +78,11 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(issubclass(dip.LocatedRefusal, ValueError))
         self.assertFalse(issubclass(reviewed_units.ReviewedUnitsError, ValueError))
         source = Path(dip.__file__).read_text(encoding="utf-8")
-        self.assertEqual(source.count('reason="refused_nested_contribution"'), 1)
+        # The nested-turn rule, and another speaker's turn in a listed procedural <rede> (ADR 0004).
+        self.assertEqual(source.count('reason="refused_nested_contribution"'), 2)
         self.assertEqual(source.count('reason="refused_nested_question_speaker"'), 1)
+        self.assertEqual(source.count('reason="unreviewed_presidium"'), 1)
+        self.assertTrue(issubclass(dip.UnreviewedUnitError, dip.LocatedRefusal))
 
     # Value: protects=a Rede withheld after it emitted nested units leaves none behind (commit on finish);
     #   fails_when=nested units or same-asker merges of the withheld Rede reach the TOP; why_new=new path; seam=none
@@ -165,6 +168,11 @@ class ParserTests(unittest.TestCase):
 
 
 class ReviewedListTests(unittest.TestCase):
+    def setUp(self):
+        # The shipped list, not the empty one _support installs for synthetic XML.
+        reviewed_units.use(None)
+        self.addCleanup(reviewed_units.use, [])
+
     # Value: protects=a listed unit is withheld with reason reviewed, even when it parses; fails_when=the list is ignored; why_new=new list; seam=reviewed
     def test_a_listed_rede_is_withheld(self):
         parsed = dip.parse_protocol_xml(sitting(rede("R1"), rede("R2", "Zwei")), reviewed=[entry("R1")])
@@ -189,7 +197,7 @@ class ReviewedListTests(unittest.TestCase):
     def test_a_malformed_list_refuses_whole(self):
         good = {"sitting": "18/7", "rede_id": "R1", "redner_id": "1", "kind": "withhold", "reason": "x"}
         bad = {"not an object": [], "extra key": {"entries": [], "x": 1}, "missing field": {"entries": [{**good, "reason": None}]},
-               "unknown kind": {"entries": [{**good, "kind": "ansprache"}]}, "bad sitting": {"entries": [{**good, "sitting": "18-7"}]},
+               "unknown kind": {"entries": [{**good, "kind": "gastrede"}]}, "bad sitting": {"entries": [{**good, "sitting": "18-7"}]},
                "bad id": {"entries": [{**good, "rede_id": "R 1"}]}, "twice": {"entries": [good, good]}}
         with tempfile.TemporaryDirectory() as tmp:
             for label, payload in bad.items():
@@ -211,16 +219,17 @@ class ReviewedListTests(unittest.TestCase):
         for row in entries:
             by_reason.setdefault(row["reason"], []).append(row["document_number"])
         self.assertEqual(by_reason["source_defect"], ["18/20"])
-        self.assertEqual(len(by_reason["awaiting_rule"]), 12)
-        self.assertEqual(len(by_reason["awaiting_acquisition"]), 73)
+        self.assertEqual(sorted(by_reason["awaiting_rule"]), ["18/62", "18/90"])  # the ten ADR 0004 sittings parse since v0.40.0.0
+        self.assertEqual(len(by_reason["awaiting_acquisition"]), 83)
         self.assertIn("19/36", by_reason["awaiting_acquisition"])
 
     # Value: protects=the committed list loads and each N7 entry names its sitting's real unit (W8);
     #   fails_when=an entry is malformed or its owner drifts; why_new=new entries; seam=none
     def test_the_committed_list_is_well_formed(self):
         entries = reviewed_units.load(_support.ROOT / "scripts/reviewed_units.json")
-        self.assertEqual(sorted(entries), ["18/2", "18/29", "18/83", "19/25"])
-        self.assertEqual(sum(len(v) for v in entries.values()), 5)
+        withhold = {number: [e for e in units if e["kind"] == reviewed_units.WITHHOLD] for number, units in entries.items()}
+        self.assertEqual(sorted(number for number, units in withhold.items() if units), ["18/2", "18/29", "18/83", "19/25"])
+        self.assertEqual(sum(len(v) for v in withhold.values()), 5)
 
     # Value: protects=the digest names a sitting's entries regardless of order, and changes with any field;
     #   fails_when=reordering or rewording leaves the store stale silently; why_new=R3; seam=none
@@ -245,6 +254,10 @@ class ReviewedListTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def setUp(self):
+        reviewed_units.use(None)
+        self.addCleanup(reviewed_units.use, [])
+
     def persisted(self, xml, reviewed=None, number="18/7"):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

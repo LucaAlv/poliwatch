@@ -1278,13 +1278,15 @@ def resolve_speaker(
     rede_id: str | None,
     occurrence_id: str,
     protocol: dict[str, Any] | None = None,
+    sideless: bool = False,
 ) -> tuple[str | None, str | None, str | None]:
     """The store row of the person a Rede or Beitrag names: ``(mp_id,
     fraktion, sprechrolle)``, bound to the registry as ``occurrence_id``.
     ``fraktion`` is the Zusammenschluss as the protocol states it for this unit,
     normalised the same way parties.name is; NULL when the XML names none (a
     minister speaking in role, or a merged record naming two), and the reader
-    then falls back to the MP's party."""
+    then falls back to the MP's party. ``sideless`` (an Ansprache, ADR 0004)
+    gives no Sprechrolle: the presidium's or a guest's role counts for no side."""
     speaker = registry.corrected_speaker(speaker or {}, protocol_id, rede_id)
     profile = speaker.get("abgeordnetenwatch") or {}
     party_name = speaker_party_name(speaker, protocol)
@@ -1312,7 +1314,7 @@ def resolve_speaker(
         aw_politician_id=aw_politician_id,
         aw_match=profile.get("match"),
     )
-    return mp_id, derive.speech_zusammenschluss(speaker, protocol), derive.sprechrolle(speaker)
+    return mp_id, derive.speech_zusammenschluss(speaker, protocol), None if sideless else derive.sprechrolle(speaker)
 
 
 def persist_speeches(
@@ -1388,7 +1390,8 @@ def persist_contributions(
         # names a person the XML has no id for: keep the announced name, no MP.
         if speaker and speaker.get("xml_redner_id"):
             mp_id, fraktion, sprechrolle = resolve_speaker(
-                conn, speaker, now, protocol_id, rede_id, contribution_id, protocol
+                conn, speaker, now, protocol_id, rede_id, contribution_id, protocol,
+                sideless=contribution["kind"] in derive.SIDELESS_KINDS,
             )
         else:
             mp_id, fraktion, sprechrolle = None, None, None

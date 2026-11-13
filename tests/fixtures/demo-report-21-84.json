@@ -872,7 +872,7 @@
   "warnings": [],
   "validation_summary": {
     "xml_top_count": 1,
-    "speech_kinds_version": 8,
+    "speech_kinds_version": 9,
     "xml_speech_count": 14,
     "xml_contribution_counts": {
       "erwiderung": 1,

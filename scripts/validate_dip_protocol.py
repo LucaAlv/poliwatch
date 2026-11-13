@@ -826,10 +826,34 @@ def nested_consent(turn: list[str]) -> bool:
 
 
 # Matched against the role with whitespace removed ("Vizepräsident in").
-SITZUNGSLEITUNG_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
-# The elected Präsident's acceptance, answering the chair's question (6d).
+SITZUNGSLEITUNG_ROLE = speech_kinds.PRESIDIUM_ROLE
+# The elected Präsident's acceptance, answering the chair's question (6d). 18/1
+# prints "Herr Alterspräsident, lieber Kollege Riesenhuber, ich nehme die Wahl
+# gerne an." (ADR 0004 plan, P4): any salutation of the chair, then the words.
 ELECTION_QUESTION = re.compile(r"\bNehmen Sie die Wahl an\?\s*$")
-ELECTION_ACCEPTANCE = re.compile(r"(?:(?:Herr|Frau) (?:Alters)?Präsident(?:in)?, )?[Ii]ch nehme die Wahl an\.")
+ELECTION_ACCEPTANCE = re.compile(
+    r"(?:(?:Herr|Frau) (?:Alters)?[Pp]räsident(?:in)?(?:, [^.!?]{1,60})?, )?[Ii]ch nehme die Wahl (?:sehr )?(?:gerne? )?an\.")
+# ADR 0004 plan P4/P5: a short <rede> that reads like an acceptance of an
+# election or an oath answer is a candidate. Listed (kind procedural) it is no
+# Rede; unlisted it refuses its sitting, located, so it is never counted unread.
+ACCEPTANCE_CANDIDATE = re.compile(r"\b[Nn]ehme\b[^.!?]{0,40}\b(?:[Ww]ahl|sie)\b[^.!?]{0,30}\ban\b")
+ACCEPTANCE_MAX_CHARS = 200
+OATH_CANDIDATE = re.compile(r"\b(?:Amts)?[Ee]id(?:es(?:formel|leistung)?)?\b|\b[Ss]chw(?:ör|ur)")
+OATH_MAX_CHARS = 400
+
+
+def procedural_candidate(text: str, heading: str, preceding: str) -> str | None:
+    """What a Rede's own ``text`` reads like when it may be no Rede at all: an
+    oath answer or an election acceptance (P4/P5), else None."""
+    if len(text) <= OATH_MAX_CHARS and OATH_CANDIDATE.search(text):
+        return "oath answer"
+    if len(text) <= ACCEPTANCE_MAX_CHARS and ACCEPTANCE_CANDIDATE.search(text):
+        return "election acceptance"
+    if text == "Ja." and (re.search(r"\bWahl\b", heading) or re.search(r"\bWahl an\b|\bannehmen\b", preceding)):
+        return "election acceptance"
+    return None
+
+
 # The chair gives the floor in the form of the Rednerliste, and the turn opens
 # like a Rede (6c).
 NESTED_REDE_FLOOR = re.compile(
@@ -914,16 +938,45 @@ def mark_roleless_chairs(root: ET.Element) -> None:
 VIZEPRAESIDIUM_ROLE = re.compile(r"Vizepräsident(?:in)?", re.IGNORECASE)
 
 
+def mark_reviewed_units(root: ET.Element, entries: list[dict[str, str]]) -> None:
+    """ADR 0004: mark each ``<rede>`` of this sitting that one of ``entries``
+    (its presidium-kind entries of ``scripts/reviewed_units.json``) lists with
+    its reviewed kind (``reviewed_kind``). The entry must name a ``<rede>`` of
+    the Sitzungsverlauf (not an annex) printed once, owned by the entry's
+    Redner-ID; anything else is a stale or misapplied entry and stops the run
+    (``ReviewedUnitsError``), naming it."""
+    if not entries:
+        return
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    verlauf = root.find("sitzungsverlauf")
+    reden = list(verlauf.iter("rede")) if verlauf is not None else []
+    for entry in entries:
+        where = f"scripts/reviewed_units.json: {sitting} {entry['rede_id']} ({entry['kind']})"
+        found = [rede for rede in reden if rede.get("id") == entry["rede_id"]]
+        if len(found) != 1:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: the Sitzungsverlauf prints this <rede> {len(found)} times, not once; the entry is stale or misapplied")
+        first = found[0].find("./p[@klasse='redner']/redner")
+        owner = derive.first_redner_id(first.get("id")) if first is not None else None
+        if owner != entry["redner_id"]:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: owned by Redner-ID {owner}, the entry says {entry['redner_id']}; the entry is stale or misapplied")
+        found[0].set("reviewed_kind", entry["kind"])
+        found[0].set("reviewed_reason", entry["reason"])
+
+
 def mark_presidium_fraktionsreden(root: ET.Element) -> None:
     """ADR 0004: a Vizepräsident(in) who owns a ``<rede>`` and is printed with a
     ``<fraktion>`` gives that Fraktion's Rede (18/46 Pau). The presidium
     ``<rolle>`` is removed from the owner's markers in that ``<rede>``, so the
-    Rede reads as an MdB's. Without a Fraktion (18/245) the role stays and no
-    Sprechrolle rule maps it; the Präsident and Alterspräsident are not covered.
+    Rede reads as an MdB's. Without a Fraktion (18/245), and for the Präsident
+    and Alterspräsident, the role stays: the ``<rede>`` needs a reviewed kind
+    (``mark_reviewed_units``) or refuses its sitting. A listed ``<rede>`` keeps
+    its role for the card.
     """
     for rede in root.iter("rede"):
         first = rede.find("./p[@klasse='redner']/redner")
-        if first is None or not child_text(first.find("name"), "fraktion"):
+        if rede.get("reviewed_kind") or first is None or not child_text(first.find("name"), "fraktion"):
             continue
         role = first.find("name/rolle")
         if role is None or not VIZEPRAESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", child_text(role, "rolle_lang"))):
@@ -1005,6 +1058,9 @@ def split_nested_reden(top: ET.Element, created: set[str] | None = None) -> None
         if not rid:
             continue
         own = redner_key(rede.find("./p[@klasse='redner']/redner"))
+        # In a listed Sitzungsleitung <rede> (ADR 0004) the owner's own words
+        # are the chair's, so a Rede given the floor there splits off.
+        owner_chairs = rede.get("reviewed_kind") == "sitzungsleitung"
         children = list(rede)
         marker = 0
         chair = None
@@ -1021,7 +1077,7 @@ def split_nested_reden(top: ET.Element, created: set[str] | None = None) -> None
             marker += 1
             redner = child.find("redner")
             key = redner_key(redner)
-            if key not in (own, None) and presidium_marker(redner):
+            if (key not in (own, None) and presidium_marker(redner)) or (owner_chairs and key == own):
                 chair = clean_text((redner.tail or "").partition(":")[2])
                 continue
             last_name = (parse_redner(redner) or {}).get("last_name") or ""
@@ -1501,6 +1557,17 @@ class LocatedRefusal(ValueError):
         self.reason = reason
 
 
+class UnreviewedUnitError(LocatedRefusal):
+    """A ``<rede>`` ADR 0004 says must be reviewed before it is counted: a
+    presidium owner, an oath answer or an acceptance with no entry in
+    ``scripts/reviewed_units.json``. Found while the TOP's Reden are read (pass
+    1) and raised when that Rede is emitted, so the parser withholds it with
+    reason ``unreviewed_presidium`` and keeps the sitting (decision O6)."""
+
+    def __init__(self, message: str, *, rede_id: str) -> None:
+        super().__init__(message, rede_id=rede_id, marker=1, reason="unreviewed_presidium")
+
+
 #: Why a Rede is withheld: ``speech_kinds.WITHHELD_REASONS`` (one table for
 #: the parser, the data dictionary, DATA.md and the Dossier).
 WITHHELD_REASONS = {code: text for code, (_label, text) in speech_kinds.WITHHELD_REASONS.items()}
@@ -1600,8 +1667,12 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     of this sitting; by default those of ``scripts/reviewed_units.json``."""
     root = ET.fromstring(xml_text)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
-    reviewed_entries = {entry["rede_id"]: entry for entry in (
-        reviewed_units.for_sitting(sitting) if reviewed is None else reviewed)}
+    sitting_entries = reviewed_units.for_sitting(sitting) if reviewed is None else reviewed
+    # Withhold entries name a unit as emitted; ADR 0004's kinds a whole source
+    # <rede>, marked before classification (mark_reviewed_units).
+    reviewed_entries = {entry["rede_id"]: entry for entry in sitting_entries
+                        if entry["kind"] not in reviewed_units.PRESIDIUM_KINDS}
+    presidium_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.PRESIDIUM_KINDS]
     matched_entries: set[str] = set()
     inventory = raw_rede_inventory(root)
     statuses: dict[str, str] = {}
@@ -1614,6 +1685,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
+    mark_reviewed_units(root, presidium_entries)
     mark_presidium_fraktionsreden(root)
     try:
         asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
@@ -1663,6 +1735,9 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         diagnostics: list[dict[str, Any]] = []
         attachments: dict[str, list[str]] = {}
         procedural_reden = set()
+        # Located refusals pass 1 finds (an ADR 0004 unit no entry names, O6; another
+        # speaker's turn in a listed procedural <rede>): withheld when emitted.
+        refused: dict[str, LocatedRefusal] = {}
         parsed_turns = [speech_segments(rede) for rede in redes]
         by_id = {rede.get("id"): i for i, rede in enumerate(redes)}
 
@@ -1678,6 +1753,24 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         for i, (rede, label) in enumerate(zip(redes, labels)):
             rid = rede.get("id")
             own_text, nested = parsed_turns[i]
+            where = f"{sitting} {top.get('top-id')}"
+            if label.kind == speech_kinds.UNREVIEWED_PRESIDIUM:
+                refused[rid] = UnreviewedUnitError(
+                    f"{where}: presidium Rede at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
+            if label.kind is None:
+                preceding = speech_kinds.trailing_sitzungsleitung_text(redes[i - 1]) if i else ""
+                candidate = procedural_candidate(own_text.text, heading, preceding)
+                if candidate:
+                    refused[rid] = UnreviewedUnitError(
+                        f"{where}: {candidate} at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
+            reviewed_procedural = label.kind in (speech_kinds.SITZUNGSLEITUNG, speech_kinds.PROCEDURAL)
+            if reviewed_procedural:
+                procedural_reden.add(rid)
+                evidence = ("Sitzungsleitung (reviewed): " if label.kind == speech_kinds.SITZUNGSLEITUNG
+                            else "procedural (reviewed): ") + (rede.get("reviewed_reason") or "")
+                for turn in speech_segments(rede, all_speakers=True)[1]:
+                    if turn.get("own"):
+                        diagnostic(rid, turn, "procedural", evidence)
             chair_evidence = ""
             chair = False
             for child in rede:
@@ -1755,6 +1848,13 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                     or (label.kind == speech_kinds.KURZINTERVENTION and key == main_key)):
                     segment["unsupported_reply"] = True
                 remaining.append(segment)
+            if reviewed_procedural and remaining:
+                # Nothing in a listed Sitzungsleitung or procedural <rede> is stored, so
+                # no other speaker's turn in it may become a Beitrag pointing at it.
+                refused[rid] = LocatedRefusal(
+                    f"{where}: unresolved nested contribution at {rid} marker {remaining[0]['marker']} "
+                    "inside a reviewed procedural <rede>",
+                    rede_id=rid, marker=remaining[0]["marker"], reason="refused_nested_contribution")
             parsed_turns[i] = (SpeechText("", [], 0) if resumed else own_text, remaining)
 
         for sequence, (rede, label) in enumerate(zip(redes, labels), start=1):
@@ -1806,6 +1906,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             rede_nested: list[dict[str, Any]] = []
             rede_diagnostics: list[dict[str, Any]] = []
             try:
+                if rid in refused:
+                    raise refused[rid]
                 for segment in nested:
                     if segment["grant_epoch"] != grant_epoch:
                         granted_nested_speaker = open_exchange = None
@@ -1855,14 +1957,15 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                 continue
             nested_units.extend(rede_nested)
             diagnostics.extend(rede_diagnostics)
-            if label.kind is None:
-                if rid not in procedural_reden:
-                    speeches.append(unit)
+            if rid in procedural_reden:
+                pass
+            elif label.kind is None:
+                speeches.append(unit)
             else:
                 contributions.append(
                     {**unit, "kind": label.kind, "parent_rede_id": label.parent_rede_id, "sequence": sequence}
                 )
-            if label.kind not in speech_kinds.REDE_STATUS:
+            if rid not in procedural_reden and label.kind not in speech_kinds.REDE_STATUS:
                 raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {rid} became {label.kind}, which has no status")
             record_status(statuses, rid, "procedural" if rid in procedural_reden else speech_kinds.REDE_STATUS[label.kind])
         unplaced_turn_count = 0
@@ -1934,7 +2037,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         "xml_sha256": xml_source_sha256(xml_text),
         # The reviewed-list entries this parse applied, as a digest: the store
         # keeps it so an edit of the list forces a replay (R3).
-        "reviewed_digest": reviewed_units.digest(list(reviewed_entries.values())),
+        "reviewed_digest": reviewed_units.digest(list(sitting_entries)),
         "sitting_contributions": sitting_contributions,
         "vote_recommendations": parse_vote_recommendations(root),
         "xml_protocol": {

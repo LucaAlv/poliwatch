@@ -1,14 +1,19 @@
 """The reviewed list of single units (``scripts/reviewed_units.json``).
 
 One file holds every reviewed decision about a single unit of a sitting, each
-entry with a ``kind``. Today the one kind is ``withhold`` (coverage gate N7, ADR
-0005): the parser withholds that unit with reason ``reviewed`` instead of
-emitting it. ADR 0004's presidium kinds join this file later.
+entry with a ``kind``:
 
-An entry names a unit as the parser emits it, after ``split_nested_reden``: a
-``<rede>`` id, or a split part ``<id>:<marker>``. ``redner_id`` is the first
-Redner-ID of that unit's owner marker; an entry whose unit the sitting does not
-hold, or whose owner differs, refuses the sitting (``validate_dip_protocol``).
+- ``withhold`` (coverage gate N7, ADR 0005): the parser withholds that unit
+  with reason ``reviewed`` instead of emitting it. It names a unit as the
+  parser emits it, after ``split_nested_reden``: a ``<rede>`` id, or a split
+  part ``<id>:<marker>``.
+- ``ansprache``, ``sitzungsleitung``, ``procedural`` (ADR 0004): what a
+  presidium, guest, oath or acceptance ``<rede>`` is. They name a whole source
+  ``<rede>`` of the Sitzungsverlauf, read before any split.
+
+``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
+unit the sitting does not hold, or whose owner differs, stops the run
+(``validate_dip_protocol``): the list, not the source, needs correcting.
 
 The file is read once per process and checked whole. A malformed file, or an
 entry the source does not match, raises ``ReviewedUnitsError``: not a
@@ -25,12 +30,20 @@ from pathlib import Path
 from typing import Any
 
 PATH = Path(__file__).resolve().with_name("reviewed_units.json")
-KINDS = frozenset({"withhold"})
+WITHHOLD = "withhold"
+#: ADR 0004's kinds of a whole ``<rede>``: an Ansprache is stored as a Beitrag;
+#: Sitzungsleitung and procedural ``<rede>``s are not stored.
+PRESIDIUM_KINDS = frozenset({"ansprache", "sitzungsleitung", "procedural"})
+KINDS = frozenset({WITHHOLD}) | PRESIDIUM_KINDS
 ENTRY_KEYS = frozenset({"sitting", "rede_id", "redner_id", "kind", "reason"})
 SITTING_RE = re.compile(r"^\d{2}/\d{1,3}$")
 REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+(?::\d+)*$")
+WHOLE_REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
+REDNER_ID_RE = re.compile(r"^\d+$")
 
 _cache: dict[Path, dict[str, list[dict[str, str]]]] = {}
+#: Entries ``use`` installed in place of the shipped file (tests), or None.
+_in_use: dict[str, list[dict[str, str]]] | None = None
 
 
 class ReviewedUnitsError(Exception):
@@ -57,6 +70,10 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
             raise ReviewedUnitsError(f"{label}: rede_id {entry['rede_id']!r} is not a <rede> id or a split part <id>:<n>")
         if entry["kind"] not in KINDS:
             raise ReviewedUnitsError(f"{label}: kind {entry['kind']!r} is not one of {', '.join(sorted(KINDS))}")
+        if not REDNER_ID_RE.fullmatch(entry["redner_id"]):
+            raise ReviewedUnitsError(f"{label}: redner_id {entry['redner_id']!r} is not a Redner-ID, digits only")
+        if entry["kind"] in PRESIDIUM_KINDS and not WHOLE_REDE_ID_RE.fullmatch(entry["rede_id"]):
+            raise ReviewedUnitsError(f"{label}: a {entry['kind']} entry names a whole source <rede>, not the split part {entry['rede_id']!r}")
         key = (entry["sitting"], entry["rede_id"])
         if key in seen:
             raise ReviewedUnitsError(f"{label}: {entry['sitting']} {entry['rede_id']} is listed twice")
@@ -80,9 +97,18 @@ def load(path: Path = PATH) -> dict[str, list[dict[str, str]]]:
     return _cache[path]
 
 
+def use(entries: list[dict[str, str]] | None) -> None:
+    """Make ``entries`` the list ``for_sitting`` reads by default, checked like
+    the file; ``None`` goes back to the shipped file. For tests: synthetic XML
+    reuses real sitting numbers the shipped list names."""
+    global _in_use
+    _in_use = None if entries is None else _check({"entries": entries}, Path("reviewed units in use"))
+
+
 def for_sitting(sitting: str, path: Path = PATH) -> list[dict[str, str]]:
     """The entries of one sitting (``WP/NR``), in file order."""
-    return [dict(entry) for entry in load(path).get(sitting, [])]
+    entries = _in_use if _in_use is not None and Path(path) == PATH else load(path)
+    return [dict(entry) for entry in entries.get(sitting, [])]
 
 
 def digest(entries: list[dict[str, str]]) -> str:

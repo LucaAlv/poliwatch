@@ -22,6 +22,7 @@ if __name__ == "__main__":
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -167,7 +168,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    reviewed_units.load()
+    try:
+        reviewed_units.load()
+    except reviewed_units.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}", file=sys.stderr)
+        return 1
     report = extract_report(args.xml)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
