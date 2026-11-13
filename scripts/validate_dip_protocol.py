@@ -988,13 +988,14 @@ def presidium_marker(redner: ET.Element | None) -> bool:
     return redner is not None and bool(SITZUNGSLEITUNG_ROLE.fullmatch(re.sub(r"\s+", "", parse_redner(redner).get("role") or "")))
 
 
-def split_nested_reden(top: ET.Element) -> None:
+def split_nested_reden(top: ET.Element, created: set[str] | None = None) -> None:
     """6c: WP 18/19 can print a whole Rede inside the previous ``<rede>``.
 
     When the chair gives that speaker the floor in the form of the Rednerliste
     and the turn opens with a salutation, the turn and everything after it
     becomes a Rede of its own, ``<outer id>:<marker>``; the outer Rede ends at
-    the marker. The tree is changed in place.
+    the marker. The tree is changed in place. ``created``, when given, receives
+    the id of each part made, so the reconciliation can require a status for it.
     """
     work = list(top.findall("rede"))
     while work:
@@ -1031,6 +1032,8 @@ def split_nested_reden(top: ET.Element) -> None:
                 opening = tail or (elem_text(following) if following is not None and following.get("klasse") != "redner" else "")
                 if REDE_SALUTATION.match(opening):
                     split = ET.Element("rede", {"id": f"{rid}:{marker}"})
+                    if created is not None:
+                        created.add(split.get("id"))
                     for moved in children[index:]:
                         rede.remove(moved)
                         split.append(moved)
@@ -1339,19 +1342,56 @@ def contribution_unit(kind: str, rede_id: str | None, parent: str | None, sequen
 
 ZU_PROTOKOLL_ANNEX = re.compile(r"zu protokoll gegebene reden?(?: zur beratung:?)?")
 
+#: Annex titles whose Reden stay out on purpose: (rule, title pattern, reason). A
+#: ``<rede>`` in an annex under any other title that is not a written submission is
+#: left without a status and refuses the sitting (``reconcile_reden``), so an unseen
+#: title is named here after review, never dropped silently. "Technisch bedingter
+#: Neudruck der zu Protokoll gegebenen Rede" and "Zu Protokoll gegebene Ergänzung"
+#: held no ``<rede>`` in the 716 sittings of the A3 store (#143), so they have no rule.
+ANNEX_EXCLUSIONS: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    ("paragraph_31", re.compile(r"erkl(?:ä|ae)rung(?:en)? nach § ?31\b.*"),
+     "Erklärungen nach § 31 GO are not Reden (ADR 0002)"),
+    ("paragraph_31_continuation", re.compile(r"zu der abstimmung über .+"),
+     "19/115: the second block of a §31 annex, which lost the words \"nach § 31 GO\""),
+    ("reprint", re.compile(r"neudruck eines redebeitrages\b.*"),
+     "a reprint of a Rede of the sitting before (19/35, 19/45), which belongs to that sitting"),
+)
+
+
+def annex_title(block: ET.Element) -> str:
+    return clean_text(block.get("anlagen-typ") or "").casefold()
+
+
+def annex_exclusion(block: ET.Element) -> str | None:
+    """The rule that keeps an annex block's Reden out, or None."""
+    title = annex_title(block)
+    return next((rule for rule, pattern, _ in ANNEX_EXCLUSIONS if pattern.fullmatch(title)), None)
+
+
+def annex_rede_key(block_index: int, sequence: int) -> str:
+    """The key of an annex ``<rede>`` without an id: its block among all
+    ``anlagen-text`` blocks and its place among the block's direct ``<rede>``s."""
+    return f"annex:{block_index}:{sequence}"
+
 
 def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
-                         rid_pages: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Only explicitly typed written submissions; an uncertain TOP stays null."""
+                         rid_pages: dict[str, dict[str, Any]],
+                         statuses: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Only explicitly typed written submissions; an uncertain TOP stays null.
+
+    ``statuses``, when given, records ``zu_protokoll`` for each annex Rede read and
+    ``excluded_annex:<rule>`` for each Rede of a block an ``ANNEX_EXCLUSIONS`` rule
+    keeps out (``reconcile_reden``)."""
     unassigned = []
     tops_by_id: dict[str, list[dict[str, Any]]] = {}
     for top in agenda_items:
         tops_by_id.setdefault(clean_text(top.get("top_id") or ""), []).append(top)
     for annex_index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1):
-        # Other annex titles stay out on purpose. §31 declarations (ADR 0002), also
-        # 19/115's second block, which lost the words "nach § 31 GO"; a "Neudruck eines
-        # Redebeitrages" (19/35, 19/45) repeats a Rede of the sitting before.
-        if not ZU_PROTOKOLL_ANNEX.fullmatch(clean_text(block.get("anlagen-typ") or "").casefold()):
+        if not ZU_PROTOKOLL_ANNEX.fullmatch(annex_title(block)):
+            rule = annex_exclusion(block)
+            if statuses is not None and rule is not None:
+                for sequence, rede in enumerate(block.findall("rede"), 1):
+                    record_status(statuses, rede.get("id") or annex_rede_key(annex_index, sequence), f"excluded_annex:{rule}")
             continue
         annex_pages = {}
         current_page = None
@@ -1381,7 +1421,9 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
             if child.tag != "rede":
                 continue
             sequence += 1
-            rid = child.get("id") or f"annex:{annex_index}:{sequence}"
+            rid = child.get("id") or annex_rede_key(annex_index, sequence)
+            if statuses is not None:
+                record_status(statuses, rid, speech_kinds.REDE_STATUS[speech_kinds.ZU_PROTOKOLL])
             own, _nested = speech_segments(child, inline=True)
             unit = contribution_unit(speech_kinds.ZU_PROTOKOLL, rid, None, sequence,
                                      parse_redner(child.find("./p[@klasse='redner']/redner")),
@@ -1407,8 +1449,79 @@ def xml_source_sha256(xml_text: str) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+class ReconciliationError(ValueError):
+    """A ``<rede>`` of the source XML that the parse left without exactly one
+    status, or a source shape the reconciliation cannot key (docs/data-methods.md).
+    A ``ValueError``, so every caller refuses the sitting as for any parser refusal."""
+
+
+def raw_rede_id(unit_id: str) -> str:
+    """The source ``<rede>`` id of a unit: a part ``split_nested_reden`` made,
+    ``<id>:<marker>``, belongs to ``<id>``."""
+    return unit_id.partition(":")[0]
+
+
+def record_status(statuses: dict[str, str], key: str, status: str) -> None:
+    if key in statuses:
+        raise ReconciliationError(f"rede reconciliation: {key} has two statuses, {statuses[key]} and {status}")
+    statuses[key] = status
+
+
+def raw_rede_inventory(root: ET.Element) -> dict[str, str]:
+    """Every ``<rede>`` of the source, read before any tree edit: its key and where
+    it stands. The key is its id, or ``annex_rede_key`` for an annex Rede without
+    one. A repeated key, or a ``<rede>`` without id outside an annex, refuses."""
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    parents = {child: parent for parent in root.iter() for child in parent}
+    verlauf = root.find("sitzungsverlauf")
+    blocks = {block: index for index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1)}
+    sequences: dict[ET.Element, int] = {}
+    inventory: dict[str, str] = {}
+    for rede in root.iter("rede"):
+        parent = parents.get(rede)
+        key = rede.get("id")
+        if parent in blocks:
+            sequences[parent] = sequences.get(parent, 0) + 1
+            key = key or annex_rede_key(blocks[parent], sequences[parent])
+            location = f"annex \"{parent.get('anlagen-typ') or ''}\""
+        elif parent is not None and parent is verlauf:
+            location = "sitzungsverlauf"
+        elif parent is not None and parent.tag == "tagesordnungspunkt" and parents.get(parent) is verlauf:
+            location = f"TOP {parent.get('top-id')}"
+        else:
+            path, node = [], parent
+            while node is not None:
+                path.append(node.tag)
+                node = parents.get(node)
+            location = "in " + "/".join(reversed(path))
+        if not key:
+            raise ReconciliationError(f"{sitting}: rede reconciliation: a <rede> without id ({location})")
+        if key in inventory:
+            raise ReconciliationError(f"{sitting}: rede reconciliation: <rede> {key} occurs twice ({inventory[key]}; {location})")
+        inventory[key] = location
+    return inventory
+
+
+def reconcile_reden(sitting: str, inventory: dict[str, str], statuses: dict[str, str], split_parts: set[str]) -> None:
+    """Each ``<rede>`` of the source, and each part ``split_nested_reden`` made of
+    one, has exactly one status (``record_status``); nothing else has one."""
+    for key, location in inventory.items():
+        if key not in statuses:
+            raise ReconciliationError(f"{sitting}: rede reconciliation: {key} ({location}) has no status")
+    for part in sorted(split_parts):
+        if part not in statuses:
+            raise ReconciliationError(f"{sitting}: rede reconciliation: part {part} of {raw_rede_id(part)} has no status")
+    unknown = sorted(set(statuses) - set(inventory) - split_parts)
+    if unknown:
+        raise ReconciliationError(f"{sitting}: rede reconciliation: status for units the source does not hold: {', '.join(unknown)}")
+
+
 def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
     root = ET.fromstring(xml_text)
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    inventory = raw_rede_inventory(root)
+    statuses: dict[str, str] = {}
+    split_parts: set[str] = set()
     adopt_reden_outside_tops(root)
     toc = parse_toc(root)
     rid_pages: dict[str, dict[str, Any]] = {}
@@ -1446,16 +1559,18 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         # (20/143, 20/159) and no T_NaS/T_fett one: it is the heading then.
         heading = clean_text(" ".join(heading_lines or zusatz_lines))
         top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
-        split_nested_reden(top)
+        split_nested_reden(top, split_parts)
         redes = top.findall("rede")
         for rede in redes:
-            outer = (rede.get("id") or "").partition(":")[0]
+            outer = raw_rede_id(rede.get("id") or "")
             if outer != rede.get("id") and outer in rid_pages:
                 rid_pages.setdefault(rede.get("id"), rid_pages[outer])
         try:
             labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
         except ValueError as exc:
             raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: {exc}") from exc
+        if len(labels) != len(redes):
+            raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {len(labels)} labels for {len(redes)} Reden")
         speeches: list[dict[str, Any]] = []
         contributions: list[dict[str, Any]] = []
         pages: list[dict[str, Any]] = []
@@ -1632,12 +1747,19 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 contributions.append(
                     {**unit, "kind": label.kind, "parent_rede_id": label.parent_rede_id, "sequence": sequence}
                 )
+            if label.kind not in speech_kinds.REDE_STATUS:
+                raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {rid} became {label.kind}, which has no status")
+            record_status(statuses, rid, "procedural" if rid in procedural_reden else speech_kinds.REDE_STATUS[label.kind])
         unplaced_turn_count = 0
         if speech_kinds.FRAGESTUNDE in top_format.formats:
+            counts: dict[str, int] = {}
             try:
-                turns, unplaced_turn_count = speech_kinds.fragestunde_turns(top, asker_candidates)
+                turns, unplaced_turn_count = speech_kinds.fragestunde_turns(top, asker_candidates, counts)
             except ValueError as exc:
                 raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: {exc}") from exc
+            markers = len(top.findall("p[@klasse='redner']"))
+            if counts["markers"] != markers:
+                raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {markers} Fragestunde markers, {counts['markers']} turns")
             for flat_index, turn in enumerate(turns, start=1):
                 text = clean_text(" ".join(turn.paragraphs))
                 if turn.redner is not None:
@@ -1685,7 +1807,8 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             }
         )
 
-    sitting_contributions = written_contributions(root, agenda_items, rid_pages)
+    sitting_contributions = written_contributions(root, agenda_items, rid_pages, statuses)
+    reconcile_reden(sitting, inventory, statuses, split_parts)
     return {
         "xml_sha256": xml_source_sha256(xml_text),
         "sitting_contributions": sitting_contributions,

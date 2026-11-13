@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.37.0.0] - 2026-11-12
+
+A sitting can no longer lose a Rede without the build saying so. Every `<rede>` of a Plenarprotokoll now ends as a stored Rede or Beitrag, a zu Protokoll gegebener Beitrag, a Verfahrensbeitrag, or an exclusion under a named rule; a sitting where one does not is refused. No figure moves: all 718 held sittings parse exactly as before.
+
+### Changed
+
+- **A Rede the parser would skip now stops the sitting.** A `<rede>` printed where the parser does not read (before or after the sitting's proceedings, nested inside another Rede), one without an id outside an annex, or an id printed twice now refuses the sitting instead of leaving it out of every count. So does a split Rede part with no status. The online build marks such a sitting as a rejected source; the offline `--repersist` stops with "rede reconciliation failed for …" and keeps the previous store, where it used to say the XML was corrupt.
+- **An annex holding Reden needs a known title.** "Zu Protokoll gegebene Rede(n)" annexes count as before. §31 declarations, the continuation block of 19/115 and the reprints in 19/35 and 19/45 stay out under named rules. An annex with any other title now refuses the sitting until a rule names it.
+- **Every Fragestunde speaker marker must open a turn.**
+- **The methods text says what the check does not cover.** It accounts for whole `<rede>` elements, not every word: 50 speaker markers standing outside any `<rede>` in 24 of the 718 sittings (median 8 words, about 1,750 in all) and other speakers' passages inside a zu Protokoll gegebene Rede can still be missing without a refusal.
+
+Checked on the store rebuilt on 2026-11-12: 718 sittings parse to identical results before and after, 0 refused, and a full `--offline --repersist` moves 0 values (0 of 1,922 Fakt values). Of 84 of the 85 sittings still outside the store (18/20's file holds another sitting), the same 71 refuse for the known located reason as before and none for the new check. The speech rule stays at 7, so no repersist is needed.
+
 ## [0.36.0.0] - 2026-11-10
 
 29 Reden and 16 written submissions that the parser dropped without a word now count. 18/49, a budget sitting, shows all 51 of its Reden instead of 25.

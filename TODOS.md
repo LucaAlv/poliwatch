@@ -54,7 +54,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 
 **What:** The store holds 716 of 801 catalog sittings. Decision N1 (2026-11-07) replaces the whole-sitting rule of 2026-10-22: one refused unit no longer keeps out a sitting. Before the first release:
 1. Keep each sitting and its TOPs, Drucksache links and votes. Withhold only refused `<rede>` units, flagged with a reason, text kept, outside all Reden counts. Record this in an ADR.
-2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing".
+2. Account for every unit: each `<rede>` id in a sitting's XML ends up stored, withheld with a reason, or excluded by a named rule such as §31. The build refuses a sitting that does not add up. This would have caught "Reden the parser drops without refusing". **Reconciliation done in v0.37.0.0 (2026-11-12, coverage gate PR 1):** every `<rede>` now ends stored, procedural or excluded by a named rule, or the sitting is refused; "withheld with a reason" arrives with PR 2.
 3. Counts name the units they omit as well as the sittings. Coverage is published per year, by sittings and by units, and the withheld share by words per sitting, year and Fraktion (N9).
 4. A written bar: a sitting stays out whole only with a named source defect, or a defect that cannot be narrowed to single units. 18/20, whose file holds sitting 21, stays out. Replace the bare "excluded" in `coverage-exclusions.json` with each sitting's real reason.
 5. Parser rounds then shrink the withheld list, one owner-approved rule at a time.
@@ -260,13 +260,32 @@ Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay
 8. **A second replay can refuse** when an adopted item and a real item share a `top_id` and an empty heading and the adopted one has no Reden ("ambiguous or missing source TOP"). Match on `top_source` too. Not the case in 18/44 or 18/49.
 9. **`reparse_report_xml` leaves stale fields:** `xml_top_fields` omits a falsy `top_source`, so a stale flag is never cleared, and `validation_summary.xml_drucksache_count`/`tops_with_xml_drucksachen` are not refreshed after T_ paragraphs move. Neither is displayed.
 10. **Replay and a fresh build can attach votes differently** on an adopted item that now holds a Drucksache (18/49 item 1 holds 18/2000 and 18/2001): replay keeps `votes: []`. No roll-call vote touches them today.
-11. **An annex title not seen yet still drops its Reden silently.** The per-sitting unit count of "Coverage gate before the first data release" step 2 is what closes this class.
+11. ~~**An annex title not seen yet still drops its Reden silently.**~~ **Completed:** v0.37.0.0 (2026-11-12). An annex holding Reden now needs a named rule (`ANNEX_EXCLUSIONS`) or the Zu-Protokoll title, else the sitting is refused.
 
 **Why:** Each is a wrong refusal message or an unguarded rule that a later edit could break without a failing test.
 
 **Context:** `scripts/validate_dip_protocol.py` `adopt_reden_outside_tops`, `no_api_fields`, `ZU_PROTOKOLL_ANNEX`; tests in `tests/test_reden_outside_tops.py`, `tests/test_written_top_association.py`.
 
 **Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Rede reconciliation (coverage gate PR 1): what it leaves open
+
+**What:** The reconciliation in `parse_protocol_xml` (plan `docs/plans/coverage-gate-w1-w2.md`) leaves these, all predating it:
+1. **Dead `unplaced` path.** `speech_kinds.fragestunde_turns` never sets `speaker = "unplaced"`, so `unplaced_turn_count` is always 0 and the summary key it feeds says nothing. Remove the path or make it fire for a marker that names no one.
+2. **`derive.SprechrolleError` escapes `build_report`.** It subclasses `Exception` (`derive.py:309`), so an unmapped Sprechrolle raised inside the parser leaves a fresh build without `source_rejected`. The offline reparse already catches it.
+3. **Marker-level losses inside a stored Rede are not reconciled:** other speakers' segments in an annex Rede (`_nested` in `written_contributions`), segments with no text, and the later markers of a merged Zwischenfrage, which keep no unit id. Markers standing directly in a TOP that is not a Fragestunde belong to no `<rede>` and are not counted either. The PR 1 corpus run (2026-11-12, 718 held sittings) counted 50 such markers in 24 sittings, against 16,389 Fragestunde markers; the ones read were a Redner's short reply outside any `<rede>`, such as accepting a Zwischenfrage ("Ja, gerne.", 19/114 TOP 1, 20/9 TOP 7, 21/24 Einzelplan 23), but the longest run to 292 words (median 8, about 1,750 in all). The list per sitting (TOP and marker count) is in the plan's "PR 1 validation".
+4. **The Fragestunde marker check guards only future edits.** `parse_protocol_xml` compares the direct `<p klasse="redner">` children of the TOP with the turns `fragestunde_turns` opened from the same children, and that function appends one item per marker or raises, so the check cannot fire today. No tree edit moves a Fragestunde marker, so a raw-tree count would give the same number. Keep it as a guard on `fragestunde_turns`, or count markers that open a turn with text if an empty turn should become visible.
+5. **Pass 1's duplicate-id guards are unreachable.** `raw_rede_inventory` now refuses any repeated `<rede>` id before pass 1 runs, so the `sum(r.get("id") == … for r in redes) == 1` checks in the `reply`, `resumed` and `unique_next` rules, and the last-wins `by_id` dict, never see a duplicate. The two `test_a1_followups.py` duplicate mutations now expect the inventory's message. Remove the guards or turn them into asserts.
+6. **A raw `<rede>` id shaped like a split part could hide an unread Rede.** Split parts are named `<rid>:<marker>` and share the status dict with raw ids, so a source `<rede id="R:2">` in a place the parser does not read would be covered by the status of R's second part (Codex outside review, PR 1 ship, reproduced on a fixture). No real input does this: none of the 85,352 `<rede>` ids in the 718 held sittings and W1's 84 contains a colon. Fix: refuse a raw id containing ":" in `raw_rede_inventory`, which `raw_rede_id` already assumes, with a regression test. Mind `scripts/audit_offline_turns.py`: after a located refusal it re-parses `ET.tostring(root)` of a tree already through `split_nested_reden`, so its split parts come back as raw `R:5` ids; make the audit re-parse the raw XML with paragraph edits only, or the guard would refuse every sitting it exists for.
+7. **The 19/115 continuation rule matches any title starting "Zu der Abstimmung über".** `ANNEX_EXCLUSIONS` `paragraph_31_continuation` (`zu der abstimmung über .+`) was written for the second block of 19/115's §31 declarations and matches only that block in the 718 held sittings, but a future annex with such a title would drop its Reden without the review the table asks for. Pin it to the observed title, or require that the block follow a §31 block in the same `anlage`.
+8. **`record_status`'s "has two statuses" error names no sitting.** Every other reconciliation message starts with wp/nr; the online and offline callers prefix the document number, but `audit_offline_turns.py` and `extract_demo_fixture.py` do not. Pass the sitting in.
+9. **The pre-gate skips two parser test files when only `validate_dip_protocol.py` changes.** `.gstack/pregate.json` maps it to four files but not `tests/test_validate_dip_protocol.py` or `tests/test_a1_followups.py`, which call `parse_protocol_xml` directly (16 test files do). CI runs the full suite, so only the local gate is weaker. Add both to the mapping.
+
+**Why:** Each is below the `<rede>` grain the coverage gate is defined on, or a refusal path that predates the change; CLAUDE.md sends them here.
+
+**Effort:** S each
 **Priority:** P3
 **Depends on:** None
 

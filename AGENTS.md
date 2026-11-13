@@ -6,7 +6,7 @@ Use Python 3.11 or newer. Run `python3 -m unittest discover -s tests` from the r
 
 See CONTRIBUTING.md and `.github/workflows/ci.yml` for the development and CI checks.
 
-On this macOS machine, system `python3` is 3.9; use `/opt/miniconda3/bin/python3.13 -m unittest discover -s tests`.
+On this macOS machine, system `python3` is 3.9; use uv's CPython: `uv run --python 3.13.18 python -m unittest discover -s tests` (3.11.18 is installed too, for the supported floor).
 
 ## Claude reviews
 
