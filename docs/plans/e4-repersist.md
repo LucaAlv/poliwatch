@@ -105,8 +105,8 @@ E4 repersist (this plan): gate on clone → reconcile → in-place repersist of 
         ├──────────────┬──────────────────┬───────────────────┐
         ▼              ▼                  ▼                   ▼
  registry split   ADR 0004 kinds    plan item 1.5       W1 inventory, W2 withholding
- (persons, pages) (speech rule 8)   (aw-profiles enrich (W2: schema 12)
-                                     on a clone)
+ (persons, pages) (speech rule 8)   (read-only aw       (W2: schema 12)
+                                     lookup script)
   each: replay on a clone of the reference, old→new against it, merge,
         then repersist the reference in place (unattended, ~30–60 min)
         │
@@ -117,7 +117,7 @@ E4 repersist (this plan): gate on clone → reconcile → in-place repersist of 
 - **Run now, do not wait (decision D3).** The registry split, ADR 0004 and W2 each change persisted rows, and each has to report its own old→new under CLAUDE.md. That needs a replay per item whatever the order. Against a current reference it takes one replay per item. Against the 2026-10-28 store it takes two (main and branch, as #141 and #143 did), and the cumulative v0.33–v0.36 moves would blur every comparison. Waiting so that "it runs once" saves nothing: T4 rebuilds the store again anyway.
 - **W1/W2:** if W1 merges first, this plan's gate also covers W1's reconciliation refusal on all 716 sittings, and that is fine. If W2 (schema 12) merges first, the repersist runs at W2's tip, and the reconciliation table gains W2's withheld units. Either way, run it at main's tip on the day and name the commit.
 - **ADR 0004** (`docs/plans/adr-0004-presidium-kinds.md`, speech rule 7 → 8) proposes to fold its own post-merge repersist into this one. That fits this plan. Step 0 gates every replay, and ADR 0004 cannot merge before it, because it needs its own replay on the store first. Whatever persist-affecting PR is merged when step 4 starts is included: its recorded new values join step 5, and its moves get their own rows in step 6's attribution.
-- **Plan item 1.5** measures the abgeordnetenwatch match share with `--enrich aw-profiles` on a clone. Measure it on a clone of the new reference.
+- **Plan item 1.5** measures the abgeordnetenwatch match share with a read-only script, `scripts/measure_aw_match_share.py`, which re-parses the cached reports and drives the build's own enrichment code (`docs/plans/a3-item-1-5-aw-match-share.md`). It does not use `--enrich aw-profiles`, which would re-acquire the WP 18/19 sittings (about 10,400 DIP requests). It writes no store, so it needs no replay or repersist of its own. Run it on the new reference.
 - **File ownership:** this plan's docs PR edits `PRODUCT.md`, `docs/plans/a3-phase4.md`, `TODOS.md` (the E4, registry and owner-check sections and roadmap line 18 only) and `AGENTS.md`. If another agent's PR touches the same TODOS lines, merge by hand.
 
 ## Steps
@@ -214,7 +214,7 @@ Run on `$A3/gate-v036`, read-only. Each row gets the recorded value, the measure
 | export | format 16, schema 11, 619 votes, 425,322 vote members | E4 |
 | broken local links | 0 | gate |
 
-Three per-row checks:
+Four per-row checks:
 - **E4, by group:** regenerate `e4-refiled-votes-old-new.tsv`. The "new" columns are `vote_fractions` of the repersisted store. The "old" columns come from the page's `fractions`, read straight from the frozen reports in `$A3/full-2026-10-28/data` (a report keeps what the page printed). They are not derived by reversing the moves, which would check the output against itself. `diff` it against the committed TSV: expect 0 lines.
 - **E4, by member:** the TSV pins group totals but no member, so moving the wrong person with the same Stimme would pass it. List the 100 rows of `vote_members` whose `listed_party_id` differs from `party_id`, as (vote, member, listed group, filed group, Stimme). Check each against the reviewed evidence in `docs/source-errors.md` E4: six MdBs, in the dated windows of the Textarchiv. Expect Kamann 38, Bülow 36, Pasemann 10, Witt 7, Huber 7 and Heßenkemper 2, which is 100, and no other name. This is the independent check that E4 item 4 says the seat cross-check no longer gives.
 - **#141:** regenerate the `neu` rows of `shared-redner-ids-old-new.tsv` (Reden, Beiträge and Stimmen per person, by name; person ids are reissued) and diff them.

@@ -117,6 +117,33 @@ Withholding works on the whole `<rede>`, as decided. After round 2's rules that 
 **Priority:** P1
 **Depends on:** the correctness P1s of stage 1
 
+### Keep the raw vote pages and DIP sitting records (check thoroughly first)
+
+**Status: idea, not specced. Do not build it until the checks below are done and the owner has seen their result.**
+
+**What:** Every online fetch keeps its raw response in the store's private directory, the way the Plenarprotokoll XML is kept in `data/xml/` since A1:
+1. The bundestag.de roll-call (namentliche Abstimmung) pages, as fetched.
+2. The per-sitting DIP Plenarprotokoll record each report is built from. The person, Vorgang and Drucksache caches already keep DIP's answers, so this part matters less.
+
+`--offline --repersist` would then re-read the raw pages as it re-reads the XML today, and refuse a vote whose raw page is missing.
+
+**Why:** Today the official result, its scope and the page's own Fraktion counts exist only inside the cached report JSON, already parsed. A fix to the vote-page parser cannot be applied offline, and a figure that moves cannot be explained afterwards. Found on 2026-11-12: on the fresh reference store `result_scope = application` is 34, where 24 was recorded. The scope is read at fetch time and the old store is gone, so which 10 are new, and why, cannot be told (E4 verification, `docs/plans/e4-repersist.md` "Outcome").
+
+**Check thoroughly before implementing:**
+- **Redistribution:** whether the raw pages may be kept and published. Until "Settle the roll-call source for redistribution" is answered, they stay in `.OUTPUT.private/`, never in the published tree.
+- **Disk:** measure the size of the 619 vote pages and the DIP records. Not measured; expected small next to the 5.5 GB store.
+- **Requests:** what re-fetching all 619 vote pages once costs, so existing sittings get their raw page too. Without it they only get one on their next online fetch. Such a re-fetch would also settle the 34 vs 24.
+- **Coverage:** which values in a report come only from a fetch (official result, scope, page counts, anything else), measured from the code, not assumed.
+- **Parser:** whether the vote-page parser can re-read a stored page without its fetch context (URL, date, the TOP it was matched to).
+- **Refusal:** how a re-persist treats a vote with no raw page, and how a store moves from today's reports to raw pages without a mixed state.
+- **Change detection:** whether bundestag.de pages change after publication, and how a changed page is detected and recorded.
+
+**Context:** Raised 2026-11-13 after the fresh store build. The XML precedent: `data/xml/`, README §"Re-persist the cached reports". Related: "Persist or prove the vote outcome and Abweichler count", "Check that vote links are right", "Settle the roll-call source for redistribution".
+
+**Effort:** unknown until the checks are done; roughly one PR for the vote pages and a smaller one for the DIP records [estimated]
+**Priority:** P2. Decide before the first data release, because the coverage gate leans on votes.
+**Depends on:** the checks above; the redistribution answer for anything published
+
 ### Shared Redner-IDs: what the fix leaves open
 
 **What:** The fix of 2026-11-07 (`docs/stable-ids.md`, `docs/source-errors.md` E7; figures in `docs/plans/shared-redner-ids-old-new.tsv`) leaves these:
