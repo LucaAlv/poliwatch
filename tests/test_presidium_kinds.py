@@ -378,6 +378,17 @@ class AcceptanceTests(unittest.TestCase):
         top = top_of(parse(rede('ID1', MEMBER_A, '<p>Ja.</p>'), heading='Vereinbarte Debatte'))
         self.assertEqual(len(top['speeches']), 1)
 
+    def test_ja_answering_the_chairs_election_question_is_a_candidate_under_any_heading(self):
+        # Value: protects=a bare "Ja." answering the chair's "Nehmen Sie die Wahl an?" is never counted as a Rede, even under a heading without "Wahl"; fails_when=the preceding-text arm of procedural_candidate is dropped or reads the wrong Rede; why_new=test_ja_under_an_election_is_a_candidate only covers the heading arm; seam=none; no_claim=real protocol shapes (synthetic XML only)
+        question = ('<name>Präsident Dr. Wolfgang Schäuble:</name><p>Nehmen Sie die Wahl an?</p>')
+        body = rede('ID1', MEMBER_A, DEBATE + question) + rede('ID2', MEMBER_B, '<p>Ja.</p>')
+        with self.assertRaisesRegex(dip.UnreviewedUnitError, 'election acceptance at ID2'):
+            parse(body, heading='Vereinbarte Debatte')
+        # The same "Ja." after an unrelated chair remark is a Rede.
+        other = '<name>Präsident Dr. Wolfgang Schäuble:</name><p>Das Wort hat der Kollege Gast.</p>'
+        body = rede('ID1', MEMBER_A, DEBATE + other) + rede('ID2', MEMBER_B, '<p>Ja.</p>')
+        self.assertEqual(len(top_of(parse(body, heading='Vereinbarte Debatte'))['speeches']), 2)
+
     def test_no_candidate(self):
         for text in ['Ich nehme an, dass Sie das wissen.',  # 18/90
                      'Ich nehme die Wahl an. Meine Antrittsrede. ' + 'Ich danke allen, die mich gewählt haben. ' * 5,
@@ -572,6 +583,16 @@ class SiteTests(unittest.TestCase):
             'speaker': {'display_name': 'Dr. Norbert Lammert', 'first_name': 'Norbert', 'last_name': 'Lammert',
                         'role': 'Präsident Dr. Norbert Lammert'}}]}, {'id': '18/178'})
         self.assertIn('<em>Ansprache · Präsident</em>', card)
+
+    def test_an_ansprache_card_without_a_printed_role_is_labelled_plain(self):
+        # Value: protects=an Ansprache whose speaker prints no role is labelled "Ansprache" with no dangling separator; fails_when=the empty-role guard in render_contribution_details is removed; why_new=T17 covers only cards with a role; seam=none; no_claim=page layout (card fragment only)
+        import render_dip_pulse_html as html
+        card = html.render_contribution_details({'index': 1, 'xml_contributions': [{
+            'kind': 'ansprache', 'sequence': 1, 'rede_id': 'ID1', 'text': 'Gedenkworte.',
+            'speaker': {'display_name': 'Dr. Norbert Lammert', 'first_name': 'Norbert', 'last_name': 'Lammert',
+                        'role': 'Dr. Norbert Lammert'}}]}, {'id': '18/178'})
+        self.assertIn('<em>Ansprache</em>', card)
+        self.assertNotIn('Ansprache ·', card)
 
     def test_a_sitting_whose_every_rede_is_procedural(self):
         # T21: 18/4, 20/5, 21/2's shape. 0 Reden is a real zero, not an extraction gap.
