@@ -93,6 +93,24 @@ class PersistOnlyRosterTests(unittest.TestCase):
             roster.list_all("/aktivitaet", {"f.wahlperiode": 20})
 
 
+class CachedRosterFileTests(unittest.TestCase):
+    # Value: protects=a person cache that is not a person cache is a refusal, and entries without a
+    #   record are skipped, not read as roster rows; fails_when=cached_roster returns an empty or
+    #   partial roster instead of raising, so the fresh clone passes with no roster;
+    #   why_new=only the missing-file refusal was tested; seam=none
+    def test_cached_roster_refuses_unreadable_files_and_skips_entries_without_a_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            path = output / "data" / gate.PERSON_FILENAME
+            path.parent.mkdir()
+            for text in ("{not json", "[]", json.dumps({"persons": []}), json.dumps({})):
+                path.write_text(text, encoding="utf-8")
+                with self.subTest(text=text), self.assertRaises(ValueError):
+                    gate.cached_roster(output)
+            path.write_text(json.dumps({"persons": {"1": {"record": {"id": "1", "wahlperiode": 21}}, "2": "x", "3": {"record": 5}, "4": {}}}), encoding="utf-8")
+            self.assertEqual([r["id"] for r in gate.cached_roster(output).records], ["1"])
+
+
 class PersistOnlyAntragCacheTests(unittest.TestCase):
     # Value: protects=the gate's fresh and half-store persistence keeps extracted Antrag passages and state; fails_when=persist_only omits the separate Drucksache text cache; why_new=the gate loader previously passed only the Vorgang cache; seam=none; no_claim=local fixture report and cache, no live DIP source
     def test_persist_only_loads_antrag_cache_like_normal_replay(self) -> None:

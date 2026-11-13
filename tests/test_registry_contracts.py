@@ -331,6 +331,25 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             evidence = json.loads(conn.execute("SELECT evidence_json FROM person_records WHERE id=?", (record,)).fetchone()[0])
             self.assertFalse(registry.roster_member({**evidence, "ever_mdb": True}))
 
+    # Value: protects=the roster ingest counts a re-issued record apart from the MdBs and warns when
+    #   the roster lists it without its successor; fails_when=superseded records count as mdb or the
+    #   stale-entry warning is dropped; why_new=ingest_mdb_roster stats and warning are new; seam=none
+    def test_roster_ingest_counts_superseded_records_and_warns_when_the_successor_is_unlisted(self):
+        import contextlib
+        import io
+
+        both = [dip_person("7", "Ada Earlier"), dip_person("9", "Ada Current")]
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            for persons, warned in ((both, False), (both[:1], True)):
+                conn = self.open_store(f"s{len(persons)}.sqlite")
+                registry.begin_build(conn)
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    stats = build.ingest_mdb_roster(roster_client(*persons), conn, wahlperioden=[21])
+                self.assertEqual((stats["superseded"], stats["mdb"]), (1, len(persons) - 1))
+                self.assertEqual("successor 9 (dip_successors) is not" in stderr.getvalue(), warned)
+                conn.close()
+
     # Value: protects=a vacated roster record grants no page and joins no one as a stale partner,
     #   whatever its ever_mdb says; fails_when=page eligibility reads ever_mdb without
     #   roster_member; why_new=collect_abgeordnete ignored vacated; seam=none
