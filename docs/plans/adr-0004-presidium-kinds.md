@@ -23,7 +23,7 @@ Three facts about the code on main:
 
 ### Why seven sittings wait on this item
 
-TODOS.md "Coverage gate before the first data release" (`TODOS.md:69`) lists 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 as waiting on this item. All seven **parse and raise no refusal**; they are kept out only by D2 (`a3-wp18-19-round2-result.md:229`). N1's withholding acts on refused `<rede>` units, so it does not reach them (`v1-scope-review.md:301`, outside finding 1). Admitting them today would either stop the run on their unmapped presidium or guest roles, or, where a Präsident is printed with a Fraktion, count an address as that Fraktion's Rede.
+TODOS.md "Coverage gate before the first data release" (`TODOS.md:69`) lists 18/178, 18/223, 18/245, 19/1, 19/9, 19/19 and 19/73 as waiting on this item. All seven **parse and raise no refusal**; they are kept out only by D2 (`a3-wp18-19-round2-result.md:229`). N1's withholding acts on refused `<rede>` units, so it does not reach them (`v1-scope-review.md:301`, outside finding 1). Admitting them today would stop the run on their unmapped presidium or guest roles. That holds for a Präsident(in) or Alterspräsident(in) printed with a Fraktion too: `mark_presidium_fraktionsreden` strips the role only on a `VIZEPRAESIDIUM_ROLE` full match (`validate_dip_protocol.py:913`, `:928`), so such an owner keeps "Präsident" and `check_sprechrollen` stops the run. Only a Vizepräsident(in) printed with a Fraktion is counted for that Fraktion, which round 2 reviewed (no address among the 24).
 
 | Sitting | What it holds (recorded) | Source |
 |---|---|---|
@@ -274,8 +274,9 @@ Guest roles stay with the existing check: an unlisted guest `<rede>` still fails
 
 ```
 load_reviewed_units()             NEW, at startup: malformed file -> ReviewedUnitsError, run stops
-parse_protocol_xml(xml)                                  validate_dip_protocol.py:1410
-  adopt_reden_outside_tops                               (W2 inventories ids here, before any edit below)
+parse_protocol_xml(xml)                                  validate_dip_protocol.py:1550
+  raw_rede_inventory              (#147: every source <rede> id, before any tree edit)
+  adopt_reden_outside_tops
   mark_reviewed_units             NEW: list -> reviewed_kind on <rede> / marker; stale or ambiguous entry refuses
   mark_presidium_fraktionsreden   Vize + Fraktion -> role removed, Fraktionsrede; skips listed <rede>s
   mark_roleless_chairs
@@ -318,8 +319,9 @@ The census found 33 acceptances: 19 kept and 12 excluded printed as the elected 
 
 The census found 79 oath answers, every one a `<rede>` of the sworn person: 63 in 17 kept sittings (counted for the Sprechrolle bundesregierung, 59, or weitere, 4) and 16 in 19/19. WP 18/19 Minister without a Redner-ID (18/4 Maas, Schwesig, Wanka) are printed as `<name>` and already outside every count.
 
-- **Detector plus list, as P4.** A turn (`<rede>` or nested) of at most 400 characters containing `\b[Ii]ch schwöre\b` is a candidate; listed (kind `procedural`) it is dropped with a diagnostic, unlisted it refuses, located. The cap covers the whole Art. 56 formula (269-329 characters) and keeps out debate Reden that quote an oath (20/57, 20/131, 21/62, all over 2,500 characters) and 21/52 Koçak's "Ich schwöre." at the end of a 1,129-character Erwiderung. The Bundespräsident's oath inside his 23,362-character address (18/223) stays inside that Ansprache.
-- **Measured:** the text test hits 63 stored units in the 718 sittings, all 63 census oath answers; 0 would refuse wrongly. The first draft's full-match regex matched 6.
+- **Detector plus list, as P4.** A `<rede>` that `classify_reden` would label a Rede, whose owner text is at most 400 characters and contains `\b(?:Amts)?[Ee]id(?:es(?:formel|leistung)?)?\b|\b[Ss]chw(?:ör|ur)` (revised after review, 2026-11-13: it also reads "Amtseid", "Eidesformel" and "Schwur"; checked against 7 positive strings, among them "Ich schwöre es.", the whole Art. 56 formula and "Ich leiste den Amtseid ohne religiöse Beteuerung.", and 3 negative ones, "Ich nehme die Wahl an.", "Eidgenossenschaft"/"Leidenschaft" and "beschwören"), is a candidate; listed (kind `procedural`) it is dropped with a diagnostic, unlisted it refuses, located. The cap covers the whole Art. 56 formula (269-329 characters) and keeps out debate Reden that quote an oath (20/57, 20/131, 21/62, all over 2,500 characters) and 21/52 Koçak's "Ich schwöre." at the end of a 1,129-character Erwiderung. The Bundespräsident's oath inside his 23,362-character address (18/223) stays inside that Ansprache.
+- **Measured:** the first text test (`\b[Ii]ch schwöre\b`) hit 63 stored units in the 718 sittings, all 63 census oath answers. The revised regex hits the same 63 plus one Befragung Frage (19/94 `ID199400400`, "Würden Sie auch unter Eid bestreiten …", 286 characters). That unit is no Rede, so testing only `<rede>`s labelled Rede keeps it out: 0 would refuse wrongly. The first draft's full-match regex matched 6.
+- **Only whole `<rede>`s, not nested turns** (revised 2026-11-13). No list entry can name a nested marker (O16), so a nested candidate could only ever refuse; the census found no nested oath answer, and a nested acceptance is 6d's. P4's `<rede>` form is tested the same way.
 - No longer conditional ("written only if the inventory shows …"): the inventory shows 63 counted units (decision O4).
 
 ### P3 additions from the outside voice
@@ -357,7 +359,7 @@ Every recipe (r1-r6, `build_dip_pulse_site.py:3460-3724`) reads `speeches`, and 
 
 ## Versions
 
-- **Speech rule `speech_kinds.VERSION` 7 → 8.** The rule changes what a presidium `<rede>`, an oath answer and an acceptance become. 25 kept sittings change (82 Reden leave `speeches`, measured above), so the bump is a figure change: the PR reports old and new, and the bump makes every store prove it was persisted under the new rule (`require_current_speech_rules`, `persist_dip_pulse_store.py:81`). The full `--offline --repersist` it forces is owed anyway for E4. If W2 or W3 lands first with its own bump, this PR takes the next number.
+- **Speech rule `speech_kinds.VERSION` 7 → 8.** The rule changes what a presidium `<rede>`, an oath answer and an acceptance become. 25 kept sittings change (82 Reden leave `speeches`, measured above), so the bump is a figure change: the PR reports old and new, and the bump makes every store prove it was persisted under the new rule (`require_current_speech_rules`, `persist_dip_pulse_store.py:81`). The full `--offline --repersist` it forces is owed anyway for E4. Checked 2026-11-13 on main 36bfd08: #147 (W2 PR 1, v0.37.0.0), #149 and #150 left `speech_kinds.VERSION` at 7, so this PR takes 8; re-check right before merge.
 - **Export format 16 → 17.** `contributions.kind` gains a code: a meaning change of an exported column (precedent: format 16 for E4's meaning change). Take the next free number at merge time; no pending slice has claimed 17 (`render-layer-and-order.md` and `a4-site-from-release.md` only say "the numbers after" schema 11 / format 16; W4 takes its numbers "after both fix branches land", `v1-scope-review.md:1196`).
 - **Store schema stays 11.** No column or table changes; `contributions.kind` has no CHECK constraint (`persist_dip_pulse_store.py:334-353`).
 - **Repersist:** one `--offline --repersist` of the reference store after merge, combined with the owed E4 repersist (whichever agent runs it).
@@ -405,14 +407,14 @@ New `tests/test_presidium_kinds.py`, plus updates where noted. Fixtures: real ex
 | T10 | Running state: a Kurzintervention announced inside a Sitzungsleitung `<rede>` is still a Kurzintervention of the last real Rede; an Erwiderung after a listed `<rede>` still pairs; a listed `<rede>` in a Befragung does not end the opening reports | synthetic, three subTests |
 | T11 | A nested presidium marker stays `procedural` (6d); another MdB's nested turn in a listed Sitzungsleitung or procedural `<rede>` refuses unless 6d covers it (19/1 `ID19101200`'s nested acceptance passes) | 19/1 excerpt + synthetic |
 | T12 | P4: 18/1's nested "Herr Alterspräsident, lieber Kollege Riesenhuber, …" (lower-case p) is procedural by 6d; "… Meine Antrittsrede." still refuses (existing test kept); listed `<rede>` forms of 20/1 (Kubicki's extra sentence), 20/5 ("Ja."), 21/1 (Ramelow) and 19/65 are procedural; the same text unlisted refuses, located; "Ich nehme an, dass Sie …" is no candidate | extends `tests/test_a3_rule5.py:56-80`, real excerpts |
-| T13 | P5: listed "Ich schwöre es.", "Ich schwöre, so wahr mir Gott helfe.", thanks after it, and the full Art. 56 formula (21/2 Merz, 329 characters) are procedural; the same unlisted refuses, located; an oath quoted in a Rede over 400 characters is no candidate; the Bundespräsident's oath inside his address stays in the Ansprache | 18/4, 20/5, 21/2, 18/223 excerpts + synthetic |
+| T13 | P5, one subTest per form: listed "Ich schwöre es.", "Ich schwöre, so wahr mir Gott helfe.", thanks after it, and the full Art. 56 formula (21/2 Merz, 329 characters) are procedural; the same unlisted refuses, located; a Befragung Frage saying "unter Eid" is no candidate; an oath quoted in a Rede over 400 characters is no candidate; the Bundespräsident's oath inside his address stays in the Ansprache | 18/4, 20/5, 21/2, 18/223 excerpts + synthetic |
 | T14 | A guest `<rede>` listed as Ansprache passes `check_sprechrollen`; an unlisted guest role still fails it | extends `tests/test_sprechrolle.py:314` |
 | T15 | A presidium role on a Rede unit raises the ADR 0004 error | `tests/test_sprechrolle.py` |
 | T16 | Persist: an Ansprache row has `sprechrolle` NULL, `fraktion` as printed, `mp_id` set; Reden counts and the r2 shares are unchanged by it | `tests/test_persist_dip_pulse_store.py`, `tests/test_sprechrolle.py:266` pattern |
 | T17 | Dossier shows "1 Ansprache" and the card label with role; person panel lists Ansprachen | `tests/test_build_dip_pulse_site.py` |
 | T18 | Every `CONTRIBUTION_KINDS` member has a `KIND_LABELS` entry and appears in CONTEXT.md's Beitrag kind list | `tests/test_speech_kinds.py` (derive the check, no hand-synced list) |
 | T19 | `docs/data-methods.md` quotes the changed CONTEXT entries verbatim | existing `tests/test_daten_export.py:104` |
-| T20 | Withholding interplay (after W3 exists): a Sitzungsleitung `<rede>` and an Ansprache reconcile as `procedural` and `stored` in W2's inventory | added in whichever PR lands second |
+| T20 | Reconciliation (#147's `raw_rede_inventory` and `reconcile_reden`): a listed Sitzungsleitung or procedural `<rede>` takes the status `procedural`, an Ansprache `beitrag` (`REDE_STATUS`); a refused presidium `<rede>` leaves no status behind it | this PR (W2 PR 1 landed first, as #147) |
 | T21 | A kept sitting whose every `<rede>` is procedural (18/4, 20/5) persists with 0 Reden: no share shown (not "0 %" or "0 von 0"), the Dossier says the units are no Reden instead of "Keine Reden im XML", facts and recipes skip it | `tests/test_persist_dip_pulse_store.py`, `tests/test_build_dip_pulse_site.py` |
 | T22 | P2 sees a presidium role printed with the speaker's name ("Präsident Dr. Norbert Lammert", 18/178) and refuses it located when unlisted; a guest role ("Präsidentin des Bundesrates") is not a presidium role | synthetic |
 | T23 | Census replay: every procedural row of `docs/plans/adr-0004-census.tsv` in a kept sitting reads procedural under the branch parser, every other row keeps its unit (one test over the cached XML, skipped when the store is absent, like the replay checks; the PR copies the row list into a fixture) | new, with Verification 2 |
@@ -446,19 +448,21 @@ The "old" for every restored sitting is **absent**, not a wrong value in the sto
 
 ## Sequencing with W1/W2/W3
 
-The coverage-gate agent builds what `v1-scope-review.md` calls W1 (fetch and audit the 85's XML), W2 (PR 1: raw XML inventory before the tree edits, and reconciliation of every `<rede>` id) and W3 (PR 2: withholding of located refusals). Overlap with this plan:
+The coverage-gate work builds what `v1-scope-review.md` calls W1 (fetch and audit the 85's XML), W2 (PR 1: raw XML inventory before the tree edits, and reconciliation of every `<rede>` id) and W3 (PR 2: withholding of located refusals).
 
-| This plan touches | W2/W3 touches | Conflict |
+**What landed (checked 2026-11-13, main 36bfd08):** W1's XML is in `~/agent-runs/w1/xml/` (84 of 85). W2 PR 1 is #147 (v0.37.0.0): `raw_rede_inventory` reads every source `<rede>` id as the first step of `parse_protocol_xml`, `record_status` gives each one exactly one status (`speech`, `beitrag`, `zu_protokoll`, `procedural`, `excluded_annex:<rule>`), `speech_kinds.REDE_STATUS` maps each Kind to its status, and `reconcile_reden` refuses a sitting where a `<rede>` or a split part has none. #149 rebuilt the withholding preflight test and W1's figures on it; #150 read 19/36's Anlage 2. None of them bumped `speech_kinds.VERSION` (still 7) or `EXPORT_FORMAT` (still 16). W3 has not landed.
+
+| This plan touches | Landed (#147) or pending (W3) | Consequence |
 |---|---|---|
-| `parse_protocol_xml` start: new pre-pass before `mark_presidium_fraktionsreden`; a skip inside it | W2's inventory runs before `mark_presidium_fraktionsreden` | textual only; the pre-pass sets attributes, never ids, and must run after W2's inventory |
-| `split_nested_reden`: owner's text as chair text in a listed Sitzungsleitung `<rede>` | W2/W3 write rules for split-off units | semantic: a new split-off source; W2's reconciliation already accounts split parts |
-| per-Rede loop: Sitzungsleitung `<rede>` into `procedural_reden` with diagnostics; nested Ansprache units; the P2 raise | W2 gives each id a status at the end; W3 catches located refusals in the same loop and commits each Rede's output only when it finishes | semantic: W2's statuses must count a Sitzungsleitung `<rede>` as `procedural` and an Ansprache as `stored`; W3's per-Rede commit must cover nested Ansprache units |
-| P2's located refusal | W3 withholds exactly two located classes, by a typed exception | decision O6: whether the third class is withheld or refuses its sitting |
-| `scripts/reviewed_units.json` | W3 adds a reviewed list for withheld units | decision O11: one file; W3 adds `withhold` entries to it |
-| `speech_kinds.VERSION`, `EXPORT_FORMAT` | W3/W4 bump both | next free number, whoever lands second |
+| `parse_protocol_xml` start: `mark_reviewed_units` before `mark_presidium_fraktionsreden`; a skip inside it | #147's `raw_rede_inventory` is the first statement | the pre-pass runs after the inventory and after `adopt_reden_outside_tops`; it sets attributes, never ids, so the inventory is unaffected |
+| `split_nested_reden`: owner's text as chair text in a listed Sitzungsleitung `<rede>` | #147 passes `split_parts` and requires a status for each part | a part split off a listed `<rede>` carries no `reviewed_kind` and takes its own status like any part |
+| per-Rede loop: Sitzungsleitung and procedural `<rede>`s into `procedural_reden`; the P2/P4/P5 raises | #147's `record_status` at the end of the loop | Sitzungsleitung and procedural `<rede>`s record `procedural` (existing branch); `ANSPRACHE` gets a `REDE_STATUS` row `beitrag`; the internal labels `SITZUNGSLEITUNG`/`PROCEDURAL` need none because they record `procedural`. T20 is in this PR |
+| P2's located refusal | W3 withholds located classes by a typed exception | decision O6: P2 raises a typed `UnreviewedUnitError(ValueError)` carrying sitting, TOP and `rede_id`; W3 decides whether to withhold it |
+| `scripts/reviewed_units.json` | W3 plans a reviewed list for withheld units | decision O11: one file; W3 adds `withhold` entries |
+| `speech_kinds.VERSION`, `EXPORT_FORMAT` | unchanged by #147/#149/#150 | 7 → 8 and 16 → 17 here; whoever lands second re-picks |
 | `docs/data-methods.md`, CONTEXT.md | W7 writes ADR 0005 and the same docs | different sections; rebase |
 
-**Order:** W1 (data) can run now and is step 0's input. Land **W2's PR 1 first**, then **this PR**, then **W3's PR 2**, then T4. Reasons: W2 is already in flight in the same function; landing after it lets this PR register its two statuses in W2's reconciliation directly instead of W2 discovering a new path; W3 then sees P2's refusal and the nested Ansprache units when it writes its undo and withholding; T4 must parse the seven with the kinds in place. If W2 slips past step 2 of this plan, this PR may land first, and W2 adds the two statuses (T20 moves to W2). Do not edit `validate_dip_protocol.py` in parallel branches without rebasing at each step.
+**Order:** W2 PR 1 has landed, so this PR goes next, then W3's PR 2, then T4. W3 then sees P2's typed refusal when it writes its withholding; T4 must parse the seven with the kinds in place. Do not edit `validate_dip_protocol.py` in parallel branches without rebasing at each step.
 
 ## Risks
 
