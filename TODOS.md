@@ -697,14 +697,18 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** None
 
-### Fresh-store record: the E4 by-member query is written too loosely
+### Fresh-store record and E8: four sentences that say something false
 
-**What:** `docs/plans/a3-phase4.md`, "Reconciliation against the recorded figures", says the by-member check joined `vote_members` to `mps` "where `listed_party_id IS NOT party_id`". `listed_party_id` is NULL on 425,222 of the 425,322 rows, so that condition as written selects every row. The figure is right: `listed_party_id IS NOT NULL AND listed_party_id != party_id` gives the 100 moves (checked read-only on `.context/dip-pulse-site`, 2026-11-13). Say "where `listed_party_id` is set and differs from `party_id`".
+**What:** Found by the /gstack-ship review of the stage-1 fix plans branch, 2026-11-13 (inline review and Codex), all checked read-only on `.context/dip-pulse-site`. No figure moves.
+1. `docs/plans/a3-phase4.md`, "Reconciliation against the recorded figures", says the by-member check joined `vote_members` to `mps` "where `listed_party_id IS NOT party_id`". `listed_party_id` is NULL on 425,222 of the 425,322 rows, so that condition as written selects every row. The figure is right: `listed_party_id IS NOT NULL AND listed_party_id != party_id` gives the 100 moves in 55 votes. Say "where `listed_party_id` is set and differs from `party_id`".
+2. The same section's finding on `result_scope` ends "It is a second such vote beside 990, whose box gave the right word." 990's box gave the wrong word (`docs/source-errors.md` E6); 996's gave the right one. Say "Unlike 990's, 996's box gives the right word."
+3. `docs/source-errors.md` E8 (#150), "Scale": "the 802 WP 18/19 sittings held (718 in the A3 store, 84 of the excluded sittings)". The A3 store held 716; 718 is the fresh reference store, across WP 18–21, of which 400 are WP 18/19. So the 802 are sittings of WP 18–21 (718 held plus 84 excluded WP 18/19 sittings), not WP 18/19 sittings. Re-check the 799 annex blocks against that base.
+4. "Coverage gate before the first data release", the paragraph on withholding the whole `<rede>`, says "89 Reden in 70 sittings (W1 run, re-audited after #147)". That is the intermediate run. After #150 the W1 result is 90 Reden in 71 sittings again, as item 6 of the same entry and `docs/plans/withholding-preflight/report.md` say.
 
-**Why:** Someone replaying the record from its text would get 425,322 rows. Deferred under the CLAUDE.md fix-now-or-defer rule: an internal record's wording, no figure moves.
+**Why:** Someone replaying item 1 from its text gets 425,322 rows. Items 2 and 3 contradict E6 and the stores' own counts, and item 3 is in a reader-facing file. All predate or sit outside the change that found them, so the CLAUDE.md fix-now-or-defer rule sends them here.
 
 **Effort:** S
-**Priority:** P4
+**Priority:** P3
 **Depends on:** None
 
 ## Protokoll-Dossier
