@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.40.0.0] - 2026-11-13
+
+An oath, the acceptance of an election, chairing and an address to the Bundestag are no longer counted as Reden. 82 Reden in 24 kept sittings were oath answers or acceptances: they leave the counts, and two sittings, 18/4 and 20/5, now hold no Rede at all. Addresses by the Präsident, a Vizepräsident, the Alterspräsident or a guest become a Beitrag of their own, the Ansprache.
+
+### Changed
+
+- **Oath answers and election acceptances printed as a `<rede>` are no longer Reden.** "Ich schwöre es, so wahr mir Gott helfe." or "Ich nehme die Wahl an." is no contribution to a debate. Each such `<rede>` is named in a reviewed list (`scripts/reviewed_units.json`) and recorded as a procedural turn, not stored. Old and new, replayed on the store of 718 sittings:
+  - Reden 54,937 → 54,855.
+  - Sprechrolle Bundesregierung 2,849 → 2,790 (59 oath answers of the Bundeskanzler(in) and Minister), weitere 22 → 18 (the Wehrbeauftragte and the Polizeibeauftragte).
+  - CDU/CSU 14,882 → 14,874, SPD 11,555 → 11,550, Grüne 7,670 → 7,667, Die Linke 5,639 → 5,637, FDP 4,374 → 4,373: the acceptances of Kanzler, Präsidentinnen and Vizepräsident(inn)en. AfD, BSW and fraktionslos are unchanged.
+  - 24 sittings move, for example 21/2 24 → 5, 20/1 14 → 8, 21/1 17 → 12; 18/4 14 → 0 and 20/5 18 → 0. Beiträge do not move.
+  - Fakten: 50 of 1,922 values move, mostly first-Rede weeks whose debut was an oath (2021-W49 10 → 4, 2025-W20 43 → 46); 2025-W19 has no first-Rede fact any more, so publishable weeks go 182 → 181.
+- **An address to the Bundestag is an Ansprache, shown and counted nowhere.** The Dossier card reads "Ansprache · Präsident" (or the guest's role), the agenda item lists it under "Weitere Beiträge, keine Reden", and a person page counts Ansprachen apart. No kept sitting holds one yet. The seven sittings that do (18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/73) now parse and join once they are fetched.
+- **A presidium `<rede>`, oath answer or acceptance nobody reviewed refuses its sitting.** A Präsident(in) or Alterspräsident(in) who owns a `<rede>`, or a short `<rede>` that reads like an oath (up to 400 characters) or an acceptance (up to 200), counts only once the list names it; until then the sitting is refused, naming the Rede, instead of counted unread. A malformed list stops the run before any fetch. A Vizepräsident(in) printed with a Fraktion still speaks for it.
+- **A sitting with no Rede says so.** Its Dossier shows no Rede or Text share and says what the protocol prints there are procedural steps, not "Keine Reden im XML".
+- **18/1's acceptance is read.** "Herr Alterspräsident, lieber Kollege Riesenhuber, ich nehme die Wahl gerne an." counted as an unresolved turn; 18/1 now parses.
+- **The speech rule goes from 7 to 8 and the export format from 16 to 17** (`contributions.kind` gains `ansprache`). A store built before this release refuses facts, export and rendering until one `--offline --repersist`.
+
 ## [0.39.0.0] - 2026-11-13
 
 A Rede the parser cannot read no longer keeps its whole sitting out. The parser withholds that one Rede, with its reason and text, and keeps the sitting's other Reden, agenda items and votes. A withheld Rede counts nowhere, neither as a Rede or Beitrag nor for a person or a Fraktion. No figure moves on the 718 sittings held today, since none of them withholds a Rede.

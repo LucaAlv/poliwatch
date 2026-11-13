@@ -1986,6 +1986,7 @@ One line per finished item, giving the version and PR that shipped it, or the da
 
 - The E4 repersist owed since #138: closed 2026-11-12, replaced by the owner's fresh online build from 28799ac (`.context/dip-pulse-site`, 718 Sitzungen, gate `all_passed`). E4, #140 inversions, #141 and #143 match their records, except `result_scope` (34 against 24, "Vote direction: what the 2026-11-07 fix left open", item 18). `docs/plans/e4-repersist.md`, "Outcome"
 
+- Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004): v0.40.0.0, 2026-11-13, `docs/plans/adr-0004-presidium-kinds.md`. Ansprache kind, reviewed list of 136 units, oath answers and acceptances procedural: Reden 54,937 → 54,855 in 24 kept sittings. Speech rule 8, export format 17. Open: "ADR 0004 follow-ups".
 - Reden the parser drops without refusing: v0.36.0.0, 2026-11-10, `docs/plans/reden-outside-tops.md`. 29 Reden of 18/49 and 18/44 under the item the Inhaltsverzeichnis names, 16 written submissions of 18/133 and 18/134. 21/43 `ID214301700` was never lost: a named rule. The 4 other annex units stay out by rule. Speech rule 7.
 - Speaker ids the Bundestag gives to more than one person: v0.35.0.0, 2026-11-09, five ids, 43 units moved to the right person on the A3 store, old and new in `docs/plans/shared-redner-ids-old-new.tsv`; open: "Shared Redner-IDs: what the fix leaves open"
 - Correct the WP 19/20 roll-call group misattributions (E4) from the MdB-Stammdaten: v0.34.0.0, 2026-11-06, 100 Stimmen in 55 roll-calls, `shift_between_groups` 55 → 0
