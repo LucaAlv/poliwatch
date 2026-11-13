@@ -34,9 +34,12 @@ def variants():
     conflict = located.replace("<nachname>Gast</nachname></name></redner>Test Gast:",
                                "<nachname>Gast</nachname><rolle><rolle_lang>Ministerpräsident (Hessen)</rolle_lang></rolle>"
                                "</name></redner>Test Gast, Bundesministerin:")
-    # After the located refusal, a nested Rede without id: a refusal withholding cannot narrow.
-    then_other = replace_line_after(located, "Kollegin Winkelmeier-Becker, Sie müssen", 'redner id="11003865"',
-                                    GUEST.replace("99999999", "99999998")).replace('<rede id="ID1815003300">', "<rede>")
+    # After the located refusal, a Rede in an annex no rule covers, as 19/36 prints a Zu-Protokoll Rede under
+    # "Liste der entschuldigten Abgeordneten": the reconciliation refuses it once the walk is done, and
+    # withholding cannot narrow that.
+    then_other = located.replace("</sitzungsverlauf>", "</sitzungsverlauf>\n  <anlagen><anlage><anlagen-titel>Anlage 1</anlagen-titel>"
+                                 '<anlagen-text anlagen-typ="Liste der entschuldigten Abgeordneten"><rede id="ID1815099900">'
+                                 f'{GUEST}<p klasse="J">Zu Protokoll gegeben.</p></rede></anlagen-text></anlage></anlagen>')
     # A nested Rede split out of ID1804900200, which stands outside any TOP, holding a refused guest marker.
     lines = f49.split("\n")
     start = lines.index('      <rede id="ID1804900200">')
@@ -91,7 +94,8 @@ class PreflightToolTests(unittest.TestCase):
     # Value: protects=located refusals survive an unnarrowable refusal after them; fails_when=the located list is replaced by the error; why_new=audit() drops it on raise; seam=none
     def test_located_refusals_kept_when_an_unnarrowable_one_follows(self):
         row = self.rows["18/3"]
-        self.assertEqual(row["refusal_class"], "nested_needs_source_id")
+        self.assertEqual(row["refusal_class"], "rede_reconciliation")
+        self.assertIn("ID1815099900 (annex \"Liste der entschuldigten Abgeordneten\") has no status", row["error"])
         self.assertEqual(list(row["located_before_refusal"]), ["ID1815002700"])
         self.assertEqual(row["located_before_refusal"]["ID1815002700"]["refusal_class"], "located_nested_contribution")
 
