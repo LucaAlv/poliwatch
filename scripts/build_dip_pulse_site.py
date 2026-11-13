@@ -2066,6 +2066,14 @@ def reparse_cached_xml(
                 f"rede reconciliation failed for {document_number}: {exc}. The <rede> elements of {path} do not reconcile with what the parser read; see docs/data-methods.md",
                 [document_number],
             ) from exc
+        except (dip.UnreviewedUnitError, dip.StaleReviewedUnitError) as exc:
+            # Not a corrupt file either: ADR 0004 needs a reviewed kind for a <rede> of a valid XML.
+            raise CachedReportError(
+                f"reviewed unit refused for {document_number}: {exc}",
+                [document_number],
+                fix="Fix: add or correct the entry in scripts/reviewed_units.json (ADR 0004; docs/plans/adr-0004-presidium-kinds.md), "
+                    "then run --offline --repersist again; re-fetching gives the same XML",
+            ) from exc
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
                 f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again",

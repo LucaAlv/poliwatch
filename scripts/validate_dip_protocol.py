@@ -853,6 +853,12 @@ class UnreviewedUnitError(ValueError):
         self.rede_id = rede_id
 
 
+class StaleReviewedUnitError(ValueError):
+    """An entry of ``scripts/reviewed_units.json`` that this sitting's XML does not
+    match (no such ``<rede>``, printed twice, or another owner): the list, not the
+    XML, needs correcting."""
+
+
 def procedural_candidate(text: str, heading: str, preceding: str) -> str | None:
     """What a Rede's own ``text`` reads like when it may be no Rede at all: an
     oath answer or an election acceptance (P4/P5), else None."""
@@ -965,11 +971,11 @@ def mark_reviewed_units(root: ET.Element) -> None:
         where = f"{sitting}: reviewed unit {entry['rede_id']} ({entry['kind']}, scripts/reviewed_units.json)"
         found = [rede for rede in reden if rede.get("id") == entry["rede_id"]]
         if len(found) != 1:
-            raise ValueError(f"{where}: the Sitzungsverlauf prints this <rede> {len(found)} times, not once")
+            raise StaleReviewedUnitError(f"{where}: the Sitzungsverlauf prints this <rede> {len(found)} times, not once")
         first = found[0].find("./p[@klasse='redner']/redner")
         owner = derive.first_redner_id(first.get("id")) if first is not None else None
         if owner != entry["redner_id"]:
-            raise ValueError(f"{where}: owned by Redner-ID {owner}, the entry says {entry['redner_id']}")
+            raise StaleReviewedUnitError(f"{where}: owned by Redner-ID {owner}, the entry says {entry['redner_id']}")
         found[0].set("reviewed_kind", entry["kind"])
         found[0].set("reviewed_reason", entry["reason"])
 

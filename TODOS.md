@@ -546,6 +546,7 @@ Found while fixing how vote pages state the outcome of a Beschlussempfehlung to 
 - **Census re-run** before step 6 admits the excluded sittings and before each data release: `docs/plans/adr-0004-census/census.py` and `review.py`; a row `review.py` cannot place is a new case for the owner. 18/20 is not in the census (W1's fetch failed for it).
 - **The "Ja." acceptance test** (`validate_dip_protocol.procedural_candidate`) reads only the TOP heading and the previous `<rede>`'s trailing chair text; a "Ja." under a prompt printed elsewhere is counted as a Rede, caught only by the census re-run.
 - **AGENTS.md interpreter path** `/opt/miniconda3/bin/python3.13` does not exist on the current machine.
+- **An edit to `scripts/reviewed_units.json` needs a `speech_kinds.VERSION` bump** (ship review 2026-11-13, red team). The list is applied at parse time and frozen into each cached report; `build_dip_pulse_site.unparsed_reports` re-parses a report only when its `speech_kinds_version` differs, so an online build keeps a cached report parsed under the old list (an added O13 option B entry would not apply, a stale entry would not refuse) until `--offline --repersist` runs. No current input reaches it: the list has not changed since VERSION 8. Fix: record a digest of the list (or of the sitting's entries) in `validation_summary` and count a mismatch as stale, or pin the list's sha256 to VERSION in a test.
 
 **Why:** the build is fail-closed for presidium `<rede>`s, oath answers and acceptances; these are the decisions and gaps it did not settle.
 

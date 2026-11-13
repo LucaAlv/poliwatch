@@ -635,6 +635,38 @@ class KindListTests(unittest.TestCase):
         self.assertEqual(derive.SIDELESS_KINDS, {sk.ANSPRACHE})
 
 
+class RepersistMessageTests(unittest.TestCase):
+    # Value: protects=offline, an unreviewed unit or a stale list entry is reported as a reviewed-list matter, not corrupt XML; fails_when=the generic "is not the Plenarprotokoll XML ... delete corrupt XML" branch catches them again; why_new=no test fed reparse_cached_xml an ADR 0004 refusal; seam=none; no_claim=online path (it reports a rejected source per sitting)
+    def run_reparse(self, xml, entries):
+        import build_dip_pulse_site as build
+        sk.use_reviewed_units(list(entries))
+        self.addCleanup(sk.use_reviewed_units, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / 'data' / 'xml').mkdir(parents=True)
+            (output_dir / 'data' / 'xml' / 'plenarprotokoll-19-1.xml').write_text(xml, encoding='utf-8')
+            report = {'protocol': {'id': 'p1', 'dokumentnummer': '19/1'}, 'agenda_items': []}
+            (output_dir / 'data' / 'plenarprotokoll-19-1.json').write_text(json.dumps(report), encoding='utf-8')
+            entries_ = build.load_existing_detail_entries(output_dir, [{'dokumentnummer': '19/1'}])
+            with self.assertRaises(build.CachedReportError) as raised:
+                build.reparse_cached_xml(output_dir, entries_)
+        return raised.exception, build.cached_report_fix(raised.exception)
+
+    def test_unreviewed_and_stale_refusals_name_the_list_not_the_xml(self):
+        xml = sitting(rede('ID1', SCHAEUBLE, '<p>Ansprache.</p>'))
+        for name, entries, expected in [
+            ('unreviewed', [], 'presidium Rede at ID1 has no reviewed kind'),
+            ('stale', [entry('ID1', '11002190', 'ansprache')], 'owned by Redner-ID 11001938, the entry says 11002190'),
+        ]:
+            with self.subTest(name):
+                exc, fix = self.run_reparse(xml, entries)
+                self.assertIn('19/1', str(exc))
+                self.assertIn(expected, str(exc))
+                self.assertNotIn('is not the Plenarprotokoll XML', str(exc))
+                self.assertNotIn('--fetch-xml', str(exc) + fix)
+                self.assertIn('scripts/reviewed_units.json', fix)
+
+
 CENSUS_TOOLS = ('docs/plans/adr-0004-census/census.py', 'docs/plans/adr-0004-census/review.py',
                 'docs/plans/adr-0004-census/measure.py', 'docs/plans/adr-0004-census/sweep.py')
 
