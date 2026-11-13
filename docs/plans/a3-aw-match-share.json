@@ -1,7 +1,7 @@
 {
- "commit": "fab68ca",
- "started_at": "2026-11-13T08:53:23Z",
- "finished_at": "2026-11-13T08:54:59Z",
+ "commit": "0641dc6",
+ "started_at": "2026-11-13T13:38:12Z",
+ "finished_at": "2026-11-13T13:39:38Z",
  "mode": "online",
  "name_fallback": true,
  "store": {
@@ -10,7 +10,7 @@
  },
  "person_corrections_sha256": "2c99fe2cb5719b0b60493877469136edfffb78e96bea2cd6c2642d69ce3b3d75",
  "cache": {
-  "path": "~/agent-runs/aw-match/regen/aw-cache.json",
+  "path": "~/agent-runs/aw-match/regen2/aw-cache.json",
   "seeded_from": null,
   "ext_id_entries_before": 1021,
   "answers_started_at": "2026-11-12T18:01:22Z"
@@ -79,7 +79,12 @@
    "M2": {
     "reden": 9862,
     "reden_hit": 9720,
+    "reden_unresolved": 0,
     "share": 0.9856,
+    "bounds": [
+     0.9856,
+     0.9856
+    ],
     "reden_without_redner_id": 1
    }
   },
@@ -124,7 +129,12 @@
    "M2": {
     "reden": 16852,
     "reden_hit": 16531,
+    "reden_unresolved": 0,
     "share": 0.981,
+    "bounds": [
+     0.981,
+     0.981
+    ],
     "reden_without_redner_id": 1
    }
   },
@@ -169,7 +179,12 @@
    "M2": {
     "reden": 26714,
     "reden_hit": 26251,
+    "reden_unresolved": 0,
     "share": 0.9827,
+    "bounds": [
+     0.9827,
+     0.9827
+    ],
     "reden_without_redner_id": 2
    }
   }
