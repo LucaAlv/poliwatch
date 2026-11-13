@@ -697,6 +697,16 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** None
 
+### Fresh-store record: the E4 by-member query is written too loosely
+
+**What:** `docs/plans/a3-phase4.md`, "Reconciliation against the recorded figures", says the by-member check joined `vote_members` to `mps` "where `listed_party_id IS NOT party_id`". `listed_party_id` is NULL on 425,222 of the 425,322 rows, so that condition as written selects every row. The figure is right: `listed_party_id IS NOT NULL AND listed_party_id != party_id` gives the 100 moves (checked read-only on `.context/dip-pulse-site`, 2026-11-13). Say "where `listed_party_id` is set and differs from `party_id`".
+
+**Why:** Someone replaying the record from its text would get 425,322 rows. Deferred under the CLAUDE.md fix-now-or-defer rule: an internal record's wording, no figure moves.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
 ## Protokoll-Dossier
 
 ### Split or filter overview.html by Wahlperiode
