@@ -263,7 +263,7 @@ After step 6 has fetched the 85 sittings, run the same command on that output di
 
 **Store enrichment decision**, taken on the result and not in this item:
 - **For:** with a clean M3 and M4, the WP 18/19 leavers M6 counts could carry profiles.
-- **Against:** they need either the 6 h re-acquisition or new code, such as an offline attach of cached ext_id profiles in `reparse_cached_xml`, gated by `profile_follows_redner_id`.
+- **Against:** they need either the 7 h re-acquisition or new code, such as an offline attach of cached ext_id profiles in `reparse_cached_xml`, gated by `profile_follows_redner_id`.
 - **Recorded:** as a follow-up for the owner, with M6's count.
 
 ## Where it is recorded
