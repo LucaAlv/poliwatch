@@ -596,13 +596,20 @@ def run(args: argparse.Namespace) -> int:
     database_path = output_dir / STORE
     if not database_path.is_file():
         raise UsageError(f"{database_path} does not exist")
+    # The store's private directory (its Stammdaten zip, writer lock and staged
+    # copies) sits beside OUTPUT_DIR; this script writes neither.
+    protected = (output_dir, registry.private_dir(database_path))
+
+    def inside_store(path: Path) -> bool:
+        return any(path == root or root in path.parents for root in protected)
+
     cache = args.cache.resolve()
-    if cache == output_dir or output_dir in cache.parents:
-        raise UsageError(f"--cache {cache} is inside OUTPUT_DIR, which this script never writes")
+    if inside_store(cache):
+        raise UsageError(f"--cache {cache} is inside OUTPUT_DIR or the store's private directory, which this script never writes")
     if args.json is not None:
         receipt_path = args.json.resolve()
-        if receipt_path == output_dir or output_dir in receipt_path.parents:
-            raise UsageError(f"--json {receipt_path} is inside OUTPUT_DIR, which this script never writes")
+        if inside_store(receipt_path):
+            raise UsageError(f"--json {receipt_path} is inside OUTPUT_DIR or the store's private directory, which this script never writes")
         inputs = [cache, _answers_path(cache)] + [path.resolve() for path in (args.verdicts, args.stammdaten) if path is not None]
         if receipt_path in inputs:
             raise UsageError(f"--json {receipt_path} would overwrite an input of this run")

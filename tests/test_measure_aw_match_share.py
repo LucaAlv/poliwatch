@@ -447,12 +447,19 @@ class MeasureTests(unittest.TestCase):
             store = fixture.output / "data" / "bundestag-pulse.sqlite"
             before = store.read_bytes()
             cache = self.root / "c.json"
-            for target in (store, fixture.output / "receipt.json", cache, cache.with_name("c.json.answers.json")):
+            private_zip = registry.private_dir(store) / "mdb-stammdaten.zip"
+            for target in (store, fixture.output / "receipt.json", cache, cache.with_name("c.json.answers.json"),
+                           private_zip):
                 with self.subTest(json=target.name):
                     self.assertEqual(share.main([str(fixture.output), "--cache", str(cache), "--offline",
                                                  "--json", str(target)]), 2)
             self.assertEqual(store.read_bytes(), before)
             self.assertFalse((fixture.output / "receipt.json").exists())
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                code = share.main([str(fixture.output), "--offline",
+                                   "--cache", str(registry.private_dir(store) / "c.json")])
+            self.assertEqual(code, 2)
+            self.assertIn("private directory", err.getvalue())
             site.report_paths(fixture.output, "19/1")[0].unlink()
             self.assertEqual(share.main([str(fixture.output), "--cache", str(self.root / "c.json"), "--offline"]), 2)
 
