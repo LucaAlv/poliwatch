@@ -423,7 +423,8 @@ class MeasureTests(unittest.TestCase):
     def test_a_sitting_in_the_exclusion_record_is_skipped_and_reported(self) -> None:
         fixture = Fixture(self.root)
         record = fixture.output / "data" / site.COVERAGE_EXCLUSIONS_FILENAME
-        record.write_text(json.dumps({"exclusions": [{"document_number": "19/1"}]}), encoding="utf-8")
+        record.write_text(json.dumps({"exclusions": [{"document_number": "19/1", "reason": "source_defect",
+                                                      "reason_detail": "Test."}]}), encoding="utf-8")
         code, receipt, _ = fixture.run("--offline")
         self.assertEqual(code, 0)
         self.assertEqual(receipt["sittings_excluded_by_record"], ["19/1"])
