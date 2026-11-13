@@ -623,6 +623,21 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P2 (1, 2); P3 for the rest
 **Depends on:** 1 on the owner; 2 before any WP 18/19 store enrichment
 
+### A3 item 1.5 review (2026-11-13): deferred findings
+
+**What:** `/code-review high` of the item 1.5 branch. Findings 1–4 were fixed in fab68ca. These five are not correctness defects in any current figure:
+1. **The 2 s pace and the 60 s 429 wait apply to every build** (`abgeordnetenwatch.DEFAULT_MIN_INTERVAL`, `BACKOFF_BASE_SECONDS`). A cold-cache `--enrich aw-profiles` run, about 1,300 roster name searches and `fetch_bio` calls, takes about 43 min instead of about 11. A 429 does not count toward the cut-off, so a run of them costs up to 4 × 60 s per request with no overall limit. The build's `--abgeordnetenwatch-sleep` accepts values below 2.0, while the script refuses them. The owner should confirm the fair-use reading of the API page (2026-11-12) and the cost.
+2. **A failed ext_id lookup leaves a name-found link that later builds never retry** (predates item 1.5). `resolve` falls through to the name search after a `failed` lookup. The `match = 'name'` profile is then stored in the report, and `enrich_report_with_profiles` skips any speaker that already holds an `abgeordnetenwatch` key, so a transient error gives that speaker an untrusted link in that report for good.
+3. **No test covers a sitting the exclusion record lists** (`load_report` → `without_recorded_exclusions`, the receipt's `sittings_excluded_by_record`). The plan asked for one, and coverage-gate step 7 depends on it.
+4. **`lookup_ext_id` ignores `enabled`.** `resolve` and `fetch_bio` return early for a disabled resolver; a direct caller of `lookup_ext_id` would still send requests. Latent: no such caller exists.
+5. **Dead exponential back-off.** `min(BACKOFF_BASE_SECONDS * 2 ** attempt, MAX_BACKOFF_SECONDS)` is always 60. Use one constant, or honour `Retry-After`.
+
+**Why:** 1 is a build-time cost and a policy reading; 2 is a latent untrusted link; 3–5 are test and code hygiene.
+
+**Effort:** S each
+**Priority:** P2 (1, 2); P3 for the rest
+**Depends on:** 1 on the owner
+
 ### Refuse a render when the Vorgang cache is newer than the store
 
 **What:** Record a fingerprint of the Vorgang cache (`dip-vorgang-cache.json`, plus the Antrag cache) when the store is persisted. An offline render then refuses when the cache on disk differs, and the message names `--offline --repersist`. This is the same shape as `require_current_speech_rules` (`persist_dip_pulse_store.py:72-92`).

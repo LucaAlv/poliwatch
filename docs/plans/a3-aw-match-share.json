@@ -1,7 +1,7 @@
 {
- "commit": "915f303",
- "started_at": "2026-11-12T18:41:27Z",
- "finished_at": "2026-11-12T18:42:52Z",
+ "commit": "fab68ca",
+ "started_at": "2026-11-13T08:53:23Z",
+ "finished_at": "2026-11-13T08:54:59Z",
  "mode": "online",
  "name_fallback": true,
  "store": {
@@ -10,7 +10,7 @@
  },
  "person_corrections_sha256": "2c99fe2cb5719b0b60493877469136edfffb78e96bea2cd6c2642d69ce3b3d75",
  "cache": {
-  "path": "~/agent-runs/aw-match/scratch/aw-cache.json",
+  "path": "~/agent-runs/aw-match/regen/aw-cache.json",
   "seeded_from": null,
   "ext_id_entries_before": 1021,
   "answers_started_at": "2026-11-12T18:01:22Z"
@@ -804,63 +804,5 @@
   }
  },
  "failures": [],
- "runs": [
-  {
-   "started_at": "2026-11-12T17:59:57Z",
-   "finished_at": "2026-11-12T18:35:53Z",
-   "requests": {
-    "ext_id_keys": 1021,
-    "ext_id": 0,
-    "name": 11,
-    "unresolved": 0,
-    "api_calls": 1032,
-    "throttled": 0,
-    "errors": 5
-   },
-   "failures": [
-    "11003646",
-    "11003854",
-    "11004260",
-    "11004842",
-    "999990102"
-   ],
-   "cache_ext_id_entries_before": 0,
-   "note": "online, every id asked; the store holds no abgeordnetenwatch cache, so the scratch cache started empty"
-  },
-  {
-   "started_at": "2026-11-12T18:36:10Z",
-   "finished_at": "2026-11-12T18:37:44Z",
-   "requests": {
-    "ext_id_keys": 1021,
-    "ext_id": 0,
-    "name": 11,
-    "unresolved": 0,
-    "api_calls": 5,
-    "throttled": 0,
-    "errors": 0
-   },
-   "failures": [],
-   "note": "online rerun: asked only the five ids that failed"
-  },
-  {
-   "started_at": "2026-11-12T18:41:27Z",
-   "finished_at": "2026-11-12T18:42:52Z",
-   "requests": {
-    "ext_id_keys": 1021,
-    "ext_id": 0,
-    "name": 11,
-    "unresolved": 0,
-    "api_calls": 0,
-    "throttled": 0,
-    "errors": 0
-   },
-   "note": "this receipt: every answer from the answers file and cache (0 requests), with the review verdicts"
-  },
-  {
-   "note": "hand review, outside the script: 33 requests (19 candidacies-mandates, which hold no WP 18/19 Bundestag mandate for these profiles; 3 probes; 11 politicians?id= for the name-found profiles' ext_id and year_of_birth)",
-   "requests": {
-    "api_calls": 33
-   }
-  }
- ]
+ "failure_reasons": {}
 }
