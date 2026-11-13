@@ -1,6 +1,6 @@
 # A3 plan item 1.5: the abgeordnetenwatch match share of WP 18/19 Redner
 
-Plan, 2026-11-10, after `/plan-eng-review` (report at the end). Nothing here has run.
+Plan, 2026-11-10, after `/plan-eng-review` (report at the end). **Ran 2026-11-12** on the fresh store of 28799ac; result and deviations in [a3-phase4.md](a3-phase4.md), "Plan item 1.5". Deviations from this plan: requests are paced at 2 s (the API page's fair-use limit of 30 a minute, not 0.5 s); `lookup_ext_id` returns a five-field `ExtIdLookup` (the cached answer beside the fresh one); an answers file beside the scratch cache lets a rerun ask only unanswered ids; the store had no aw cache to seed from, so M3 flag 4 was vacuous; the profile-page mandate check was replaced by the birth year, because the API's `candidacies-mandates` holds no WP 18/19 Bundestag mandate for the reviewed profiles; the abgeordnetenwatch id errors went to TODOS.md, since `docs/source-errors.md` lists Bundestag sources only.
 
 Sources of the item:
 - TODOS.md, "A3 /gstack-ship review: deferred findings", last bullet (P1);
@@ -113,8 +113,8 @@ Optional, at no request cost: compare the abgeordnetenwatch `year_of_birth` with
   - `--offline --repersist` resolves nothing.
   - `--detail-limit -1 --enrich aw-profiles` resolves only the roster, by name (that is how Phase 3 4.6 ran the roster).
 - **So it costs a re-acquisition.** Enriching the 400 stored WP 18/19 sittings (194 + 206 [measured: a3-phase3.md, store after WP 21]) means acquiring them again:
-  - about 26 DIP requests per sitting, about 10,400 in all;
-  - at the 2 s pace about 6 h, plus the dserver XML limits [estimated from A3, coverage-gate step 6].
+  - about 5.2 DIP requests per sitting all-in, about 2,100 in all [measured: a3-phase3.md, 1,001 requests for 194 sittings; the 26 per sitting of before option B no longer holds, a3-pilot.md];
+  - at the 2 s pace about 70 min of DIP requests, plus the dserver XML pacing, a 60-min pause after each 50 XML, about 7 h for 400 sittings [estimated from a3-phase3.md].
 - **It would blur the result.** Re-fetched DIP data would land in the same clone.
 - **The lookup does not depend on the store.** It depends only on the Redner-ID and on abgeordnetenwatch. A read-only script that drives the same code measures the same thing, with no DIP request.
 
@@ -263,7 +263,7 @@ After step 6 has fetched the 85 sittings, run the same command on that output di
 
 **Store enrichment decision**, taken on the result and not in this item:
 - **For:** with a clean M3 and M4, the WP 18/19 leavers M6 counts could carry profiles.
-- **Against:** they need either the 6 h re-acquisition or new code, such as an offline attach of cached ext_id profiles in `reparse_cached_xml`, gated by `profile_follows_redner_id`.
+- **Against:** they need either the 7 h re-acquisition or new code, such as an offline attach of cached ext_id profiles in `reparse_cached_xml`, gated by `profile_follows_redner_id`.
 - **Recorded:** as a follow-up for the owner, with M6's count.
 
 ## Where it is recorded
@@ -306,7 +306,7 @@ It can run before, during or after any of them. Two qualifications:
 
 None of these could be asked during planning. Each is picked by CLAUDE.md's accuracy-only rule.
 
-1. **A read-only script that drives the build's own enrichment code, not `--enrich aw-profiles` on a clone.** It makes the same lookups with 0 DIP requests instead of about 10,400, and mixes no re-fetched data in.
+1. **A read-only script that drives the build's own enrichment code, not `--enrich aw-profiles` on a clone.** It makes the same lookups with 0 DIP requests instead of about 2,100, and mixes no re-fetched data in.
 2. **Commit the script and its test, not a one-off.** Step 7 re-runs it, and the committed receipt makes the figure reproducible.
 3. **The denominator is distinct Redner-IDs, per Wahlperiode and in the union.** The headline counts MdB-Stammdaten ids. Non-MdB ids and the Reden-weighted share are shown beside it. There is no per-person figure, and no number-range proxy when the Stammdaten are missing.
 4. **Every id is asked again, cached hits included** (outside voice finding 3). The figure is as of the run date, and a stale cached hit shows up as M3 flag 4. This costs about 500 extra requests.

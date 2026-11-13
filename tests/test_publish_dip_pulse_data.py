@@ -556,6 +556,21 @@ class FollowUpReleaseTests(ReleaseTestCase):
         self.assertIn("Endergebnis", (release / "CHANGES.md").read_text(encoding="utf-8"))
         self.assert_nothing_dangerous_ran()
 
+    # Value: protects=D9 at the entry point: a follow-up release adding more newly withheld Reden than the cap is refused naming each, and --confirm-withheld lets it through; fails_when=run_release skips the cap or the flag is not read; why_new=the cap function is tested alone, not through main; seam=main; no_claim=which Reden are worth releasing
+    def test_a_release_with_too_many_new_withheld_reden_needs_each_confirmed(self) -> None:
+        previous = self.work / "previous.json"
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
+        changes = self.work / "changes-source.json"
+        changes.write_text(json.dumps({"summary": "Drei Reden zurückgehalten."}), encoding="utf-8")
+        self.edit_manifest(withheld_reden=[{"document_number": "18/7", "rede_id": f"R{i}", "reason": "reviewed"} for i in (1, 2, 3)])
+        args = ("--previous-manifest", str(previous), "--changes", str(changes))
+        code, _, stderr = self.run_script(*args)
+        self.assert_refused(code, stderr, "--confirm-withheld", "18/7:R1, 18/7:R2, 18/7:R3")
+        code, _, stderr = self.run_script(*args, "--confirm-withheld", "18/7:R1", "--confirm-withheld", "18/7:R2", "--confirm-withheld", "18/7:R3")
+        self.assertEqual(code, 0, stderr)
+        added = json.loads((self.out / f"data-{VERSION}" / "changes.json").read_text(encoding="utf-8"))["withheld_reden_added"]
+        self.assertEqual([unit["rede_id"] for unit in added], ["R1", "R2", "R3"])
+
     # Value: protects=a follow-up release published through gh is not blocked by the previous release's own tag, which gh lists, and creates exactly one release for the new version; fails_when=the remote check counts any listed release as blocking (the --initial rule leaks into follow-ups) or --publish drops the previous version from changes.json; why_new=every other --publish test passes --initial, so the follow-up x --publish cell had no test; seam=main with a recorded gh; no_claim=changelog rules (tested in test_release_changes)
     def test_a_follow_up_release_is_published_although_gh_lists_the_previous_tag(self) -> None:
         previous = self.work / "previous.json"

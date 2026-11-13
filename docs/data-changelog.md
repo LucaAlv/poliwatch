@@ -38,6 +38,7 @@ What only a person knows is **authored** in a JSON file passed as `--changes`:
 
 - **First release:** no authored file is needed; the changelog says "Erste Veröffentlichung." (an authored file may give another summary, but no corrections or schema changes). The release script needs `--initial` for this; it never guesses "initial" from missing tags.
 - **Later release:** `--changes` and `--previous-manifest` are required, and the previous version must be earlier than this one.
+- **Newly withheld Reden (ADR 0005, D5, D9):** the script derives from the two manifests' `withheld_reden` every withheld Rede this release adds and every one it releases, and lists them in `CHANGES.md` with the reason. A previous manifest without the list (export format 16 or older) counts as holding none. A release that adds more than `WITHHELD_CAP = 2` is refused unless every newly withheld Rede is named with `--confirm-withheld WP/NR:REDE_ID` after the owner has read it in `withheld_units`. The first release lists every withheld Rede and has no cap. A change of the cap is recorded here and in the release's `notes`.
 - **Schema change:** if `export_format`, `store_schema`, `key_version` or `schema_hash` differ between the two manifests, the release is refused until `schema_changes` describes them. A schema change does not change the version scheme; it is named in the changelog and in `changes.json` (`schema_changed`, `detected`).
 
 ## `changes.json`
@@ -56,6 +57,8 @@ schema_changes   authored, see above
 coverage         {protocols, first_protocol, last_protocol, last_protocol_date,
                   votes, vote_members, total_rows}: each {old, new}; old is null for the initial release
 coverage_added   authored
+withheld_reden_added     derived: [{document_number, rede_id, reason}] withheld in this release, not in the previous one
+withheld_reden_released  derived: [{document_number, rede_id, reason}] withheld in the previous release, not in this one
 corrections      authored
 notes            authored
 ```

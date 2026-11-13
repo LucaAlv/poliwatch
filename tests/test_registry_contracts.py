@@ -411,11 +411,12 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                 former = index.split('<details class="former-mps" id="fruehere-abgeordnete" data-former-mps>', 1)[1].split("</details>", 1)[0]
                 self.assertIn("<th>Fraktion</th>", former)
                 self.assertNotIn("Fraktion (zuletzt)", former)
-                # Former rows are searchable and the script filters them (review 2026-11-01).
+                # Former rows are searchable and the script filters them (review 2026-11-01).  # pregate-literal: SCHEMA_VERSION=11 a review date (2026-11-01), not the schema
                 former_row = next(line for line in former.splitlines() if "data-former-mp-row" in line)
                 self.assertIn('data-search="lea former', former_row)
                 self.assertIn("data-party=", former_row)
                 self.assertIn('querySelectorAll("[data-former-mp-row]")', index)
+                # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
                 # The intro sends former MdBs to their own table, not to "Weitere" (review 2026-11-01).
                 intro = index.split('<header class="page-header">', 1)[1].split("</header>", 1)[0]
                 self.assertIn('<a href="#fruehere-abgeordnete">Frühere Abgeordnete</a>', intro)
@@ -1336,7 +1337,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         url = "https://example.org/ada"
         profile_record = self.up(first, "o1", f"profile:{url}", "Ada Example", party="SPD", profile_url=url)
         second = self.next_build(first)
-        aw_record = self.up(second, "o2", "aw:5", "Ada Example", aw=5, match="ext_id", xml="11", party="SPD")
+        aw_record = self.up(second, "o2", "aw:5", "Ada Example", aw=5, match="ext_id", xml="11", party="SPD")  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
         # o1's source now names the trusted profile: an enrichment, not another person.
         self.up(second, "o1", "aw:5", "Ada Example", aw=5, match="ext_id", party="SPD", profile_url=url)
         self.assertNotEqual(profile_record, aw_record)
@@ -1358,7 +1359,8 @@ class _FlakyTouch(sqlite3.Connection):
 class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
     """Handoff A.2 05: store open errors, the touched table, private staging and
     the writer lock, and person page writes (TODOS "A.2 third ship round" (3),
-    (6), (11), "A.2 second-round review leftovers" (4))."""
+    # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
+    (6), (11), "A.2 second-round review leftovers" (4))."""  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
 
     rebuild = RegistryContractTests.rebuild
 
@@ -1459,6 +1461,7 @@ class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(before, self.db.read_bytes())
         self.assertEqual(list(staging.glob(f"{self.db.name}.*.tmp*")), [])
 
+    # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
     # Value: protects=no staged copy, sidecar or lock file enters the published output tree, during a rebuild or after a successful or failed one; fails_when=the staged copy or writer lock lives next to the store in OUTPUT/data; why_new=third ship round (11), open half; seam=roster_ingest observes the tree while the staged store is open
     def test_staging_and_lock_stay_outside_the_published_tree(self):
         site = self.site()

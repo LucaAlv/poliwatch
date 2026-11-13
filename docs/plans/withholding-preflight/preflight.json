@@ -1,6 +1,6 @@
 {
-  "parser": "/Users/luca/Projects/poliwatch/.claude/worktrees/agent-ad36903a450a80b08/scripts/validate_dip_protocol.py",
-  "parser_sha256": "4b0c6686f5329e868ea23b5d2a14341699395e62f8684dd336c64c433078fcec",
+  "parser": "/Users/luca/Projects/poliwatch/.claude/worktrees/gallant-khayyam-4c3a5d/scripts/validate_dip_protocol.py",
+  "parser_sha256": "73a82fa5c4bd5bba3e03d305bbf215bf72215b012de79ec59b392dcf7fe7ce33",
   "speech_rule_version": 7,
   "summary": {
     "status": {
@@ -2337,6 +2337,7 @@
         "erwiderung": 4,
         "kurzintervention": 4,
         "rede": 159,
+        "zu_protokoll": 1,
         "zwischenfrage": 13
       }
     },

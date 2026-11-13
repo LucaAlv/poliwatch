@@ -1,5 +1,7 @@
 # WP 18/19 counting audit on all 484 sittings (2026-10-20/22)
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 This is step 4 of [a3-next-handoff.md](a3-next-handoff.md). It runs the parser of 6ba5fa7 (speech rule 5 with 6a–6d, [a3-rule5-validation.md](a3-rule5-validation.md)) over every WP 18/19 Plenarprotokoll XML. No parser rule was added or widened. The rules this audit suggests are in [a3-rule5-wp18-19-round2.md](a3-rule5-wp18-19-round2.md) and need the owner's yes.
 
 ## Source and method

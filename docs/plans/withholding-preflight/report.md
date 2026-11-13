@@ -1,10 +1,12 @@
 # Withholding preflight: the 85 sittings (W1, 2026-11-12)
 
-Fetched from dserver.bundestag.de on 2026-11-12, after the fresh store rebuild had finished its downloads, and audited with `fetch_and_audit.py` at main 28799ac plus the W1 fixes (speech rule 7, parser sha256 `4b0c6686f532…`). Sittings: the 84 of `a3-wp18-19-round2-result.md:234` plus 20/11 (`sittings-85.txt`). The data is in `preflight.json` beside this file.
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `fetch_and_audit.py`, which produced `preflight.json`, and `scripts/audit_offline_turns.py`, which it imported, are deleted; both are in git history up to 36bfd08. The parser now withholds refused Reden itself ([ADR 0005](../../adr/0005-withhold-refused-reden.md)). PR 2's re-measure of these numbers at its tip is in [coverage-gate-pr2.md](../coverage-gate-pr2.md), "Replay".
+
+Fetched from dserver.bundestag.de on 2026-11-12, after the fresh store rebuild had finished its downloads, and audited with `fetch_and_audit.py`. Re-audited twice on 2026-11-13 from the same XML. The second run, at main a4acab0 after #147's Rede reconciliation (parser `deb0cb17c87e…`), refused 19/36 as `rede_reconciliation`. The third, with the parser reading 19/36's Anlage 2 by its own heading (parser sha256 `73a82fa5c4bd…`), counts it as parsing once withheld again (see "19/36" below); its figures match the first run, at main 28799ac plus the W1 fixes (parser `4b0c6686f532…`), which predates #147. 18/20 was fetched again and is again rejected. Sittings: the 84 of `a3-wp18-19-round2-result.md:234` plus 20/11 (`sittings-85.txt`). The data is in `preflight.json` beside this file.
 
 ## Result
 
-- **71 sittings parse once single Reden are withheld.** Every refusal is `located_nested_contribution`, located to a Rede and marker (107 markers). No sitting refused for a class that cannot be narrowed (no `conflicting_roles`, `befragung`, `fragestunde_marker`, `nested_needs_source_id` or `outside_top`).
+- **71 sittings parse once single Reden are withheld.** Every refusal is `located_nested_contribution`, located to a Rede and marker (107 markers). No sitting refused for a class that cannot be narrowed (no `conflicting_roles`, `befragung`, `fragestunde_marker`, `nested_needs_source_id`, `outside_top` or `rede_reconciliation`).
 - **13 parse with no refusal:** 18/2, 18/29, 18/62, 18/83, 18/90, 18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/25, 19/73. These are the sittings TODOS lists "with no refusal": N7's four (18/2, 18/29, 18/83, 19/25) whose known wrong units need the reviewed list, seven that wait on ADR 0004, and 18/62 and 18/90, out by the owner's round 2 decision. Parsing cleanly does not clear them.
 - **1 fetch rejected:** 18/20, by design (dserver's `18020.xml` holds sitting 21).
 - **Withheld:** 90 Reden, 94,707 words, of 4,917,684 words in the Reden of the sittings that parse once withheld. Share per sitting: median 1.69%, max 8.42%.
@@ -23,6 +25,22 @@ This run gives no reason to fall back to releasing WP 20 and 21 first: every ref
 - **18/20** (fetch failed): expected 1, found 0; not found: ID1802102900 marker 2.
 - **18/89** (parses once withheld): expected 2, found 4; found, not listed: ID1808901500 marker 3, ID1808901500 marker 4. ID1808901500 stands outside any TOP; the round 2 audit predates #143, which reads such Reden, so it never saw them.
 - **20/11** is not in the blockers file (it was added to the 85 separately): one located marker, ID201100900 marker 2.
+
+## 19/36
+
+The audit withholds ID193612200 (Roderich Kiesewetter, CDU/CSU, markers 6 and 8, 1,125 words); 19/36 then parses, and its Anlage 2 is read as one Zu-Protokoll Beitrag under TOP 5.
+
+That Anlage 2 carries Anlage 1's title "Liste der entschuldigten Abgeordneten" in its `anlagen-typ` but holds no list. It holds one `<rede id="ID193616800">`, headed "Zu Protokoll gegebene Fortsetzung des abgebrochenen Redebeitrages der Abgeordneten Martina Stamm-Fibich (SPD)" and "(Tagesordnungspunkt 5, Seite 3370 C)". In TOP 5 the chair had offered her to give the rest of her speech zu Protokoll, with a footnote pointing to Anlage 2, and the Inhaltsverzeichnis lists Anlage 2 under the same heading (`docs/source-errors.md`, E8). Each parser read the block differently:
+
+| Run | Parser | 19/36 | Anlage 2 |
+|---|---|---|---|
+| First (2026-11-12) | before #147 | parses once withheld | dropped without a word |
+| Second (2026-11-13) | #147's Rede reconciliation | refused, `rede_reconciliation`: `ID193616800 (annex "Liste der entschuldigten Abgeordneten") has no status` | refuses the sitting |
+| Third (2026-11-13) | reads the block by its heading | parses once withheld | one `zu_protokoll` Beitrag, TOP 5, 3,580 characters |
+
+The parser reads a block under that title only when its first `Anlage_3` heading also says "Zu Protokoll gegebene Rede(n)" or "… Fortsetzung" (`MISTITLED_ZU_PROTOKOLL`), and drops the page from a TOP reference ("…, Seite 3370 C"). In the 802 sittings held (the 718 of the fresh store and the 84 here) 799 annex blocks carry an "entschuldigt" title, 356 of them exactly "Liste der entschuldigten Abgeordneten"; 19/36's Anlage 2 is the only one holding a `<rede>` or such a heading, so no real list is read. No other block in the 802 has a Zu-Protokoll heading under another title, and no other TOP reference names a page. Reading the block rather than naming it in `ANNEX_EXCLUSIONS` keeps a Beitrag the source gives zu Protokoll; as a Beitrag it adds to no Rede figure, so 19/36's words in Reden (113,658) are the same either way.
+
+From the second run to the third: parse once withheld 70 → 71, refused 1 → 0, withheld Reden 89 → 90, withheld words 93,582 → 94,707, words in Reden of those sittings 4,804,026 → 4,917,684, median share 1.71% → 1.69%, blockers-file sittings parsing once withheld 67 → 68 (66 → 67 with exactly the listed markers).
 
 ## The two flagged sittings
 

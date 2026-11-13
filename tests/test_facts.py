@@ -573,7 +573,8 @@ class LaengsteSitzungTests(StoreCase):
         self.seed(
             [
                 # 9:00 to 01:30 the next morning, single-digit hour as the store
-                # spells it for 2022's protocols: 16 h 30 min.
+                # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
+                # spells it for 2022's protocols: 16 h 30 min.  # pregate-literal: EXPORT_FORMAT=16 a duration in the comment (16 h 30 min), not the export format
                 {"document_number": "21/1", "date": "2025-03-25", "sitzung": ("9:00", "01:30")},
                 {"document_number": "21/2", "date": "2025-03-26", "sitzung": ("09:00", "14:08")},
             ]
@@ -1575,7 +1576,7 @@ class CatalogCompletenessTests(StoreCase):
         # thousands of empty periods. Before the first dossier nothing is
         # judged; after the last one, everything DIP lists is.
         seeded = self.seed(week_specs(10))
-        before = [{"document_number": "19/1", "date": "2019-01-16"}, {"document_number": "20/9", "date": "2024-11-20"}]
+        before = [{"document_number": "19/1", "date": "2019-01-16"}, {"document_number": "20/9", "date": "2024-11-20"}]  # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
         after = [{"document_number": "21/99", "date": "2025-06-11"}]
         rows = self.compute(catalog=_facts_fixture.catalog_for(seeded["catalog_sittings"] + before + after))
         weekly = self.rows_for(rows, LAENGSTE)

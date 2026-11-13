@@ -16,6 +16,7 @@ import render_dip_pulse_html as html
 import speech_kinds as sk
 import validate_dip_protocol as dip
 from stable_ids import contribution_occurrence_id
+from withheld_assert import assert_withheld
 
 
 def source(name):
@@ -108,7 +109,7 @@ class ContributionTests(unittest.TestCase):
                '<p klasse="redner"><redner id="B"><name><nachname>Neben</nachname><fraktion>SPD</fraktion></name></redner></p><p>Meine Frage?</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         for placement in (xml, xml.replace('Herr Neben, bitte Ruhe. ', '').replace('Gast?</p>', 'Gast? Herr Neben, bitte Ruhe.</p>')):
-            with self.assertRaisesRegex(ValueError, 'R marker 3'):
+            with assert_withheld(self, 'R marker 3'):
                 dip.parse_protocol_xml(placement)
 
     def test_reviewed_faction_permissions_reject_an_unrelated_recipient(self):
@@ -117,7 +118,7 @@ class ContributionTests(unittest.TestCase):
         rede = root.find(".//rede[@id='ID204403100']")
         marker = rede.findall("./p[@klasse='redner']")[2]
         marker.find('redner/name/fraktion').text = 'SPD'
-        with self.assertRaisesRegex(ValueError, 'ID204403100 marker 3'):
+        with assert_withheld(self, 'ID204403100 marker 3'):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
         self.assertEqual(dip.nested_grant_names('Zwischenfrage vom Kollegen der Grünen'), None)
 
@@ -134,7 +135,7 @@ class ContributionTests(unittest.TestCase):
             name = rede.findall("./p[@klasse='redner']")[marker - 1].find('redner/name')
             name.find('nachname').text = surname
             name.find('fraktion').text = faction
-            with self.subTest(sitting=sitting, marker=marker), self.assertRaisesRegex(ValueError, f'{rid} marker {marker}'):
+            with self.subTest(sitting=sitting, marker=marker), assert_withheld(self, f'{rid} marker {marker}'):
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_question_addressee_is_not_its_asker(self):
@@ -143,7 +144,7 @@ class ContributionTests(unittest.TestCase):
                '<name>Präsident</name><p>Der Abgeordnete Gast hat die Möglichkeit zu einer Zwischenfrage an den Abgeordneten Neben. – Bitte schön.</p>'
                '<p klasse="redner"><redner id="B"><name><nachname>Neben</nachname><fraktion>SPD</fraktion></name></redner></p><p>Meine Frage?</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'R marker 2'):
+        with assert_withheld(self, 'R marker 2'):
             dip.parse_protocol_xml(xml)
         allowed = xml.replace('<nachname>Neben</nachname>', '<nachname>Gast</nachname>')
         self.assertEqual(dip.parse_protocol_xml(allowed)['agenda_items'][0]['contributions'][0]['speaker']['last_name'], 'Gast')
@@ -159,7 +160,7 @@ class ContributionTests(unittest.TestCase):
                     p.text = 'Möchten Sie die Zwischenfrage wirklich zulassen?' if mutation == 'banter' else 'Vielen Dank.'
                 elif mutation == 'explicit' and dip.elem_text(p) == 'Nein. Genau.':
                     p.text = 'Nein, ich lasse keine Zwischenfrage zu.'
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'ID215612200 marker 4'):
+            with self.subTest(mutation=mutation), assert_withheld(self, 'ID215612200 marker 4'):
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_fresh_faction_authorization_requires_new_consent_after_refusal(self):
@@ -172,7 +173,7 @@ class ContributionTests(unittest.TestCase):
                 p.text = 'Ich fahre mit meinem Gedanken fort, denn die Zeit ist knapp und das Thema wichtig.'
             # The asker's opening thanks would be grant evidence of its own (rule 5, 6a).
             p.text = (p.text or '').replace(', dass Sie die Zwischenfrage zulassen', '')
-        with self.assertRaisesRegex(ValueError, 'ID205104600 marker 4'):
+        with assert_withheld(self, 'ID205104600 marker 4'):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_named_exchange_after_refusal_requires_the_chair_floor(self):
@@ -181,7 +182,7 @@ class ContributionTests(unittest.TestCase):
         for p in rede.findall('p'):
             if 'Es sind noch fünf Sekunden. Aber bitte schön.' == dip.elem_text(p):
                 p.text = 'Es sind noch fünf Sekunden.'
-        with self.assertRaisesRegex(ValueError, 'ID205710600 marker 3'):
+        with assert_withheld(self, 'ID205710600 marker 3'):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_delegated_procedural_reply_requires_proven_identity_and_adjacent_target(self):
@@ -206,7 +207,9 @@ class ContributionTests(unittest.TestCase):
                 dip.ET.SubElement(root.find('sitzungsverlauf'), 'tagesordnungspunkt').append(target)
             # A repeated <rede> id is refused by the raw inventory, before the reply rule reads it.
             expected = 'ID2019101100 occurs twice' if mutation == 'duplicate' else 'ID2019101000 marker 2'
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, expected):
+            # A duplicate refuses the sitting; the other mutations withhold the container Rede.
+            check = self.assertRaisesRegex(ValueError, expected) if mutation == 'duplicate' else assert_withheld(self, expected)
+            with self.subTest(mutation=mutation), check:
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_shortened_source_surname_requires_unique_local_candidate(self):
@@ -217,7 +220,7 @@ class ContributionTests(unittest.TestCase):
             clone.find('redner').set('id', 'OTHER')
             clone.find('redner/name/nachname').text = duplicate_name
             rede.append(clone)  # even an empty source marker makes the alias ambiguous
-            with self.subTest(name=duplicate_name), self.assertRaisesRegex(ValueError, 'ID2020801600 marker 3'):
+            with self.subTest(name=duplicate_name), assert_withheld(self, 'ID2020801600 marker 3'):
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_interrupted_request_needs_acceptance_and_chair_floor_grant(self):
@@ -228,7 +231,7 @@ class ContributionTests(unittest.TestCase):
             for child in rede.findall('p'):
                 if dip.elem_text(child) == missing:
                     child.text = ''
-            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, 'ID2020707400 marker 5'):
+            with self.subTest(missing=missing), assert_withheld(self, 'ID2020707400 marker 5'):
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_reply_attachment_requires_evidence_matching_identity_and_unique_same_top_target(self):
@@ -252,7 +255,9 @@ class ContributionTests(unittest.TestCase):
                 other.append(target)
             # A repeated <rede> id is refused by the raw inventory, before the reply rule reads it.
             expected = 'ID213505200 occurs twice' if mutation == 'duplicate' else 'ID213505100 marker 2'
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, expected):
+            # A duplicate refuses the sitting; the other mutations withhold the container Rede.
+            check = self.assertRaisesRegex(ValueError, expected) if mutation == 'duplicate' else assert_withheld(self, expected)
+            with self.subTest(mutation=mutation), check:
                 dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_resumption_cannot_attach_to_an_unrelated_original_speaker(self):
@@ -263,7 +268,7 @@ class ContributionTests(unittest.TestCase):
         for p in list(container):
             if p.tag == 'p' and dip.elem_text(p) == 'Alles gut.':
                 container.remove(p)
-        with self.assertRaisesRegex(ValueError, 'ID214301700 marker 4'):
+        with assert_withheld(self, 'ID214301700 marker 4'):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
     def test_short_reply_outside_a_proven_exchange_remains_unresolved(self):
@@ -272,7 +277,7 @@ class ContributionTests(unittest.TestCase):
                '<p>Rede.</p><name>Präsident</name><p>Möchten Sie antworten?</p>'
                '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>SPD</fraktion></name></redner></p>'
                '<p>Ja.</p></rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'R marker 2'):
+        with assert_withheld(self, 'R marker 2'):
             dip.parse_protocol_xml(xml)
 
     def test_nested_remark_keeps_grant_across_same_speaker_resumption(self):
@@ -317,7 +322,7 @@ class ContributionTests(unittest.TestCase):
         parsed = dip.parse_protocol_xml(xml)
         self.assertEqual(parsed['agenda_items'][0]['contributions'][0]['kind'], 'zwischenfrage')
         refused = xml.replace('die Frage zulassen', 'die Frage nicht zulassen')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             dip.parse_protocol_xml(refused)
 
     def test_explicit_refusal_is_not_a_main_speaker_grant(self):
@@ -330,7 +335,7 @@ class ContributionTests(unittest.TestCase):
                '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
                '<fraktion>Grüne</fraktion></name></redner></p><p>Eine Bemerkung.</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             dip.parse_protocol_xml(xml)
         for pending in [
             '<name>Präsident:</name><p>Gestatten Sie eine Zwischenfrage von Gast?</p>',
@@ -338,7 +343,7 @@ class ContributionTests(unittest.TestCase):
         ]:
             with self.subTest(pending=pending):
                 refused = xml.replace('<p>Rede.</p>', '<p>Rede.</p>' + pending)
-                with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+                with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
                     dip.parse_protocol_xml(refused)
 
     def test_multi_speaker_grant_applies_only_to_named_askers(self):
@@ -358,7 +363,7 @@ class ContributionTests(unittest.TestCase):
                          ['Erster', 'Zweite'])
         # Value: protects=named grants reject unrelated askers; fails_when=chair text bypasses the name guard; why_new=existing case names both granted askers; seam=none
         unrelated = xml.replace('<nachname>Erster</nachname>', '<nachname>Andere</nachname>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             dip.parse_protocol_xml(unrelated)
 
     def test_named_grant_survives_main_resumption_without_authorizing_another_speaker(self):
@@ -372,7 +377,7 @@ class ContributionTests(unittest.TestCase):
                '<p klasse="redner"><redner id="C"><name><nachname>Andere</nachname>'
                '<fraktion>FDP</fraktion></name></redner></p><p>Eine Bemerkung ohne Fragezeichen.</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             dip.parse_protocol_xml(xml)
 
     def test_three_named_askers_include_first_name_before_grammatical_genitives(self):
@@ -407,7 +412,7 @@ class ContributionTests(unittest.TestCase):
                '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
                '<fraktion>Grüne</fraktion></name></redner></p><p>Eine weitere Bemerkung.</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 4'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 4'):
             dip.parse_protocol_xml(xml)
         for authorization, continuation in [
             ('', 'Eine weitere Frage?'),
@@ -424,7 +429,7 @@ class ContributionTests(unittest.TestCase):
                     authorization + '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
                     '<fraktion>Grüne</fraktion></name></redner></p><p>' + continuation + '</p>')
                 if not authorization:
-                    with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 4'):
+                    with assert_withheld(self, 'unresolved nested contribution at R marker 4'):
                         dip.parse_protocol_xml(renewed)
                 else:
                     parsed = dip.parse_protocol_xml(renewed)
@@ -444,7 +449,7 @@ class ContributionTests(unittest.TestCase):
                '<p klasse="redner"><redner id="C"><name><nachname>Andere</nachname>'
                '<fraktion>FDP</fraktion></name></redner></p><p>Eine Mitteilung.</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 4'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 4'):
             dip.parse_protocol_xml(xml)
 
     def test_same_nested_speaker_can_resume_after_the_main_speaker_replies(self):
@@ -497,7 +502,7 @@ class ContributionTests(unittest.TestCase):
                '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
                '<fraktion>Grüne</fraktion></name></redner></p><p>Weitere Bemerkung.</p></rede>'
                '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R2 marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R2 marker 2'):
             dip.parse_protocol_xml(xml)
 
     def test_nested_non_questions_reject_instead_of_becoming_zwischenfragen(self):
@@ -515,7 +520,7 @@ class ContributionTests(unittest.TestCase):
                        '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
                        + role + '</name></redner></p><p>' + text + '</p></rede>'
                        '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-                with self.assertRaisesRegex(ValueError, '21/1 T1: unresolved nested contribution at R marker 2'):
+                with assert_withheld(self, '21/1 T1: unresolved nested contribution at R marker 2'):
                     dip.parse_protocol_xml(xml)
 
     def test_nested_member_question_or_announced_remark_is_a_zwischenfrage(self):
@@ -588,24 +593,6 @@ class ContributionTests(unittest.TestCase):
 
 
 class ReplayAndGuardTests(unittest.TestCase):
-    def test_read_only_audit_exposes_later_rejected_markers_without_editing_source(self):
-        import audit_offline_turns
-        xml = ('<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt><rede id="R">'
-               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname><fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
-               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>SPD</fraktion></name></redner></p><p>Ungeklärt.</p>'
-               '<p klasse="redner"><redner id="C"><name><nachname>Andere</nachname><fraktion>SPD</fraktion></name></redner></p><p>Ebenfalls ungeklärt.</p>'
-               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'source.xml'
-            path.write_text(xml)
-            result = audit_offline_turns.audit(dip, path)
-            self.assertFalse(result['accepted'])
-            self.assertEqual([u['marker_ordinal'] for u in result['unresolved']], [2, 3])
-            self.assertEqual(result['counts'], {'rede': 1})
-            self.assertEqual(path.read_text(), xml)
-            with self.assertRaisesRegex(ValueError, 'R marker 2'):
-                dip.parse_protocol_xml(path.read_text())
-
     def test_reordered_unique_tops_keep_enrichment_and_refresh_heading(self):
         parsed = dip.parse_protocol_xml(source('speech-kinds-befragung-fragestunde.xml'))
         r = report(parsed, '21/6')
@@ -633,8 +620,8 @@ class ReplayAndGuardTests(unittest.TestCase):
             r = report(parsed)
             conn = store.connect(path)
             store.persist_report(conn, r)
-            self.assertEqual(sk.VERSION, 7)
-            self.assertEqual(store.SCHEMA_VERSION, 11)
+            self.assertEqual(sk.VERSION, 9)
+            self.assertEqual(store.SCHEMA_VERSION, 12)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()
@@ -747,7 +734,7 @@ class AcceptanceFailuresTests(unittest.TestCase):
 
     def test_unresolved_nested_question_format_speaker_rejects_source(self):
         xml = '<dbtplenarprotokoll wahlperiode="18" sitzung-nr="84"><sitzungsverlauf><tagesordnungspunkt top-id="T1"><p klasse="T_ohne_NaS">Befragung der Bundesregierung</p><rede id="R"><p klasse="redner"><redner id="A"><name><nachname>Minister</nachname><rolle><rolle_lang>Bundesminister</rolle_lang></rolle></name></redner></p><p>Report</p><p klasse="redner"><redner id="X"><name><nachname>Unknown</nachname></name></redner></p><p>Question</p></rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>'
-        with self.assertRaisesRegex(ValueError, '18/84 T1: unresolved nested.*R marker 2'):
+        with assert_withheld(self, '18/84 T1: unresolved nested.*R marker 2'):
             dip.parse_protocol_xml(xml)
 
     def test_repeated_tops_require_unique_heading_context_or_source_unit(self):

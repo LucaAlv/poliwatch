@@ -453,3 +453,157 @@ So no vote panel on the A3 site quotes an Antrag passage. Filling the cache is a
 ### Kept
 
 `~/agent-runs/a3/phase4/gate-merged` (the replayed clone) and `gate-merged-scratch` are kept for the owner's inspection: 5.6 GB and 7.5 GB by `du` (the clone shares unchanged blocks with `full`, so less is actually used). Delete them only with the owner's OK.
+
+## Fresh reference store on main 28799ac, 2026-11-10 to 11-12 (online)
+
+This store replaces `~/agent-runs/a3/full` as the reference store. `full` was never moved to the machine set up on 2026-11-09, so the repersist planned in [e4-repersist.md](e4-repersist.md) did not run. The owner built a new store online instead, from main at 28799ac. Its data equals v0.36.0.0, because #144 and #145 are docs only. So it holds #138 (E4), #140, #141 and #143 by construction.
+
+- **Where:** `.context/dip-pulse-site` in the main checkout (5.5 GB; the SQLite store is 885 MB). Its private directory `.context/.dip-pulse-site.private` holds the MdB-Stammdaten zip: VERSION 1777449783, Stand 29.04.2026, sha256 `29ae4ba1…68bde460`, fetched 2026-11-10. This is the Stand every E4 figure was measured with. The 290-Sitzungen store that had this path on the old machine is retired (decision D7).
+- **Recipe:** `~/agent-runs/fresh/run.sh`, which follows steps 3 to 4.6 of [a3-phase3.md](a3-phase3.md): catalog and exclusions, bulk prefetch, backfill per Wahlperiode, then `--enrich mp-roster`. 21/106 was added to the exclusion list during step 5 (TODOS.md, "Coverage gate before the first data release"). Logs are in `~/agent-runs/fresh/logs/`, about 12,200 lines in `requests.log`.
+- **Interpreter:** uv's CPython 3.13.18.
+- **Revision:** the export manifest records `28799ac90af8-dirty-c595c5e5`, so tracked files in the main checkout differed from 28799ac when the export ran. Its codebook inputs (`data_dictionary.json`, `data-methods.md`) have the same sha256 as at 28799ac. What differed is not recorded. The owner should confirm it was docs only, for example the TODOS.md lines #146 committed later that day.
+- **Backfill time:**
+  - WP 18: two runs. The first lost 45 sittings to a DNS outage while the Mac slept; the re-run fetched them in 662 s.
+  - WP 19: 19,250 s.
+  - WP 20: 21,039 s, 8.0 GB maxrss.
+  - WP 21: 14,044 s, 10.2 GB maxrss.
+  - Roster: 283 s.
+
+### Gate, 2026-11-12 15:24–15:47 UTC (no DIP)
+
+- **Command:** `~/agent-runs/fresh/gate.sh`, which runs `validate_store_gate.py` with `--today 2026-11-12` on an APFS clone of the store and of its private directory. The clone therefore had the Stammdaten.
+- **Receipt:** [fresh-store-gate.json](fresh-store-gate.json), with `$HOME` written as `~`.
+- **Result: `all_passed: true`.** All 11 checks pass. `replay.log` has `refile: 100 Stimmen in 55 Abstimmungen from the MdB-Stammdaten`. It has no `warning: [refile]` and no `keine Sitzzahlen` line. The only Redner-ID lines are the known `11005217 999990074` merged record in 21/18 to 21/45, which is used, not refused. The `fresh` and `half` clones warn that they have no Stammdaten, as designed (TODOS.md, "E4 /gstack-review: deferred findings", item 5).
+
+| Step | Result |
+|---|---|
+| `--offline --repersist` | exit 0, 718 reports, store replaced (356 s) |
+| integrity / foreign keys | ok / 0 |
+| fresh vs. half-then-full | identical fingerprint `9326f153…`, 1,948 persons, 524,446 bindings |
+| replayed vs. fresh, on the fresh store's bindings | passes: 1,948 = 1,948, the same fingerprint |
+| unchanged replay | exit 0, store kept (same sha256, size, mtime, inode) |
+| link audit | 8,626 pages, 880,627 links, 0 broken |
+| export | `g-d3c392383c24`, format 16, schema 11, 41 files match; 718 protocols, 619 votes, 425,322 vote members |
+| `--validate-publication` | passes |
+
+- **Timing:** 1,355 s in total. The largest process used 7.8 GB maxrss. The machine is an M5 Pro, so these times can't be compared with the 8,466 s of the merged-tree gate above.
+
+### Reconciliation against the recorded figures (read-only, 2026-11-12)
+
+The queries ran on the store itself, opened with `mode=ro`. The A3 store ended at 21/103. This store also holds 21/104 and 21/105, dated 2026-11-04 and 2026-11-05. So each per-sitting figure is given on the 716 sittings both stores hold and on all 718. No roll-call vote falls in those two sittings: the newest vote is dated 2026-10-15.
+
+| Figure | Recorded | Fresh, 716 shared | Fresh, all 718 | Source of the record |
+|---|---:|---:|---:|---|
+| Reden | 54,747 | **54,747** | 54,937 | #143 |
+| Beiträge | 42,484 | **42,484** | 42,724 | #143 |
+| zu Protokoll / Zwischenfragen | 3,342 / 3,061 | **3,342 / 3,061** | 3,345 / 3,085 | #143 |
+| agenda items / Politikfeld rows | 7,135 / 11,465 | **7,135 / 11,465** | 7,160 / 11,509 | #143 |
+| Reden per Fraktion: CDU/CSU, SPD, Grüne, Linke | 14,963, 11,620, 7,643, 5,616 | **the same** | 15,014, 11,652, 7,670, 5,639 | #143 |
+| `speeches.char_count` sum | 253,528,378 | **253,528,378** | 254,296,521 | #143 |
+| 18/49, 18/44 Reden; 18/133, 18/134 zu Protokoll | 51, 44; 32, 11 | **51, 44; 33, 11** | | #143; see below |
+| speech rule version 7 | 716 of 716 | | 718 of 718 | #143 |
+| votes / vote members | 619 / 425,322 | | **619 / 425,322** | merged gate, E4 |
+| E4 moves: Stimmen / roll-calls | 100 / 55 | | **100 / 55** | E4 |
+| `vote_members` with `listed_party_id` ≠ `party_id` | 100 | | **100** (and 100 non-NULL in all) | E4 |
+| `vote_fractions` rows that differ from the page | 146 | | **146**, the committed TSV byte for byte | E4 |
+| Abweichungen / r3 rows | 3,720 / 1,390 | | **3,720 / 1,390** | E4 |
+| seat cross-check: agree / `shift_between_groups` | 606 / 0 | | **606 / 0** | E4 |
+| names with no Stammdaten match: none / only another WP | 27 names, 3,073 rows / 10, 927 | | **the same** | TODOS.md, "E4 re-filing", item 2 |
+| `votes.inverted` = 1 | 95 | | **95**; 638, 695, 774, 777, 801, 990 among them | #140 |
+| `result_scope = application` | 24 | | **34**: does not match | #140 |
+| vote 990 `result_scope` | proposition | | **proposition** | #140 |
+| #141 per person (Reden, Beiträge, Stimmen) | `shared-redner-ids-old-new.tsv`, rows `neu` | **all 15 rows equal** | equal | #141 |
+| `erste-reden` 2014-W23, 2015-W12, 2022-W11, 2022-W27, 2023-W50 | 26, 2, 50, 2, 1 | | **26, 2, 50, 2, 1** | #141 |
+
+How each row was checked:
+- **E4, by group.** The script rebuilt `e4-refiled-votes-old-new.tsv` over all 619 votes. The old columns are the page's own rows, `derive.merge_fractions` on the cached reports' `fractions`, with `derive.majority_vote` for the Mehrheit. The new columns are `vote_fractions`. A row is written wherever the two differ. `diff` against the committed file is empty.
+- **E4, by member.** `vote_members` joined to `mps` where `listed_party_id IS NOT party_id`, with the group named in each direction:
+  - Kamann, 38, fraktionslos → AfD, 2017-12-12 to 2018-12-13;
+  - Bülow, 36, fraktionslos → SPD, 2017-12-12 to 2018-11-23;
+  - Pasemann, 10, AfD → fraktionslos, 2020-11-18 to 2020-12-11;
+  - Witt and Huber, 7 each, fraktionslos → AfD, votes 750–754 and 756–757;
+  - Heßenkemper, 2, fraktionslos → AfD, votes 753–754.
+
+  That is 100, with no other name, and matches `docs/source-errors.md` E4 window by window.
+- **Unmatched names:** `derive.person_name_key` through `derive.refiling_source`, the build's own lookup, over every member row of the cached reports.
+- **#141:** the person's `mps` rows grouped by `person_id`, by name, on the 716 sittings and on all 718. The two new sittings add nothing to these 15 rows. Person ids are issued anew, as expected. The records column has no `aw:` ids because this build ran no `--enrich aw-profiles` (A3 plan item 1.5).
+- **18/133 zu Protokoll: 33, not a mismatch.** #143's 27 → 32 is the sum of its four Fraktion columns (`reden-outside-tops.md`: CDU/CSU 10, SPD 8, Grüne 7, Linke 7). The fresh store has the same 32, plus Iris Gleicke's submission. She speaks with no Fraktion, so none of those columns counts her. The totals match the record too: 3,342 `zu_protokoll` on the 716, and a `speeches.char_count` sum of 253,528,378, which equals #143's new value.
+
+**Finding: `result_scope = application` is 34, not 24.** The scope is read when the roll-call detail page is fetched (`validate_dip_protocol.official_vote_result`). A replay keeps it. This store fetched every page afresh, while the A3 store's reports were older. The 34 are 710, 712, 750, 753, 754, 760, 763, 768–771, 780–782, 802, 813, 842, 846, 848, 849, 851, 864, 865, 870, 877, 878, 891, 900, 919, 921, 938, 981, 996 and 1011.
+- In 33 of the 34, the official word agrees with the Ja or Nein majority.
+- 996 reads "rejected" on a Ja majority. It is an inverted Beschlussempfehlung to reject ("Ablehnung eines Antrags zur Reform der Einbürgerungspolitik"), so the word is right. It is a second such vote beside 990, whose box gave the right word.
+
+Without the old store it is unknown which 10 are new, and whether bundestag.de changed its pages or the old reports predated the scope rule. `docs/source-errors.md` E6's scale sentence is dated to the A3 store. TODOS.md, "Vote direction: what the 2026-11-07 fix left open", records the open question.
+
+### Registry and site figures: a fresh build has no carried-forward history
+
+These figures depend on the registry the A3 store carried forward from earlier builds, so they are re-measured here, not matched:
+
+| Figure | A3 lineage (record) | Fresh store |
+|---|---:|---:|
+| `mps` rows | 7,451 (#141) | 6,387 |
+| `persons` in the store (distinct `person_records.person_id`) | 2,244 (merged gate) | 1,952; 1,956 after the gate's replay |
+| persons on fresh bindings | 1,942 | 1,948 |
+| bindings of retired occurrences | 494 | 13 |
+| Personen after Zusammenführung (`compare_store_values`) | 2,287 (#141) | 2,042 |
+| Personenseiten (non-redirect, `abgeordnete/`) | 1,999 (#141) | 1,661; 4,435 redirect pages |
+| pages / links in the link audit | 8,970 / 874,930 | 8,626 / 880,627 |
+| documents | 20,596 | 20,678 |
+| Fakten rows / publishable | 1,908 / 530 | 1,922 / 532 |
+| export files | 37 (format 11) | 41 (format 16) |
+| `vote_passages` / votes with an extracted passage | 0 / 0 (no Drucksache text cache) | 104 / 88 |
+
+The gate's replay raises `persons` from 1,952 to 1,956, while grouping on fresh bindings stays 1,948 on both sides. That belongs to "The carried-forward registry diverges from a fresh build after A3" and to the registry-split plan (`docs/plans/registry-split-koestering-krampe.md`), not to E4.
+
+Not re-measured: `docs/stable-ids.md`'s "five ids out of 2,364 records with a Redner-ID". That count was taken on the A3 store's registry, and this store's reconcile passed with the five reviewed entries in place.
+
+## Plan item 1.5: abgeordnetenwatch match share (2026-11-12)
+
+Plan: [a3-item-1-5-aw-match-share.md](a3-item-1-5-aw-match-share.md). Receipt: [a3-aw-match-share.json](a3-aw-match-share.json), with `$HOME` written as `~` and every review verdict.
+
+- **Object:** an APFS clone (`~/agent-runs/aw-match/site`, with `.site.private`) of the fresh online store built on 28799ac (`.context/dip-pulse-site`): 400 WP 18/19 sittings (194 + 206), 0 of them excluded by the record, all 400 re-parsed from their cached XML. Store sha256 `aa245957…`, the same as the reference store's; nothing under the clone or the reference was written (`find -newer` is empty, the sha256 is unchanged).
+- **Code:** the requests were sent by bb5519c (`scripts/measure_aw_match_share.py`, `lookup_ext_id` and the `_request` fix; run before a rebase onto v0.37.0.0, under an id that no longer exists, with the same four files). The receipt was then regenerated on 0641dc6, the review and ship fixes on top (rebased onto #150; the same code is c08fb0f after the rebase onto #151, so the receipt's `commit` names 0641dc6), from that run's cache and answers with the network blocked: 0 requests, every figure and verdict identical. That code also re-parses all 400 sittings with the parser of #147 and #150, so the speaker set holds under it. (An earlier regeneration on fab68ca, before the rebase, gave the same figures; that id is on no remote branch.) `person_corrections.json` sha256 `2c99fe2c…`.
+- **MdB source:** `mdb_zugehoerigkeiten` for the Mandat rule; names and Stammdaten membership from the store's cached zip (Stand 2026-04-29). The table and the zip agree on every WP 18/19 Mandat (0 disagreements).
+- **Commands**, all through `~/agent-runs/aw-match/run.sh` (`SSL_CERT_FILE` set, scratch cache `~/agent-runs/aw-match/scratch/aw-cache.json`):
+  1. `--offline`: 1,021 distinct Redner-IDs, 0 merged raw values, so 1,021 requests announced; 86 s, 0.3 GB maxrss.
+  2. online `--name-fallback`, 2026-11-12 17:59:57–18:35:53Z: 1,032 requests (1,021 ext_id + 11 name searches), 0 HTTP 429, 5 isolated failures (`11003646`, `11003854`, `11004260`, `11004842`, `999990102`; exit 1); 36 min.
+  3. online rerun, 18:36:10–18:37:44Z: asked only the 5 failed ids, 5 requests, 0 failures (exit 0).
+  4. the receipt run with `--verdicts`, 18:41:27Z: 0 requests. Regenerated on 0641dc6 on 2026-11-13 (above), from copies of the cache and answers in `~/agent-runs/aw-match/regen2/`: 0 requests; this is the committed receipt. It adds `reden_unresolved` and `bounds` to each M2 row (0 and equal to the share here, since every id has an answer).
+  - Hand review outside the script: 33 requests. Altogether about 1,070 abgeordnetenwatch requests, 0 DIP requests, 0 store writes.
+- **Pace:** the API page (read 2026-11-12, still CC0 1.0, no key) now asks for at most 30 requests a minute per IP and at most one a second, 60 s after a 429. The resolver's 0.5 s spacing broke that, so item 1.5 raises the default to 2.0 s (and the 429 wait to 60 s) for every build, not only this script.
+- **No store cache:** the fresh store holds no `abgeordnetenwatch-cache.json` and no `aw_match` on any of its 6,387 `mps` rows, because it was built without `--enrich aw-profiles`. The scratch cache therefore started empty: M3 flag 4 (cache disagrees) had nothing to compare and is vacuous here, and M6 is 0.
+
+### Figures
+
+A Redner-ID is counted per Wahlperiode it speaks in; the union counts it once, as M1 when it holds a Mandat in a Wahlperiode it spoke in.
+
+| | WP 18 | WP 19 | Union |
+|---|---:|---:|---:|
+| **M1:** MdB ids with a Mandat in the WP, ext_id hit | **640 / 640 (100%)** | **719 / 727 (98.9%)** | **937 / 945 (99.2%)** |
+| M1a: in the Stammdaten, no Mandat in the WP | 1 / 1 | 8 / 11 | 4 / 7 |
+| M1b: not in the Stammdaten (government, Bundesrat, guests) | 0 / 30 | 0 / 43 | 0 / 69 |
+| **M2:** Reden whose speaker's id hit | **9,720 / 9,862 (98.6%)** | **16,531 / 16,852 (98.1%)** | **26,251 / 26,714 (98.3%)** |
+| Reden without a Redner-ID | 1 | 1 | 2 |
+| Failures | 0 | 0 | 0 |
+
+- **M3 precision:** 8 name-rule flags, 0 multi-candidate replies, 0 profiles returned for two Redner-IDs, 0 M1b hits (so no role id of an MdB), flag 4 vacuous (above).
+- **M4 name fallback:** 11 MdB-Stammdaten misses searched by name, 11 linked, 0 unlinked, 0 failed. All 11 reviewed.
+- **M5:** 4 partitioned Redner-IDs speak in WP 18/19 (`999990108`, `999990124`, `999990127`, `10000`); none hits, so a fresh WP 18/19 enrichment creates no `aw:` record under a shared id ("Shared Redner-IDs" item 8 stays unreached). 0 merged raw values in WP 18/19.
+- **M6:** 0 WP 18/19 Reden hold a trusted profile in this store; all 640 + 727 WP 18/19 MdB ids hold none. On this store "the leavers" are every WP 18/19 speaker, not only those who left by 2021, because no aw data reached the store at all.
+
+### Review
+
+- **The 8 name-rule flags are all the right person.** Each profile carries the Redner-ID as its `ext_id_bundestagsverwaltung` (that is how it was found), and the abgeordnetenwatch birth year equals the Stammdaten `GEBURTSDATUM` year in all 8. The labels differ only in spelling: a hyphen (Franz-Josef Jung, Hans Joachim Schabedoth), a diacritic (Zaklin Nastić), an added name (Gehrcke-Reymann, Jensen-Bornhöft, Bernd-Bernhard Fabritius), a civil name beside the stage name (Karl-Heinz (Charles M.) Huber), Armin Paul / Armin-Paulus Hampel. The two-word rule is strict by design; no rule change follows.
+- **The 11 name-found links are all the right person**, by full name and birth year (Stammdaten against abgeordnetenwatch, read with `politicians?id=`). The plan's mandate check on the profile was not possible through the API: `candidacies-mandates?politician=` returns no WP 18/19 Bundestag mandate for these profiles (Franz-Josef Jung: 0 rows; Manja Schüle: only Brandenburg 2024-2029). The birth year stood in for it, at no request cost.
+- **Why the 8 M1 ids miss (all WP 19):** abgeordnetenwatch holds a four-digit `ext_id_bundestagsverwaltung` for them, not the Bundestag id: Danyal Bayaz `2028` (ours `11004664`), Nicola Beer `2031`, Axel Gehrke `2085`, Martin Hebner `2100`, Christian Jung `2130`, Thomas L. Kemmerich `2136`, Nikolas Löbel `2165`, Manja Schüle `2239`. All eight left the Bundestag during WP 19. Our key is the Stammdaten `ID`, which 937 other hits confirm, so this is class (c) on abgeordnetenwatch's side, not a defect of our key. `docs/source-errors.md` lists Bundestag sources only, so it is recorded here and in TODOS.md.
+- **Why the 3 M1a ids miss:** Horst Seehofer, Annegret Kramp-Karrenbauer and Andreas Pinkwart (WP 19, speaking as ministers or for a Land) have no `ext_id_bundestagsverwaltung` on abgeordnetenwatch at all: class (b), a source gap.
+- **M1b:** none of the 69 ids outside the Stammdaten (`9999…` and `10000`) is an abgeordnetenwatch ext id; expected.
+
+**No confirmed defect.** No Redner-ID is linked to the wrong person, by ext_id or by name.
+
+### What it triggers
+
+- M3 clean, M1 high: the ext_id join holds for WP 18/19. Nothing to fix before coverage-gate step 8.
+- The 11 misses would get a name-found link from a build (match `name`, untrusted, but linked on the person page as fact). All 11 are right today; the deferred item "Person pages link name-found profiles" stays open in TODOS.md.
+- The store enrichment decision stays with the owner, now with M6 = every WP 18/19 MdB id (1,367 per-WP ids, 945 distinct MdBs) on this store.
+- Coverage-gate step 7 re-runs the same command on the step 6 output directory; only Redner-IDs new in the 85 sittings cost requests, unless the answers file is deleted to ask every id again.

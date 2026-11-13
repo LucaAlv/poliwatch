@@ -2,8 +2,10 @@
 import unittest
 
 import _support  # noqa: F401
+import reviewed_units
 import speech_kinds as sk
 import validate_dip_protocol as dip
+from withheld_assert import assert_withheld
 
 
 def redner(rid, last, fraktion='SPD', role=''):
@@ -47,34 +49,49 @@ class SitzungsleitungMarkerTests(unittest.TestCase):
         self.assertEqual(contributions, [(sk.ZWISCHENFRAGE, 'Meine Bemerkung.')])
 
     def test_ministerpraesident_is_not_the_presidium(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse('<rede id="R">' + redner('A', 'Haupt') + '<p>Rede.</p>'
                   + redner('M', 'Schwesig', 'SPD', 'Ministerpräsidentin (Mecklenburg-Vorpommern)') + '<p>Eine Antwort.</p></rede>')
 
 
 class ElectionAcceptanceTests(unittest.TestCase):
-    """6d: the elected Präsident's acceptance is part of the election procedure."""
+    """6d: the elected Präsident's acceptance is part of the election procedure.
+    The Alterspräsident's election <rede> is listed as Sitzungsleitung (ADR 0004),
+    as 19/1 ID19101200 is."""
 
-    def body(self, turn):
-        return ('<rede id="R">' + redner('S', 'Solms', 'FDP', 'Alterspräsident') + '<p>Ergebnis.</p>'
+    def setUp(self):
+        reviewed_units.use([{'sitting': '18/1', 'rede_id': 'ID1', 'redner_id': '1', 'kind': 'sitzungsleitung',
+                                'reason': 'the election of the Präsident'}])
+        self.addCleanup(reviewed_units.use, [])
+
+    def body(self, turn, salutation=''):
+        return ('<rede id="ID1">' + redner('1', 'Solms', 'FDP', 'Alterspräsident') + '<p>Ergebnis.</p>'
                 '<p>Ich frage Sie, Herr Schäuble: Nehmen Sie die Wahl an?</p>'
-                + redner('W', 'Schäuble', 'CDU/CSU') + turn
+                + redner('2', 'Schäuble', 'CDU/CSU') + turn
                 + '<name>Alterspräsident Dr. Hermann Otto Solms:</name><p>Herzlichen Glückwunsch.</p></rede>')
 
     def test_the_acceptance_is_procedural(self):
-        top, contributions = parse(self.body('<p>Herr Präsident, ich nehme die Wahl an.</p>'))
-        self.assertEqual(contributions, [])
-        self.assertEqual([(d['marker_ordinal'], d['treatment']) for d in top['xml_turn_diagnostics']],
-                         [(2, 'procedural')])
+        # T12: 18/1 prints "Herr Alterspräsident, lieber Kollege Riesenhuber, ich
+        # nehme die Wahl gerne an." (lower-case p); 19/1 "Herr Präsident, ...".
+        for turn in ['Herr Präsident, ich nehme die Wahl an.',
+                     'Herr Alterspräsident, lieber Kollege Riesenhuber, ich nehme die Wahl gerne an.',
+                     'Frau Alterspräsidentin, ich nehme die Wahl sehr gern an.',
+                     'Ich nehme die Wahl an.']:
+            with self.subTest(turn=turn):
+                top, contributions = parse(self.body(f'<p>{turn}</p>'))
+                self.assertEqual(contributions, [])
+                self.assertEqual(top['speeches'], [])
+                self.assertEqual([(d['marker_ordinal'], d['treatment']) for d in top['xml_turn_diagnostics']],
+                                 [(1, 'procedural'), (2, 'procedural')])
 
     def test_more_than_the_acceptance_is_not_procedural(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at ID1 marker 2'):
             parse(self.body('<p>Herr Präsident, ich nehme die Wahl an.</p><p>Meine Antrittsrede.</p>'))
 
     def test_an_acceptance_without_the_chair_question_is_not_procedural(self):
         body = self.body('<p>Herr Präsident, ich nehme die Wahl an.</p>').replace(
             'Ich frage Sie, Herr Schäuble: Nehmen Sie die Wahl an?', 'Weiter.')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at ID1 marker 2'):
             parse(body)
 
 
@@ -105,20 +122,20 @@ class NestedRedeTests(unittest.TestCase):
                                  [(sk.ZWISCHENFRAGE, 'nested:R:2:3', 'R:2')])
 
     def test_a_salutation_without_the_floor_is_not_a_rede(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body(floor='Danke schön.'))
 
     def test_the_floor_to_someone_else_is_not_this_rede(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body(floor='Als nächste Rednerin spricht die Kollegin Müller.'))
 
     def test_the_floor_for_a_question_is_not_a_rede(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body(floor='Das Wort zu einer Kurzintervention hat die Kollegin Binder.',
                             opening='Sehr geehrte Frau Präsidentin! Eine Bemerkung.'))
 
     def test_the_floor_without_a_salutation_is_not_a_rede(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body(opening='Rede B.'))
 
 
@@ -141,14 +158,14 @@ class GrantEvidenceTests(unittest.TestCase):
                 self.assertEqual(contributions, [(sk.ZWISCHENFRAGE, 'Meine Bemerkung.')])
 
     def test_a_consent_without_an_offer_does_not_grant(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(self.body('Weiter geht es.', 'Ja.'))
 
     def test_a_long_or_mixed_answer_is_not_a_consent(self):
         offer = 'Frau Kollegin, darf Ihnen der Kollege Gast eine Zwischenfrage stellen?'
         for consent in ['Ja, wenn ich danach noch etwas länger über das wichtige Thema reden darf.', 'Ja. Nein, doch nicht.']:
             with self.subTest(consent=consent):
-                with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+                with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
                     parse(self.body(offer, consent))
 
     def test_opening_thanks_for_being_allowed_grants_over_a_carried_refusal(self):
@@ -164,7 +181,7 @@ class GrantEvidenceTests(unittest.TestCase):
             with self.subTest(turn=turn):
                 _, contributions = parse(refused.format(turn=turn))
                 self.assertEqual(contributions, [(sk.ZWISCHENFRAGE, turn)])
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(refused.format(turn='Schade, dass Sie die Zwischenbemerkung nicht zulassen. Meine Bemerkung.'))
 
 
@@ -187,15 +204,15 @@ class AddressedMemberTests(unittest.TestCase):
     def test_a_floor_for_a_kurzintervention_is_not_a_zwischenbemerkung(self):
         chair = ('<name>Vizepräsidentin Edelgard Bulmahn:</name>'
                  '<p>Jetzt erhält der Kollege Gast das Wort zu einer Kurzintervention.</p>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body('Sehr geehrte Kollegin, Sie hatten mich direkt angesprochen.', chair=chair))
 
     def test_a_turn_that_does_not_say_it_was_addressed_stays_refused(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body('Das trifft nicht zu.'))
 
     def test_without_the_chair_giving_the_floor_it_stays_refused(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.body('Sie haben mich angesprochen. Das trifft nicht zu.', chair=''))
 
 

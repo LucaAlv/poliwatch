@@ -118,6 +118,27 @@ def _delta(previous: dict[str, Any] | None, current: dict[str, Any], *path: str)
     return {"old": dig(previous) if previous is not None else None, "new": dig(current)}
 
 
+#: A release may add at most this many newly withheld Reden (ADR 0005, D9)
+#: unless the owner confirms each by key; a change is recorded in the data changelog.
+WITHHELD_CAP = 2
+
+
+def _withheld_key(unit: dict[str, Any]) -> str:
+    return f"{unit.get('document_number')} {unit.get('rede_id')}"
+
+
+def withheld_changes(manifest: dict[str, Any], previous_manifest: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
+    """The withheld Reden this release adds and releases against the previous
+    one (D5). A previous manifest without the list (export format 16 or older)
+    held none; the initial release lists every withheld Rede as added."""
+    current = {_withheld_key(unit): unit for unit in manifest.get("withheld_reden") or []}
+    previous = {_withheld_key(unit): unit for unit in (previous_manifest or {}).get("withheld_reden") or []}
+    return {
+        "added": [current[key] for key in sorted(current.keys() - previous.keys())],
+        "released": [previous[key] for key in sorted(previous.keys() - current.keys())],
+    }
+
+
 def assemble(
     *,
     version: str,
@@ -163,6 +184,7 @@ def assemble(
         "vote_members": _delta(previous_manifest, manifest, "votes", "members"),
         "total_rows": _delta(previous_manifest, manifest, "total_rows"),
     }
+    withheld = withheld_changes(manifest, previous_manifest)
     return {
         "changes_format": CHANGES_FORMAT,
         "version": version,
@@ -180,6 +202,9 @@ def assemble(
         "schema_changes": checked["schema_changes"],
         "coverage": coverage,
         "coverage_added": checked["coverage_added"],
+        # ADR 0005, D5: every withheld Rede this release adds or releases, with its reason.
+        "withheld_reden_added": withheld["added"],
+        "withheld_reden_released": withheld["released"],
         "corrections": checked["corrections"],
         "notes": checked["notes"],
     }
@@ -229,6 +254,11 @@ def render_markdown(changes: dict[str, Any]) -> str:
         lines.append(f"- {label}: {_change(coverage[key])}")
     if changes["coverage_added"]:
         lines += ["", "Neu erfasst:", ""] + [f"- {_cell(entry['description'])}" for entry in changes["coverage_added"]]
+    added, released = changes.get("withheld_reden_added") or [], changes.get("withheld_reden_released") or []
+    if added or released:
+        lines += ["", "Zurückgehaltene Reden (nicht mitgezählt, siehe withheld_units):", ""]
+        lines += [f"- neu zurückgehalten: {_cell(unit['document_number'])} {_cell(unit['rede_id'])} ({_cell(unit['reason'])})" for unit in added]
+        lines += [f"- nicht mehr zurückgehalten: {_cell(unit['document_number'])} {_cell(unit['rede_id'])}" for unit in released]
     lines += ["", "## Korrekturen", ""]
     if changes["corrections"]:
         lines += ["| Tabelle | Schlüssel | Spalte | Alter Wert | Neuer Wert | Grund |", "|---|---|---|---|---|---|"]

@@ -29,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 API_BASE = "https://www.abgeordnetenwatch.de/api/v2"
 USER_AGENT = "bundestag-pulse/1.0 (+https://www.abgeordnetenwatch.de/api)"
@@ -41,21 +41,33 @@ CACHE_VERSION = 2
 # while the profile lookups of the same cache stay.
 BIO_VERSION = 2
 
-# abgeordnetenwatch sits behind an nginx burst limiter (~12 quick requests before
-# it answers HTTP 429). A steady minimum interval between requests keeps us under
-# it; transient 429s are retried with exponential backoff.
-DEFAULT_MIN_INTERVAL = 0.5
+# The API page's fair-use rule (read 2026-11-12): at most 30 requests a minute
+# per IP address and at most one a second; on HTTP 429, slow down and retry
+# after a short wait, "z.B. 60 Sekunden". A steady 2 s interval keeps to 30 a
+# minute; a 429 waits 60 s before the retry.
+DEFAULT_MIN_INTERVAL = 2.0
 MAX_RETRIES = 4
-BACKOFF_BASE_SECONDS = 2.0
-MAX_BACKOFF_SECONDS = 30.0
+BACKOFF_BASE_SECONDS = 60.0
+MAX_BACKOFF_SECONDS = 60.0
 
-# Give up entirely after this many consecutive *connection* failures so a real
-# outage does not stall the build. HTTP 429 does not count — the API is up.
+# Give up entirely after this many consecutive connection failures or error
+# replies, so a real outage, or an API that answers every query with an error,
+# does not stall the build. HTTP 429 and other HTTP errors do not count.
 MAX_CONSECUTIVE_FAILURES = 8
 
 
 class AbgeordnetenwatchError(Exception):
     """Raised for unexpected API responses (network errors are handled inline)."""
+
+
+class ExtIdLookup(NamedTuple):
+    """The answer of ``AbgeordnetenwatchResolver.lookup_ext_id``."""
+
+    state: str  # hit, miss, failed or not_cached
+    profile: dict[str, Any] | None
+    candidates: int | None
+    cached_state: str  # what the cache held before the call: hit, miss or not_cached
+    cached_profile: dict[str, Any] | None
 
 
 def _clean_label(value: Any) -> str:
@@ -209,6 +221,8 @@ class AbgeordnetenwatchResolver:
         self._consecutive_failures = 0
         self._network_disabled = False
         self._call_failed = False
+        #: Why the last failed request failed (for a caller's record).
+        self.last_error: str | None = None
         self._last_request_ts = 0.0
         self.stats = {
             "ext_id": 0,
@@ -246,10 +260,14 @@ class AbgeordnetenwatchResolver:
             "by_name": self._by_name,
             "by_bio": self._by_bio,
         }
-        self.cache_path.write_text(
+        # Written beside the cache and renamed over it: a run stopped mid-write
+        # leaves the previous cache, never a truncated one that loads as empty.
+        temporary = self.cache_path.with_name(self.cache_path.name + ".tmp")
+        temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        temporary.replace(self.cache_path)
         self._dirty = False
 
     # -- API -----------------------------------------------------------------
@@ -261,10 +279,12 @@ class AbgeordnetenwatchResolver:
                 time.sleep(wait)
         self._last_request_ts = time.monotonic()
 
-    def _note_failure(self, *, connection: bool) -> None:
+    def _note_failure(self, reason: str, *, counts: bool) -> None:
+        """Record a request with no answer; ``counts`` toward the cut-off."""
         self.stats["errors"] += 1
         self._call_failed = True
-        if connection:
+        self.last_error = reason
+        if counts:
             self._consecutive_failures += 1
             if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                 self._network_disabled = True
@@ -282,6 +302,7 @@ class AbgeordnetenwatchResolver:
         self._call_failed = False
         if self._network_disabled:
             self._call_failed = True
+            self.last_error = f"not asked: stopped after {MAX_CONSECUTIVE_FAILURES} failures in a row"
             return None
         for attempt in range(MAX_RETRIES + 1):
             self._throttle()
@@ -297,21 +318,20 @@ class AbgeordnetenwatchResolver:
                     self.stats["throttled"] += 1
                     time.sleep(min(BACKOFF_BASE_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS))
                     continue
-                return self._note_failure(connection=False)
-            except (urllib.error.URLError, json.JSONDecodeError, ValueError):
-                return self._note_failure(connection=True)
+                return self._note_failure(f"HTTP {exc.code}", counts=False)
+            except (urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+                return self._note_failure(f"{type(exc).__name__}: {exc}", counts=True)
+            meta = payload.get("meta") if isinstance(payload, dict) else None
+            if not isinstance(meta, dict) or meta.get("status") != "ok":
+                # An error reply is no answer: a caller must not cache it as "no
+                # match". It counts toward the cut-off, so an API that rejects every
+                # query stops being asked instead of being asked once per id.
+                status = meta.get("status") if isinstance(meta, dict) else None
+                return self._note_failure(f"reply status {status!r}", counts=True)
             self._consecutive_failures = 0
-            if not isinstance(payload, dict) or payload.get("meta", {}).get("status") != "ok":
-                return None
             data = payload.get("data")
             return data if isinstance(data, list) else []
-        return self._note_failure(connection=False)
-
-    def _resolve_by_ext_id(self, ext_id: str) -> dict[str, Any] | None:
-        data = self._get({"ext_id_bundestagsverwaltung": ext_id})
-        if not data:
-            return None
-        return _profile_from_politician(data[0], "ext_id")
+        return self._note_failure("HTTP 429 after every retry", counts=False)
 
     def _resolve_by_name(
         self, first_name: str | None, last_name: str | None, fraktion: Any
@@ -334,6 +354,37 @@ class AbgeordnetenwatchResolver:
 
     # -- public --------------------------------------------------------------
 
+    def lookup_ext_id(self, ext_id: Any, *, network: bool = True, refresh: bool = False) -> ExtIdLookup:
+        """Look a Bundestagsverwaltung id up as ``ext_id_bundestagsverwaltung``.
+
+        The answer's ``state`` is ``hit`` (``profile`` holds it, built from the
+        first politician returned), ``miss`` (the API answered with none),
+        ``failed`` (no answer: a network or HTTP error, an error reply, or the
+        resolver stopped asking after repeated connection failures) or
+        ``not_cached`` (``network=False`` and the cache holds nothing).
+        ``candidates`` is the number of politicians the API returned, None for an
+        answer taken from the cache. A cached answer is used unless ``refresh``,
+        which asks again; ``cached_state`` and ``cached_profile`` report what the
+        cache held before the call either way. Only an answer is cached, never a
+        failure, so a failure leaves the cached answer in place."""
+        key = str(ext_id).strip() if ext_id is not None else ""
+        if not key:
+            raise ValueError("lookup_ext_id needs a nonblank id")
+        if key in self._by_ext_id:
+            cached_profile = self._by_ext_id[key]
+            cached_state = "miss" if cached_profile is None else "hit"
+        else:
+            cached_profile, cached_state = None, "not_cached"
+        if not network or (cached_state != "not_cached" and not refresh):
+            return ExtIdLookup(cached_state, cached_profile, None, cached_state, cached_profile)
+        data = self._get({"ext_id_bundestagsverwaltung": key})
+        if data is None:
+            return ExtIdLookup("failed", None, None, cached_state, cached_profile)
+        profile = _profile_from_politician(data[0], "ext_id") if data else None
+        self._by_ext_id[key] = profile
+        self._dirty = True
+        return ExtIdLookup("hit" if profile else "miss", profile, len(data), cached_state, cached_profile)
+
     def resolve(
         self,
         *,
@@ -353,22 +404,11 @@ class AbgeordnetenwatchResolver:
 
         ext_id = str(ext_id).strip() if ext_id else None
         if ext_id:
-            if ext_id in self._by_ext_id:
-                cached = self._by_ext_id[ext_id]
-                # A positive hit wins; a cached negative falls through to the
-                # name search below (some members lack an ext_id on abg.watch).
-                if cached is not None:
-                    return self._record_stat(cached)
-            elif not self._network_disabled:
-                profile = self._resolve_by_ext_id(ext_id)
-                if profile is not None:
-                    self._by_ext_id[ext_id] = profile
-                    self._dirty = True
-                    return self._record_stat(profile)
-                # Only cache a negative when the API actually answered.
-                if not self._call_failed:
-                    self._by_ext_id[ext_id] = None
-                    self._dirty = True
+            # A hit wins; a miss or a failure falls through to the name search
+            # below (some members lack an ext_id on abg.watch).
+            found = self.lookup_ext_id(ext_id)
+            if found.state == "hit":
+                return self._record_stat(found.profile)
 
         last = (last_name or "").strip()
         if last:

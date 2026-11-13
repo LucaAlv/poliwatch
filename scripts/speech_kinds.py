@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 7
+VERSION = 9
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -31,6 +31,9 @@ BEFRAGUNG_FRAGE = "befragung_frage"
 BEFRAGUNG_ANTWORT = "befragung_antwort"
 FRAGESTUNDE_FRAGE = "fragestunde_frage"
 FRAGESTUNDE_ANTWORT = "fragestunde_antwort"
+#: ADR 0004: an address that is no contribution to a debate, by the presidium or
+#: a guest; shown, counted in no Reden figure.
+ANSPRACHE = "ansprache"
 
 CONTRIBUTION_KINDS = (
     KURZINTERVENTION,
@@ -41,7 +44,16 @@ CONTRIBUTION_KINDS = (
     BEFRAGUNG_ANTWORT,
     FRAGESTUNDE_FRAGE,
     FRAGESTUNDE_ANTWORT,
+    ANSPRACHE,
 )
+
+#: Internal labels of a whole ``<rede>`` (ADR 0004), never stored and never a
+#: ``CONTRIBUTION_KINDS`` member, so ``validate_kind`` refuses one that reaches
+#: persist. A listed Sitzungsleitung or procedural ``<rede>`` takes the status
+#: ``procedural``; an unreviewed presidium ``<rede>`` refuses its sitting.
+SITZUNGSLEITUNG = "sitzungsleitung_rede"
+PROCEDURAL = "procedural_rede"
+UNREVIEWED_PRESIDIUM = "unreviewed_presidium"
 
 #: The status a whole ``<rede>`` of the source takes in the parser's reconciliation
 #: (``validate_dip_protocol.reconcile_reden``) when it is emitted as this kind;
@@ -54,7 +66,37 @@ REDE_STATUS = {
     BEFRAGUNG_FRAGE: "beitrag",
     BEFRAGUNG_ANTWORT: "beitrag",
     ZU_PROTOKOLL: "zu_protokoll",
+    ANSPRACHE: "beitrag",
 }
+#: Why a Rede is withheld (``withheld_units.reason``, ADR 0005): the short label
+#: the Dossier shows, and the German text the data dictionary and DATA.md give.
+#: The data dictionary must list exactly these codes.
+WITHHELD_REASONS: dict[str, tuple[str, str]] = {
+    "refused_nested_contribution": (
+        "ein Beitrag eines anderen Redners darin ist keiner Regel zuzuordnen",
+        "Ein Beitrag eines anderen Redners in dieser Rede passt zu keiner geprüften Regel "
+        "(Zwischenfrage, Kurzintervention, Sitzungsleitung); die Rede wird zurückgehalten.",
+    ),
+    "refused_nested_question_speaker": (
+        "ein Redner darin ist weder Fragesteller noch Antwortender",
+        "In einer Befragung der Bundesregierung ist ein Redner in dieser Rede weder als "
+        "Fragesteller noch als Antwortender erkennbar; die Rede wird zurückgehalten.",
+    ),
+    "reviewed": (
+        "auf der geprüften Liste",
+        "Auf der geprüften Liste (scripts/reviewed_units.json) mit Begründung zurückgehalten, etwa weil eine "
+        "ganze Rede als Zwischenfrage gelesen würde.",
+    ),
+    "unreviewed_presidium": (
+        "Präsidium, Eid oder Wahlannahme, noch nicht geprüft",
+        "Eine Rede des Präsidiums oder eines Gastes, oder eine kurze Rede, die wie ein Eid oder die Annahme "
+        "einer Wahl liest, steht noch nicht auf der geprüften Liste (scripts/reviewed_units.json, ADR 0004); "
+        "sie wird zurückgehalten, bis sie als Ansprache, Sitzungsleitung oder Verfahrensschritt eingeordnet ist.",
+    ),
+}
+#: The status of a ``<rede>`` the parser withholds (ADR 0005): stored in
+#: ``withheld_units``, outside every count, instead of under one of the kinds above.
+WITHHELD_STATUS = "withheld"
 #: Kinds that are never a whole ``<rede>``: a marker inside one (Zwischenfrage) or a
 #: Fragestunde turn, which stands outside any ``<rede>``.
 NOT_REDE_KINDS = frozenset({ZWISCHENFRAGE, FRAGESTUNDE_FRAGE, FRAGESTUNDE_ANTWORT})
@@ -69,6 +111,7 @@ KIND_LABELS = {
     BEFRAGUNG_ANTWORT: ("Antwort in der Befragung der Bundesregierung", "Antworten in der Befragung der Bundesregierung"),
     FRAGESTUNDE_FRAGE: ("Frage oder Nachfrage in der Fragestunde", "Fragen und Nachfragen in der Fragestunde"),
     FRAGESTUNDE_ANTWORT: ("Antwort in der Fragestunde", "Antworten in der Fragestunde"),
+    ANSPRACHE: ("Ansprache", "Ansprachen"),
 }
 
 # DIP records only these two Kinds per Beitrag as an ``aktivitaetsart``. Its
@@ -193,6 +236,22 @@ def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
         # The printed spelling is the one a Sprechrolle rule maps.
         return printed, short
     return (long, short) if structured else (printed, None)
+
+
+PRESIDIUM_ROLE = derive.PRESIDIUM_ROLE
+
+
+def presidium_role(role: str | None, redner: ET.Element | None = None) -> bool:
+    """``derive.is_presidium_role`` with the printed name parts of ``redner``."""
+    name = redner.find("name") if redner is not None else None
+    parts = [_text(name.find(tag)) for tag in ("titel", "vorname", "namenszusatz", "nachname")] if name is not None else []
+    return derive.is_presidium_role(role, parts)
+
+
+def presidium_owner(rede: ET.Element) -> bool:
+    """Whether the owner marker of ``rede`` carries a presidium role."""
+    redner = _rede_redner(rede)
+    return redner is not None and presidium_role(effective_role(redner)[0] or effective_role(redner)[1], redner)
 
 
 def validate_kind(kind: str) -> None:
@@ -404,6 +463,19 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
             between += " " + _text(child)
             continue
         if child.tag != "rede":
+            continue
+        # ADR 0004: a reviewed or unreviewed presidium <rede> is no Rede, and it
+        # leaves the running state alone, so a Kurzintervention announced across
+        # it still answers the last real Rede. A Sitzungsleitung <rede> is chair
+        # text throughout; the others pass on what the chair says after them.
+        reviewed = child.get("reviewed_kind")
+        if reviewed or presidium_owner(child):
+            labels.append(RedeLabel({"ansprache": ANSPRACHE, "sitzungsleitung": SITZUNGSLEITUNG,
+                                     "procedural": PROCEDURAL}.get(reviewed or "", UNREVIEWED_PRESIDIUM)))
+            if reviewed == "sitzungsleitung":
+                between += " " + " ".join(_text(p) for p in child.findall("p") if p.get("klasse") != "redner")
+            else:
+                between += " " + trailing_sitzungsleitung_text(child)
             continue
         redner = _rede_redner(child)
         who = speaker_class(redner)

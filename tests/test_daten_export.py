@@ -15,6 +15,7 @@ import tempfile
 import traceback
 import unittest
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -26,6 +27,9 @@ import _daten_fixture
 import build_dip_pulse_site as b
 import facts
 import persist_dip_pulse_store as pulse_store
+import publish_dip_pulse_data as publish
+import release_changes
+import validate_dip_protocol as dip
 from stable_ids import stable_key
 
 
@@ -206,7 +210,7 @@ class ExportHelpersTests(unittest.TestCase):
     # A host the Datenschutz page cannot parse ended the build in a traceback
     # after every other page was written; it is refused up front instead.
     def test_resolve_data_base_url_rejects_other_schemes_and_malformed_hosts(self) -> None:
-        # /ship review 2026-11-01: a backslash-led base left the site with no
+        # /ship review 2026-11-01: a backslash-led base left the site with no  # pregate-literal: SCHEMA_VERSION=11 a review date (2026-11-01), not the schema
         # host named on datenschutz.html.
         for bad in ("javascript://x", "ftp://example.org/x", "https://[::1/", "https:///no-host/", "///no-host/",
                     "/\\evil.example/x/", "data\\exports/"):
@@ -214,6 +218,7 @@ class ExportHelpersTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     b.resolve_data_base_url(bad)
 
+    # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
     # Value: protects=a base a browser reads as another URL than the one named (a scheme without "//", a port that is no number, whitespace a browser strips, a query or fragment the download paths would land inside) stops the build at the flag; fails_when=any of these is returned as the prefix of every download href, or the checks run only on the "https://" branch so a leading space skips the host checks; why_new=TODOS "Impressum/licence branch: deferred /gstack-ship findings" item 11; seam=none; no_claim=the host exists
     def test_resolve_data_base_url_rejects_what_a_browser_reads_differently(self) -> None:
         for bad in ("javascript:x", "data:text/plain,x", "mailto:x@example.org", "https:/example.org/", "https:example.org",
@@ -290,6 +295,38 @@ class ExportDistributionDataTests(unittest.TestCase):
         )
         kwargs.update(overrides)
         return b.export_distribution_data(self.db_path, self.exports_dir, **kwargs)
+
+    # Value (R4, ADR 0005): protects=a withheld Rede travels parse -> store -> export (CSV, manifest, DATA.md coverage) ->
+    #   changelog -> release cap; fails_when=one layer drops or renames what the next reads; why_new=the real store holds
+    #   no withheld Rede until T4; seam=none; no_claim=a real release directory (publish's own tests cover it)
+    def test_a_withheld_rede_reaches_the_export_and_the_changelog(self) -> None:
+        import test_withholding as tw
+        parsed = dip.parse_protocol_xml(tw.sitting(tw.rede("R1"), tw.rede("R2", "Zwei", tw.REFUSED)), reviewed=[])
+        conn = pulse_store.connect(self.db_path)
+        try:
+            pulse_store.persist_report(conn, tw.report(parsed))
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertEqual(manifest["withheld_reden"], [{"document_number": "18/7", "rede_id": "R2", "reason": "refused_nested_contribution"}])
+        year = next(row for row in manifest["coverage"]["withheld"]["by_year"] if row["year"] == "2015")
+        self.assertEqual((year["reden_withheld"], year["words_withheld"]), (1, 3))
+        self.assertEqual([row["document_number"] for row in manifest["coverage"]["withheld"]["by_sitting"]], ["18/7"])
+        self.assertEqual([(r["year"], r["fraktion"], r["reden_withheld"], r["words_withheld"], r["words_stored"]) for r in manifest["coverage"]["withheld"]["by_fraktion"]],
+                         [("2015", "SPD", 1, 3, 3)])
+        gen_dir = self.exports_dir / manifest["generation"]
+        with gzip.open(gen_dir / "withheld_units-local.csv.gz", "rt", encoding="utf-8") as handle:
+            self.assertEqual(len(handle.read().strip().splitlines()), 2)
+        codebook = (gen_dir / "DATA.md").read_text(encoding="utf-8")
+        self.assertIn("## Abdeckung nach Jahr und zurückgehaltene Reden", codebook)
+        self.assertIn("**zurückgehaltenen Fakt** (`facts.withheld`)", codebook)
+        self.assertIn("| 18/7 | 2015-04-23 | 1 | 3 |", codebook)
+        self.assertIn("1 Rede zurückgehalten (3 Wörter,", b.render_daten_datenstand(manifest))
+        previous = {**manifest, "tag": "2026.11.01", "withheld_reden": []}
+        changes = release_changes.assemble(version="2026.11.02", released=date(2026, 11, 2), manifest={**manifest, "tag": "2026.11.02"},  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
+                                           previous_manifest=previous, authored={"summary": "Test."})
+        self.assertEqual([u["rede_id"] for u in changes["withheld_reden_added"]], ["R2"])
+        self.assertIsNone(publish.withheld_cap_problem(changes, []))
 
     # Value: protects=a real export (DATA.md with the authored inputs, datenstand.json) passes the public-output validator that now scans both; fails_when=authored text or the manifest holds a denylisted pattern, which would turn CI red on every build; why_new=validate_public_output started scanning data/exports documents; seam=none; no_claim=other surfaces
     def test_a_real_export_passes_the_public_output_validator(self) -> None:
@@ -716,7 +753,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             conn.execute(
                 "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
                 "VALUES ('5700', '9/1', '1980-01-01', 'Alte Sitzung', '{}', ?, ?)", (now, now))
-            conn.execute("INSERT INTO speech_rule_inputs(protocol_id, version) VALUES ('5700', ?)", (pulse_store.speech_kinds.VERSION,))
+            conn.execute("INSERT INTO speech_rule_inputs(protocol_id, version, reviewed_digest) VALUES ('5700', ?, ?)", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]),))
             conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN '5801' ELSE '5802' END")
             totals = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                       for table in ("agenda_items", "speeches", "contributions", "votes", "vote_members")}
@@ -739,7 +776,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                 conn.execute(
                     "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
                     "VALUES (?, ?, ?, 'Weitere Sitzung', '{}', ?, ?)", (protocol_id, number, date, now, now))
-            conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+            conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
         (row,) = [row for row in self.export()["coverage"]["wahlperioden"] if row["wp"] == "20"]
         self.assertEqual((row["wp"], row["sittings"], row["date_from"], row["date_to"]), ("20", 5, "2024-03-01", "2024-09-30"))
 
@@ -936,8 +973,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                 conn.execute("INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)"
                              " VALUES ('ai-5803', '5803', 1, 'T1', 'TOP 1', ?, ?)", (now, now))
                 self._add_speech(conn, "5803", "R-late", fraktion="fraktionslos")
-                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
-                             (pulse_store.speech_kinds.VERSION,))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
         finally:
             conn.close()
         # (2+2+1)/12, (2+1+2)/12, (0+1+1)/12.
@@ -949,8 +986,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                 now = pulse_store.utc_now()
                 conn.execute("INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)"
                              " VALUES ('5701', '20/1', '2021-10-25', 'Vor dem Mandat', '{}', ?, ?)", (now, now))
-                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
-                             (pulse_store.speech_kinds.VERSION,))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
         finally:
             conn.close()
         self.assertEqual(set(self._r2_seat_shares().values()), {None})
@@ -1009,8 +1046,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                 conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count,"
                              " text, fraktion, created_at, updated_at) VALUES ('s-1805', '1805', 'ai-1805', 'R1805', 1, ?,"
                              " 500, 'Alt', 'SPD', ?, ?)", (mp_id, now, now))
-                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
-                             (pulse_store.speech_kinds.VERSION,))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
         finally:
             conn.close()
         manifest = self.export()
@@ -1049,11 +1086,13 @@ class ExportDistributionDataTests(unittest.TestCase):
     # counted coverage gap on the Daten page; fails_when=the export forgets it or the page
     # does not name it; seam=export_distribution_data + render_daten_datenstand.
     def test_an_excluded_sitting_is_counted_as_not_covered(self) -> None:
-        manifest = self.export(excluded_sittings=["18/84"])
-        self.assertEqual(manifest["coverage"]["excluded"], ["18/84"])
+        manifest = self.export(excluded_sittings=[{"document_number": "18/84", "reason": "source_defect", "reason_detail": "Die Datei enthält eine andere Sitzung."}])
+        self.assertEqual(manifest["coverage"]["excluded"], [{"document_number": "18/84", "reason": "source_defect", "reason_detail": "Die Datei enthält eine andere Sitzung."}])
         self.assertNotIn("source_rejected", manifest["coverage"])
         html = b.render_daten_datenstand(manifest)
-        self.assertIn("1 nicht erfasst (ausgeschlossen): 18/84", html)
+        # Gate step 4: the page says why the sitting is missing, not just that it is.
+        self.assertIn("1 nicht erfasst (ausgeschlossen): 18/84 (Fehler der Quelle, der die ganze Sitzung betrifft: "
+                      "Die Datei enthält eine andere Sitzung.)", html)
         self.assertNotIn("ausgeschlossen", b.render_daten_datenstand(self.export(force=True)))
 
     # Value (A3): protects=the Daten page states the v1 scope beside the measured
@@ -1071,7 +1110,7 @@ class ExportDistributionDataTests(unittest.TestCase):
     # claims every sitting or the pointer shows with nothing excluded;
     # seam=render_daten_datenstand.
     def test_datenstand_scope_line_names_the_exclusions(self) -> None:
-        html = b.render_daten_datenstand(self.export(excluded_sittings=["18/84"]))
+        html = b.render_daten_datenstand(self.export(excluded_sittings=[{"document_number": "18/84", "reason": "source_defect", "reason_detail": "Die Datei enthält eine andere Sitzung."}]))
         scope = html.index('class="scope-line"')
         self.assertIn("XML-Protokoll f&uuml;hrt, bis auf die ausgeschlossenen Sitzungen (unten).", html[scope:])
         self.assertGreater(html.index("nicht erfasst (ausgeschlossen)"), scope)
@@ -1119,7 +1158,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                    VALUES ('speech-5900', '5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
                 (ai, mp_id, now, now),
             )
-        conn.execute("INSERT INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+        conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
         person_registry.reconcile(conn)
         conn.commit()
         conn.close()
@@ -1191,18 +1230,19 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_thirty_two_csvs_named_and_headered(self) -> None:
+    def test_all_thirty_four_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 32)
+        self.assertEqual(len(csv_files), 34)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
             "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
             "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz", "mdb_stammdaten_stand-local.csv.gz",
+            "withheld_units-local.csv.gz", "withheld_turns-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -1241,7 +1281,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 16)
+        self.assertEqual(manifest["export_format"], 18)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1808,6 +1848,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             "vote_members": ["vote_id", "mp_id"], "vote_passages": ["vote_id", "document_id"],
             "vote_politikfelder": ["vote_id", "politikfeld"],
             "vote_proceedings": ["vote_id", "proceeding_id"], "votes": ["id"],
+            "withheld_turns": ["id"], "withheld_units": ["id"],
         })
 
     def _export_acting_after_copy(self, act):
@@ -1892,7 +1933,7 @@ class RecipeRepresentativeTests(unittest.TestCase):
     PERSONS = (
         # person, identity_key, display_name, is_mdb, xml_redner_id
         ("p-1", "dip:1", "Ada Lovelace, MdB, SPD", 0, None),
-        ("p-1", "xml:11", "Ada Lovelace", 0, "11"),
+        ("p-1", "xml:11", "Ada Lovelace", 0, "11"),  # pregate-literal: SCHEMA_VERSION=11 an unrelated number (date, count or id), not the constant
         ("p-2", "dip:7", "Bea Zwei", 0, None),
         ("p-2", "profile:x", "Zwei, Bea", 0, None),
         ("p-3", "dip:9", "Dr. Cem Drei", 1, None),

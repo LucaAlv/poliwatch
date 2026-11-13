@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.40.0.0] - 2026-11-13
+
+An oath, the acceptance of an election, chairing and an address to the Bundestag are no longer counted as Reden. 82 Reden in 24 kept sittings were oath answers or acceptances: they leave the counts, and two sittings, 18/4 and 20/5, now hold no Rede at all. Addresses by the Präsident, a Vizepräsident, the Alterspräsident or a guest become a Beitrag of their own, the Ansprache.
+
+### Changed
+
+- **Oath answers and election acceptances printed as a `<rede>` are no longer Reden.** "Ich schwöre es, so wahr mir Gott helfe." or "Ich nehme die Wahl an." is no contribution to a debate. Each such `<rede>` is named in a reviewed list (`scripts/reviewed_units.json`) and recorded as a procedural turn, not stored. Old and new, replayed on the store of 718 sittings:
+  - Reden 54,937 → 54,855.
+  - Sprechrolle Bundesregierung 2,849 → 2,790 (59 oath answers of the Bundeskanzler(in) and Minister), weitere 22 → 18 (the Wehrbeauftragte and the Polizeibeauftragte).
+  - CDU/CSU 14,882 → 14,874, SPD 11,555 → 11,550, Grüne 7,670 → 7,667, Die Linke 5,639 → 5,637, FDP 4,374 → 4,373: the acceptances of Kanzler, Präsidentinnen and Vizepräsident(inn)en. AfD, BSW and fraktionslos are unchanged.
+  - 24 sittings move, for example 21/2 24 → 5, 20/1 14 → 8, 21/1 17 → 12; 18/4 14 → 0 and 20/5 18 → 0. Beiträge do not move.
+  - Fakten: 50 of 1,922 values move, mostly first-Rede weeks whose debut was an oath (2021-W49 10 → 4, 2025-W20 43 → 46); 2025-W19 has no first-Rede fact any more, so publishable weeks go 182 → 181.
+- **An address to the Bundestag is an Ansprache, shown and counted nowhere.** The Dossier card reads "Ansprache · Präsident" (or the guest's role), the agenda item lists it under "Weitere Beiträge, keine Reden", and a person page counts Ansprachen apart. No kept sitting holds one yet. Ten excluded sittings that held only for these kinds (18/173, 18/178, 18/193, 18/215, 18/223, 18/245, 19/1, 19/9, 19/19, 19/73) now parse with every role mapped, 14 Ansprachen among them; `coverage-exclusions.json` records them as awaiting acquisition instead of a rule.
+- **A presidium `<rede>`, oath answer or acceptance nobody reviewed is withheld.** A Präsident(in) or Alterspräsident(in) who owns a `<rede>`, or a short `<rede>` that reads like an oath (up to 400 characters) or an acceptance (up to 200), counts only once the list names it; until then that Rede is withheld with the new reason `unreviewed_presidium` (`withheld_units`), named on the Dossier, and the sitting stays. The ADR 0004 entries share `scripts/reviewed_units.json` with the withheld units of 0.39.0.0: a stale entry stops the run, an edit re-reads exactly the sittings it touches. A Vizepräsident(in) printed with a Fraktion still speaks for it.
+- **A sitting with no Rede says so.** Its Dossier shows no Rede or Text share and says what the protocol prints there are procedural steps, not "Keine Reden im XML".
+- **18/1's acceptance is read.** "Herr Alterspräsident, lieber Kollege Riesenhuber, ich nehme die Wahl gerne an." was an unresolved turn, so 0.39.0.0 withheld the Rede holding it (`ID1800100100`); it is now a Rede with the acceptance as a procedural turn.
+- **The speech rule goes from 8 to 9 and the export format from 17 to 18** (`contributions.kind` gains `ansprache`, `withheld_units.reason` gains `unreviewed_presidium`). A store built before this release refuses facts, export and rendering until one `--offline --repersist`.
+
+## [0.39.0.0] - 2026-11-13
+
+A Rede the parser cannot read no longer keeps its whole sitting out. The parser withholds that one Rede, with its reason and text, and keeps the sitting's other Reden, agenda items and votes. A withheld Rede counts nowhere, neither as a Rede or Beitrag nor for a person or a Fraktion. No figure moves on the 718 sittings held today, since none of them withholds a Rede.
+
+### Added
+
+- **Withheld Reden are stored apart, with their reason.** Two new tables hold them: `withheld_units` (who spoke, as printed, the page, the reason, the speaker's own words and their count) and `withheld_turns` (other speakers' passages inside the Rede). Both are in the Daten export and the data dictionary. The reasons are a passage by another speaker that no rule explains, a speaker in a Befragung who is neither asker nor answerer, and an entry on a reviewed list.
+- **A reviewed list withholds single known-wrong Reden.** `scripts/reviewed_units.json` names five Reden in 18/2, 18/29, 18/83 and 19/25 that read wrongly without any refusal. An entry whose Rede or speaker no longer matches the source stops the run, and editing the list forces a re-read of exactly the sittings it touches.
+- **DATA.md shows coverage by year and the withheld share.** The share is the withheld Reden's own words over all Reden's own words, per year, per Fraktion and per sitting; the Daten page gives the totals and each excluded sitting's reason. The Dossier names each withheld Rede and its reason, without the text.
+- **Every excluded sitting says why it is out.** `coverage-exclusions.json` now needs a reason code (`source_defect`, `not_narrowable`, `awaiting_rule`, `awaiting_acquisition`) and a sentence for each sitting; `--exclude-document-number` needs `--exclusion-reason` and `--exclusion-detail`. A record with the old bare "excluded" is refused. The 86 reasons for the current record are in `docs/plans/coverage-gate-pr2/coverage-exclusions.json`.
+- **A release that adds more than two newly withheld Reden needs them named.** `publish_dip_pulse_data.py` refuses it until each is confirmed with `--confirm-withheld 18/1:ID…`; the data changelog lists every Rede a release newly withholds or releases.
+- **Checks for withholding.** `scripts/check_withhold_one.py` withholds one Rede per agenda item and checks that nothing else moves, the store gate checks that no withheld Rede is also counted, and `compare_store_values.py` lists withheld Reden added, released or changed.
+
+### Changed
+
+- **A Rede's position is its place among the agenda item's Reden in the source.** `speeches.sequence` used to count stored Reden only, so withholding a neighbour would renumber it. 5,556 of 54,937 speeches in 425 sittings take a new number, for example 21/105 `ID2110505700` 12 → 14; no other stored value moves (0 of 1,922 Fakt values).
+- **The speech rule goes from 7 to 8, the store schema from 11 to 12 and the export format from 16 to 17.** A store built before this release needs one `--offline --repersist`. Copy `docs/plans/coverage-gate-pr2/coverage-exclusions.json` to `<site-dir>/data/` first, because the old record is refused.
+
+### Removed
+
+- **`scripts/audit_offline_turns.py` and the W1 preflight tool are retired.** The parser now withholds by itself; both scripts stay in git history.
+
+Measured on the 84 fetched XML of the 85 sittings still out of the store: 71 parse once their refused Reden are withheld (90 Reden, 94,697 words), and 4 more parse with their reviewed entries. Twelve wait on rules for presidium and guest Reden and 18/20 stays out, so the coming acquisition step can bring back 72 of the 85 plus 21/106.
+
+## [0.38.0.0] - 2026-11-13
+
+How many WP 18 and 19 speakers can carry a trusted abgeordnetenwatch profile is now measured: 937 of the 945 distinct MdB Redner-IDs (99.2%) find their profile by their Bundestag id, and every hit a precision review had to see was checked by hand and is the right person. No page, figure or export changes in this release.
+
+### Added
+
+- **A read-only script measures the abgeordnetenwatch match share of the WP 18/19 Redner.** `scripts/measure_aw_match_share.py OUTPUT_DIR --cache PATH` counts the build's own speaker set, splits MdBs by their Mandat in each Wahlperiode, and writes a receipt listing every hit a reviewer must look at. It never writes the store or its private directory, sends nothing with `--offline`, and a rerun asks only the ids that had no answer. A share stays a range while any id is unanswered.
+- **The result:** 640 of 640 MdB ids in WP 18 and 719 of 727 in WP 19 find their profile; 98.3% of Reden (26,251 of 26,714) are by a speaker who does. The 8 WP 19 misses are wrong ids at abgeordnetenwatch (four-digit Bundestag ids), not parser errors.
+
+### Changed
+
+- **Builds ask abgeordnetenwatch at most once every 2 seconds** (was 0.5 s) and wait 60 s after a rate-limit reply, following the API's fair-use limit of 30 requests a minute. The abgeordnetenwatch part of an `--enrich aw-profiles` run takes up to four times as long.
+- **An error reply from abgeordnetenwatch is no longer stored as "no profile".** It counts as a failed lookup and is asked again next time; after eight connection failures or error replies in a row a run stops asking. A cache write that is cut short keeps the previous cache.
+
+Measured on an APFS clone of the store built on 2026-11-12 (400 WP 18/19 sittings): about 1,070 abgeordnetenwatch requests, 0 DIP requests, 0 store writes. The committed receipt was regenerated from the same answers with the network blocked, and every figure is identical.
+
 ## [0.37.0.0] - 2026-11-12
 
 A sitting can no longer lose a Rede without the build saying so. Every `<rede>` of a Plenarprotokoll now ends as a stored Rede or Beitrag, a zu Protokoll gegebener Beitrag, a Verfahrensbeitrag, or an exclusion under a named rule; a sitting where one does not is refused. No figure moves: all 718 held sittings parse exactly as before.

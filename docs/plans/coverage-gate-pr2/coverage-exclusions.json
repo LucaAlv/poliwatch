@@ -1,0 +1,606 @@
+{
+  "exclusions": [
+    {
+      "document_number": "18/1",
+      "date": "2013-10-22",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung, seit ADR 0004 die Wahlannahme in ID1800100100 liest (v0.40.0.0, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/2",
+      "date": "2013-11-18",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung; ihre bekannten falschen Einheiten stehen auf scripts/reviewed_units.json und werden zurückgehalten (N7). Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/3",
+      "date": "2013-11-28",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1800301600, ID1800305900 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/6",
+      "date": "2013-12-19",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1800602300 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/8",
+      "date": "2014-01-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1800803100 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/10",
+      "date": "2014-01-29",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1801002600:2 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/11",
+      "date": "2014-01-30",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1801101700, ID1801105900 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/20",
+      "date": "2014-03-13",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "source_defect",
+      "reason_detail": "Die Datei 18020.xml des Bundestages enthält die 21. Sitzung (Rede ID1802102900); ein XML der 20. Sitzung gibt es nicht (W1, 12.11.2026)."
+    },
+    {
+      "document_number": "18/21",
+      "date": "2014-03-14",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1802102900 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/26",
+      "date": "2014-04-03",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1802600400, ID1802603000, ID1802610500 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/29",
+      "date": "2014-04-09",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung; ihre bekannten falschen Einheiten stehen auf scripts/reviewed_units.json und werden zurückgehalten (N7). Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/36",
+      "date": "2014-05-22",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1803601400 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/42",
+      "date": "2014-06-25",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1804202000, ID1804205300 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/43",
+      "date": "2014-06-26",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1804301900:6 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/50",
+      "date": "2014-09-10",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1805001800 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/60",
+      "date": "2014-10-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1806005000 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/62",
+      "date": "2014-11-05",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_rule",
+      "reason_detail": "Eine Nachfrage einer Vizepräsidentin in der Fragestunde steht außerhalb jeder <rede> und hat keine Sprechrolle; nach der Entscheidung des Eigentümers in Runde 2 draußen, bis eine Regel sie abdeckt."
+    },
+    {
+      "document_number": "18/63",
+      "date": "2014-11-06",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1806302300 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/67",
+      "date": "2014-11-14",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1806700200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/82",
+      "date": "2015-01-29",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1808200300, ID1808201400 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/83",
+      "date": "2015-01-30",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung; ihre bekannten falschen Einheiten stehen auf scripts/reviewed_units.json und werden zurückgehalten (N7). Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/88",
+      "date": "2015-02-26",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1808801500, ID1808807800 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/89",
+      "date": "2015-02-27",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1808901500, ID1808902100 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/90",
+      "date": "2015-03-04",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_rule",
+      "reason_detail": "Eine Nachfrage einer Vizepräsidentin in der Fragestunde steht außerhalb jeder <rede> und hat keine Sprechrolle; nach der Entscheidung des Eigentümers in Runde 2 draußen, bis eine Regel sie abdeckt."
+    },
+    {
+      "document_number": "18/97",
+      "date": "2015-03-26",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1809705600 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/98",
+      "date": "2015-03-27",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1809802700 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/110",
+      "date": "2015-06-12",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1811002600, ID1811004200 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/112",
+      "date": "2015-06-18",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1811200600 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/113",
+      "date": "2015-06-19",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1811303100 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/117",
+      "date": "2015-07-17",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1811702000 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/118",
+      "date": "2015-08-19",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1811801700 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/124",
+      "date": "2015-09-24",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1812400500 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/127",
+      "date": "2015-10-01",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1812705000 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/143",
+      "date": "2015-12-03",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1814305400 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/158",
+      "date": "2016-02-25",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1815826800, ID1815828300, ID1815828500, ID1815828700 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/159",
+      "date": "2016-02-26",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1815914100 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/160",
+      "date": "2016-03-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1816000400 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/161",
+      "date": "2016-03-17",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1816110600 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/171",
+      "date": "2016-05-13",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1817101800 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/173",
+      "date": "2016-06-02",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1817303100 zurückgehalten wird (ADR 0005, XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/178",
+      "date": "2016-06-22",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/180",
+      "date": "2016-06-24",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1818004800 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/184",
+      "date": "2016-07-08",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1818402200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/193",
+      "date": "2016-09-29",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1819306800 zurückgehalten wird (ADR 0005, XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/210",
+      "date": "2016-12-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1821001700 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/215",
+      "date": "2017-01-26",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1821502200 zurückgehalten wird (ADR 0005, XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/219",
+      "date": "2017-02-17",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1821900300, ID1821904900 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/221",
+      "date": "2017-03-09",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1822109800 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/223",
+      "date": "2017-03-22",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/241",
+      "date": "2017-06-23",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1824101400 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "18/245",
+      "date": "2017-09-05",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/1",
+      "date": "2017-10-24",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/9",
+      "date": "2018-01-22",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/12",
+      "date": "2018-02-02",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID191202900, ID191203800 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/13",
+      "date": "2018-02-21",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID191304800, ID191305000, ID191306000 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/14",
+      "date": "2018-02-22",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID191411900 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/18",
+      "date": "2018-03-02",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID191806500, ID191806600 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/19",
+      "date": "2018-03-14",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/20",
+      "date": "2018-03-15",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID192001100, ID192003100 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/23",
+      "date": "2018-03-22",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID192304600 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/25",
+      "date": "2018-04-18",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung; ihre bekannten falschen Einheiten stehen auf scripts/reviewed_units.json und werden zurückgehalten (N7). Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/32",
+      "date": "2018-05-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID193207500 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/36",
+      "date": "2018-06-07",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID193612200 zurückgehalten wird (ADR 0005, XML aus W1); ihre Anlage 2 wird als zu Protokoll gegebene Fortsetzung gelesen (docs/source-errors.md, E8). Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/40",
+      "date": "2018-06-15",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID194002300 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/42",
+      "date": "2018-06-28",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID194214000 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/44",
+      "date": "2018-07-03",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID194407800 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/47",
+      "date": "2018-09-11",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID194701300 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/59",
+      "date": "2018-10-19",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID195905700 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/61",
+      "date": "2018-11-08",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID196110900 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/68",
+      "date": "2018-11-29",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID196811500, ID196811600 zurückgehalten werden (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/73",
+      "date": "2019-01-16",
+      "recorded_at": "2026-11-13T19:19:51Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich ohne Verweigerung (XML aus W1); mit den Arten aus ADR 0004 (Ansprache, Sitzungsleitung, Verfahrensschritt; v0.40.0.0) hat jede Rolle eine Sprechrolle. Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/92",
+      "date": "2019-04-04",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID199211200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/101",
+      "date": "2019-05-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1910104500 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/102",
+      "date": "2019-05-17",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1910206000 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/158",
+      "date": "2020-05-07",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1915809200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/170",
+      "date": "2020-07-02",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1917006200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/173",
+      "date": "2020-09-10",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1917304200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/189",
+      "date": "2020-11-05",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1918907900 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/192",
+      "date": "2020-11-19",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1919201800 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/193",
+      "date": "2020-11-20",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1919306300 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/201",
+      "date": "2020-12-16",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1920109100 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/215",
+      "date": "2021-03-04",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1921513700 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/227",
+      "date": "2021-05-06",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1922705300 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "19/239",
+      "date": "2021-09-07",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID1923903200 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "20/11",
+      "date": "2022-01-13",
+      "recorded_at": "2026-11-10T15:14:06Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Liest sich, wenn ID201100900 zurückgehalten wird (ADR 0005, XML aus W1); Abstimmungen, Tagesordnungspunkte und Verknüpfungen sind noch abzurufen (T4), danach die Prüfung N8."
+    },
+    {
+      "document_number": "21/106",
+      "date": "2026-11-06",
+      "recorded_at": "2026-11-12T15:15:15Z",
+      "reason": "awaiting_acquisition",
+      "reason_detail": "Parserlücke bei ID2110609100:4 Marker 2 (eine eigene Wortmeldung der Rednerin zwischen Zulassung und Zwischenfrage); kommt voraussichtlich mit dieser Rede zurückgehalten zurück (ADR 0005). XML noch nicht abgerufen; Abruf mit T4."
+    }
+  ]
+}

@@ -262,7 +262,9 @@ def check_export(output_dir: Path) -> dict[str, Any]:
 
 
 def store_counts(database_path: Path) -> dict[str, Any]:
-    """The row counts the receipt records, plus Beiträge per kind."""
+    """The row counts the receipt records, plus Beiträge per kind. The withheld
+    tables (schema 12, ADR 0005) read as None in a store from before them: the
+    gate counts the owner's store before the replay that upgrades it."""
     conn = _open_readonly(database_path)
     try:
         counts = {
@@ -270,6 +272,14 @@ def store_counts(database_path: Path) -> dict[str, Any]:
             for table in ("protocols", "agenda_items", "speeches", "contributions", "mps", "person_records",
                           "person_bindings", "person_aliases", "documents", "votes", "vote_members", "facts")
         }
+        has_withheld = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'withheld_units'").fetchone() is not None
+        for table in ("withheld_units", "withheld_turns"):
+            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] if has_withheld else None
+        counts["withheld_reasons"] = dict(conn.execute(
+            "SELECT reason, COUNT(*) FROM withheld_units GROUP BY reason ORDER BY reason")) if has_withheld else None
+        counts["withheld_words"] = conn.execute(
+            "SELECT COALESCE(SUM(word_count), 0) FROM withheld_units").fetchone()[0] if has_withheld else None
         counts["persons"] = conn.execute("SELECT COUNT(DISTINCT person_id) FROM person_records").fetchone()[0]
         # Schema 10 stores a total the source did not give as NULL, not 0.
         counts["votes_without_total"] = conn.execute(
@@ -292,6 +302,19 @@ def integrity(database_path: Path) -> dict[str, Any]:
     finally:
         conn.close()
     return {"integrity_check": check, "integrity_ok": check == ["ok"], "foreign_key_violations": len(violations)}
+
+
+def withheld_also_counted(database_path: Path) -> list[str]:
+    """Up to five withheld Reden whose rede_id is also a stored Rede or Beitrag
+    of the same sitting. A withheld Rede is outside every count (ADR 0005)."""
+    conn = _open_readonly(database_path)
+    try:
+        return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
+            "SELECT w.protocol_id, w.rede_id FROM withheld_units w WHERE EXISTS (SELECT 1 FROM speeches s "
+            "WHERE s.protocol_id = w.protocol_id AND s.rede_id = w.rede_id) OR EXISTS (SELECT 1 FROM contributions c "
+            "WHERE c.protocol_id = w.protocol_id AND c.rede_id = w.rede_id) LIMIT 5")]
+    finally:
+        conn.close()
 
 
 def _store_identity(database_path: Path) -> dict[str, Any]:
@@ -503,6 +526,8 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         receipt["integrity"] = integrity(database_path)
         checks["sqlite_integrity_ok"] = receipt["integrity"]["integrity_ok"]
         checks["no_foreign_key_violations"] = receipt["integrity"]["foreign_key_violations"] == 0
+        receipt["withheld_also_counted"] = withheld_also_counted(database_path)
+        checks["no_withheld_rede_counted"] = not receipt["withheld_also_counted"]
         receipt["counts"] = store_counts(database_path)
         receipt["counts_vs_2026_10_05"] = {
             key: {"old": old, "new": receipt["counts"][key], "delta": receipt["counts"][key] - old}

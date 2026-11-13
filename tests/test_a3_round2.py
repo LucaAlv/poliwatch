@@ -4,6 +4,7 @@ import unittest
 import _support  # noqa: F401
 import derive
 import validate_dip_protocol as dip
+from withheld_assert import assert_withheld
 
 
 def role_redner(long='', short='', printed=''):
@@ -133,7 +134,7 @@ class MiddleInitialTests(unittest.TestCase):
         self.assertEqual(top['contributions'][0]['speaker']['last_name'], 'W. Birkwald')
 
     def test_another_surname_is_still_a_mismatch(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(self.body('W. Birkholz'))
 
 
@@ -195,7 +196,7 @@ class ConsentAndOfferTests(unittest.TestCase):
         self.assertEqual(contributions, [('zwischenfrage', 'Ich halte das für falsch.')])
 
     def assert_refused(self, offer, consent, asker='Konrad'):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(self.body(offer, consent, asker))
 
     def test_a_short_turn_after_the_offer_is_consent(self):
@@ -236,7 +237,7 @@ class ConsentAndOfferTests(unittest.TestCase):
                 + redner('B', 'Konrad', 'FDP') + '<p>Ich halte das für falsch.</p>'
                 + redner('A', 'Haupt', 'CDU/CSU') + '<p>Weiter.</p>'
                 + redner('C', 'Meier', 'SPD') + '<p>Das ist doch so.</p></rede>')
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 3'):
             parse(body)
 
 
@@ -278,7 +279,7 @@ class RolelessChairTests(unittest.TestCase):
         self.assertEqual(contributions, [('zwischenfrage', 'Herr Renner, habe ich Sie richtig verstanden, dass Sie zustimmen würden?')])
 
     def test_a_namesake_of_the_chair_is_not_the_chair(self):
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at R marker 2'):
             parse(self.OPENING + '<rede id="R">' + person('A', 'Martin', 'Renner', 'AfD') + '<p>Rede.</p>'
                   + person('O', 'Dagmar', 'Ortleb')
                   + '<p>Herr Kollege Renner, erlauben Sie eine Zwischenfrage der Kollegin Gast.</p></rede>')
@@ -356,20 +357,22 @@ class PresidiumFraktionsredeTests(unittest.TestCase):
         self.assertIsNone(speech['speaker']['role'])
         self.assertEqual(contributions, [])
 
-    def test_without_a_fraktion_the_role_stays_unmapped(self):
-        # 18/245 Bulmahn, Singhammer: presidium Reden with no <fraktion>.
-        top, _contributions = parse(
-            '<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
-        speaker = top['speeches'][0]['speaker']
-        self.assertEqual(speaker['role'], 'Vizepräsidentin')
-        with self.assertRaises(derive.SprechrolleError):
-            derive.sprechrolle(speaker)
+    def test_without_a_fraktion_an_unlisted_presidium_rede_is_withheld_located(self):
+        # T3. 18/245 Bulmahn: a presidium Rede with no <fraktion> and no reviewed
+        # kind is withheld, named, and counts nowhere (ADR 0004 plan P2, O6).
+        with assert_withheld(self, r'^18/1 T1: presidium Rede at R has no reviewed kind \(scripts/reviewed_units\.json, ADR 0004\)$',
+                             reason='unreviewed_presidium') as withheld:
+            top, contributions = parse('<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
+        self.assertEqual([w['rede_id'] for w in withheld], ['R'])
+        self.assertEqual((top['speeches'], contributions), ([], []))
 
-    def test_the_praesident_is_not_covered(self):
-        top, _contributions = parse(
-            '<rede id="R">' + presidium('L', 'Lammert', 'Präsident', 'CDU/CSU') + '<p>Ansprache.</p></rede>')
-        self.assertEqual(top['speeches'][0]['speaker']['role'], 'Präsident')
-
+    def test_an_unlisted_praesident_printed_with_a_fraktion_is_withheld(self):
+        # T4. Only a Vizepräsident(in) role is stripped; the Präsident and the
+        # Alterspräsident keep theirs, so their Rede is never counted unread.
+        for role in ('Präsident', 'Alterspräsident', 'Präsidentin'):
+            with self.subTest(role=role):
+                with assert_withheld(self, 'presidium Rede at R has no reviewed kind', reason='unreviewed_presidium'):
+                    parse('<rede id="R">' + presidium('L', 'Lammert', role, 'CDU/CSU') + '<p>Ansprache.</p></rede>')
 
 if __name__ == '__main__':
     unittest.main()

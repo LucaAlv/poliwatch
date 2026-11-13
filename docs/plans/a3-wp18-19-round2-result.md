@@ -1,5 +1,7 @@
 # WP 18/19 round 2: rules built, re-audit, review, exclusion list (2026-10-22)
 
+> **Retired tool (coverage gate PR 2, 2026-11-13):** `scripts/audit_offline_turns.py`, cited below, is deleted; the parser now withholds a refused Rede itself and stores it in `withheld_units` ([ADR 0005](../adr/0005-withhold-refused-reden.md)). The script is in git history up to a4acab0.
+
 The owner's round-2 decisions ([a3-rule5-wp18-19-round2.md](a3-rule5-wp18-19-round2.md#owner-decisions-2026-10-22)) are built, one commit each, test-first. This record holds what moved, what the new-rule review found, and the exclusion list that follows. **Two questions for the owner are at the end.**
 
 ## Commits

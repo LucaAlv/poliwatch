@@ -86,7 +86,7 @@ A list of places where an official source file says something wrong or files con
   - Heßenkemper: 2 (753–754).
 
   The 8 roll-calls added since the first measurement (489, 490, 510, 531–533, 556 and 705) fall in the same windows. No other MdB appears.
-- **Corrected in poliwatch, 2026-11-05:** each of these Stimmen now counts for the group the Stammdaten prove on the vote's day (`derive.refile_vote_members`): 100 Stimmen in the 55 roll-calls. `vote_members.listed_party_id` keeps the page's group, and the page's totals can be read back from the store. The dossier panel names the difference. Old and new figures per vote and group are in `docs/plans/e4-refiled-votes-old-new.tsv`. The seat cross-check now finds no `shift_between_groups`. The Bundestag's pages still show these errors, so the entry stands for a correction request.
+- **Corrected in poliwatch, 2026-11-05:** each of these Stimmen now counts for the group the Stammdaten prove on the vote's day (`derive.refile_vote_members`): 100 Stimmen in the 55 roll-calls. `vote_members.listed_party_id` keeps the page's group, and the page's totals can be read back from the store. The dossier panel names the difference. Old and new figures per vote and group are in `docs/plans/e4-refiled-votes-old-new.tsv`. The seat cross-check now finds no `shift_between_groups`. The fresh reference store of 2026-11-12, built online from main 28799ac, gives the same 100 Stimmen in 55 roll-calls. Rebuilt from its cached pages, its TSV equals the committed one byte for byte, and its moved rows name exactly these six MdBs, in these windows (`docs/plans/a3-phase4.md`). The Bundestag's pages still show these errors, so the entry stands for a correction request.
 
 ### E5. 2016-11-09: two CDU/CSU members missing from one roll-call list
 
@@ -114,7 +114,8 @@ A list of places where an official source file says something wrong or files con
   - The chair, in 21/51: "Die Beschlussempfehlung ist damit angenommen."
   - DIP: Beschlusstenor "Ablehnung der Vorlage", with "507:47:0 (Annahme der Beschlussempfehlung auf Ablehnung)".
 - **What it should be:** the box names the Beschlussempfehlung, as on the pages of votes 774 ("Beschlussempfehlung 20/1890 Buchstabe b (Antrag 20/699 ablehnen) angenommen") and 777 ("Beschlussempfehlung 20/1835 angenommen").
-- **Scale:** of the 619 stored roll-calls, 25 have an official result worded on the Antrag. In all 25 the word agrees with the Ja or Nein majority. Vote 990 is the only one of them on a Beschlussempfehlung to reject. Only the pages of votes 638, 695, 774, 777, 801, 883 and 990 were read.
+- **Scale:** of the 619 stored roll-calls, 25 have an official result worded on the Antrag. In all 25 the word agrees with the Ja or Nein majority. Vote 990 is the only one of them on a Beschlussempfehlung to reject. Only the pages of votes 638, 695, 774, 777, 801, 883 and 990 were read. That count was taken on the A3 store's cached pages.
+- **Scale on the fresh reference store, 2026-11-12:** every page was fetched again, and 35 of the 619 roll-calls are now worded on the Antrag: 990 and 34 others. 990 is stored as `proposition` since the correction below, so the store's `result_scope = application` count is 34. In 34 of the 35 the word agrees with the Ja or Nein majority. The exception is 996 (2026-03-25), a second Beschlussempfehlung to reject. Its box gives the right word ("abgelehnt" on a Ja majority for rejecting the Antrag), so the page is not in error there. Why the count rose by 10 is open (TODOS.md, "Vote direction: what the 2026-11-07 fix left open").
 - **Effect on poliwatch:** vote 990 read "Antrag: Angenommen" and "der Antrag wurde angenommen (laut Beschluss auf bundestag.de)".
 - **Corrected in poliwatch, 2026-11-07:** on a vote established as a Beschlussempfehlung to reject, a Ja majority outranks the box's word "Antrag … angenommen": the word is read as the ballot's (`validate_dip_protocol._read_contradicted_official_result`). Vote 990 now reads "Antrag: Abgelehnt". `votes.result_scope` moved from `application` to `proposition`, and `result_raw` and `result_source` stay `accepted` and `official`. The Bundestag's page still shows the error, so the entry stands for a correction request.
 
@@ -132,6 +133,15 @@ A list of places where an official source file says something wrong or files con
   - `id="11003609"`: Sibylle Pfeiffer; Michael Roth, once, in the speaker list of 18/230.
 - **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
 - **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored.
+
+### E8. 19/36: a Zu-Protokoll continuation filed under the title of the absentee list
+
+- **Status:** verified 2026-11-13, on the XML fetched 2026-11-12.
+- **Source:** `https://dserver.bundestag.de/btp/19/19036.xml`, `<anlage>` "Anlage 2": `<anlagen-text anlagen-typ="Liste der entschuldigten Abgeordneten">`, holding `<rede id="ID193616800">` (Martina Stamm-Fibich, SPD).
+- **What is wrong:** the `anlagen-typ` repeats the title of Anlage 1, the real list of absent members. Anlage 2 holds no list. Its own headings read "Zu Protokoll gegebene Fortsetzung des abgebrochenen Redebeitrages der Abgeordneten Martina Stamm-Fibich (SPD)" and "(Tagesordnungspunkt 5, Seite 3370 C)". In TOP 5 (`ID193602600`) Stamm-Fibich breaks off her speech for her voice, the chair offers to take the rest zu Protokoll, and a footnote points to Anlage 2. The protocol's Inhaltsverzeichnis lists Anlage 2 under the same heading.
+- **What it should be:** an `anlagen-typ` for a written submission, as "Zu Protokoll gegebene Rede".
+- **Scale:** of the 799 annex blocks with an "entschuldigt" title in the 802 WP 18/19 sittings held (718 in the A3 store, 84 of the excluded sittings), this is the only one holding a `<rede>`, and the only block in the 802 with a Zu-Protokoll heading under another title.
+- **Our side:** fixed 2026-11-13. `scripts/validate_dip_protocol.py` reads a block under that title by its first `Anlage_3` heading when the heading says "Zu Protokoll gegebene Rede(n)" or "… Fortsetzung" (`MISTITLED_ZU_PROTOKOLL`), so the text is a `zu_protokoll` Beitrag under TOP 5. Before #147 the parser dropped it without a word; from #147 until this fix the sitting refused (`docs/plans/withholding-preflight/report.md`, "19/36").
 
 ## Candidates
 

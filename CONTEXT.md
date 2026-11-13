@@ -101,12 +101,16 @@ A Sitzung this project has a Dossier for. Every count this project publishes —
 _Avoid_: erfasste Sitzung ("erfasst" already names Presentation states and incomplete Fakt periods), implying a count covers every Sitzung held
 
 **Rede**:
-One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung; the Plenarprotokoll records the first three and the Befragung's Fragen and Antworten as `<rede>` elements like Reden, and the Fragestunde's as flat turns.
+One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung; the Plenarprotokoll records the first three and the Befragung's Fragen and Antworten as `<rede>` elements like Reden, and the Fragestunde's as flat turns. Nor are an Ansprache, the acceptance of an election, the answer to an oath or Sitzungsleitung, even where the Plenarprotokoll XML prints one as a `<rede>` of its own (ADR 0004).
 _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text, counting every recorded contribution as a Rede
 
 **Beitrag**:
-Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Zwischenfrage, a written submission, a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde. Each has a Kind (`zwischenfrage`, `zu_protokoll`, `kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
+Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Zwischenfrage, a written submission, a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde, or an Ansprache. Each has a Kind (`zwischenfrage`, `zu_protokoll`, `kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`, `ansprache`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
 _Avoid_: Wortmeldung, counting a Beitrag as a Rede, adding Beiträge to a Person's Reden
+
+**Zurückgehaltene Rede**:
+A Rede the parser cannot read without guessing, because a turn of another Redner inside it matches no reviewed rule, or a Rede the owner has put on the reviewed list with a reason. It is held back, not dropped: it keeps its text and reason in `withheld_units` (other Redner's turns inside it in `withheld_turns`) and counts nowhere, not as a Rede, not as a Beitrag, not for a Person or a Zusammenschluss. Its Sitzung keeps everything else (ADR 0005). The grain is the unit the parser emits, so a split part `ID…:n` can be withheld while its outer Rede is stored.
+_Avoid_: excluded (that is a whole Sitzung), dropped, refused (the Sitzung is not), confusing it with a **zurückgehaltener Fakt** (`facts.withheld`, a Fakt held back because a Sitzung is missing)
 
 **Zwischenfrage**:
 A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner. A separately marked nested speaker segment is stored as a Beitrag with its own source identity and a link to the containing Rede or Beitrag. In a Befragung, nested official answers remain answers of that format.
@@ -141,12 +145,12 @@ DIP's record of one Person's contribution in a Plenarprotokoll or Drucksache, ty
 _Avoid_: Aktivität as a synonym for Rede, counting Aktivitäten as Reden
 
 **Sitzungsleitung**:
-What the presiding Präsident, Vizepräsident or Alterspräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede, including where the Plenarprotokoll XML of Wahlperiode 18 and 19 prints it inside another speaker's `<rede>`; a Präsident who speaks from the lectern gives a Rede like any other Redner, counted for their Zusammenschluss (ADR 0004).
+What the presiding Präsident, Vizepräsident or Alterspräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede, including where the Plenarprotokoll XML of Wahlperiode 18 and 19 prints it inside another speaker's `<rede>` or as a whole `<rede>` of the presiding member; a Präsident who speaks from the lectern gives a Rede like any other Redner, counted for their Zusammenschluss (ADR 0004).
 _Avoid_: attributing chairing remarks to the Redner or counting them as speeches
 
-**Gastansprache**:
-An address to the Bundestag by an invited guest, such as a foreign head of state or a speaker at a Gedenkstunde. It is not a Rede and counts toward no speech total and no Zusammenschluss. The Plenarprotokoll XML does not record it at all (checked in 20/21 and the 20/209 Gedenkstunde: every Redner there has a Fraktion or a Rolle), so there is nothing to exclude and nothing to show.
-_Avoid_: Gastrede, counting it as a Rede
+**Ansprache**:
+An address to the Bundestag that is no contribution to a debate: given on its behalf by its Präsident, a Vizepräsident or the Alterspräsident (the opening of a constituent Sitzung, an inaugural address, Gedenkworte, a farewell, the welcome to a guest), or by an invited guest or another constitutional organ at a ceremonial or joint Sitzung. It is a Beitrag of Kind `ansprache`: shown on the Dossier with the speaker's printed role, counted in no Reden figure and for no Zusammenschluss or side. The code cannot tell an address from a debate Rede, so each one is named in a reviewed list (`scripts/reviewed_units.json`); a `<rede>` of the presidium the list does not name is refused (ADR 0004). An address the Plenarprotokoll XML prints as the chair's `<name>` text, as WP 20 and 21 do, stays outside every count and is not shown.
+_Avoid_: Gastansprache or Gastrede for a separate kind, counting an Ansprache as a Rede of the speaker's Fraktion
 
 **Sitzungswoche**:
 A week the Ältestenrat schedules for plenary work in the Bundestag's Sitzungskalender. It is a plan, not a record: a Sondersitzung can fall outside any Sitzungswoche. A week with only a Sondersitzung is sitzungsfrei in the Sitzungskalender, yet a Kalenderwoche this project reports on.
@@ -391,4 +395,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 11 / export format 16 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 12 / export format 18 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

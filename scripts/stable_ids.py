@@ -61,6 +61,16 @@ def speech_occurrence_id(protocol_id: Any, rede_id: str) -> str:
     return stable_key("speech", str(protocol_id), rede_id)
 
 
+def withheld_occurrence_id(protocol_id: Any, rede_id: str) -> str:
+    """A withheld Rede (ADR 0005) by its rede id, the unit the parser emits."""
+    return stable_key("withheld", str(protocol_id), rede_id)
+
+
+def withheld_turn_id(protocol_id: Any, rede_id: str, marker: Any) -> str:
+    """One other speaker's turn in a withheld Rede, by its marker ordinal."""
+    return stable_key("withheld-turn", str(protocol_id), rede_id, int(marker))
+
+
 def contribution_occurrence_id(protocol_id: Any, item_index: Any, sequence: Any, rede_id: Any) -> str:
     """A Beitrag by its rede id; a Fragestunde turn has none and goes by its
     source item index and sequence within the item."""

@@ -310,6 +310,37 @@ class SprechrolleError(Exception):
     """Speaker roles no rule maps; the message is the finished ``ERROR [sprechrolle]`` line."""
 
 
+class PresidiumRoleError(SprechrolleError):
+    """A Rede that still carries a presidium role (ADR 0004): the parser gives
+    every presidium <rede> a reviewed kind or refuses it, so a report holding one
+    was made by an older parser."""
+
+
+#: The presidium (ADR 0004), matched against a role with whitespace removed
+#: ("Vizepräsident in"). It is no Sprechrolle: no rule maps it.
+PRESIDIUM_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
+
+#: Beitrag kinds whose speaker's role picks no side and counts for no one: an
+#: Ansprache of the presidium or a guest (ADR 0004). Its Sprechrolle is NULL.
+SIDELESS_KINDS = frozenset({"ansprache"})
+
+
+def role_without_name(role: str | None, name_parts: Iterable[str | None] = ()) -> str:
+    """``role`` without the words of the speaker's printed name: 18/178, 19/9 and
+    19/73 print "Präsident Dr. Norbert Lammert" as the role."""
+    role = role or ""
+    for part in name_parts:
+        for token in (part or "").split():
+            role = re.sub(rf"(?<![\w.-]){re.escape(token)}(?![\w-])", " ", role)
+    return _clean(role)
+
+
+def is_presidium_role(role: str | None, name_parts: Iterable[str | None] = ()) -> bool:
+    """Whether ``role``, without the speaker's name (``role_without_name``), is
+    the presidium's. A guest's role ("Präsidentin des Bundesrates") is none."""
+    return bool(PRESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", role_without_name(role, name_parts))))
+
+
 def role_text(speaker: Mapping[str, Any] | None) -> str:
     """The ``<rolle_lang>`` of a speaker (``role``), else its short form."""
     speaker = speaker or {}
@@ -366,15 +397,39 @@ def find_unmapped_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> dict[str
     for report in reports:
         number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
         for item in [report, *(report.get("agenda_items") or [])]:
-            for speech in [*(item.get("xml_speakers") or []), *(item.get("xml_contributions") or [])]:
+            contributions = [c for c in item.get("xml_contributions") or [] if c.get("kind") not in SIDELESS_KINDS]
+            for speech in [*(item.get("xml_speakers") or []), *contributions]:
                 text = role_text(speech.get("speaker"))
                 if text and side_of_role(text) is None:
                     unmapped.setdefault(text, []).append(f"{number} {speech.get('rede_id') or '?'}")
     return unmapped
 
 
+def presidium_reden(reports: Iterable[Mapping[str, Any]]) -> list[str]:
+    """"protocol Rede-id" of every Rede whose speaker carries a presidium role."""
+    found = []
+    for report in reports:
+        number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
+        for item in [report, *(report.get("agenda_items") or [])]:
+            for speech in item.get("xml_speakers") or []:
+                speaker = speech.get("speaker") or {}
+                names = (speaker.get("display_name"), speaker.get("first_name"), speaker.get("last_name"))
+                if is_presidium_role(role_text(speaker), names):
+                    found.append(f"{number} {speech.get('rede_id') or '?'}")
+    return found
+
+
 def check_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> None:
-    """Raise one SprechrolleError listing every unmapped role of ``reports``."""
+    """Raise one SprechrolleError listing every unmapped role of ``reports``; a
+    Rede with a presidium role raises PresidiumRoleError first."""
+    reports = list(reports)
+    presidium = presidium_reden(reports)
+    if presidium:
+        shown = ", ".join(presidium[:4]) + (f" and {len(presidium) - 4} more" if len(presidium) > 4 else "")
+        raise PresidiumRoleError(
+            f"ERROR [sprechrolle]: {len(presidium)} Rede(n) carry a presidium role ({shown}). ADR 0004: the presidium "
+            "has no Sprechrolle; the parser gives each presidium <rede> a reviewed kind (scripts/reviewed_units.json) "
+            "or refuses it. The previous store is untouched. Fix: reparse the cached XML with --offline --repersist.")
     unmapped = find_unmapped_sprechrollen(reports)
     if unmapped:
         raise unmapped_sprechrollen_error(unmapped)
