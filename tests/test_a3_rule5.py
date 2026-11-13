@@ -2,6 +2,7 @@
 import unittest
 
 import _support  # noqa: F401
+import reviewed_units
 import speech_kinds as sk
 import validate_dip_protocol as dip
 from withheld_assert import assert_withheld
@@ -59,9 +60,9 @@ class ElectionAcceptanceTests(unittest.TestCase):
     as 19/1 ID19101200 is."""
 
     def setUp(self):
-        sk.use_reviewed_units([{'sitting': '18/1', 'rede_id': 'ID1', 'redner_id': '1', 'kind': 'sitzungsleitung',
+        reviewed_units.use([{'sitting': '18/1', 'rede_id': 'ID1', 'redner_id': '1', 'kind': 'sitzungsleitung',
                                 'reason': 'the election of the Präsident'}])
-        self.addCleanup(sk.use_reviewed_units, [])
+        self.addCleanup(reviewed_units.use, [])
 
     def body(self, turn, salutation=''):
         return ('<rede id="ID1">' + redner('1', 'Solms', 'FDP', 'Alterspräsident') + '<p>Ergebnis.</p>'

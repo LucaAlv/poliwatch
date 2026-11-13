@@ -2066,14 +2066,6 @@ def reparse_cached_xml(
                 f"rede reconciliation failed for {document_number}: {exc}. The <rede> elements of {path} do not reconcile with what the parser read; see docs/data-methods.md",
                 [document_number],
             ) from exc
-        except (dip.UnreviewedUnitError, dip.StaleReviewedUnitError) as exc:
-            # Not a corrupt file either: ADR 0004 needs a reviewed kind for a <rede> of a valid XML.
-            raise CachedReportError(
-                f"reviewed unit refused for {document_number}: {exc}",
-                [document_number],
-                fix="Fix: add or correct the entry in scripts/reviewed_units.json (ADR 0004; docs/plans/adr-0004-presidium-kinds.md), "
-                    "then run --offline --repersist again; re-fetching gives the same XML",
-            ) from exc
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
                 f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again",
@@ -3444,7 +3436,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 17
+EXPORT_FORMAT = 18
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -14543,11 +14535,6 @@ def main() -> int:
     # Reads .env so DIP_API_KEY and the LLM keys can live outside the shell.
     dip.load_local_env()
     args = parse_args()
-    try:
-        speech_kinds.reviewed_units()
-    except speech_kinds.ReviewedUnitsError as exc:
-        print(f"ERROR [reviewed-units]: {exc}", file=sys.stderr)
-        return 1
     args.include_dev_view = bool(getattr(args, "include_dev_view", False))
     args.summary_mode = getattr(args, "summary_mode", "reuse")
     # The reviewed list is read and checked before any sitting is touched: a

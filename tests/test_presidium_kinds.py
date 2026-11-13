@@ -10,8 +10,10 @@ from pathlib import Path
 
 import _support
 import derive
+import reviewed_units
 import speech_kinds as sk
 import validate_dip_protocol as dip
+from withheld_assert import assert_withheld
 
 
 def redner(rid, last, fraktion=None, role=None, first=None, title=None, printed=None):
@@ -44,15 +46,21 @@ def entry(rede_id, redner_id, kind, sitting_='19/1', reason='reviewed in the cen
 
 
 def parse(body, entries=(), **kwargs):
-    sk.use_reviewed_units(list(entries))
+    reviewed_units.use(list(entries))
     try:
         return dip.parse_protocol_xml(sitting(body, **kwargs))
     finally:
-        sk.use_reviewed_units([])
+        reviewed_units.use([])
 
 
 def top_of(parsed):
     return parsed['agenda_items'][0]
+
+
+def unreviewed(parsed):
+    """(rede_id, message) of each Rede withheld as an unreviewed ADR 0004 unit (O6)."""
+    return [(w['rede_id'], w['reason_detail']) for t in parsed['agenda_items'] for w in t['withheld']
+            if w['reason'] == 'unreviewed_presidium']
 
 
 SCHAEUBLE = redner('11001938', 'Schäuble', 'CDU/CSU', 'Präsident', first='Wolfgang', title='Dr.')
@@ -115,20 +123,24 @@ class SitzungsleitungTests(unittest.TestCase):
 
 
 class UnreviewedPresidiumTests(unittest.TestCase):
-    def test_an_unlisted_presidium_rede_refuses_located(self):
-        # T3, T4: whatever the Fraktion.
+    def test_an_unlisted_presidium_rede_is_withheld_located(self):
+        # T3, T4: whatever the Fraktion. Withheld with W3's located type (O6);
+        # the debate around it stays.
         for owner in [SCHAEUBLE, SOLMS, redner('3', 'Bulmahn', role='Vizepräsidentin')]:
             with self.subTest(owner=owner[:60]):
-                with self.assertRaises(dip.UnreviewedUnitError) as caught:
-                    parse(rede('ID7', owner, '<p>Ansprache.</p>'))
-                self.assertEqual(caught.exception.rede_id, 'ID7')
-                self.assertIn('19/1 T1: presidium Rede at ID7 has no reviewed kind', str(caught.exception))
+                parsed = parse(rede('ID7', owner, '<p>Ansprache.</p>') + rede('ID8', MEMBER_A, DEBATE))
+                [(rid, message)] = unreviewed(parsed)
+                self.assertEqual(rid, 'ID7')
+                self.assertIn('19/1 T1: presidium Rede at ID7 has no reviewed kind', message)
+                self.assertEqual([s['rede_id'] for s in top_of(parsed)['speeches']], ['ID8'])
+                self.assertEqual(top_of(parsed)['contributions'], [])
+        self.assertTrue(issubclass(dip.UnreviewedUnitError, dip.LocatedRefusal))
 
     def test_a_role_printed_with_the_name_is_the_presidium(self):
         # T22: 18/178 prints "Präsident Dr. Norbert Lammert" as rolle_lang.
         lammert = redner('11001274', 'Lammert', role='Präsident Dr. Norbert Lammert', first='Norbert', title='Dr.')
-        with self.assertRaisesRegex(dip.UnreviewedUnitError, 'presidium Rede at ID1 has no reviewed kind'):
-            parse(rede('ID1', lammert, '<p>Gedenkworte.</p>'), wp=18, nr=178)
+        [(_rid, message)] = unreviewed(parse(rede('ID1', lammert, '<p>Gedenkworte.</p>'), wp=18, nr=178))
+        self.assertIn('presidium Rede at ID1 has no reviewed kind', message)
         top = top_of(parse(rede('ID1', lammert, '<p>Gedenkworte.</p>'),
                            [entry('ID1', '11001274', 'ansprache', '18/178')], wp=18, nr=178))
         self.assertEqual([c['kind'] for c in top['contributions']], [sk.ANSPRACHE])
@@ -173,8 +185,9 @@ class VizepraesidentTests(unittest.TestCase):
 
 
 class StaleEntryTests(unittest.TestCase):
-    def test_a_stale_entry_refuses_the_sitting_naming_it(self):
-        # T6.
+    def test_a_stale_entry_stops_the_run_naming_it(self):
+        # T6. One rule for the whole list (ADR 0005): the list, not the source,
+        # needs correcting, so the run stops instead of skipping the sitting.
         body = rede('ID1', SCHAEUBLE, '<p>Ansprache.</p>')
         annex = ('<dbtplenarprotokoll wahlperiode="19" sitzung-nr="1"><sitzungsverlauf>'
                  '<tagesordnungspunkt top-id="T1"><p klasse="T_NaS">Eröffnung</p>' + rede('ID1', MEMBER_A, DEBATE)
@@ -182,37 +195,43 @@ class StaleEntryTests(unittest.TestCase):
                  + rede('ID9', SCHAEUBLE, '<p>Zu Protokoll.</p>') + '</anlagen-text></anlage></anlagen></dbtplenarprotokoll>')
         for name, xml, entries, message in [
             ('missing rede', sitting(body), [entry('ID1', '11001938', 'ansprache'), entry('ID2', '11001938', 'ansprache')],
-             'reviewed unit ID2 .*prints this <rede> 0 times'),
+             r'ID2 \(ansprache\): the Sitzungsverlauf prints this <rede> 0 times'),
             ('wrong redner', sitting(body), [entry('ID1', '11002190', 'ansprache')],
-             'reviewed unit ID1 .*owned by Redner-ID 11001938, the entry says 11002190'),
-            ('annex only', annex, [entry('ID9', '11001938', 'ansprache')], 'reviewed unit ID9 .*prints this <rede> 0 times'),
+             r'ID1 \(ansprache\): owned by Redner-ID 11001938, the entry says 11002190'),
+            ('annex only', annex, [entry('ID9', '11001938', 'ansprache')], r'ID9 \(ansprache\): the Sitzungsverlauf prints this <rede> 0 times'),
         ]:
             with self.subTest(name):
-                sk.use_reviewed_units(entries)
+                reviewed_units.use(entries)
                 try:
-                    with self.assertRaisesRegex(ValueError, '^19/1: ' + message):
+                    with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, '^scripts/reviewed_units.json: 19/1 ' + message):
                         dip.parse_protocol_xml(xml)
                 finally:
-                    sk.use_reviewed_units([])
+                    reviewed_units.use([])
 
     def test_an_id_printed_twice_refuses(self):
         xml = sitting(rede('ID1', SCHAEUBLE, '<p>A.</p>') + rede('ID1', SCHAEUBLE, '<p>B.</p>'))
-        sk.use_reviewed_units([entry('ID1', '11001938', 'ansprache')])
+        reviewed_units.use([entry('ID1', '11001938', 'ansprache')])
         try:
             with self.assertRaisesRegex(ValueError, 'ID1'):
                 dip.parse_protocol_xml(xml)
         finally:
-            sk.use_reviewed_units([])
+            reviewed_units.use([])
 
     def test_an_entry_for_another_sitting_is_not_applied(self):
         # T8.
-        with self.assertRaisesRegex(dip.UnreviewedUnitError, 'presidium Rede at ID1'):
-            parse(rede('ID1', SCHAEUBLE, '<p>Ansprache.</p>'), [entry('ID1', '11001938', 'ansprache', '19/2')])
+        parsed = parse(rede('ID1', SCHAEUBLE, '<p>Ansprache.</p>'), [entry('ID1', '11001938', 'ansprache', '19/2')])
+        self.assertEqual([rid for rid, _message in unreviewed(parsed)], ['ID1'])
 
 
 class LoaderTests(unittest.TestCase):
     """T7: a malformed list stops the run with ReviewedUnitsError, never as a
-    protocol refusal (a ValueError)."""
+    protocol refusal (a ValueError). The ADR 0004 kinds share ADR 0005's file
+    and checks (scripts/reviewed_units.py)."""
+
+    def load(self, tmp, name, content):
+        path = Path(tmp) / f'{name}.json'
+        path.write_text(content, encoding='utf-8')
+        return reviewed_units.load(path)
 
     def test_malformed_lists_refuse_with_a_named_entry(self):
         good = entry('ID1', '1', 'ansprache')
@@ -224,63 +243,62 @@ class LoaderTests(unittest.TestCase):
             'entry not an object': {'entries': ['x']},
             'unknown key': {'entries': [{**good, 'marker': 3}]},
             'missing key': {'entries': [{k: v for k, v in good.items() if k != 'reason'}]},
-            'unknown kind': {'entries': [{**good, 'kind': 'withhold'}]},
+            'unknown kind': {'entries': [{**good, 'kind': 'gastrede'}]},
             'number value': {'entries': [{**good, 'redner_id': 11001938}]},
             'blank sitting': {'entries': [{**good, 'sitting': ''}]},
             'path sitting': {'entries': [{**good, 'sitting': '../1'}]},
             'blank reason': {'entries': [{**good, 'reason': '  '}]},
-            'rede id not an id': {'entries': [{**good, 'rede_id': 'ID1:3'}]},
+            'presidium kind on a split part': {'entries': [{**good, 'rede_id': 'ID1:3'}]},
             'redner id not digits': {'entries': [{**good, 'redner_id': '11001938 '}]},
             'duplicate entry': {'entries': [good, good]},
             'one rede under two kinds': {'entries': [good, {**good, 'kind': 'procedural'}]},
+            'withheld and reviewed at once': {'entries': [good, {**good, 'kind': 'withhold'}]},
         }
-        for name, data in cases.items():
-            with self.subTest(name):
-                with self.assertRaises(sk.ReviewedUnitsError) as caught:
-                    sk.validate_reviewed_units(data, 'list.json')
-                self.assertNotIsInstance(caught.exception, ValueError)
-                self.assertTrue(str(caught.exception).startswith('list.json'))
-        self.assertEqual(len(sk.validate_reviewed_units({'entries': [good]})), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            for index, (name, data) in enumerate(cases.items()):
+                with self.subTest(name):
+                    with self.assertRaises(reviewed_units.ReviewedUnitsError) as caught:
+                        self.load(tmp, f'list{index}', json.dumps(data))
+                    self.assertNotIsInstance(caught.exception, ValueError)
+                    self.assertTrue(str(caught.exception).startswith(f'list{index}.json'), str(caught.exception))
+            self.assertEqual(sum(map(len, self.load(tmp, 'good', json.dumps({'entries': [good]})).values())), 1)
+            # A withhold entry may still name a split part.
+            self.load(tmp, 'part', json.dumps({'entries': [{**good, 'rede_id': 'ID1:3', 'kind': 'withhold'}]}))
 
     def test_an_unreadable_file_refuses(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'reviewed_units.json'
-            for content in ['', '{', '{"entries": [}']:
+            for index, content in enumerate(['', '{', '{"entries": [}']):
                 with self.subTest(content=content):
-                    path.write_text(content, encoding='utf-8')
-                    with self.assertRaises(sk.ReviewedUnitsError):
-                        sk.load_reviewed_units(path)
-            with self.assertRaises(sk.ReviewedUnitsError):
-                sk.load_reviewed_units(Path(tmp) / 'absent.json')
-        sk.use_reviewed_units([])
+                    with self.assertRaises(reviewed_units.ReviewedUnitsError):
+                        self.load(tmp, f'bad{index}', content)
 
     def test_the_shipped_list_loads(self):
         with _support.shipped_reviewed_units() as units:
-            kinds = [e['kind'] for e in units.values()]
-        self.assertEqual((kinds.count('procedural'), kinds.count('ansprache'), kinds.count('sitzungsleitung')),
-                         (113, 14, 9))
+            kinds = [e['kind'] for entries in units.values() for e in entries]
+        self.assertEqual((kinds.count('procedural'), kinds.count('ansprache'), kinds.count('sitzungsleitung'),
+                          kinds.count('withhold')), (113, 14, 9, 5))
 
     def test_a_broken_list_stops_the_entry_points_before_any_work(self):
         import build_dip_pulse_site as build
         import extract_demo_fixture
-        original = sk.REVIEWED_UNITS_PATH
+        real_read = Path.read_text
+
+        def broken(path, *args, **kwargs):
+            if path == reviewed_units.PATH:
+                return '{"entries": [{"sitting": "19/1"}]}'
+            return real_read(path, *args, **kwargs)
+
         with tempfile.TemporaryDirectory() as tmp:
-            broken = Path(tmp) / 'reviewed_units.json'
-            broken.write_text('{"entries": [{"sitting": "19/1"}]}', encoding='utf-8')
             for name, main, argv in [('build', build.main, ['build', '--offline', '--output-dir', tmp]),
                                      ('validate', dip.main, ['validate', '--document-number', '19/1']),
                                      ('fixture', extract_demo_fixture.main, ['x', '--xml', 'x.xml', '--output', f'{tmp}/o.json'])]:
                 with self.subTest(name):
-                    sk.REVIEWED_UNITS_PATH = broken
-                    sk._reviewed = None
-                    try:
-                        with unittest.mock.patch('sys.argv', argv), unittest.mock.patch('sys.stderr') as stderr:
-                            self.assertEqual(main(), 1)
-                        written = ''.join(call.args[0] for call in stderr.write.call_args_list)
-                        self.assertIn('ERROR [reviewed-units]', written)
-                    finally:
-                        sk.REVIEWED_UNITS_PATH = original
-                        sk.use_reviewed_units([])
+                    with unittest.mock.patch.dict(reviewed_units._cache, clear=True), \
+                            unittest.mock.patch.object(Path, 'read_text', broken), \
+                            unittest.mock.patch('sys.argv', argv), unittest.mock.patch('sys.stderr') as stderr:
+                        self.assertEqual(main(), 1)
+                    written = ''.join(call.args[0] for call in stderr.write.call_args_list)
+                    self.assertIn('reviewed_units.json entry 1 must have exactly the keys', written)
 
 
 class SplitTests(unittest.TestCase):
@@ -294,7 +312,7 @@ class SplitTests(unittest.TestCase):
         self.assertEqual([d['marker_ordinal'] for d in top['xml_turn_diagnostics']], [1])
         # In a listed Ansprache the owner's words are not the chair's: no split, and
         # the other speaker's turn follows the existing nested rules.
-        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at ID1 marker 2'):
+        with assert_withheld(self, 'unresolved nested contribution at ID1 marker 2'):
             parse(body, [entry('ID1', '11001938', 'ansprache')])
 
 
@@ -302,13 +320,13 @@ class RunningStateTests(unittest.TestCase):
     """T10: a listed or unlisted presidium <rede> leaves classify_reden's state alone."""
 
     def labels(self, body, entries, formats=frozenset()):
-        sk.use_reviewed_units(list(entries))
+        reviewed_units.use(list(entries))
         try:
             root = dip.ET.fromstring(sitting(body))
-            dip.mark_reviewed_units(root)
+            dip.mark_reviewed_units(root, list(entries))
             return [tuple(l) for l in sk.classify_reden(root.find('.//tagesordnungspunkt'), formats)]
         finally:
-            sk.use_reviewed_units([])
+            reviewed_units.use([])
 
     def test_a_kurzintervention_announced_inside_a_sitzungsleitung_rede_answers_the_last_rede(self):
         body = (rede('ID1', MEMBER_A, DEBATE)
@@ -337,13 +355,15 @@ class RunningStateTests(unittest.TestCase):
 
 
 class NestedInListedTests(unittest.TestCase):
-    def test_another_members_turn_in_a_listed_procedural_rede_refuses_unless_6d_covers_it(self):
-        # T11.
+    def test_another_members_turn_in_a_listed_procedural_rede_is_withheld_unless_6d_covers_it(self):
+        # T11. Located to that <rede>, so it is withheld (ADR 0005), not the sitting refused.
         body = rede('ID1', MEMBER_A, '<p>Ich nehme die Wahl an.</p>' + MEMBER_B + '<p>Was ist mit uns?</p>')
         for kind in ('procedural', 'sitzungsleitung'):
             with self.subTest(kind=kind):
-                with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at ID1 marker 2 inside a reviewed'):
-                    parse(body, [entry('ID1', '11000001', kind)])
+                with assert_withheld(self, 'unresolved nested contribution at ID1 marker 2 inside a reviewed',
+                                     reason='refused_nested_contribution'):
+                    top = top_of(parse(body, [entry('ID1', '11000001', kind)]))
+                self.assertEqual((top['speeches'], top['contributions']), ([], []))
         # 6d: a nested presidium marker in it is chair text.
         body = rede('ID1', MEMBER_A, '<p>Ich nehme die Wahl an.</p>' + SCHAEUBLE + '<p>Herzlichen Glückwunsch.</p>')
         top = top_of(parse(body, [entry('ID1', '11000001', 'procedural')]))
@@ -354,7 +374,7 @@ class NestedInListedTests(unittest.TestCase):
 class AcceptanceTests(unittest.TestCase):
     """T12: P4's <rede> form."""
 
-    def test_listed_acceptances_are_procedural_and_unlisted_ones_refuse(self):
+    def test_listed_acceptances_are_procedural_and_unlisted_ones_are_withheld(self):
         for text in ['Herr Präsident, ich nehme die Wahl an und bedanke mich für das Vertrauen.',
                      'Ich nehme die Wahl an. – Danke schön.',
                      'Frau Alterspräsidentin, ich nehme die Wahl sehr gerne an.',
@@ -366,15 +386,14 @@ class AcceptanceTests(unittest.TestCase):
                 self.assertEqual((top['speeches'], top['contributions']), ([], []))
                 self.assertEqual([(d['treatment'], d['evidence']) for d in top['xml_turn_diagnostics']],
                                  [('procedural', 'procedural (reviewed): acceptance')])
-                with self.assertRaises(dip.UnreviewedUnitError) as caught:
-                    parse(body)
-                self.assertIn('election acceptance at ID1 has no reviewed kind', str(caught.exception))
-                self.assertEqual(caught.exception.rede_id, 'ID1')
+                [(rid, message)] = unreviewed(parse(body))
+                self.assertIn('election acceptance at ID1 has no reviewed kind', message)
+                self.assertEqual(rid, 'ID1')
 
     def test_ja_under_an_election_is_a_candidate(self):
         # 20/5 Scholz: "Ja." under "Wahl des Bundeskanzlers".
-        with self.assertRaisesRegex(dip.UnreviewedUnitError, 'election acceptance at ID1'):
-            parse(rede('ID1', MEMBER_A, '<p>Ja.</p>'), heading='Wahl des Bundeskanzlers')
+        [(_rid, message)] = unreviewed(parse(rede('ID1', MEMBER_A, '<p>Ja.</p>'), heading='Wahl des Bundeskanzlers'))
+        self.assertIn('election acceptance at ID1', message)
         top = top_of(parse(rede('ID1', MEMBER_A, '<p>Ja.</p>'), heading='Vereinbarte Debatte'))
         self.assertEqual(len(top['speeches']), 1)
 
@@ -382,8 +401,8 @@ class AcceptanceTests(unittest.TestCase):
         # Value: protects=a bare "Ja." answering the chair's "Nehmen Sie die Wahl an?" is never counted as a Rede, even under a heading without "Wahl"; fails_when=the preceding-text arm of procedural_candidate is dropped or reads the wrong Rede; why_new=test_ja_under_an_election_is_a_candidate only covers the heading arm; seam=none; no_claim=real protocol shapes (synthetic XML only)
         question = ('<name>Präsident Dr. Wolfgang Schäuble:</name><p>Nehmen Sie die Wahl an?</p>')
         body = rede('ID1', MEMBER_A, DEBATE + question) + rede('ID2', MEMBER_B, '<p>Ja.</p>')
-        with self.assertRaisesRegex(dip.UnreviewedUnitError, 'election acceptance at ID2'):
-            parse(body, heading='Vereinbarte Debatte')
+        [(_rid, message)] = unreviewed(parse(body, heading='Vereinbarte Debatte'))
+        self.assertIn('election acceptance at ID2', message)
         # The same "Ja." after an unrelated chair remark is a Rede.
         other = '<name>Präsident Dr. Wolfgang Schäuble:</name><p>Das Wort hat der Kollege Gast.</p>'
         body = rede('ID1', MEMBER_A, DEBATE + other) + rede('ID2', MEMBER_B, '<p>Ja.</p>')
@@ -405,7 +424,7 @@ class OathTests(unittest.TestCase):
             'Schaden von ihm wenden, das Grundgesetz und die Gesetze des Bundes wahren und verteidigen, meine '
             'Pflichten gewissenhaft erfüllen und Gerechtigkeit gegen jedermann üben werde. So wahr mir Gott helfe.')
 
-    def test_each_listed_form_is_procedural_and_refuses_unlisted(self):
+    def test_each_listed_form_is_procedural_and_withheld_unlisted(self):
         minister = redner('11000003', 'Ministerin', role='Bundesministerin für Bildung', first='Eva')
         for form, text in [('short', 'Ich schwöre es.'),
                            ('with God', 'Ich schwöre, so wahr mir Gott helfe.'),
@@ -419,8 +438,8 @@ class OathTests(unittest.TestCase):
                 body = rede('ID1', minister, f'<p>{text}</p>')
                 top = top_of(parse(body, [entry('ID1', '11000003', 'procedural', '21/2')], wp=21, nr=2))
                 self.assertEqual((top['speeches'], top['contributions']), ([], []))
-                with self.assertRaisesRegex(dip.UnreviewedUnitError, '21/2 T1: oath answer at ID1 has no reviewed kind'):
-                    parse(body, wp=21, nr=2)
+                [(_rid, message)] = unreviewed(parse(body, wp=21, nr=2))
+                self.assertIn('21/2 T1: oath answer at ID1 has no reviewed kind', message)
 
     def test_no_candidate(self):
         quote = 'Sehr geehrte Frau Präsidentin! Wir alle haben geschworen, dem Wohle des Volkes zu dienen. ' * 6
@@ -459,9 +478,11 @@ class OathTests(unittest.TestCase):
 class ReconciliationTests(unittest.TestCase):
     def test_statuses(self):
         # T20: #147's reconciliation counts a listed procedural or Sitzungsleitung
-        # <rede> as procedural and an Ansprache as a Beitrag.
+        # <rede> as procedural and an Ansprache as a Beitrag; an unlisted presidium
+        # <rede> or oath answer is withheld (W3's status, O6).
         body = (rede('ID1', SCHAEUBLE, '<p>Gedenkworte.</p>') + rede('ID2', SOLMS, '<p>Wahlgang.</p>')
-                + rede('ID3', MEMBER_A, '<p>Ich nehme die Wahl an.</p>') + rede('ID4', MEMBER_B, DEBATE))
+                + rede('ID3', MEMBER_A, '<p>Ich nehme die Wahl an.</p>') + rede('ID4', MEMBER_B, DEBATE)
+                + rede('ID5', SCHAEUBLE, '<p>Unlisted.</p>') + rede('ID6', MEMBER_B, '<p>Ich schwöre es.</p>'))
         statuses = {}
         original = dip.reconcile_reden
 
@@ -472,7 +493,8 @@ class ReconciliationTests(unittest.TestCase):
         with unittest.mock.patch.object(dip, 'reconcile_reden', capture):
             parse(body, [entry('ID1', '11001938', 'ansprache'), entry('ID2', '11002190', 'sitzungsleitung'),
                          entry('ID3', '11000001', 'procedural')])
-        self.assertEqual(statuses, {'ID1': 'beitrag', 'ID2': 'procedural', 'ID3': 'procedural', 'ID4': 'speech'})
+        self.assertEqual(statuses, {'ID1': 'beitrag', 'ID2': 'procedural', 'ID3': 'procedural', 'ID4': 'speech',
+                                    'ID5': sk.WITHHELD_STATUS, 'ID6': sk.WITHHELD_STATUS})
         self.assertEqual(sk.REDE_STATUS[sk.ANSPRACHE], 'beitrag')
         for internal in (sk.SITZUNGSLEITUNG, sk.PROCEDURAL, sk.UNREVIEWED_PRESIDIUM):
             self.assertNotIn(internal, sk.CONTRIBUTION_KINDS)
@@ -537,11 +559,7 @@ class PersistTests(unittest.TestCase):
 
 
 def site_report(xml, entries, number):
-    sk.use_reviewed_units(list(entries))
-    try:
-        parsed = dip.parse_protocol_xml(xml)
-    finally:
-        sk.use_reviewed_units([])
+    parsed = dip.parse_protocol_xml(xml, reviewed=list(entries))
     return {'protocol': {'id': number, 'dokumentnummer': number, 'datum': '2025-05-06',
                          'pdf_url': 'https://dserver.bundestag.de/btp/21/21002.pdf'},
             'agenda_items': [dict(index=t['index'], **dip.xml_top_fields(t)) for t in parsed['agenda_items']],
@@ -635,12 +653,12 @@ class KindListTests(unittest.TestCase):
         self.assertEqual(derive.SIDELESS_KINDS, {sk.ANSPRACHE})
 
 
-class RepersistMessageTests(unittest.TestCase):
-    # Value: protects=offline, an unreviewed unit or a stale list entry is reported as a reviewed-list matter, not corrupt XML; fails_when=the generic "is not the Plenarprotokoll XML ... delete corrupt XML" branch catches them again; why_new=no test fed reparse_cached_xml an ADR 0004 refusal; seam=none; no_claim=online path (it reports a rejected source per sitting)
+class RepersistTests(unittest.TestCase):
+    # Value: protects=offline, a stale list entry stops the repersist naming scripts/reviewed_units.json, never "corrupt XML, delete it"; fails_when=a ReviewedUnitsError is caught as a refused XML; why_new=the merged design moved both from a CachedReportError; seam=none; no_claim=online path
     def run_reparse(self, xml, entries):
         import build_dip_pulse_site as build
-        sk.use_reviewed_units(list(entries))
-        self.addCleanup(sk.use_reviewed_units, [])
+        reviewed_units.use(list(entries))
+        self.addCleanup(reviewed_units.use, [])
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
             (output_dir / 'data' / 'xml').mkdir(parents=True)
@@ -648,23 +666,13 @@ class RepersistMessageTests(unittest.TestCase):
             report = {'protocol': {'id': 'p1', 'dokumentnummer': '19/1'}, 'agenda_items': []}
             (output_dir / 'data' / 'plenarprotokoll-19-1.json').write_text(json.dumps(report), encoding='utf-8')
             entries_ = build.load_existing_detail_entries(output_dir, [{'dokumentnummer': '19/1'}])
-            with self.assertRaises(build.CachedReportError) as raised:
-                build.reparse_cached_xml(output_dir, entries_)
-        return raised.exception, build.cached_report_fix(raised.exception)
+            build.reparse_cached_xml(output_dir, entries_)
 
-    def test_unreviewed_and_stale_refusals_name_the_list_not_the_xml(self):
+    def test_a_stale_entry_stops_the_repersist_naming_the_list(self):
         xml = sitting(rede('ID1', SCHAEUBLE, '<p>Ansprache.</p>'))
-        for name, entries, expected in [
-            ('unreviewed', [], 'presidium Rede at ID1 has no reviewed kind'),
-            ('stale', [entry('ID1', '11002190', 'ansprache')], 'owned by Redner-ID 11001938, the entry says 11002190'),
-        ]:
-            with self.subTest(name):
-                exc, fix = self.run_reparse(xml, entries)
-                self.assertIn('19/1', str(exc))
-                self.assertIn(expected, str(exc))
-                self.assertNotIn('is not the Plenarprotokoll XML', str(exc))
-                self.assertNotIn('--fetch-xml', str(exc) + fix)
-                self.assertIn('scripts/reviewed_units.json', fix)
+        with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError,
+                                    r'^scripts/reviewed_units\.json: 19/1 ID1 \(ansprache\): owned by Redner-ID 11001938, the entry says 11002190'):
+            self.run_reparse(xml, [entry('ID1', '11002190', 'ansprache')])
 
 
 CENSUS_TOOLS = ('docs/plans/adr-0004-census/census.py', 'docs/plans/adr-0004-census/review.py',
@@ -685,7 +693,7 @@ class CensusToolTests(unittest.TestCase):
         # scripts/reviewed_units.json, scripts/extract_demo_fixture.py, tests/_support.py.
         for path in ('scripts/reviewed_units.json', 'scripts/extract_demo_fixture.py', 'tests/_support.py'):
             self.assertTrue((_support.ROOT / path).is_file(), path)
-        self.assertEqual(sk.REVIEWED_UNITS_PATH, _support.ROOT / 'scripts/reviewed_units.json')
+        self.assertEqual(reviewed_units.PATH, _support.ROOT / 'scripts/reviewed_units.json')
 
 
 STORE_XML = Path('/Users/luca/Projects/poliwatch/.context/dip-pulse-site/data/xml')

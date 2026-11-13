@@ -357,21 +357,21 @@ class PresidiumFraktionsredeTests(unittest.TestCase):
         self.assertIsNone(speech['speaker']['role'])
         self.assertEqual(contributions, [])
 
-    def test_without_a_fraktion_an_unlisted_presidium_rede_refuses_located(self):
+    def test_without_a_fraktion_an_unlisted_presidium_rede_is_withheld_located(self):
         # T3. 18/245 Bulmahn: a presidium Rede with no <fraktion> and no reviewed
-        # kind refuses its sitting, naming the Rede (ADR 0004 plan P2).
-        with self.assertRaises(dip.UnreviewedUnitError) as caught:
-            parse('<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
-        self.assertEqual(caught.exception.rede_id, 'R')
-        self.assertIn('18/1 T1: presidium Rede at R has no reviewed kind (scripts/reviewed_units.json, ADR 0004)',
-                      str(caught.exception))
+        # kind is withheld, named, and counts nowhere (ADR 0004 plan P2, O6).
+        with assert_withheld(self, r'^18/1 T1: presidium Rede at R has no reviewed kind \(scripts/reviewed_units\.json, ADR 0004\)$',
+                             reason='unreviewed_presidium') as withheld:
+            top, contributions = parse('<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
+        self.assertEqual([w['rede_id'] for w in withheld], ['R'])
+        self.assertEqual((top['speeches'], contributions), ([], []))
 
-    def test_an_unlisted_praesident_printed_with_a_fraktion_refuses(self):
+    def test_an_unlisted_praesident_printed_with_a_fraktion_is_withheld(self):
         # T4. Only a Vizepräsident(in) role is stripped; the Präsident and the
         # Alterspräsident keep theirs, so their Rede is never counted unread.
         for role in ('Präsident', 'Alterspräsident', 'Präsidentin'):
             with self.subTest(role=role):
-                with self.assertRaisesRegex(dip.UnreviewedUnitError, 'presidium Rede at R has no reviewed kind'):
+                with assert_withheld(self, 'presidium Rede at R has no reviewed kind', reason='unreviewed_presidium'):
                     parse('<rede id="R">' + presidium('L', 'Lammert', role, 'CDU/CSU') + '<p>Ansprache.</p></rede>')
 
 if __name__ == '__main__':

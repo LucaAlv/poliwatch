@@ -11,10 +11,11 @@ import validate_dip_protocol as dip
 
 
 @contextlib.contextmanager
-def assert_withheld(test, pattern):
+def assert_withheld(test, pattern, reason=None):
     """In place of ``assertRaisesRegex(ValueError, pattern)`` around a parse:
     every ``parse_protocol_xml`` call in the block is observed, and some Rede
-    must be withheld for a located refusal whose message matches ``pattern``."""
+    must be withheld for a located refusal whose message matches ``pattern``
+    (and, when given, whose reason code is ``reason``)."""
     original = dip.parse_protocol_xml
     withheld = []
 
@@ -25,6 +26,6 @@ def assert_withheld(test, pattern):
 
     with mock.patch.object(dip, "parse_protocol_xml", observed):
         yield withheld
-    located = [w for w in withheld if w["reason"] != "reviewed"]
+    located = [w for w in withheld if w["reason"] != "reviewed" and reason in (None, w["reason"])]
     test.assertTrue(any(re.search(pattern, w["reason_detail"]) for w in located),
                     f"no Rede withheld for a refusal matching {pattern!r}; withheld: {[w['reason_detail'] for w in located]}")

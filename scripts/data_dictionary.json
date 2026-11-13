@@ -1879,8 +1879,8 @@
           "license": "eigene-auswertung-uebernommene-quelldaten"
         },
         "reason": {
-          "meaning": "Grund des Zurückhaltens als Code. refused_nested_contribution: Ein Beitrag eines anderen Redners in dieser Rede passt zu keiner geprüften Regel (Zwischenfrage, Kurzintervention, Sitzungsleitung); die Rede wird zurückgehalten.; refused_nested_question_speaker: In einer Befragung der Bundesregierung ist ein Redner in dieser Rede weder als Fragesteller noch als Antwortender erkennbar; die Rede wird zurückgehalten.; reviewed: Auf der geprüften Liste (scripts/reviewed_units.json) mit Begründung zurückgehalten, etwa weil eine ganze Rede als Zwischenfrage gelesen würde.",
-          "unit": "Einer der Codes refused_nested_contribution, refused_nested_question_speaker, reviewed.",
+          "meaning": "Grund des Zurückhaltens als Code. refused_nested_contribution: Ein Beitrag eines anderen Redners in dieser Rede passt zu keiner geprüften Regel (Zwischenfrage, Kurzintervention, Sitzungsleitung); die Rede wird zurückgehalten.; refused_nested_question_speaker: In einer Befragung der Bundesregierung ist ein Redner in dieser Rede weder als Fragesteller noch als Antwortender erkennbar; die Rede wird zurückgehalten.; reviewed: Auf der geprüften Liste (scripts/reviewed_units.json) mit Begründung zurückgehalten, etwa weil eine ganze Rede als Zwischenfrage gelesen würde.; unreviewed_presidium: Eine Rede des Präsidiums oder eines Gastes, oder eine kurze Rede, die wie ein Eid oder die Annahme einer Wahl liest, steht noch nicht auf der geprüften Liste (scripts/reviewed_units.json, ADR 0004); sie wird zurückgehalten, bis sie als Ansprache, Sitzungsleitung oder Verfahrensschritt eingeordnet ist.",
+          "unit": "Einer der Codes refused_nested_contribution, refused_nested_question_speaker, reviewed, unreviewed_presidium.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
           "license": "eigene-auswertung-uebernommene-quelldaten"
         },

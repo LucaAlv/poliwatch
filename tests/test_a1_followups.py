@@ -620,7 +620,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             r = report(parsed)
             conn = store.connect(path)
             store.persist_report(conn, r)
-            self.assertEqual(sk.VERSION, 8)
+            self.assertEqual(sk.VERSION, 9)
             self.assertEqual(store.SCHEMA_VERSION, 12)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:

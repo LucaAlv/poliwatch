@@ -842,23 +842,6 @@ OATH_CANDIDATE = re.compile(r"\b(?:Amts)?[Ee]id(?:es(?:formel|leistung)?)?\b|\b[
 OATH_MAX_CHARS = 400
 
 
-class UnreviewedUnitError(ValueError):
-    """A ``<rede>`` ADR 0004 says must be reviewed before it is counted: a presidium
-    owner, an oath answer or an acceptance with no entry in
-    ``scripts/reviewed_units.json``. Located (``rede_id``), so the withholding of
-    W3 can tell it from a refusal it cannot narrow to one Rede."""
-
-    def __init__(self, message: str, rede_id: str | None):
-        super().__init__(message)
-        self.rede_id = rede_id
-
-
-class StaleReviewedUnitError(ValueError):
-    """An entry of ``scripts/reviewed_units.json`` that this sitting's XML does not
-    match (no such ``<rede>``, printed twice, or another owner): the list, not the
-    XML, needs correcting."""
-
-
 def procedural_candidate(text: str, heading: str, preceding: str) -> str | None:
     """What a Rede's own ``text`` reads like when it may be no Rede at all: an
     oath answer or an election acceptance (P4/P5), else None."""
@@ -955,27 +938,29 @@ def mark_roleless_chairs(root: ET.Element) -> None:
 VIZEPRAESIDIUM_ROLE = re.compile(r"Vizepräsident(?:in)?", re.IGNORECASE)
 
 
-def mark_reviewed_units(root: ET.Element) -> None:
-    """ADR 0004: mark each ``<rede>`` of this sitting that ``scripts/reviewed_units.json``
-    lists with its reviewed kind (``reviewed_kind``). The entry must name a
-    ``<rede>`` of the Sitzungsverlauf (not an annex) printed once, owned by the
-    entry's Redner-ID; anything else is a stale or misapplied entry and refuses
-    the sitting, naming it."""
-    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
-    entries = [entry for (number, _rid), entry in speech_kinds.reviewed_units().items() if number == sitting]
+def mark_reviewed_units(root: ET.Element, entries: list[dict[str, str]]) -> None:
+    """ADR 0004: mark each ``<rede>`` of this sitting that one of ``entries``
+    (its presidium-kind entries of ``scripts/reviewed_units.json``) lists with
+    its reviewed kind (``reviewed_kind``). The entry must name a ``<rede>`` of
+    the Sitzungsverlauf (not an annex) printed once, owned by the entry's
+    Redner-ID; anything else is a stale or misapplied entry and stops the run
+    (``ReviewedUnitsError``), naming it."""
     if not entries:
         return
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     verlauf = root.find("sitzungsverlauf")
     reden = list(verlauf.iter("rede")) if verlauf is not None else []
     for entry in entries:
-        where = f"{sitting}: reviewed unit {entry['rede_id']} ({entry['kind']}, scripts/reviewed_units.json)"
+        where = f"scripts/reviewed_units.json: {sitting} {entry['rede_id']} ({entry['kind']})"
         found = [rede for rede in reden if rede.get("id") == entry["rede_id"]]
         if len(found) != 1:
-            raise StaleReviewedUnitError(f"{where}: the Sitzungsverlauf prints this <rede> {len(found)} times, not once")
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: the Sitzungsverlauf prints this <rede> {len(found)} times, not once; the entry is stale or misapplied")
         first = found[0].find("./p[@klasse='redner']/redner")
         owner = derive.first_redner_id(first.get("id")) if first is not None else None
         if owner != entry["redner_id"]:
-            raise StaleReviewedUnitError(f"{where}: owned by Redner-ID {owner}, the entry says {entry['redner_id']}")
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: owned by Redner-ID {owner}, the entry says {entry['redner_id']}; the entry is stale or misapplied")
         found[0].set("reviewed_kind", entry["kind"])
         found[0].set("reviewed_reason", entry["reason"])
 
@@ -1572,6 +1557,17 @@ class LocatedRefusal(ValueError):
         self.reason = reason
 
 
+class UnreviewedUnitError(LocatedRefusal):
+    """A ``<rede>`` ADR 0004 says must be reviewed before it is counted: a
+    presidium owner, an oath answer or an acceptance with no entry in
+    ``scripts/reviewed_units.json``. Found while the TOP's Reden are read (pass
+    1) and raised when that Rede is emitted, so the parser withholds it with
+    reason ``unreviewed_presidium`` and keeps the sitting (decision O6)."""
+
+    def __init__(self, message: str, *, rede_id: str) -> None:
+        super().__init__(message, rede_id=rede_id, marker=1, reason="unreviewed_presidium")
+
+
 #: Why a Rede is withheld: ``speech_kinds.WITHHELD_REASONS`` (one table for
 #: the parser, the data dictionary, DATA.md and the Dossier).
 WITHHELD_REASONS = {code: text for code, (_label, text) in speech_kinds.WITHHELD_REASONS.items()}
@@ -1671,8 +1667,12 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     of this sitting; by default those of ``scripts/reviewed_units.json``."""
     root = ET.fromstring(xml_text)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
-    reviewed_entries = {entry["rede_id"]: entry for entry in (
-        reviewed_units.for_sitting(sitting) if reviewed is None else reviewed)}
+    sitting_entries = reviewed_units.for_sitting(sitting) if reviewed is None else reviewed
+    # Withhold entries name a unit as emitted; ADR 0004's kinds a whole source
+    # <rede>, marked before classification (mark_reviewed_units).
+    reviewed_entries = {entry["rede_id"]: entry for entry in sitting_entries
+                        if entry["kind"] not in reviewed_units.PRESIDIUM_KINDS}
+    presidium_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.PRESIDIUM_KINDS]
     matched_entries: set[str] = set()
     inventory = raw_rede_inventory(root)
     statuses: dict[str, str] = {}
@@ -1685,7 +1685,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
-    mark_reviewed_units(root)
+    mark_reviewed_units(root, presidium_entries)
     mark_presidium_fraktionsreden(root)
     try:
         asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
@@ -1735,6 +1735,9 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         diagnostics: list[dict[str, Any]] = []
         attachments: dict[str, list[str]] = {}
         procedural_reden = set()
+        # Located refusals pass 1 finds (an ADR 0004 unit no entry names, O6; another
+        # speaker's turn in a listed procedural <rede>): withheld when emitted.
+        refused: dict[str, LocatedRefusal] = {}
         parsed_turns = [speech_segments(rede) for rede in redes]
         by_id = {rede.get("id"): i for i, rede in enumerate(redes)}
 
@@ -1752,12 +1755,14 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             own_text, nested = parsed_turns[i]
             where = f"{sitting} {top.get('top-id')}"
             if label.kind == speech_kinds.UNREVIEWED_PRESIDIUM:
-                raise UnreviewedUnitError(f"{where}: presidium Rede at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rid)
+                refused[rid] = UnreviewedUnitError(
+                    f"{where}: presidium Rede at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
             if label.kind is None:
                 preceding = speech_kinds.trailing_sitzungsleitung_text(redes[i - 1]) if i else ""
                 candidate = procedural_candidate(own_text.text, heading, preceding)
                 if candidate:
-                    raise UnreviewedUnitError(f"{where}: {candidate} at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rid)
+                    refused[rid] = UnreviewedUnitError(
+                        f"{where}: {candidate} at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
             reviewed_procedural = label.kind in (speech_kinds.SITZUNGSLEITUNG, speech_kinds.PROCEDURAL)
             if reviewed_procedural:
                 procedural_reden.add(rid)
@@ -1846,8 +1851,10 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             if reviewed_procedural and remaining:
                 # Nothing in a listed Sitzungsleitung or procedural <rede> is stored, so
                 # no other speaker's turn in it may become a Beitrag pointing at it.
-                raise ValueError(f"{where}: unresolved nested contribution at {rid} marker {remaining[0]['marker']} "
-                                 "inside a reviewed procedural <rede>")
+                refused[rid] = LocatedRefusal(
+                    f"{where}: unresolved nested contribution at {rid} marker {remaining[0]['marker']} "
+                    "inside a reviewed procedural <rede>",
+                    rede_id=rid, marker=remaining[0]["marker"], reason="refused_nested_contribution")
             parsed_turns[i] = (SpeechText("", [], 0) if resumed else own_text, remaining)
 
         for sequence, (rede, label) in enumerate(zip(redes, labels), start=1):
@@ -1899,6 +1906,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             rede_nested: list[dict[str, Any]] = []
             rede_diagnostics: list[dict[str, Any]] = []
             try:
+                if rid in refused:
+                    raise refused[rid]
                 for segment in nested:
                     if segment["grant_epoch"] != grant_epoch:
                         granted_nested_speaker = open_exchange = None
@@ -2028,7 +2037,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         "xml_sha256": xml_source_sha256(xml_text),
         # The reviewed-list entries this parse applied, as a digest: the store
         # keeps it so an edit of the list forces a replay (R3).
-        "reviewed_digest": reviewed_units.digest(list(reviewed_entries.values())),
+        "reviewed_digest": reviewed_units.digest(list(sitting_entries)),
         "sitting_contributions": sitting_contributions,
         "vote_recommendations": parse_vote_recommendations(root),
         "xml_protocol": {
