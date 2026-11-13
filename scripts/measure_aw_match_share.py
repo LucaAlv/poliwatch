@@ -417,17 +417,23 @@ def measure(collected: dict[str, Any], found: dict[str, Any], mdb: dict[str, Any
         for kind in ("M1", "M1a", "M1b"):
             group = [rid for rid in members if category(rid, wahlperiode, mdb, ids[rid]["wahlperioden"]) == kind]
             states = Counter(found[rid]["state"] for rid in group)
+            # An id without an answer (failed or not asked) may still be a hit: the
+            # share stays open and the upper bound counts it.
+            unresolved = states["failed"] + states["not_cached"]
             row[kind] = {"ids": len(group), "hits": states["hit"], "misses": states["miss"],
                          "failed": states["failed"], "not_cached": states["not_cached"],
-                         "share": _share(states["hit"], len(group)) if not (states["failed"] or states["not_cached"]) else None,
-                         "bounds": [_share(states["hit"], len(group)), _share(states["hit"] + states["not_cached"], len(group))]}
+                         "share": _share(states["hit"], len(group)) if not unresolved else None,
+                         "bounds": [_share(states["hit"], len(group)), _share(states["hit"] + unresolved, len(group))]}
         if mdb["source"] == "none":
             row["M1"] = None
         reden = [(rid, ids[rid]["reden"][wahlperiode] if wahlperiode else sum(ids[rid]["reden"].values())) for rid in members]
         reden_total = collected["reden_total"][wahlperiode] if wahlperiode else sum(collected["reden_total"].values())
         reden_hit = sum(count for rid, count in reden if found[rid]["state"] == "hit")
+        reden_open = sum(count for rid, count in reden if found[rid]["state"] in ("failed", "not_cached"))
         without = collected["reden_without_id"][wahlperiode] if wahlperiode else sum(collected["reden_without_id"].values())
-        row["M2"] = {"reden": reden_total, "reden_hit": reden_hit, "share": _share(reden_hit, reden_total),
+        row["M2"] = {"reden": reden_total, "reden_hit": reden_hit, "reden_unresolved": reden_open,
+                     "share": _share(reden_hit, reden_total) if not reden_open else None,
+                     "bounds": [_share(reden_hit, reden_total), _share(reden_hit + reden_open, reden_total)],
                      "reden_without_redner_id": without}
         figures[name] = row
 
@@ -551,7 +557,8 @@ def print_table(result: dict[str, Any], *, offline: bool) -> None:
             share = cell["share"] if cell["share"] is not None else "bounds {}-{}".format(*cell["bounds"])
             print(f"{scope:6} {kind:4} {cell['ids']:5} {cell['hits']:5} {cell['misses']:5} {cell['failed']:5} {cell['not_cached']:8}  {share}")
         m2 = row["M2"]
-        print(f"{scope:6} M2   {m2['reden_hit']}/{m2['reden']} Reden hit ({m2['share']}), {m2['reden_without_redner_id']} without a Redner-ID")
+        m2_share = m2["share"] if m2["share"] is not None else "bounds {}-{}".format(*m2["bounds"])
+        print(f"{scope:6} M2   {m2['reden_hit']}/{m2['reden']} Reden hit ({m2_share}), {m2['reden_without_redner_id']} without a Redner-ID")
     if not offline:
         m3 = result["m3"]
         print("M3 flags: " + ", ".join(f"{name} {len(entries)}" for name, entries in m3.items()))
@@ -592,6 +599,13 @@ def run(args: argparse.Namespace) -> int:
     cache = args.cache.resolve()
     if cache == output_dir or output_dir in cache.parents:
         raise UsageError(f"--cache {cache} is inside OUTPUT_DIR, which this script never writes")
+    if args.json is not None:
+        receipt_path = args.json.resolve()
+        if receipt_path == output_dir or output_dir in receipt_path.parents:
+            raise UsageError(f"--json {receipt_path} is inside OUTPUT_DIR, which this script never writes")
+        inputs = [cache, _answers_path(cache)] + [path.resolve() for path in (args.verdicts, args.stammdaten) if path is not None]
+        if receipt_path in inputs:
+            raise UsageError(f"--json {receipt_path} would overwrite an input of this run")
     if args.verdicts is not None:
         try:
             verdicts = json.loads(args.verdicts.read_text(encoding="utf-8"))

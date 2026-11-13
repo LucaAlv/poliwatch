@@ -195,7 +195,8 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(figures["union"]["redner_ids"], 7)
         self.assertEqual(figures["union"]["M1"]["ids"], 5)
         # M2: Reden are xml_speakers entries; Dora has no Redner-ID; Bob's Rede missed.
-        self.assertEqual(figures["18"]["M2"], {"reden": 5, "reden_hit": 3, "share": 0.6, "reden_without_redner_id": 1})
+        self.assertEqual(figures["18"]["M2"], {"reden": 5, "reden_hit": 3, "reden_unresolved": 0, "share": 0.6,
+                                               "bounds": [0.6, 0.6], "reden_without_redner_id": 1})
         self.assertEqual(figures["union"]["M2"]["reden"], 9)
         # M6 from the store: WP 21 rows are not counted.
         self.assertEqual(receipt["m6"]["reden_with_ext_id_profile"], {"18": 1, "19": 1})
@@ -290,6 +291,12 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual((code, calls), (0, []))
         m1 = receipt["figures"]["union"]["M1"]
         self.assertEqual((m1["not_cached"], m1["share"], m1["bounds"]), (5, None, [0.0, 1.0]))
+        # No Rede has an answer yet, so M2 is a range, never a share of 0.
+        m2 = receipt["figures"]["union"]["M2"]
+        self.assertIsNone(m2["share"])
+        self.assertEqual(m2["bounds"][0], 0.0)
+        self.assertGreater(m2["reden_unresolved"], 0)
+        self.assertEqual(m2["bounds"][1], round((m2["reden_hit"] + m2["reden_unresolved"]) / m2["reden"], 4))
         self.assertEqual(receipt["requests"]["ext_id_keys"], 8)
         self.assertFalse(fixture.cache.exists())
 
@@ -301,6 +308,9 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(receipt["failure_reasons"], {"11000006": "stub failure"})
         m1 = receipt["figures"]["19"]["M1"]
         self.assertEqual((m1["failed"], m1["misses"], m1["share"]), (1, 0, None))
+        # The failed id may still be a hit: the upper bound counts it.
+        self.assertEqual(m1["bounds"], [round(m1["hits"] / m1["ids"], 4), round((m1["hits"] + 1) / m1["ids"], 4)])
+        self.assertIsNone(receipt["figures"]["19"]["M2"]["share"])
         code, receipt, calls = fixture.run()
         self.assertEqual((code, receipt["failures"]), (0, []))
         self.assertEqual(calls, [{"ext_id_bundestagsverwaltung": "11000006"}])
@@ -433,6 +443,16 @@ class MeasureTests(unittest.TestCase):
             self.assertEqual(share.main([str(fixture.output), "--cache", str(self.root / "c.json"),
                                          "--stammdaten", str(self.root / "none.zip")]), 2)
             self.assertEqual(share.main([str(fixture.output), "--cache", str(self.root / "c.json"), "--sleep", "0.1"]), 2)
+            # The receipt never lands on the store or an input of the run.
+            store = fixture.output / "data" / "bundestag-pulse.sqlite"
+            before = store.read_bytes()
+            cache = self.root / "c.json"
+            for target in (store, fixture.output / "receipt.json", cache, cache.with_name("c.json.answers.json")):
+                with self.subTest(json=target.name):
+                    self.assertEqual(share.main([str(fixture.output), "--cache", str(cache), "--offline",
+                                                 "--json", str(target)]), 2)
+            self.assertEqual(store.read_bytes(), before)
+            self.assertFalse((fixture.output / "receipt.json").exists())
             site.report_paths(fixture.output, "19/1")[0].unlink()
             self.assertEqual(share.main([str(fixture.output), "--cache", str(self.root / "c.json"), "--offline"]), 2)
 
