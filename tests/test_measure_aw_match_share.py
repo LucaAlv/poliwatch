@@ -146,9 +146,9 @@ class Fixture:
         conn.commit()
         conn.close()
         if zip_:
-            private = registry.private_dir(data / "bundestag-pulse.sqlite")
-            private.mkdir()
-            with zipfile.ZipFile(private / "mdb-stammdaten.zip", "w") as archive:
+            stammdaten_dir = registry.private_dir(data / "bundestag-pulse.sqlite")
+            stammdaten_dir.mkdir()
+            with zipfile.ZipFile(stammdaten_dir / "mdb-stammdaten.zip", "w") as archive:
                 archive.writestr("MDB_STAMMDATEN.XML", STAMMDATEN)
 
     def run(self, *args: str, api: dict = API, names: dict = NAMES, fail: set | None = None) -> tuple[int, dict, list]:
