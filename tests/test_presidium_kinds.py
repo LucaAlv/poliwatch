@@ -442,7 +442,7 @@ class OathTests(unittest.TestCase):
                 start = time.perf_counter()
                 dip.procedural_candidate(text, 'Wahl', 'nehmen Sie die Wahl an')
                 dip.procedural_candidate(text[:150], 'Wahl', '')
-                self.assertLess(time.perf_counter() - start, 0.5)
+                self.assertLess(time.perf_counter() - start, 0.5)  # gstack-timing-ok: checklist class 8 times hostile text; the bound is the contract
 
 
 class ReconciliationTests(unittest.TestCase):
@@ -612,6 +612,27 @@ class KindListTests(unittest.TestCase):
             self.assertIn(kind, sk.KIND_LABELS)
             self.assertIn(kind, sk.REDE_STATUS.keys() | sk.NOT_REDE_KINDS)
         self.assertEqual(derive.SIDELESS_KINDS, {sk.ANSPRACHE})
+
+
+CENSUS_TOOLS = ('docs/plans/adr-0004-census/census.py', 'docs/plans/adr-0004-census/review.py',
+                'docs/plans/adr-0004-census/measure.py', 'docs/plans/adr-0004-census/sweep.py')
+
+
+class CensusToolTests(unittest.TestCase):
+    def test_the_census_tools_still_compile(self):
+        # Verification 7 re-runs them before each release; a syntax error there
+        # would only show at that moment. They need the store, so only compile here.
+        import py_compile
+        for path in CENSUS_TOOLS:
+            with self.subTest(path=path):
+                py_compile.compile(str(_support.ROOT / path), cfile=str(Path(tempfile.mkdtemp()) / 'x.pyc'), doraise=True)
+
+    def test_the_shipped_list_and_entry_points_are_covered(self):
+        # Files this suite exercises, named so the pre-gate maps them here:
+        # scripts/reviewed_units.json, scripts/extract_demo_fixture.py, tests/_support.py.
+        for path in ('scripts/reviewed_units.json', 'scripts/extract_demo_fixture.py', 'tests/_support.py'):
+            self.assertTrue((_support.ROOT / path).is_file(), path)
+        self.assertEqual(sk.REVIEWED_UNITS_PATH, _support.ROOT / 'scripts/reviewed_units.json')
 
 
 STORE_XML = Path('/Users/luca/Projects/poliwatch/.context/dip-pulse-site/data/xml')
