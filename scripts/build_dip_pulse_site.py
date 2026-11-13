@@ -4335,7 +4335,9 @@ def _withheld_coverage(conn: sqlite3.Connection) -> dict[str, Any]:
         "SELECT substr(p.date, 1, 4), p.document_number, p.date, w.fraktion, w.word_count, w.rede_id, w.reason "
         "FROM withheld_units w JOIN protocols p ON p.id = w.protocol_id"
     ) if has_table else ():
-        label = derive.zusammenschluss(fraktion) or "(keine)"
+        # The label persist gives a stored Rede of the same Sitzung (speeches.fraktion),
+        # so a WP 20 "Die Linke" after the Fraktion ended meets Gruppe Die Linke's words.
+        label = derive.speech_zusammenschluss({"fraktion": fraktion}, {"dokumentnummer": number, "datum": date_text}) or "(keine)"
         cell = withheld.setdefault((str(year or "unbekannt"), label), [0, 0])
         cell[0] += 1
         cell[1] += int(words)

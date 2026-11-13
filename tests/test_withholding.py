@@ -286,6 +286,23 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Old build-store schema.*--offline --repersist"):
             store.require_current_schema(conn)
 
+    # Value: protects=N9: a withheld Rede counts against the Zusammenschluss its stored neighbours count under, told apart by
+    #   the Sitzung (WP 20 Gruppe Die Linke); fails_when=the coverage share reads the printed name alone and finds no stored
+    #   words; why_new=codex review of PR 2; seam=none
+    def test_withheld_coverage_names_the_zusammenschluss_by_the_sitzung(self):
+        xml = (sitting(rede("R1"), rede("R2", "Zwei", REFUSED)).replace('wahlperiode="18"', 'wahlperiode="20"')
+               .replace("<fraktion>SPD</fraktion>", "<fraktion>DIE LINKE</fraktion>"))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = store.connect(Path(tmp.name) / "store.sqlite")
+        self.addCleanup(conn.close)
+        filed = report(dip.parse_protocol_xml(xml, reviewed=[]), "20/200")
+        filed["protocol"]["datum"] = "2024-11-01"
+        store.persist_report(conn, filed)
+        self.assertEqual(conn.execute("SELECT fraktion FROM speeches").fetchone()[0], "Gruppe Die Linke")
+        [row] = build._withheld_coverage(conn)["by_fraktion"]
+        self.assertEqual((row["fraktion"], row["words_withheld"], row["words_stored"], row["share"]), ("Gruppe Die Linke", 3, 3, 0.5))
+
     # Value: protects=D5: the run summary names every withheld Rede the new store adds, and the ones it releases;
     #   fails_when=a new withheld Rede passes silently; why_new=D5; seam=none
     def test_the_run_summary_lists_newly_withheld_reden(self):
