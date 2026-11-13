@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.39.0.0] - 2026-11-13
+
+A Rede the parser cannot read no longer keeps its whole sitting out. The parser withholds that one Rede, with its reason and text, and keeps the sitting's other Reden, agenda items and votes. A withheld Rede counts nowhere, neither as a Rede or Beitrag nor for a person or a Fraktion. No figure moves on the 718 sittings held today, since none of them withholds a Rede.
+
+### Added
+
+- **Withheld Reden are stored apart, with their reason.** Two new tables hold them: `withheld_units` (who spoke, as printed, the page, the reason, the speaker's own words and their count) and `withheld_turns` (other speakers' passages inside the Rede). Both are in the Daten export and the data dictionary. The reasons are a passage by another speaker that no rule explains, a speaker in a Befragung who is neither asker nor answerer, and an entry on a reviewed list.
+- **A reviewed list withholds single known-wrong Reden.** `scripts/reviewed_units.json` names five Reden in 18/2, 18/29, 18/83 and 19/25 that read wrongly without any refusal. An entry whose Rede or speaker no longer matches the source stops the run, and editing the list forces a re-read of exactly the sittings it touches.
+- **DATA.md shows coverage by year and the withheld share.** The share is the withheld Reden's own words over all Reden's own words, per year, per Fraktion and per sitting; the Daten page gives the totals and each excluded sitting's reason. The Dossier names each withheld Rede and its reason, without the text.
+- **Every excluded sitting says why it is out.** `coverage-exclusions.json` now needs a reason code (`source_defect`, `not_narrowable`, `awaiting_rule`, `awaiting_acquisition`) and a sentence for each sitting; `--exclude-document-number` needs `--exclusion-reason` and `--exclusion-detail`. A record with the old bare "excluded" is refused. The 86 reasons for the current record are in `docs/plans/coverage-gate-pr2/coverage-exclusions.json`.
+- **A release that adds more than two newly withheld Reden needs them named.** `publish_dip_pulse_data.py` refuses it until each is confirmed with `--confirm-withheld 18/1:ID…`; the data changelog lists every Rede a release newly withholds or releases.
+- **Checks for withholding.** `scripts/check_withhold_one.py` withholds one Rede per agenda item and checks that nothing else moves, the store gate checks that no withheld Rede is also counted, and `compare_store_values.py` lists withheld Reden added, released or changed.
+
+### Changed
+
+- **A Rede's position is its place among the agenda item's Reden in the source.** `speeches.sequence` used to count stored Reden only, so withholding a neighbour would renumber it. 5,556 of 54,937 speeches in 425 sittings take a new number, for example 21/105 `ID2110505700` 12 → 14; no other stored value moves (0 of 1,922 Fakt values).
+- **The speech rule goes from 7 to 8, the store schema from 11 to 12 and the export format from 16 to 17.** A store built before this release needs one `--offline --repersist`. Copy `docs/plans/coverage-gate-pr2/coverage-exclusions.json` to `<site-dir>/data/` first, because the old record is refused.
+
+### Removed
+
+- **`scripts/audit_offline_turns.py` and the W1 preflight tool are retired.** The parser now withholds by itself; both scripts stay in git history.
+
+Measured on the 84 fetched XML of the 85 sittings still out of the store: 71 parse once their refused Reden are withheld (90 Reden, 94,697 words), and 4 more parse with their reviewed entries. Twelve wait on rules for presidium and guest Reden and 18/20 stays out, so the coming acquisition step can bring back 72 of the 85 plus 21/106.
+
 ## [0.38.0.0] - 2026-11-13
 
 How many WP 18 and 19 speakers can carry a trusted abgeordnetenwatch profile is now measured: 937 of the 945 distinct MdB Redner-IDs (99.2%) find their profile by their Bundestag id, and every hit a precision review had to see was checked by hand and is the right person. No page, figure or export changes in this release.
