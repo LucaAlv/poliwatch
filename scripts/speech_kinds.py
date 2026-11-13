@@ -13,8 +13,10 @@ Pure functions over ``ElementTree`` elements; the parser builds the row dicts.
 
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Any, NamedTuple
 
 import derive
@@ -31,6 +33,9 @@ BEFRAGUNG_FRAGE = "befragung_frage"
 BEFRAGUNG_ANTWORT = "befragung_antwort"
 FRAGESTUNDE_FRAGE = "fragestunde_frage"
 FRAGESTUNDE_ANTWORT = "fragestunde_antwort"
+#: ADR 0004: an address that is no contribution to a debate, by the presidium or
+#: a guest; shown, counted in no Reden figure.
+ANSPRACHE = "ansprache"
 
 CONTRIBUTION_KINDS = (
     KURZINTERVENTION,
@@ -41,7 +46,16 @@ CONTRIBUTION_KINDS = (
     BEFRAGUNG_ANTWORT,
     FRAGESTUNDE_FRAGE,
     FRAGESTUNDE_ANTWORT,
+    ANSPRACHE,
 )
+
+#: Internal labels of a whole ``<rede>`` (ADR 0004), never stored and never a
+#: ``CONTRIBUTION_KINDS`` member, so ``validate_kind`` refuses one that reaches
+#: persist. A listed Sitzungsleitung or procedural ``<rede>`` takes the status
+#: ``procedural``; an unreviewed presidium ``<rede>`` refuses its sitting.
+SITZUNGSLEITUNG = "sitzungsleitung_rede"
+PROCEDURAL = "procedural_rede"
+UNREVIEWED_PRESIDIUM = "unreviewed_presidium"
 
 #: The status a whole ``<rede>`` of the source takes in the parser's reconciliation
 #: (``validate_dip_protocol.reconcile_reden``) when it is emitted as this kind;
@@ -54,6 +68,7 @@ REDE_STATUS = {
     BEFRAGUNG_FRAGE: "beitrag",
     BEFRAGUNG_ANTWORT: "beitrag",
     ZU_PROTOKOLL: "zu_protokoll",
+    ANSPRACHE: "beitrag",
 }
 #: Why a Rede is withheld (``withheld_units.reason``, ADR 0005): the short label
 #: the Dossier shows, and the German text the data dictionary and DATA.md give.
@@ -92,6 +107,7 @@ KIND_LABELS = {
     BEFRAGUNG_ANTWORT: ("Antwort in der Befragung der Bundesregierung", "Antworten in der Befragung der Bundesregierung"),
     FRAGESTUNDE_FRAGE: ("Frage oder Nachfrage in der Fragestunde", "Fragen und Nachfragen in der Fragestunde"),
     FRAGESTUNDE_ANTWORT: ("Antwort in der Fragestunde", "Antworten in der Fragestunde"),
+    ANSPRACHE: ("Ansprache", "Ansprachen"),
 }
 
 # DIP records only these two Kinds per Beitrag as an ``aktivitaetsart``. Its
@@ -178,6 +194,82 @@ def top_format(heading: str | None, top_id: str | None, seen: dict[str, frozense
     return TopFormat(formats, continuation)
 
 
+# --- Reviewed units (ADR 0004) -------------------------------------------------
+
+#: Every reviewed decision about a whole source ``<rede>``: its kind, keyed by
+#: sitting and source id, with the owner's Redner-ID as the proof of identity.
+REVIEWED_UNITS_PATH = Path(__file__).with_name("reviewed_units.json")
+REVIEWED_KINDS = ("ansprache", "sitzungsleitung", "procedural")
+_ENTRY_KEYS = {"sitting", "rede_id", "redner_id", "kind", "reason"}
+_SITTING = re.compile(r"\d{2}/\d{1,3}")
+_reviewed: dict[tuple[str, str], dict[str, str]] | None = None
+
+
+class ReviewedUnitsError(Exception):
+    """``scripts/reviewed_units.json`` is malformed. Not a ``ValueError``: a
+    parser refusal reads as "protocol source rejected" for one sitting, while a
+    broken list must stop the whole run."""
+
+
+def validate_reviewed_units(data: Any, source: str = str(REVIEWED_UNITS_PATH)) -> dict[tuple[str, str], dict[str, str]]:
+    """The entries of a reviewed-units document keyed by (sitting, rede_id), or
+    ``ReviewedUnitsError`` naming the first entry that breaks the format."""
+    if not isinstance(data, dict) or set(data) != {"entries"} or not isinstance(data["entries"], list):
+        raise ReviewedUnitsError(f"{source}: expected an object with exactly the key 'entries', a list")
+    units: dict[tuple[str, str], dict[str, str]] = {}
+    for index, entry in enumerate(data["entries"], 1):
+        where = f"{source}: entry {index}"
+        if not isinstance(entry, dict):
+            raise ReviewedUnitsError(f"{where}: expected an object")
+        if set(entry) != _ENTRY_KEYS:
+            extra, missing = sorted(set(entry) - _ENTRY_KEYS), sorted(_ENTRY_KEYS - set(entry))
+            raise ReviewedUnitsError(f"{where}: keys must be {sorted(_ENTRY_KEYS)} (unknown {extra}, missing {missing})")
+        if not all(isinstance(entry[key], str) for key in _ENTRY_KEYS):
+            raise ReviewedUnitsError(f"{where}: every value must be a string")
+        where = f"{where} ({entry['sitting']} {entry['rede_id']})"
+        if not _SITTING.fullmatch(entry["sitting"]):
+            raise ReviewedUnitsError(f"{where}: sitting must read like 19/1")
+        if not re.fullmatch(r"ID\d+", entry["rede_id"]):
+            raise ReviewedUnitsError(f"{where}: rede_id must be a source <rede> id like ID19101300")
+        if not re.fullmatch(r"\d+", entry["redner_id"]):
+            raise ReviewedUnitsError(f"{where}: redner_id must be the owner's Redner-ID, digits only")
+        if entry["kind"] not in REVIEWED_KINDS:
+            raise ReviewedUnitsError(f"{where}: kind must be one of {', '.join(REVIEWED_KINDS)}")
+        if not entry["reason"].strip():
+            raise ReviewedUnitsError(f"{where}: reason must not be blank")
+        key = (entry["sitting"], entry["rede_id"])
+        if key in units:
+            raise ReviewedUnitsError(f"{where}: listed twice (as {units[key]['kind']} and {entry['kind']})")
+        units[key] = dict(entry)
+    return units
+
+
+def load_reviewed_units(path: Path | None = None) -> dict[tuple[str, str], dict[str, str]]:
+    """Read and validate the reviewed list and make it the one the parser uses."""
+    global _reviewed
+    path = path or REVIEWED_UNITS_PATH
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReviewedUnitsError(f"{path}: cannot read the reviewed list: {exc}") from exc
+    _reviewed = validate_reviewed_units(data, str(path))
+    return _reviewed
+
+
+def use_reviewed_units(entries: list[dict[str, str]]) -> None:
+    """Make ``entries`` the parser's reviewed list (tests; synthetic XML reuses
+    real sitting numbers)."""
+    global _reviewed
+    _reviewed = validate_reviewed_units({"entries": entries}, "reviewed units in use")
+
+
+def reviewed_units() -> dict[tuple[str, str], dict[str, str]]:
+    """The reviewed list in use, loaded and validated from the shipped file on
+    first use. Every entry point that parses XML calls it before any work, so a
+    broken list stops the run there; the parser calls it again per sitting."""
+    return _reviewed if _reviewed is not None else load_reviewed_units()
+
+
 # --- Who speaks ---------------------------------------------------------------
 
 MEMBER = "member"
@@ -216,6 +308,32 @@ def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
         # The printed spelling is the one a Sprechrolle rule maps.
         return printed, short
     return (long, short) if structured else (printed, None)
+
+
+#: The presidium (ADR 0004), matched against a role with whitespace removed
+#: ("Vizepräsident in").
+PRESIDIUM_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
+
+
+def presidium_role(role: str | None, redner: ET.Element | None = None) -> bool:
+    """Whether ``role`` is the presidium's. 18/178, 19/9 and 19/73 print the role
+    with the speaker's name ("Präsident Dr. Norbert Lammert"): the name parts of
+    ``redner`` are removed first. A guest's role ("Präsidentin des Bundesrates")
+    is none."""
+    role = role or ""
+    if redner is not None:
+        name = redner.find("name")
+        for tag in ("titel", "vorname", "namenszusatz", "nachname"):
+            part = _text(name.find(tag)) if name is not None else ""
+            for token in part.split():
+                role = re.sub(rf"(?<![\w.-]){re.escape(token)}(?![\w-])", " ", role)
+    return bool(PRESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", role)))
+
+
+def presidium_owner(rede: ET.Element) -> bool:
+    """Whether the owner marker of ``rede`` carries a presidium role."""
+    redner = _rede_redner(rede)
+    return redner is not None and presidium_role(effective_role(redner)[0] or effective_role(redner)[1], redner)
 
 
 def validate_kind(kind: str) -> None:
@@ -427,6 +545,19 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
             between += " " + _text(child)
             continue
         if child.tag != "rede":
+            continue
+        # ADR 0004: a reviewed or unreviewed presidium <rede> is no Rede, and it
+        # leaves the running state alone, so a Kurzintervention announced across
+        # it still answers the last real Rede. A Sitzungsleitung <rede> is chair
+        # text throughout; the others pass on what the chair says after them.
+        reviewed = child.get("reviewed_kind")
+        if reviewed or presidium_owner(child):
+            labels.append(RedeLabel({"ansprache": ANSPRACHE, "sitzungsleitung": SITZUNGSLEITUNG,
+                                     "procedural": PROCEDURAL}.get(reviewed or "", UNREVIEWED_PRESIDIUM)))
+            if reviewed == "sitzungsleitung":
+                between += " " + " ".join(_text(p) for p in child.findall("p") if p.get("klasse") != "redner")
+            else:
+                between += " " + trailing_sitzungsleitung_text(child)
             continue
         redner = _rede_redner(child)
         who = speaker_class(redner)

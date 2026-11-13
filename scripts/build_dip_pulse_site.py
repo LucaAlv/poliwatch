@@ -14532,6 +14532,11 @@ def main() -> int:
     # Reads .env so DIP_API_KEY and the LLM keys can live outside the shell.
     dip.load_local_env()
     args = parse_args()
+    try:
+        speech_kinds.reviewed_units()
+    except speech_kinds.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}", file=sys.stderr)
+        return 1
     args.include_dev_view = bool(getattr(args, "include_dev_view", False))
     args.summary_mode = getattr(args, "summary_mode", "reuse")
     # The reviewed list is read and checked before any sitting is touched: a

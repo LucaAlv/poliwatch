@@ -357,20 +357,22 @@ class PresidiumFraktionsredeTests(unittest.TestCase):
         self.assertIsNone(speech['speaker']['role'])
         self.assertEqual(contributions, [])
 
-    def test_without_a_fraktion_the_role_stays_unmapped(self):
-        # 18/245 Bulmahn, Singhammer: presidium Reden with no <fraktion>.
-        top, _contributions = parse(
-            '<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
-        speaker = top['speeches'][0]['speaker']
-        self.assertEqual(speaker['role'], 'Vizepräsidentin')
-        with self.assertRaises(derive.SprechrolleError):
-            derive.sprechrolle(speaker)
+    def test_without_a_fraktion_an_unlisted_presidium_rede_refuses_located(self):
+        # T3. 18/245 Bulmahn: a presidium Rede with no <fraktion> and no reviewed
+        # kind refuses its sitting, naming the Rede (ADR 0004 plan P2).
+        with self.assertRaises(dip.UnreviewedUnitError) as caught:
+            parse('<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
+        self.assertEqual(caught.exception.rede_id, 'R')
+        self.assertIn('18/1 T1: presidium Rede at R has no reviewed kind (scripts/reviewed_units.json, ADR 0004)',
+                      str(caught.exception))
 
-    def test_the_praesident_is_not_covered(self):
-        top, _contributions = parse(
-            '<rede id="R">' + presidium('L', 'Lammert', 'Präsident', 'CDU/CSU') + '<p>Ansprache.</p></rede>')
-        self.assertEqual(top['speeches'][0]['speaker']['role'], 'Präsident')
-
+    def test_an_unlisted_praesident_printed_with_a_fraktion_refuses(self):
+        # T4. Only a Vizepräsident(in) role is stripped; the Präsident and the
+        # Alterspräsident keep theirs, so their Rede is never counted unread.
+        for role in ('Präsident', 'Alterspräsident', 'Präsidentin'):
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(dip.UnreviewedUnitError, 'presidium Rede at R has no reviewed kind'):
+                    parse('<rede id="R">' + presidium('L', 'Lammert', role, 'CDU/CSU') + '<p>Ansprache.</p></rede>')
 
 if __name__ == '__main__':
     unittest.main()
