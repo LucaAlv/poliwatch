@@ -34,9 +34,9 @@ def variants():
     conflict = located.replace("<nachname>Gast</nachname></name></redner>Test Gast:",
                                "<nachname>Gast</nachname><rolle><rolle_lang>Ministerpräsident (Hessen)</rolle_lang></rolle>"
                                "</name></redner>Test Gast, Bundesministerin:")
-    # After the located refusal, a Rede in an annex no rule covers, as 19/36 prints a Zu-Protokoll Rede under
-    # "Liste der entschuldigten Abgeordneten": the reconciliation refuses it once the walk is done, and
-    # withholding cannot narrow that.
+    # After the located refusal, a Rede in an annex no rule covers: the absentee-list title without the
+    # Zu-Protokoll heading that lets 19/36's Anlage 2 be read. The reconciliation refuses it once the walk
+    # is done, and withholding cannot narrow that.
     then_other = located.replace("</sitzungsverlauf>", "</sitzungsverlauf>\n  <anlagen><anlage><anlagen-titel>Anlage 1</anlagen-titel>"
                                  '<anlagen-text anlagen-typ="Liste der entschuldigten Abgeordneten"><rede id="ID1815099900">'
                                  f'{GUEST}<p klasse="J">Zu Protokoll gegeben.</p></rede></anlagen-text></anlage></anlagen>')

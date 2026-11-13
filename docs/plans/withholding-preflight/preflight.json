@@ -1,18 +1,16 @@
 {
-  "parser": "/Users/luca/Projects/poliwatch/.claude/worktrees/hopeful-jepsen-4b18a5/scripts/validate_dip_protocol.py",
-  "parser_sha256": "deb0cb17c87e827d17c541fdf3f235a6c07a9b5ea60cc0cf2d7b281a2dc0710a",
+  "parser": "/Users/luca/Projects/poliwatch/.claude/worktrees/gallant-khayyam-4c3a5d/scripts/validate_dip_protocol.py",
+  "parser_sha256": "73a82fa5c4bd5bba3e03d305bbf215bf72215b012de79ec59b392dcf7fe7ce33",
   "speech_rule_version": 7,
   "summary": {
     "status": {
-      "parses once withheld": 70,
+      "parses once withheld": 71,
       "parses, no refusal": 13,
-      "fetch failed": 1,
-      "refused, not narrowable": 1
+      "fetch failed": 1
     },
     "refusal_class": {
-      "located_nested_contribution": 70,
-      "fetch_rejected": 1,
-      "rede_reconciliation": 1
+      "located_nested_contribution": 71,
+      "fetch_rejected": 1
     },
     "located_markers_by_class": {
       "located_nested_contribution": 107
@@ -27,7 +25,7 @@
       ]
     },
     "blockers_listed_sittings": 69,
-    "blockers_listed_parse_once_withheld": 67,
+    "blockers_listed_parse_once_withheld": 68,
     "blockers_listed_exact_match": [
       "18/1",
       "18/10",
@@ -87,6 +85,7 @@
       "19/23",
       "19/239",
       "19/32",
+      "19/36",
       "19/40",
       "19/42",
       "19/44",
@@ -121,16 +120,6 @@
             "ID1808901500 marker 4"
           ]
         }
-      },
-      "19/36": {
-        "status": "refused, not narrowable",
-        "refusal_class": "rede_reconciliation",
-        "blockers": {
-          "expected": 2,
-          "found": 2,
-          "missing": [],
-          "not_listed": []
-        }
       }
     },
     "flagged": {
@@ -145,23 +134,23 @@
         "error": null
       }
     },
-    "words_in_reden_parse_once_withheld": 4804026,
-    "withheld_reden": 89,
-    "withheld_words": 93582,
+    "words_in_reden_parse_once_withheld": 4917684,
+    "withheld_reden": 90,
+    "withheld_words": 94707,
     "withheld_words_by_year": {
       "2013": 4714,
       "2014": 19367,
       "2015": 21383,
       "2016": 14889,
       "2017": 5704,
-      "2018": 12900,
+      "2018": 14025,
       "2019": 2311,
       "2020": 7422,
       "2021": 3990,
       "2022": 902
     },
     "withheld_words_by_fraktion": {
-      "CDU/CSU": 60921,
+      "CDU/CSU": 62046,
       "BÜNDNIS 90/DIE GRÜNEN": 11264,
       "SPD": 8326,
       "DIE LINKE": 6507,
@@ -169,7 +158,7 @@
       "(keine)": 1890,
       "FDP": 862
     },
-    "withheld_share_median": 0.017099999999999997,
+    "withheld_share_median": 0.0169,
     "withheld_share_max": 0.0842,
     "sittings_with_moves_out": []
   },
@@ -2320,10 +2309,9 @@
       "date": "07.06.2018",
       "words_in_reden": 113658,
       "xml_sha256": "04b5cac6ad6a5038340b0bda32812aa310446cd5deb41531e10d589214f55086",
-      "status": "refused, not narrowable",
-      "refusal_class": "rede_reconciliation",
-      "error": "ReconciliationError: 19/36: rede reconciliation: ID193616800 (annex \"Liste der entschuldigten Abgeordneten\") has no status",
-      "located_before_refusal": {
+      "status": "parses once withheld",
+      "refusal_class": "located_nested_contribution",
+      "withheld_reden": {
         "ID193612200": {
           "markers": [
             6,
@@ -2336,11 +2324,21 @@
           "locator": "19/36 Tagesordnungspunkt 14: unresolved nested contribution at ID193612200 marker 6"
         }
       },
+      "withheld_words": 1125,
+      "withheld_share": 0.0099,
+      "moves_out_of_withheld": [],
       "blockers": {
         "expected": 2,
         "found": 2,
         "missing": [],
         "not_listed": []
+      },
+      "counts": {
+        "erwiderung": 4,
+        "kurzintervention": 4,
+        "rede": 159,
+        "zu_protokoll": 1,
+        "zwischenfrage": 13
       }
     },
     "19/40": {
