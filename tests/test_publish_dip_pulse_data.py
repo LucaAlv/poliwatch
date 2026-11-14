@@ -91,6 +91,15 @@ class ReleaseTestCase(unittest.TestCase):
         _daten_fixture.seed_store(db_path)
         conn = pulse_store.connect(db_path)
         try:
+            # Three withheld Reden in 18/7 (ADR 0005), so the export carries real
+            # withheld_units rows for the manifest's list to match.
+            import test_withholding as tw
+
+            parsed = b.dip.parse_protocol_xml(
+                tw.sitting(tw.rede("R0"), *(tw.rede(f"R{i}", name, tw.REFUSED) for i, name in ((1, "Eins"), (2, "Zwei"), (3, "Drei")))),
+                reviewed=[],
+            )
+            pulse_store.persist_report(conn, tw.report(parsed))
             _mps, lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
@@ -526,6 +535,46 @@ class PublishTests(ReleaseTestCase):
                 self.assertEqual(runner.gh("release", "create"), [])
                 shutil.rmtree(self.out, ignore_errors=True)
 
+    def set_exclusions(self, excluded) -> None:
+        manifest = json.loads((self.exports_copy / "datenstand.json").read_text(encoding="utf-8"))
+        self.edit_manifest(coverage={**manifest["coverage"], "excluded": excluded})
+
+    # Value: protects=ADR 0005's bar: --publish refuses while any exclusion still reads awaiting_rule or awaiting_acquisition, the first release included (D6, owner 2026-11-14); fails_when=a release goes out with sittings on their way back; why_new=nothing read coverage.excluded[].reason outside the codebook; seam=main
+    def test_publish_refuses_while_an_exclusion_awaits(self) -> None:
+        final = [{"document_number": "18/20", "reason": "source_defect", "reason_detail": "Datei hält Sitzung 21."},
+                 {"document_number": "18/90", "reason": "not_narrowable", "reason_detail": "x"}]
+        waiting = [{"document_number": "18/62", "reason": "awaiting_rule", "reason_detail": "x"},
+                   *({"document_number": f"18/{n}", "reason": "awaiting_acquisition", "reason_detail": "x"} for n in range(100, 113))]
+        self.set_exclusions(final + waiting)
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, "--publish refused: 14 exclusions still await acquisition or a rule (ADR 0005",
+                            "18/62, 18/100, 18/101", "18/110, …")
+        self.assertEqual(self.runner.gh("release", "create"), [])
+        # A dry run still builds the directory and says what --publish would do.
+        code, stdout, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("--publish would refuse: 14 exclusions still await acquisition or a rule (ADR 0005", stdout)
+        shutil.rmtree(self.out)
+        self.set_exclusions(final)
+        code, stdout, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(self.runner.gh("release", "create")), 1)
+
+    # Value: protects=an exclusion record the bar cannot read is refused, never read as none (class 9); fails_when=a missing or malformed coverage.excluded lets --publish through; why_new=D6; seam=main
+    def test_an_unreadable_exclusion_record_is_refused(self) -> None:
+        manifest = json.loads((self.exports_copy / "datenstand.json").read_text(encoding="utf-8"))
+        coverage = {k: v for k, v in manifest["coverage"].items() if k != "excluded"}
+        for label, edit in (
+            ("absent", coverage),
+            ("null", {**coverage, "excluded": None}),
+            ("an entry without a reason", {**coverage, "excluded": [{"document_number": "18/20"}]}),
+            ("an entry that is no object", {**coverage, "excluded": ["18/20"]}),
+        ):
+            with self.subTest(label):
+                self.edit_manifest(coverage=edit)
+                code, _, stderr = self.run_script("--initial", "--publish")
+                self.assert_refused(code, stderr, "coverage.excluded")
+
 
 class FollowUpReleaseTests(ReleaseTestCase):
     # Value: protects=a later release assembles its changelog from the previous manifest and the authored file and is refused without them; fails_when=a missing --changes passes, the previous version is not recorded, or the corrections do not reach changes.json and CHANGES.md; why_new=a researcher must be able to check a cited figure against the release before; seam=main; no_claim=changelog rules (tested in test_release_changes)
@@ -558,11 +607,11 @@ class FollowUpReleaseTests(ReleaseTestCase):
 
     # Value: protects=D9 at the entry point: a follow-up release adding more newly withheld Reden than the cap is refused naming each, and --confirm-withheld lets it through; fails_when=run_release skips the cap or the flag is not read; why_new=the cap function is tested alone, not through main; seam=main; no_claim=which Reden are worth releasing
     def test_a_release_with_too_many_new_withheld_reden_needs_each_confirmed(self) -> None:
+        self.assertEqual([u["rede_id"] for u in self.manifest["withheld_reden"]], ["R1", "R2", "R3"])
         previous = self.work / "previous.json"
-        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01", "withheld_reden": []}), encoding="utf-8")
         changes = self.work / "changes-source.json"
         changes.write_text(json.dumps({"summary": "Drei Reden zurückgehalten."}), encoding="utf-8")
-        self.edit_manifest(withheld_reden=[{"document_number": "18/7", "rede_id": f"R{i}", "reason": "reviewed"} for i in (1, 2, 3)])
         args = ("--previous-manifest", str(previous), "--changes", str(changes))
         code, _, stderr = self.run_script(*args)
         self.assert_refused(code, stderr, "--confirm-withheld", "18/7:R1, 18/7:R2, 18/7:R3")
@@ -570,6 +619,34 @@ class FollowUpReleaseTests(ReleaseTestCase):
         self.assertEqual(code, 0, stderr)
         added = json.loads((self.out / f"data-{VERSION}" / "changes.json").read_text(encoding="utf-8"))["withheld_reden_added"]
         self.assertEqual([unit["rede_id"] for unit in added], ["R1", "R2", "R3"])
+
+    # Value: protects=the manifest's withheld list matches the withheld_units rows a reader downloads (P2); fails_when=a hand-edited list (rows removed, added or re-reasoned) passes the cap and the changelog; why_new=Codex's repro at PR 2's ship; seam=main
+    def test_the_withheld_list_must_match_the_exported_rows(self) -> None:
+        listed = self.manifest["withheld_reden"]
+        cases = (
+            ("every row removed", [], "only in the export: 18/7 R1, 18/7 R2, 18/7 R3"),
+            ("one row missing", listed[:2], "only in the export: 18/7 R3"),
+            ("an extra row", [*listed, {"document_number": "18/7", "rede_id": "R9", "reason": "reviewed"}], "only in the manifest: 18/7 R9"),
+            ("a changed reason", [{**listed[0], "reason": "reviewed"}, *listed[1:]],
+             "18/7 R1: reason reviewed in the manifest, refused_nested_contribution in the export"),
+        )
+        for label, units, fragment in cases:
+            with self.subTest(label):
+                self.edit_manifest(withheld_reden=units)
+                code, _, stderr = self.run_script("--initial")
+                self.assert_refused(code, stderr, "withheld_reden does not match", fragment)
+        self.edit_manifest(withheld_reden=listed)
+        code, _, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+
+    # Value: protects=a previous manifest whose export_format is not an integer is refused (class 9); fails_when=previous_manifest_problem only checks the field is present, so "17" decides whether the withheld list may be absent; why_new=P2; seam=main
+    def test_a_previous_manifest_needs_an_integer_export_format(self) -> None:
+        for value in ("17", None, True, 17.0):
+            with self.subTest(value=value):
+                previous = self.work / "previous.json"
+                previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01", "export_format": value}), encoding="utf-8")
+                code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}))
+                self.assert_refused(code, stderr, "export_format is not an integer")
 
     # Value: protects=a follow-up release published through gh is not blocked by the previous release's own tag, which gh lists, and creates exactly one release for the new version; fails_when=the remote check counts any listed release as blocking (the --initial rule leaks into follow-ups) or --publish drops the previous version from changes.json; why_new=every other --publish test passes --initial, so the follow-up x --publish cell had no test; seam=main with a recorded gh; no_claim=changelog rules (tested in test_release_changes)
     def test_a_follow_up_release_is_published_although_gh_lists_the_previous_tag(self) -> None:

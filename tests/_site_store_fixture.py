@@ -76,6 +76,7 @@ def persistable(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         protocol = report.setdefault("protocol", {})
         protocol.setdefault("id", f"test-{protocol.get('dokumentnummer') or len(complete)}")
         report.setdefault("validation_summary", {}).setdefault("speech_kinds_version", speech_kinds.VERSION)
+        _support.stamp_reviewed(report)
         complete.append(entry)
     return complete
 

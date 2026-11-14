@@ -29,3 +29,20 @@ def shipped_reviewed_units():
         yield reviewed_units.load()
     finally:
         reviewed_units.use([])
+
+
+def stamp_reviewed(report: dict) -> dict:
+    """Give a hand-built report the reviewed digest a parse under the active list
+    would record for its sitting, unless it has one. Without it the report reads
+    as stale (build_dip_pulse_site.stale_causes, P3b)."""
+    protocol = report.setdefault("protocol", {})
+    number = str(protocol.get("dokumentnummer") or "").strip()
+    protocol.setdefault("reviewed_digest", reviewed_units.sitting_digest(number))
+    return report
+
+
+def shipped_digest(number: str) -> str:
+    """The reviewed digest of ``number`` under scripts/reviewed_units.json, what a
+    CLI run in a subprocess compares a cached report against."""
+    with shipped_reviewed_units():
+        return reviewed_units.sitting_digest(number)

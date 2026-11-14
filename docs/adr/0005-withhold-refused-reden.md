@@ -35,24 +35,25 @@ Decided by the owner as N1 B on 2026-11-07. The build's shape was settled in the
 ## Facts
 
 - **A Sitzung with a withheld Rede is not complete for speeches.** Every Fakt whose basis is speeches, in every week and month that holds it, reads *unvollständig erfasst* and names the Sitzung and the number of withheld Reden ("Sitzung 18/3: 2 Reden zurückgehalten"). A report that records no withheld count is unknown, and unknown is not complete.
-- ***Erste Reden*** counts a person's first Rede in our coverage, stored or withheld, in the metric's own order: Sitzung, Tagesordnungspunkt, position in it (D3). When that first Rede is withheld, the person is not counted in any week. A withheld Rede binds every person who shares its Redner-ID.
+- ***Erste Reden*** counts a person's first Rede in our coverage, stored or withheld, in the metric's own order: Sitzung, Tagesordnungspunkt, position in it (D3). When that first Rede is withheld, the person is not counted in any week. A withheld Rede binds every person who shares its Redner-ID. The store gate fails on a withheld Rede with no Redner-ID, which would bind no one.
 - **A backfill does not re-acquire a Sitzung for its withheld Reden.** Re-fetching never releases one; a parser rule or a change of the reviewed list does, through `--offline --repersist`. A Sitzung with withheld Reden and another gap is still acquired for that gap.
 
 ## Releases (D5, D9)
 
 - **The run summary** names every Rede a rebuild newly withholds or no longer withholds.
-- **The release manifest** lists every withheld Rede (`withheld_reden`).
+- **The release manifest** lists every withheld Rede (`withheld_reden`). A release refuses a manifest without the list, with a malformed one, or with one that differs from the exported `withheld_units` rows; a previous manifest needs it from export format 17 on.
 - **The changelog** names the ones a release adds and releases.
 - **The cap.** A weekly release goes out with up to `WITHHELD_CAP = 2` newly withheld Reden. Above that, the release is refused until the owner has read each one and names it with `--confirm-withheld`, because a pile-up points to parser drift. The first release lists every withheld Rede and has no cap. A change of the cap is recorded in the data changelog.
 
 ## The list and the store
 
-- **A store must match the reviewed list it was persisted under (R3).** The store keeps a digest of each Sitzung's reviewed entries. Facts, export and pages refuse a store whose digest differs from the current file, until `--offline --repersist` has re-read those Sitzungen. An online run re-reads them by itself.
+- **A store must match the reviewed list it was persisted under (R3).** The store keeps a digest of each Sitzung's reviewed entries. A cached report without a digest counts as parsed under another list, and the refusal names which input made a report stale: the speech rule or the reviewed list. A missing `scripts/reviewed_units.json` stops every run; it is never read as empty. The list is keyed by the XML's own Sitzung number and the store by `dokumentnummer`, so every parse, the online one included, refuses an XML whose number differs. Facts, export and pages refuse a store whose digest differs from the current file, until `--offline --repersist` has re-read those Sitzungen. An online run re-reads them by itself.
 
 ## Coverage and the bar (N9, gate step 4)
 
 - **Coverage.** DATA.md and the Daten page publish coverage per year, by Sitzungen and by Reden. They give the withheld share by own words per year, per Fraktion and year, and per Sitzung. Withheld own words are divided by own words of all Reden, stored or withheld.
 - **The exclusion record.** Every entry of `coverage-exclusions.json` carries a reason code and a sentence. A Sitzung may stay out for good only with `source_defect` or `not_narrowable`. The codes `awaiting_rule` and `awaiting_acquisition` name Sitzungen on their way back. A bare "excluded" is refused.
+- **The release enforces the bar.** `--publish` refuses while any exclusion reads a code other than `source_defect` or `not_narrowable`, the first release included; a dry run names those Sitzungen. The gate does not refuse them, because T4's own builds must pass it while the codes are still on the record (owner decision D6, 2026-11-14).
 
 ## Considered Options
 

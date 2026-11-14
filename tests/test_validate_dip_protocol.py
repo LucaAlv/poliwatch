@@ -151,7 +151,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
             roll_call_list_id=None,
             limit_tops=None,
         )
-        parsed_xml = {"xml_protocol": {}, "agenda_items": []}
+        parsed_xml = {"xml_protocol": {"wahlperiode": "21", "sitzung_nr": "87"}, "agenda_items": []}
         enrichment = {
             "agenda_items": [],
             "api_totals": {},
@@ -192,7 +192,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
             roll_call_list_id=None,
             limit_tops=None,
         )
-        parsed_xml = {"xml_protocol": {}, "agenda_items": []}
+        parsed_xml = {"xml_protocol": {"wahlperiode": "21", "sitzung_nr": "87"}, "agenda_items": []}
         enrichment = {
             "agenda_items": [],
             "api_totals": {},
@@ -234,14 +234,14 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         )
         enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [], "api_records": {}, "sitting_votes": []}
         with (
-            mock.patch.object(dip, "fetch_text", return_value="<dbtplenarprotokoll>ä</dbtplenarprotokoll>"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87">ä</dbtplenarprotokoll>'),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
             mock.patch("sys.stderr"),
         ):
             report = dip.build_report(args, protocol=protocol)
         # build_report caches nothing: the caller keeps the XML only once it accepts the report.
-        self.assertEqual(sink, {"text": "<dbtplenarprotokoll>ä</dbtplenarprotokoll>"})
+        self.assertEqual(sink, {"text": '<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87">ä</dbtplenarprotokoll>'})
         # A report an online update makes carries the current rule marker, so the A1 warning stays silent.
         self.assertEqual(report["validation_summary"]["speech_kinds_version"], speech_kinds.VERSION)
 
@@ -253,7 +253,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
                       "api_records": {"sitting_votes": [sitting_vote]}, "sitting_votes": [sitting_vote]}
         with (
             mock.patch.object(dip, "fetch_text", return_value="<xml />"),
-            mock.patch.object(dip, "parse_protocol_xml", return_value={"xml_protocol": {}, "agenda_items": []}),
+            mock.patch.object(dip, "parse_protocol_xml", return_value={"xml_protocol": {"wahlperiode": "21", "sitzung_nr": "87"}, "agenda_items": []}),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
         ):

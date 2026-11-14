@@ -2,6 +2,8 @@
 docs/plans/coverage-gate-pr2.md): a Rede the parser cannot read, or one on the
 reviewed list, is held back with its reason and text, outside every count, and
 the rest of the sitting is kept unchanged."""
+import contextlib
+import io
 import json
 import sqlite3
 import tempfile
@@ -206,6 +208,15 @@ class ReviewedListTests(unittest.TestCase):
                 with self.subTest(label), self.assertRaises(reviewed_units.ReviewedUnitsError):
                     reviewed_units.load(path)
 
+    # Value: protects=a missing reviewed list stops the run instead of releasing every reviewed Rede (P3c); fails_when=load reads FileNotFoundError as no entries; why_new=red team at PR 2's ship; seam=path
+    def test_a_missing_list_is_refused_and_an_empty_one_loads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, "is missing; it is checked in, restore it"):
+                reviewed_units.load(Path(tmp) / "absent.json")
+            empty = Path(tmp) / "empty.json"
+            empty.write_text('{"entries": []}', encoding="utf-8")
+            self.assertEqual(reviewed_units.load(empty), {})
+
     # Value: protects=the 86 shipped exclusion reasons load through the real loader, every one with a known code;
     #   fails_when=the file drifts from the loader's shape and the owner's store refuses on its next run; why_new=W5; seam=none
     def test_the_shipped_exclusion_record_loads(self):
@@ -251,6 +262,44 @@ class ReviewedListTests(unittest.TestCase):
         stale = [cached(listed, reviewed_units.digest([])), cached(unlisted, reviewed_units.digest([entry("R1")])),
                  cached(unlisted, reviewed_units.digest([]), version=sk.VERSION - 1)]
         self.assertEqual(build.unparsed_reports(stale), stale)
+
+
+    # Value: protects=a report without reviewed_digest is stale, not current (P3b), and every stale report says which input made it so (P3a); fails_when=unparsed_reports reads an absent digest as fresh, or the refusal blames the speech rule for a reviewed-list change; why_new=Codex and the adversarial pass at PR 2's ship; seam=stale_causes
+    def test_stale_reports_name_their_cause_and_an_absent_digest_is_stale(self):
+        def cached(number, digest="absent", version=sk.VERSION):
+            protocol = {"dokumentnummer": number, "xml_url": f"https://example.test/{number}.xml"}
+            if digest != "absent":
+                protocol["reviewed_digest"] = digest
+            return {"report": {"protocol": protocol, "validation_summary": {"speech_kinds_version": version}}}
+
+        no_digest, other_list = cached("18/7"), cached("18/2", reviewed_units.digest([]))
+        old_rule, both = cached("18/8", reviewed_units.digest([]), sk.VERSION - 1), cached("18/9", version=sk.VERSION - 1)
+        self.assertEqual(build.stale_causes(no_digest["report"]), ("reviewed",))
+        self.assertEqual(build.stale_causes(other_list["report"]), ("reviewed",))
+        self.assertEqual(build.stale_causes(old_rule["report"]), ("rule",))
+        self.assertEqual(build.stale_causes(both["report"]), ("rule", "reviewed"))
+        self.assertEqual(build.unparsed_reports([no_digest]), [no_digest])
+        with self.assertRaises(build.CachedReportError) as caught:
+            build.require_parsed_reports([no_digest, other_list])
+        message = str(caught.exception)
+        self.assertIn("2 were parsed under other entries of scripts/reviewed_units.json than it holds now (18/2, 18/7)", message)
+        self.assertNotIn("speech-counting rule", message)
+        with self.assertRaises(build.CachedReportError) as caught:
+            build.require_parsed_reports([old_rule, both])
+        message = str(caught.exception)
+        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/8, 18/9)", message)
+        self.assertIn("1 were parsed under other entries of scripts/reviewed_units.json than it holds now (18/9)", message)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(build.warn_unparsed_reports([no_digest, old_rule, cached("18/10", reviewed_units.digest([]))]), 2)
+        self.assertIn("2 of 3 cached reports", stderr.getvalue())
+        self.assertIn("1 predate the current speech-counting rule", stderr.getvalue())
+        self.assertIn("1 were parsed under other entries of scripts/reviewed_units.json", stderr.getvalue())
+
+    # Value: protects=the committed demo fixture carries the reviewed digest the parse gives 21/84, so it is not stale under P3b and drifts loudly; fails_when=extract_demo_fixture drops the key or the list changes for 21/84 without a regenerated fixture; why_new=P3b; seam=none
+    def test_the_demo_fixture_carries_the_reviewed_digest_of_its_sitting(self):
+        fixture = json.loads((_support.FIXTURES / "demo-report-21-84.json").read_text(encoding="utf-8"))
+        self.assertEqual(fixture["protocol"]["reviewed_digest"], _support.shipped_digest("21/84"))
 
 
 class StoreTests(unittest.TestCase):

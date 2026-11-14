@@ -134,6 +134,9 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             "xml_url": XML_URL,
             "xml_header": parsed.get("xml_protocol") or {},
             "xml_sha256": parsed["xml_sha256"],
+            # The reviewed entries it was parsed under (R3): without it the
+            # report reads as stale (build_dip_pulse_site.stale_causes).
+            "reviewed_digest": parsed["reviewed_digest"],
         },
         "sampled_people": [],
         "agenda_items": [item],

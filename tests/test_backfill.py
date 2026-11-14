@@ -61,6 +61,7 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
             vote["id"] = f"{n}{vote['id']}"
             vote["detail_url"] = f"{vote['detail_url']}{n}"
     report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION}
+    _support.stamp_reviewed(report)
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}
         # The evidence a scan records (how it ended); a report cached before
@@ -315,7 +316,8 @@ class RetainedScopeTests(unittest.TestCase):
         before = (self.database).read_bytes()
         code, _fetch, _build_dossiers, render_site, stderr = self.run_main("--document-number", "21/2", generated=[])
         self.assertEqual(code, 1)
-        self.assertIn("ERROR [persist]: 1 cached reports predate the current speech-counting rule", stderr)
+        self.assertIn("ERROR [persist]: 1 cached reports have no cached XML in data/xml/ to re-read them from: "
+                      "1 predate the current speech-counting rule", stderr)
         self.assertIn("(21/1)", stderr)
         self.assertIn("Fix: run --fetch-xml, then --offline --repersist", stderr)
         self.assertEqual(self.database.read_bytes(), before)

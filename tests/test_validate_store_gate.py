@@ -55,6 +55,7 @@ class PersistOnlyRosterTests(unittest.TestCase):
             output = Path(tmp) / "gate"
             report = antrag_report()
             report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            _support.stamp_reviewed(report)
             report_path, _, _ = site.report_paths(output, report["protocol"]["dokumentnummer"])
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -118,6 +119,7 @@ class PersistOnlyAntragCacheTests(unittest.TestCase):
             root = Path(tmp)
             report = antrag_report()
             report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            _support.stamp_reviewed(report)
             cache = antrag_cache()
             outputs = [root / "gate", root / "normal"]
             for output in outputs:
@@ -347,6 +349,50 @@ class WithheldGateTest(unittest.TestCase):
             conn.commit()
             conn.close()
             self.assertEqual(gate.withheld_also_counted(path), ["18/7 R1"])
+
+    # Value: protects=the gate also flags a counted nested Beitrag of a withheld Rede (P3d), and only that; fails_when=withheld_also_counted compares rede_id alone, or flags a Beitrag of the stored outer Rede of a withheld split part; why_new=Codex at PR 2's ship; seam=none
+    def test_flags_a_counted_beitrag_inside_a_withheld_rede(self) -> None:
+        def add_beitrag(conn, rede_id, parent, sequence):
+            conn.execute(
+                "INSERT INTO contributions(id, protocol_id, agenda_item_id, kind, rede_id, parent_rede_id, sequence, "
+                "created_at, updated_at) SELECT ?, protocol_id, agenda_item_id, 'zwischenfrage', ?, ?, ?, 'x', 'x' "
+                "FROM withheld_units LIMIT 1",
+                (f"c-{rede_id}", rede_id, parent, sequence),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.persisted_store(tmp)
+            conn = sqlite3.connect(path)
+            add_beitrag(conn, "nested:R1:2", "R1", 90)  # a Beitrag of the stored R1
+            conn.commit()
+            self.assertEqual(gate.withheld_also_counted(path), [])
+            add_beitrag(conn, "nested:R2:2", "R2", 91)  # a Beitrag inside the withheld R2
+            conn.commit()
+            self.assertEqual(gate.withheld_also_counted(path), ["18/7 R2"])
+            # D4: only the split part R2:2 is withheld, so a Beitrag of the outer
+            # Rede R2, which stays stored, is legitimate.
+            conn.execute("DELETE FROM contributions WHERE rede_id = 'nested:R2:2'")
+            conn.execute("UPDATE withheld_units SET rede_id = 'R2:2'")
+            add_beitrag(conn, "nested:R2:3", "R2", 92)
+            conn.commit()
+            self.assertEqual(gate.withheld_also_counted(path), [])
+            add_beitrag(conn, "nested:R2:2:1", "R2:2", 93)
+            conn.commit()
+            conn.close()
+            self.assertEqual(gate.withheld_also_counted(path), ["18/7 R2:2"])
+
+    # Value: protects=the gate fails on a withheld Rede with no Redner-ID, the one assumption erste-reden v3 rests on (ADR 0005 "Facts"); fails_when=such a Rede binds no one and its speaker's next stored Rede posts as a debut unnoticed; why_new=PR A; seam=none
+    def test_counts_withheld_reden_without_a_redner_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.persisted_store(tmp)
+            self.assertEqual(gate.withheld_without_redner_id(path), [])
+            conn = sqlite3.connect(path)
+            for value in (None, ""):
+                with self.subTest(value=value):
+                    conn.execute("UPDATE withheld_units SET xml_redner_id = ?", (value,))
+                    conn.commit()
+                    self.assertEqual(gate.withheld_without_redner_id(path), ["18/7 R2"])
+            conn.close()
 
     # Value: protects=run_gate counts the owner's store before the replay that upgrades it, so store_counts reads a store
     #   without the schema 12 withheld tables as None instead of crashing, and counts them once present;

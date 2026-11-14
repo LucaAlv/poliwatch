@@ -1718,8 +1718,9 @@ class SittingWeekComparisonTests(unittest.TestCase):
         slug = document_number.replace("/", "-")
         return {
             "report": {
-                # A protocol id and the current speech rule, so a build can persist it (A4 R1).
-                "protocol": {"id": f"pp-{slug}", "datum": datum, "dokumentnummer": document_number, "titel": "T"},
+                # A protocol id, the current speech rule and reviewed digest, so a build can persist it (A4 R1).
+                "protocol": {"id": f"pp-{slug}", "datum": datum, "dokumentnummer": document_number, "titel": "T",
+                             "reviewed_digest": _support.reviewed_units.sitting_digest(document_number)},
                 "agenda_items": items,
                 "validation_summary": {"speech_kinds_version": speech_kinds.VERSION},
             },
@@ -3947,6 +3948,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
         (output_dir / "data").mkdir(parents=True)
         report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
         report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        _support.stamp_reviewed(report)
         (output_dir / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(report), encoding="utf-8")
         _site_store_fixture.build_site_store(output_dir, [{"report": report}])
         return output_dir
@@ -4002,12 +4004,13 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             output_dir = self._seed(tmp)
             old = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
             old["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
+            _support.stamp_reviewed(old)
             path = output_dir / "data" / "plenarprotokoll-20-998.json"
             path.write_text(json.dumps(old), encoding="utf-8")
             code, stderr = self._build(output_dir)
             self.assertEqual(code, 1, stderr)
             self.assertEqual(stderr.count("predate the current speech-counting rule"), 1)
-            self.assertIn("1 of 2 cached reports predate", stderr)
+            self.assertIn("1 of 2 cached reports are stale", stderr)
             self.assertIn("1 cached report(s) are not in the store (20/998)", stderr)
             self.assertIn("If that refuses a report, follow the Fix it prints", stderr)
             self.assertIn(build_dip_pulse_site.CONCURRENT_UPDATE_NOTE, stderr)
@@ -4026,6 +4029,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
         report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
         report["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
         report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        _support.stamp_reviewed(report)
         (output_dir / "data" / "plenarprotokoll-20-998.json").write_text(json.dumps(report), encoding="utf-8")
         return report
 

@@ -21,7 +21,8 @@ from stable_ids import stable_key
 
 
 def report(pid='s1', names=('Ada Example',)):
-    return {'protocol': {'id':pid,'dokumentnummer':f'21/{pid[-1]}','datum':'2026-06-10'},
+    return {'protocol': {'id':pid,'dokumentnummer':f'21/{pid[-1]}','datum':'2026-06-10',
+                         'reviewed_digest':_support.reviewed_units.sitting_digest(f'21/{pid[-1]}')},
             'validation_summary':{'speech_kinds_version':speech_kinds.VERSION},
             'agenda_items':[{'index':1,'heading':'Debatte','xml_speakers':[
                 {'rede_id':f'{pid}-r{index}', 'speaker':{'display_name':name,'xml_redner_id':str(index+1),'fraktion':'SPD'},
@@ -239,7 +240,8 @@ class StableIDsTests(unittest.TestCase):
 
     def test_legacy_cli_requires_explicit_replay_then_builds_pages_facts_and_exports(self):
         site=self.root/'site';data=site/'data';data.mkdir(parents=True);db=data/'bundestag-pulse.sqlite'
-        r=report();(data/'plenarprotokoll-21-1.json').write_text(json.dumps(r))
+        r=report();r['protocol']['reviewed_digest']=_support.shipped_digest('21/1')  # the CLI runs in a subprocess
+        (data/'plenarprotokoll-21-1.json').write_text(json.dumps(r))
         with sqlite3.connect(db) as conn:
             conn.executescript('CREATE TABLE parties(id INTEGER PRIMARY KEY,name TEXT); CREATE TABLE mps(id INTEGER PRIMARY KEY,display_name TEXT); CREATE TABLE protocols(id TEXT PRIMARY KEY,document_number TEXT);')
             conn.execute('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT)')

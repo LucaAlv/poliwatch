@@ -211,6 +211,19 @@ This is also the check T4 needs most from PR B: 18/20's file holds sitting 21. A
 
 The finding holds: `merged_rede`, `merged_erwiderung` and procedural diagnostics that target a withheld Rede stay in `xml_turn_diagnostics` and in the report JSON (`validate_dip_protocol.py:3844`). But "drop them with the Rede" contradicts ADR 0005 D7. The diagnostics are where "partly merged into X, rest withheld" is recorded. The only renderer reader, `reviewed_procedural` (`render_dip_pulse_html.py:1949`), looks for `(reviewed)` presidium evidence, and a withheld Rede cannot carry that: the list allows one entry per (sitting, rede_id). PR B rewrites the TODOS.md item to read: "keep them (D7); mark them `withheld` if they ever reach the store or a page."
 
+### B8. Outcome (built 2026-11-14)
+
+**Built as planned, with three additions found while building:**
+- B3's sibling: `build_demo_site.persisted_store` refused every stale fixture as "made under speech rule …". It now names the cause `stale_causes` gives, so a digest-only drift does not blame the rule.
+- B6: `--fetch-xml` compared the header on its own. It now uses the same `xml_sitting_mismatch` as the online parse and the re-parse, so one function decides (class 4). Its message for another sitting reads "it is the XML of 21/7, not of 21/6".
+- B1: `assemble` validates both withheld lists before it compares the manifests, so a bad list is refused first, not reported as a schema change.
+
+**Test fixtures.** P3b makes a hand-built report without `reviewed_digest` stale. About 15 test helpers built such reports; they now stamp the digest through `_support.stamp_reviewed` (or `_support.shipped_digest` where the CLI runs in a subprocess and reads the shipped list). The demo fixture was regenerated from the reference store's `data/xml/plenarprotokoll-21-84.xml`; its only change is the new key.
+
+**Replay.** `--offline --repersist` with PR B on a fresh clone of `.context/dip-pulse-site` (403 s), compared with PR A's replay by `compare_store_values.py` and the facts diff: every table count and value equal, 0 of 1,922 Fakt values moved, no stale-report warning. PR B changes no figure.
+
+**Real data.** On the reference store, 718 of 718 cached reports have no stale cause under the new rule, and 718 of 718 cached XML headers match their `dokumentnummer`. The D6 check on the replay's real manifest finds the 85 awaiting exclusions (83 `awaiting_acquisition`, 2 `awaiting_rule`), so `--publish` refuses as decided. The reconciliation passes on both real exports (0 rows on the replay, 1 on the rehearsal) and, with the list emptied, names the rehearsal's row: "only in the export: 21/20 ID212014300".
+
 ---
 
 ## The review checklist applied to this plan

@@ -185,6 +185,21 @@ class RefusalPathTests(unittest.TestCase):
         self.assertTrue(raised.exception.source_rejected)
         self.assertIn("rede reconciliation", str(raised.exception))
 
+    # Value: protects=the online parse refuses an XML that holds another sitting, before any DIP enrichment request (P3f; 18/20's file holds sitting 21); fails_when=build_report stores 18/21's Reden as 18/20, as --fetch-xml and the re-parse already refuse; why_new=the adversarial pass at PR 2's ship; seam=fetch_text and enrich_with_api stubbed
+    def test_online_build_refuses_the_xml_of_another_sitting(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/20", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18020.xml"}}
+        good = sitting()
+        for label, number, xml in (
+            ("another sitting", "18/20", good.replace('sitzung-nr="7"', 'sitzung-nr="21"')),
+            ("no sitting number", "18/7", good.replace(' sitzung-nr="7"', "")),
+        ):
+            with self.subTest(label), patch.object(dip, "fetch_text", return_value=xml), \
+                    patch.object(dip, "enrich_with_api") as enrich, self.assertRaises(dip.DipError) as raised:
+                dip.build_report(SimpleNamespace(api_key="test", sleep=0), {**protocol, "dokumentnummer": number})
+            self.assertTrue(raised.exception.source_rejected)
+            self.assertIn("not of " + number, str(raised.exception))
+            enrich.assert_not_called()
+
     # Value: protects=offline, a reconciliation failure names itself, not a corrupt file; fails_when=the generic "is not the Plenarprotokoll XML" message returns;
     #   why_new=the offline message would send the operator to refetch good XML; seam=none
     def test_offline_reparse_says_reconciliation_not_corrupt_xml(self):

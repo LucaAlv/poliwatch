@@ -33,7 +33,8 @@ def report(pid="s1", names=("Ada Example",), rede_ids=None):
          "char_count": 20, "text": "Ein geprüfter Text."}
         for index, name in enumerate(names)
     ]
-    return {"validation_summary": {"speech_kinds_version": store.speech_kinds.VERSION}, "protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10"},
+    return {"validation_summary": {"speech_kinds_version": store.speech_kinds.VERSION}, "protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10",
+                                                                                                "reviewed_digest": _support.reviewed_units.sitting_digest(f"21/{pid[-1]}")},
             "agenda_items": [{"index": 1, "heading": "Debatte", "xml_speakers": speakers}]}
 
 
@@ -1397,6 +1398,7 @@ class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
     def test_a_store_path_that_is_a_directory_is_reported_without_a_traceback(self):
         site = self.site()
         r = report()
+        r["protocol"]["reviewed_digest"] = _support.shipped_digest("21/1")  # the CLI runs in a subprocess
         (site / "data" / "plenarprotokoll-21-1.json").write_text(json.dumps(r))
         self.db.mkdir()
         (self.db / "keep").write_text("x")

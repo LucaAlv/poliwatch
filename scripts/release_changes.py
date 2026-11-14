@@ -123,16 +123,54 @@ def _delta(previous: dict[str, Any] | None, current: dict[str, Any], *path: str)
 WITHHELD_CAP = 2
 
 
+#: The first export format whose manifest lists its withheld Reden (ADR 0005).
+WITHHELD_LIST_FORMAT = 17
+
+#: The fields of one withheld_reden entry, each non-blank text.
+WITHHELD_FIELDS = ("document_number", "rede_id", "reason")
+
+
 def _withheld_key(unit: dict[str, Any]) -> str:
+    """The one key of a withheld Rede, for the manifest list and the exported rows alike."""
     return f"{unit.get('document_number')} {unit.get('rede_id')}"
+
+
+def withheld_list(source: dict[str, Any], where: str, *, required: bool = True) -> dict[str, dict[str, Any]]:
+    """The manifest's withheld Reden by key, refused unless the list is there and
+    well formed. The release cap and the changelog read it, so a missing,
+    null or malformed list may not pass as "none withheld" (P2). ``required``
+    False lets an absent list mean none (a previous manifest before
+    WITHHELD_LIST_FORMAT)."""
+    units = source.get("withheld_reden")
+    if units is None and not required:
+        return {}
+    if not isinstance(units, list):
+        raise ChangesError(f"{where} carries no withheld_reden list (ADR 0005); export it again")
+    keyed: dict[str, dict[str, Any]] = {}
+    for index, unit in enumerate(units):
+        label = f"{where} withheld_reden[{index}]"
+        if not isinstance(unit, dict):
+            raise ChangesError(f"{label} is not an object")
+        for field in WITHHELD_FIELDS:
+            if not isinstance(unit.get(field), str) or not unit[field].strip():
+                raise ChangesError(f"{label}.{field} must be non-empty text")
+        key = _withheld_key(unit)
+        if key in keyed:
+            raise ChangesError(f"{label} names {key} a second time")
+        keyed[key] = unit
+    return keyed
 
 
 def withheld_changes(manifest: dict[str, Any], previous_manifest: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
     """The withheld Reden this release adds and releases against the previous
-    one (D5). A previous manifest without the list (export format 16 or older)
-    held none; the initial release lists every withheld Rede as added."""
-    current = {_withheld_key(unit): unit for unit in manifest.get("withheld_reden") or []}
-    previous = {_withheld_key(unit): unit for unit in (previous_manifest or {}).get("withheld_reden") or []}
+    one (D5). A previous manifest before WITHHELD_LIST_FORMAT may lack the list:
+    it held none. The initial release lists every withheld Rede as added."""
+    current = withheld_list(manifest, "the manifest")
+    previous: dict[str, dict[str, Any]] = {}
+    if previous_manifest is not None:
+        fmt = previous_manifest.get("export_format")
+        older = type(fmt) is int and fmt < WITHHELD_LIST_FORMAT
+        previous = withheld_list(previous_manifest, "the previous manifest", required=not older)
     return {
         "added": [current[key] for key in sorted(current.keys() - previous.keys())],
         "released": [previous[key] for key in sorted(previous.keys() - current.keys())],
@@ -166,6 +204,9 @@ def assemble(
         checked = _check_authored(authored)
         if initial and (checked["corrections"] or checked["schema_changes"]):
             raise ChangesError("an initial release has nothing to correct or migrate: drop corrections and schema_changes from the changes file")
+    # Before anything compares the two manifests: a list the cap cannot trust
+    # is the first thing to refuse.
+    withheld = withheld_changes(manifest, previous_manifest)
     detected = {}
     if not initial:
         for field in SCHEMA_FIELDS:
@@ -184,7 +225,6 @@ def assemble(
         "vote_members": _delta(previous_manifest, manifest, "votes", "members"),
         "total_rows": _delta(previous_manifest, manifest, "total_rows"),
     }
-    withheld = withheld_changes(manifest, previous_manifest)
     return {
         "changes_format": CHANGES_FORMAT,
         "version": version,
