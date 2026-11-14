@@ -308,14 +308,18 @@ def withheld_also_counted(database_path: Path) -> list[str]:
     """Up to five withheld Reden whose rede_id is also a stored Rede or Beitrag
     of the same sitting, or that a stored Beitrag names as its parent (a
     nested Beitrag inside it). A withheld Rede is outside every count (ADR
-    0005). The parent is compared exactly: when only a split part ``R:n`` is
-    withheld, the outer ``R`` stays stored (D4) and may have Beiträge."""
+    0005). Only a nested Beitrag (``nested:…``) is inside its parent: a
+    Kurzintervention or Erwiderung is its own ``<rede>`` whose parent_rede_id
+    names the Rede it answers, and it stays counted when that Rede is withheld.
+    The parent is compared exactly: when only a split part ``R:n`` is withheld,
+    the outer ``R`` stays stored (D4) and may have Beiträge."""
     conn = _open_readonly(database_path)
     try:
         return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
             "SELECT w.protocol_id, w.rede_id FROM withheld_units w WHERE EXISTS (SELECT 1 FROM speeches s "
             "WHERE s.protocol_id = w.protocol_id AND s.rede_id = w.rede_id) OR EXISTS (SELECT 1 FROM contributions c "
-            "WHERE c.protocol_id = w.protocol_id AND (c.rede_id = w.rede_id OR c.parent_rede_id = w.rede_id)) LIMIT 5")]
+            "WHERE c.protocol_id = w.protocol_id AND (c.rede_id = w.rede_id "
+            "OR (c.parent_rede_id = w.rede_id AND substr(c.rede_id, 1, 7) = 'nested:'))) LIMIT 5")]
     finally:
         conn.close()
 

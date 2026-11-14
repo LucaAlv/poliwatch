@@ -381,6 +381,25 @@ class WithheldGateTest(unittest.TestCase):
             conn.close()
             self.assertEqual(gate.withheld_also_counted(path), ["18/7 R2:2"])
 
+    # Value: protects=a Kurzintervention or Erwiderung that answers a withheld Rede is its own <rede>, stored and counted
+    #   by right, so the gate passes it; fails_when=withheld_also_counted reads every parent_rede_id as "nested inside",
+    #   and the gate fails falsely on the T4 store (1,237 of 54,855 stored Reden are answered by one, 2026-11-15);
+    #   why_new=the P3d check reused parent_rede_id, which also links a reply <rede> to the Rede it answers; seam=none
+    def test_passes_a_stored_reply_to_a_withheld_rede(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.persisted_store(tmp)
+            conn = sqlite3.connect(path)
+            for kind, rede_id, sequence in (("kurzintervention", "R3", 3), ("erwiderung", "R4", 4)):
+                conn.execute(
+                    "INSERT INTO contributions(id, protocol_id, agenda_item_id, kind, rede_id, parent_rede_id, sequence, "
+                    "created_at, updated_at) SELECT ?, protocol_id, agenda_item_id, ?, ?, 'R2', ?, 'x', 'x' "
+                    "FROM withheld_units LIMIT 1",
+                    (f"c-{rede_id}", kind, rede_id, sequence),
+                )
+            conn.commit()
+            conn.close()
+            self.assertEqual(gate.withheld_also_counted(path), [])
+
     # Value: protects=the gate fails on a withheld Rede with no Redner-ID, the one assumption erste-reden v3 rests on (ADR 0005 "Facts"); fails_when=such a Rede binds no one and its speaker's next stored Rede posts as a debut unnoticed; why_new=PR A; seam=none
     def test_counts_withheld_reden_without_a_redner_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
