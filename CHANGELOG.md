@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.41.0.0] - 2026-11-14
+
+Jan Krampe and Jan Wenzel Schmidt each have one Personenseite again, and six former MdBs get their roll-call votes back on their own page. An offline replay of the store now groups persons exactly like the online build that wrote it, and the store gate checks that. Reden, Beiträge, votes and Fakten do not move.
+
+### Fixed
+
+- **A person DIP gave a second record is one person with one page.** DIP issued Jan Köstering a new record when he became Jan Krampe (8054 → 8257), and Jan Wenzel Schmidt one when he left the AfD (7406 → 8220), and it still lists both old records. Each old record now counts as the same person as its new one, through a reviewed list (`dip_successors` in `scripts/person_corrections.json`); it gives no page and no MdB biography of its own, and a speaker link with the old id opens the person's page. The empty "Jan Köstering" page and Schmidt's two extra pages are gone; Schmidt's page shows his 19 Reden, 3 Beiträge and 272 Stimmen under his current Fraktion, fraktionslos.
+- **An offline replay no longer moves votes off a page.** `--offline --repersist` used to take the store's preserved roster entries out of person matching, so six former MdBs whom no cached sitting names lost their votes to a second, pageless person. Their pages show them again: Boris Gamanov 85, Jimmy Schulz 98, Agnes Alpers 51, Ronald Pofalla 51, Annette Schavan 20, Uwe Foullong 7.
+- Old and new, replayed on the store of 718 sittings:
+  - Persons 1,956 → 1,946, Personenseiten 1,661 → 1,658.
+  - Stimmen on Personenseiten 417,707 → 418,104; pages with no Rede, Beitrag or Stimme 65 → 56.
+  - MdB records per party: AfD 198 → 197, Die Linke 119 → 118 (the two old DIP records).
+
+### Added
+
+- **The store gate checks that a replay keeps every person and page.** `validate_store_gate.py` compares the replayed store with the store it replayed (the same grouping of persons, and every Personenseite with the same Reden, Beiträge and Stimmen), and with a fresh build of the same sittings that reads the MdB roster from the cached DIP person records (`data/dip-person-cache.json`). The fresh build must list the same DIP persons as the input store. A store from before this release fails both checks by design, because its persons regroup and the two old DIP records stop being MdB records. Replay it once with `--offline --repersist` before gating it.
+
 ## [0.40.0.0] - 2026-11-13
 
 An oath, the acceptance of an election, chairing and an address to the Bundestag are no longer counted as Reden. 82 Reden in 24 kept sittings were oath answers or acceptances: they leave the counts, and two sittings, 18/4 and 20/5, now hold no Rede at all. Addresses by the Präsident, a Vizepräsident, the Alterspräsident or a guest become a Beitrag of their own, the Ansprache.

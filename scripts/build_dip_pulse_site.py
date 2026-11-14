@@ -1528,8 +1528,7 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
         roster_records = set()
         if previous.execute("SELECT 1 FROM sqlite_master WHERE name='person_records'").fetchone():
             for record in previous.execute("SELECT id, evidence_json FROM person_records"):
-                evidence = json.loads(record["evidence_json"])
-                if (evidence.get("ever_mdb") or evidence.get("is_mdb")) and not evidence.get("vacated"):
+                if registry.roster_member(json.loads(record["evidence_json"])):
                     roster_records.add(record["id"])
         return [
             dict(row)
@@ -1540,8 +1539,10 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
                 LEFT JOIN parties p ON p.id = m.party_id
                 """
             )
-            # Retain biographies after a known non-MdB role clears its old flag.
-            if row["is_mdb"] or row["id"] in roster_records
+            # Retain biographies after a known non-MdB role clears its old flag,
+            # and a re-issued DIP record, which the roster lists beside its
+            # successor (upsert_mp stores it with is_mdb 0).
+            if row["is_mdb"] or row["id"] in roster_records or registry.superseded_dip_person(dict(row))
         ]
     finally:
         previous.close()
@@ -1845,8 +1846,10 @@ def _rebuild_database_from_entries(
             except Exception as exc:
                 raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
         if roster_rows:
+            # The preserved rows stand in for the roster ingest that wrote them, so
+            # they are live matching evidence, as in that online build: a replay
+            # then groups like it (docs/plans/registry-split-koestering-krampe.md).
             now = pulse_store.utc_now()
-            live_records = {row[0] for row in store.execute("SELECT id FROM temp.registry_touched")}
             with store:
                 skipped = [row for row in roster_rows if not canonical_dip_person_id(row.get("dip_person_id"))]
                 if skipped:
@@ -1857,7 +1860,7 @@ def _rebuild_database_from_entries(
                         continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
                     roles = _parse_listish(row.get("function"))
-                    record_id = pulse_store.upsert_mp(
+                    pulse_store.upsert_mp(
                         store,
                         now=now,
                         display_name=row.get("display_name"),
@@ -1894,9 +1897,6 @@ def _rebuild_database_from_entries(
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=not roles or derive.is_mdb_funktion(roles),
                     )
-                    # Preserved biographies are not fresh source evidence for matching.
-                    if record_id not in live_records:
-                        store.execute("DELETE FROM temp.registry_touched WHERE id=?", (record_id,))
         if roster_ingest is not None:
             try:
                 roster_ingest(store)
@@ -2599,6 +2599,7 @@ def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
     today: date | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    roster_ingest: Callable[[sqlite3.Connection], None] | None = None,
 ) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -2616,6 +2617,7 @@ def repersist_cached_reports(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
         today=today, upgrade=True, vorgang_cache=vorgang_cache, excluded_document_numbers=recorded,
+        roster_ingest=roster_ingest,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
@@ -9087,7 +9089,7 @@ def ingest_mdb_roster(
     index of the newest period lists only its members (collect_abgeordnete).
     ``is_mdb`` stays the roster-source flag (biography authority, ever_mdb); it
     does not mean "member now"."""
-    stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0}
+    stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0, "superseded": 0}
     if store is None:
         return stats
     members: dict[str, dict[str, Any]] = {}
@@ -9111,13 +9113,23 @@ def ingest_mdb_roster(
             # Periods run oldest first, so the newest period's record names the
             # person and their Fraktion.
             member["compact"] = compact
+    successors = registry.dip_successors()
+    listed = {canonical_dip_person_id(key) for key in members}
+    for superseded in sorted(listed & successors.keys()):
+        if successors[superseded] not in listed:
+            # The reviewed entry names a record the roster no longer lists beside
+            # the old one: the entry needs a new review (scripts/person_corrections.json).
+            print(f"warning: [roster] DIP person {superseded} is listed but its successor "
+                  f"{successors[superseded]} (dip_successors) is not", file=sys.stderr)
     now = pulse_store.utc_now()
     pulse_store.initialize(store)
     with store:
         for member in members.values():
             compact = member["compact"]
             funktion = compact.get("funktion") or []
-            stats["mdb"] += 1
+            # A re-issued record is persisted as matching evidence, not as an MdB
+            # of its own (upsert_mp; dip_successors).
+            stats["superseded" if canonical_dip_person_id(compact["id"]) in successors else "mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
             fraktion = fraktion_list[0] if fraktion_list else None
             party_name = derive.zusammenschluss(fraktion)
@@ -9321,7 +9333,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
         person_id = registry.resolve(conn, record["person_id"])
-        if evidence.get("ever_mdb") or evidence.get("is_mdb"):
+        if registry.roster_member(evidence):
             page_eligible.add(person_id)
         # A record with no mps row is stale evidence. It keeps a page only for a
         # person this build has no current record of, or as the biography a
@@ -9449,6 +9461,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         for key in registry.mp_keys(row):
             key_owners.setdefault(key, set()).add(assignments[row["id"]])
     lookup = {key: owner for key, owner in lookup.items() if len(key_owners[key]) == 1}
+    # A speaker link that still carries a re-issued DIP id reaches the successor's
+    # page (mp_keys reads the old id as the successor's).
+    for superseded, successor in registry.dip_successors().items():
+        if f"dip:{successor}" in lookup:
+            lookup[f"dip:{superseded}"] = lookup[f"dip:{successor}"]
     page_ids = {mp["id"] for mp in mps if has_abgeordnete_page(mp)}
     for binding in conn.execute("SELECT id, person_id FROM person_bindings"):
         if binding["person_id"] in page_ids:

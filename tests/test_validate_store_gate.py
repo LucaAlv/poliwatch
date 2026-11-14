@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sqlite3
 import tempfile
@@ -32,6 +34,83 @@ def _store(path: Path, bindings: list[tuple[str, str]]) -> Path:
     return path
 
 
+def _person_cache(output: Path, *records: dict) -> None:
+    """``data/dip-person-cache.json`` holding ``records``, as dip_cache saves it."""
+    path = output / "data" / gate.PERSON_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    persons = {str(record["id"]): {"fetched_at": "2026-01-01T00:00:00Z", "record": record} for record in records}
+    path.write_text(json.dumps({"persons": persons}), encoding="utf-8")
+
+
+class PersistOnlyRosterTests(unittest.TestCase):
+    # Value: protects=the gate's fresh and half clones build as an online --enrich mp-roster build,
+    #   the roster served from the person cache by Wahlperiode; fails_when=persist_only builds
+    #   store-less (no roster records, so replay_vs_fresh compares against a store that never had
+    #   the roster) or lists a record outside the roster's periods; why_new=the store-less clone
+    #   hid the R1 replay (docs/plans/registry-split-koestering-krampe.md); seam=none
+    def test_persist_only_ingests_the_cached_roster_of_the_catalog_periods(self) -> None:
+        from test_registry_contracts import dip_person
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "gate"
+            report = antrag_report()
+            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            report_path, _, _ = site.report_paths(output, report["protocol"]["dokumentnummer"])
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            listed = {**dip_person("5", "Bo Voter"), "wahlperiode": [19, 20]}
+            later = {**dip_person("6", "Cy Later"), "wahlperiode": 99}
+            _person_cache(output, listed, later)
+            with contextlib.redirect_stderr(io.StringIO()):
+                gate.persist_only(output, "2024-05-15")
+            database = output / "data" / "bundestag-pulse.sqlite"
+            with sqlite3.connect(database) as conn:
+                mdbs = conn.execute("SELECT dip_person_id FROM mps WHERE is_mdb = 1").fetchall()
+            self.assertEqual(mdbs, [("5",)])
+            # The report samples one DIP person of its own (is_mdb 0); the roster adds Bo.
+            self.assertEqual(sorted(mdb for _binding, mdb in gate.dip_person_occurrences(database)), [0, 1])
+
+    # Value: protects=a clone without a readable person cache is a clear refusal (exit 2), not a
+    #   store-less build that passes as the fresh reference; fails_when=cached_roster falls back
+    #   to no roster; why_new=persist_only needs the cache now; seam=none
+    def test_a_missing_person_cache_refuses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "data").mkdir()
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = gate.main([tmp, "--persist-only"])
+        self.assertEqual(code, 2)
+        self.assertIn("no readable DIP person cache", stderr.getvalue())
+
+    # Value: protects=the cached roster answers only the request ingest_mdb_roster makes, and lists
+    #   a record for each period it names (int, digit text or a list); fails_when=another request is
+    #   answered from the cache or a period form is missed; why_new=CachedRoster is new; seam=none
+    def test_the_cached_roster_lists_by_period_and_refuses_other_requests(self) -> None:
+        roster = gate.CachedRoster([{"id": "1", "wahlperiode": [19, "20"]}, {"id": "2", "wahlperiode": 21}, {"id": "3"}])
+        self.assertEqual([r["id"] for r in roster.list_all("/person", {"f.wahlperiode": 20})], ["1"])
+        self.assertEqual([r["id"] for r in roster.list_all("/person", {"f.wahlperiode": 21})], ["2"])
+        with self.assertRaises(ValueError):
+            roster.list_all("/aktivitaet", {"f.wahlperiode": 20})
+
+
+class CachedRosterFileTests(unittest.TestCase):
+    # Value: protects=a person cache that is not a person cache is a refusal, and entries without a
+    #   record are skipped, not read as roster rows; fails_when=cached_roster returns an empty or
+    #   partial roster instead of raising, so the fresh clone passes with no roster;
+    #   why_new=only the missing-file refusal was tested; seam=none
+    def test_cached_roster_refuses_unreadable_files_and_skips_entries_without_a_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            path = output / "data" / gate.PERSON_FILENAME
+            path.parent.mkdir()
+            for text in ("{not json", "[]", json.dumps({"persons": []}), json.dumps({})):
+                path.write_text(text, encoding="utf-8")
+                with self.subTest(text=text), self.assertRaises(ValueError):
+                    gate.cached_roster(output)
+            path.write_text(json.dumps({"persons": {"1": {"record": {"id": "1", "wahlperiode": 21}}, "2": "x", "3": {"record": 5}, "4": {}}}), encoding="utf-8")
+            self.assertEqual([r["id"] for r in gate.cached_roster(output).records], ["1"])
+
+
 class PersistOnlyAntragCacheTests(unittest.TestCase):
     # Value: protects=the gate's fresh and half-store persistence keeps extracted Antrag passages and state; fails_when=persist_only omits the separate Drucksache text cache; why_new=the gate loader previously passed only the Vorgang cache; seam=none; no_claim=local fixture report and cache, no live DIP source
     def test_persist_only_loads_antrag_cache_like_normal_replay(self) -> None:
@@ -47,6 +126,7 @@ class PersistOnlyAntragCacheTests(unittest.TestCase):
                 report_path.write_text(json.dumps(report), encoding="utf-8")
                 politikfelder.save_cache(output, cache)
                 antrag_text.save_cache(output, cache[antrag_text.CACHE_NAMESPACE])
+            _person_cache(outputs[0])
 
             gate.persist_only(outputs[0], "2024-05-15")
             normal_cache = politikfelder.load_cache(outputs[1])
@@ -100,6 +180,117 @@ class GroupingFingerprintTest(unittest.TestCase):
             live = gate.binding_ids(fresh)
             self.assertNotEqual(gate.grouping_fingerprint(replayed), gate.grouping_fingerprint(fresh))
             self.assertEqual(gate.grouping_fingerprint(replayed, only=live), gate.grouping_fingerprint(fresh))
+
+
+class ReplayVsInputTest(unittest.TestCase):
+    """The gate compares its replay with the input store it replayed."""
+
+    def build(self, root: Path) -> Path:
+        from test_registry_contracts import dip_person, report_with_vote, roster_client
+
+        root.mkdir(parents=True, exist_ok=True)
+        database = root / "store.sqlite"
+        report = report_with_vote(member="Voter, Bo", url="https://www.bundestag.de/abgeordnete/biografien/V/voter_bo-123")
+        entries = [{"report": report, "report_path": root / "s1.json"}]
+        with contextlib.redirect_stderr(io.StringIO()):
+            site.rebuild_database_from_entries(
+                database, entries, preserve_roster=False,
+                roster_ingest=lambda staged: site.ingest_mdb_roster(
+                    roster_client(dip_person("5", "Bo Voter")), staged, wahlperioden=[21]))
+        return database
+
+    def snapshot(self, database: Path) -> dict:
+        return {"bindings": gate.binding_ids(database), "grouping": gate.grouping_fingerprint(database),
+                "pages": gate.person_pages(database)}
+
+    # Value: protects=an unchanged replay passes, and one that moves a roster MdB's Stimmen to a
+    #   pageless roll-call person fails with the moved counts in the receipt (the 227 Stimmen the
+    #   fresh store lost in a replay at 34a4615); fails_when=the check compares only the bindings
+    #   a store-less build holds, or only person counts, as replayed_store_groups_like_fresh did;
+    #   why_new=replay_vs_input is new; seam=none; no_claim=the full-data run
+    def test_a_replay_that_moves_stimmen_off_a_page_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.build(Path(tmp))
+            before = self.snapshot(database)
+            self.assertTrue(gate.replay_vs_input(before, database)["equal"])
+            bo = {page["name"]: page for page in before["pages"].values()}["Bo Voter"]
+            self.assertEqual((bo["stimmen"], bo["reden"]), (1, 0))
+
+            conn = sqlite3.connect(database)
+            voter = conn.execute("SELECT id FROM mps WHERE identity_key LIKE 'profile:%'").fetchone()[0]
+            alone = conn.execute("SELECT person_id FROM mps WHERE identity_key LIKE 'xml:%'").fetchone()[0]
+            for table, column in (("mps", "id"), ("person_records", "id"), ("person_bindings", "record_id")):
+                conn.execute(f"UPDATE {table} SET person_id = ? WHERE {column} = ?", (alone, voter))
+            conn.commit()
+            conn.close()
+            result = gate.replay_vs_input(before, database)
+
+        self.assertFalse(result["equal"])
+        self.assertNotEqual(result["grouping_before"], result["grouping_after"])
+        pages = result["pages"]
+        self.assertEqual((pages["totals"]["before"]["stimmen"], pages["totals"]["after"]["stimmen"]), (1, 1))
+        self.assertEqual(pages["lost_count"] + pages["changed_count"], 2)
+        lost_names = {page["name"] for page in pages["lost"]}
+        self.assertIn("Bo Voter", lost_names)
+
+    # Value: protects=pages compare by their binding sets and counts, so the same pages under other
+    #   person keys are equal, and each kind of difference is counted; fails_when=compare_pages keys
+    #   on person ids or drops a changed count; why_new=compare_pages is new; seam=none
+    def test_compare_pages_counts_lost_gained_and_changed_pages(self) -> None:
+        page = lambda pid, stimmen: {"id": pid, "name": pid, "reden": 1, "beitraege": 0, "stimmen": stimmen}
+        before = {"a": page("p1", 2), "b": page("p2", 3)}
+        self.assertTrue(gate.compare_pages(before, {"a": page("x1", 2), "b": page("x2", 3)})["equal"])
+        result = gate.compare_pages(before, {"a": page("p1", 1), "c": page("p3", 3)})
+        self.assertFalse(result["equal"])
+        self.assertEqual((result["lost_count"], result["gained_count"], result["changed_count"]), (1, 1, 1))
+        self.assertEqual((result["totals"]["before"]["stimmen"], result["totals"]["after"]["stimmen"]), (5, 4))
+
+    # Value: protects=a replay that drifts from a fresh build fails even when the gate's input was
+    #   itself such a replay, so replay_vs_input sees no difference; fails_when=the gate checks the
+    #   replay only against its input (the gap after replayed_store_groups_like_fresh became
+    #   report-only); why_new=replay_vs_fresh is new; seam=none; no_claim=the full-data run
+    def test_a_replay_that_drifted_from_fresh_fails_although_its_input_drifted_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fresh = self.build(Path(tmp) / "fresh")
+            replayed = self.build(Path(tmp) / "replayed")
+            roster = gate.dip_person_occurrences(fresh)
+            self.assertTrue(gate.replay_vs_fresh(fresh, replayed, roster)["equal"])
+
+            conn = sqlite3.connect(replayed)
+            voter = conn.execute("SELECT id FROM mps WHERE identity_key LIKE 'profile:%'").fetchone()[0]
+            alone = conn.execute("SELECT person_id FROM mps WHERE identity_key LIKE 'xml:%'").fetchone()[0]
+            for table, column in (("mps", "id"), ("person_records", "id"), ("person_bindings", "record_id")):
+                conn.execute(f"UPDATE {table} SET person_id = ? WHERE {column} = ?", (alone, voter))
+            conn.commit()
+            conn.close()
+            # The input is the drifted store, so a replay that keeps the drift matches it.
+            self.assertTrue(gate.replay_vs_input(self.snapshot(replayed), replayed)["equal"])
+            result = gate.replay_vs_fresh(fresh, replayed, gate.dip_person_occurrences(replayed))
+
+        self.assertFalse(result["equal"])
+        self.assertTrue(result["roster"]["equal"])
+        self.assertNotEqual(result["grouping"]["fresh"], result["grouping"]["replay"])
+        self.assertIn("Bo Voter", {page["name"] for page in result["pages"]["lost"]})
+
+    # Value: protects=the fresh build is the reference only when it lists the input's roster
+    #   records; a person cache lacking one is reported, not read as a passing reference;
+    #   fails_when=the roster comparison is dropped or counts retired roster bindings; why_new=same; seam=none
+    def test_a_fresh_build_missing_an_input_roster_record_fails_the_roster_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fresh = self.build(Path(tmp))
+            roster = gate.dip_person_occurrences(fresh)
+            result = gate.replay_vs_fresh(fresh, fresh, roster | {("roster-v1-missing", 1)})
+        self.assertEqual(roster, {(next(iter(roster))[0], 1)})
+        self.assertFalse(result["roster"]["equal"])
+        self.assertEqual(result["roster"]["missing_from_fresh"], 1)
+        self.assertTrue(result["equal"])
+
+    # Value: protects=a gate run without an input store cannot pass the replay comparison;
+    #   fails_when=a missing snapshot reads as equal; why_new=replay_vs_input is new; seam=none
+    def test_no_input_store_fails_the_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = gate.replay_vs_input(None, Path(tmp) / "missing.sqlite")
+        self.assertEqual(result, {"equal": False, "reason": "no input store to compare the replay with"})
 
 
 class IntegrityTest(unittest.TestCase):

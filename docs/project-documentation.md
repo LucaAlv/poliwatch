@@ -38,7 +38,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- facts.py
     |-- dip_cache.py                 # cross-run DIP caches (Vorgang Drucksachen, /person records)
     |-- prefetch_dip_bulk.py         # fills those caches for a closed Wahlperiode from a few bulk DIP lists
-    |-- validate_store_gate.py       # the merged-store gate: replay, integrity, order independence, links, export (run on a clone)
+    |-- validate_store_gate.py       # the merged-store gate: replay (keeps the input store's persons and pages, groups like a fresh build), integrity, order independence, links, export (run on a clone)
     |-- build_revision.py            # the build revision an export cites; the release gate
     |-- publish_dip_pulse_data.sh    # wrapper for publish_dip_pulse_data.py: versioned data release (dry run by default)
     |-- release_changes.py           # changes.json / CHANGES.md of a release

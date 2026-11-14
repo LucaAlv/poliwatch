@@ -16,7 +16,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 1. "Coverage gate before the first data release". Today 718 of 804 sittings (2026-11-12): WP 18 79%, WP 19 86%.
 2. Correctness P1s:
    - ~~"Correct the WP 19/20 roll-call group misattributions (E4)", merged as #138; the repersist is owed.~~ **Done 2026-11-12:** the owner rebuilt the store online from 28799ac instead of repersisting it. The new reference store, `.context/dip-pulse-site`, holds the E4 correction exactly as recorded: 100 Stimmen, 55 roll-calls, the six MdBs and the committed TSV byte for byte (`docs/plans/e4-repersist.md`, "Outcome").
-   - "The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+   - ~~"The carried-forward registry diverges from a fresh build after A3", part 2, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".~~ **Done 2026-11-13** (see Completed). Follow-ups: "Roster MdB records that never join their speaker", "Government-office DIP records: a second person without a page", "Registry fix review: deferred findings".
    - ADR 0004 kinds: built (see Completed); the owner decisions left are in "ADR 0004 follow-ups".
    - ~~Plan item 1.5 of "A3 /gstack-ship review: deferred findings".~~ Measured 2026-11-12: 937 of 945 WP 18/19 MdB ids find their abgeordnetenwatch profile, no wrong person ([a3-phase4.md](docs/plans/a3-phase4.md), "Plan item 1.5"). Follow-ups: "abgeordnetenwatch profiles for WP 18/19: what item 1.5 leaves open".
    - "Check that vote links are right".
@@ -948,42 +948,63 @@ Done when:
 **Priority:** P2
 **Depends on:** None
 
-### The carried-forward registry diverges from a fresh build after A3
+### The Abgeordnete index scrolls sideways at 375px
 
-**What:** The A3 Phase 4 gate failed `replayed_store_groups_like_fresh` on a clone of `~/agent-runs/a3/full` (4,168 vs. 4,165 groups on the fresh store's bindings). Details are in [the Phase 4 record](docs/plans/a3-phase4.md), Step 1. There are two parts:
-1. **Köstering/Krampe split.** One person, Jan Krampe (formerly Köstering, Die Linke, WP 21), is a single person with 121 bindings in a fresh build. In the replayed store he is four persons: `dip:8257`, `aw:178656`, and the profiles `koestering_jan-1045564` and `krampe_jan-1045564`. `baseline` had `aw:178656` and the Köstering profile as one person. So A3 newly separates his speeches from his votes, and a replay does not heal it. `full` shows the same split. The cause is not the URL rule. DIP holds two person records for him (8054 Köstering, 8257 Krampe), and the store keeps `dip:8054` as a roster record. An in-memory `match_rows` on `full` joins all five records once `dip:8054` is stale. Why a replay still matches it is untraced. It is part 2's defect.
-2. **Orphan persons.** 295 persons hold only retired bindings. Each holds one `roster-v1-…` binding of a `dip:` record that the roster no longer produces: 295 of the 307 retired roster bindings. The other 12, and the 187 retired contribution bindings of speech rule v6, sit on persons that also hold live bindings. 282 of the orphans render an Abgeordnete page and are listed on the index. They raise the store's person count from 4,165 (fresh) to 4,463.
+**What:** At 375px the table on `abgeordnete/index.html` (`table.mp-table`, columns Name, Fraktion, Wahlkreis / Bundesland, Reden) is 404px wide, so the page scrolls horizontally and the Reden column sits past the edge. Found in the /ship browser check of 0.41.0.0 (2026-11-13, dark mode, store of 718 sittings); that release touches no rendering code, so this predates it. The Personenseiten themselves do not overflow.
 
-**Re-measured at the branch tip, 2026-10-31** (the "Gate at the branch tip" section of the [Phase 4 record](docs/plans/a3-phase4.md); rule C plus 0f59729 and a508cfa):
-- **Part 1 is healed.** The replayed store groups like the fresh one: 1,942 = 1,942 persons on live bindings, the same fingerprint. Krampe is one live person.
-- **Part 2 is open:**
-  - 302 persons hold only retired bindings, and 289 of them render a page with no Reden and no votes.
-  - The index links only 8 of them, down from 282.
-  - 281 of the 302 are Bundesrat members. So the fix likely goes with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+**Why:** On a phone the Reden count is cut off unless the reader scrolls the whole page sideways.
 
-**Re-measured on the merged tree, 2026-11-01** (09b7c5d, A3 plus main v0.26.0.0; complete gate, `all_passed`; "Gate on the merged tree" in the [Phase 4 record](docs/plans/a3-phase4.md)): unchanged.
-- Replayed 1,942 = fresh 1,942 on live bindings, the same fingerprint.
-- The replayed store has 2,244 persons.
-- 302 persons are retired-only, 289 of them with a page, 8 of those linked from the index.
-- 494 retired bindings (307 roster / 187 contribution).
+**Context:** Fix with a scroll container around the table or by folding Wahlkreis / Bundesland under the name below a breakpoint, then check at 375px and in dark mode (DESIGN.md).
 
-**Re-measured on e7b06f3, 2026-11-05** (E4 plus main v0.33.0.0; complete gate, `all_passed`): unchanged, the same 1,942 = 1,942, 2,244, 302, 289 and 494. A store-less `--offline --repersist` of the same reports has 1,577 Personenseiten against the upgraded store's 2,005. The +428 are the 289 retired-only pages plus 139 on live persons: 68 roster MdBs who have a page only because the roster exists, and 71 persons holding only a roster binding, all with `ever_mdb` evidence, many of them Bundesrat or Land office holders. So those 71 belong with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
-**Fresh online build, 2026-11-12** (28799ac, `.context/dip-pulse-site`, complete gate, `all_passed`; `docs/plans/a3-phase4.md`, "Fresh reference store"). This store carries no registry history:
-- 1,948 = 1,948 persons on fresh bindings, with the same fingerprint;
-- 13 retired bindings;
-- 1,661 Personenseiten.
+### Roster MdB records that never join their speaker: 56 empty duplicate Personenseiten
 
-The store holds 1,952 persons, and the gate's own `--offline --repersist` raises that to 1,956. So a replay of a fresh store already adds 4 persons that are not on live bindings. Measure them with this item's fix (`docs/plans/registry-split-koestering-krampe.md`). The 302 / 289 / 494 above were measured on the A3 lineage, which no longer exists on this machine.
+**What:** On the fresh reference store (2026-11-12, 28799ac plus the registry fix of `docs/plans/registry-split-koestering-krampe.md`) 56 Personenseiten show 0 Reden, 0 Beiträge and 0 Stimmen. Each is a DIP roster record (exact "MdB" funktion) that pass 2 of `person_registry.match_rows` did not join to the speaker and roll-call person of the same human being. 54 of them have a twin page with activity under the same name once titles, accents and a bracketed Wahlkreis are ignored, for example:
+- "Achim Post (Minden)" beside "Achim Post" (35 Reden, 534 Stimmen);
+- "Aniko Glogowski-Merten" beside "Anikó Glogowski-Merten" (25 Reden, 187 Stimmen);
+- "Anita Schäfer (Saalstadt)", "Axel E. Fischer (Karlsruhe-Land)", "Axel Schäfer (Bochum)", "Carsten Müller (Braunschweig)": DIP's `titel` carries the Wahlkreis in brackets, the Plenarprotokoll does not;
+- "Alexander Bartz", "Bela Bach": the same printed name on both sides, so the block is elsewhere (the party, or a second name+party bucket).
 
-Decide whether retired-only persons render a page. Report persons and pages old/new.
+The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia Heller" (printed "Uda Heller"). The real page then lacks the roster biography (`is_mdb` false, no Wahlperioden from the roster), and the duplicate is listed on the index.
 
-**Owner decision, 2026-11-01:** A3 ships with part 2 open. It is fixed after the merge, likely together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+**Why:** Two pages for one MdB, one of them empty; the page with the Reden does not say the person is an MdB.
 
-**Why:** 289 pages for persons with no live occurrence, reachable by URL.
+**Context:** Found while measuring the registry fix (step 0). Not a replay/fresh divergence: the fresh online build and its replay agree. The fix is a normalisation of the DIP `titel` name (bracketed Wahlkreis, accents) before `name_party_keys`, or a reviewed list; registry territory, needs the namesake guard checked.
 
 **Effort:** M
 **Priority:** P1
+**Depends on:** None
+
+### Government-office DIP records: a second person without a page
+
+**What:** DIP issued five MdBs a new person record for a government office and keeps the old MdB record on the roster: Linnemann 1173 → 8250, Otte 615 → 8226, Steiniger 1624 → 8255, Castellucci 1537 → 8247, Bilger 1013 → 8251 (2026-11-12 store). The new record is a person of its own with no Reden, no Stimmen and no page; the MdB page is complete. They are not in `dip_successors`, because there the old record would lose `is_mdb` and the page its biography.
+
+**Why:** The published registry tables count each of them as two persons. No page or figure on a page moves.
+
+**Context:** A `dip_successors` entry in the other direction (new → old), or a reviewed merge, would join them. Decide when the registry tables are first published.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Registry fix review (dip_successors, live preserved roster rows): deferred findings (2026-11-13)
+
+**What:** Non-correctness findings from the `code-review high` of the registry fix (`docs/plans/registry-split-koestering-krampe.md`). None moves a figure on the 2026-11-12 reference store. The review's one gate gap (no hard replay-vs-fresh check once the input is itself a replay) was fixed in the same branch with `replay_vs_fresh`, and so was the page keying of `person_pages` (a person with a binding the input lacks showed as lost plus gained instead of changed).
+- (a) **A `dip_successors` entry cannot be withdrawn in a replay.** Pass 1 joins the old and new records durably (the retired person key stays an alias), and the old row is stored with `is_mdb = 0` and no `ever_mdb`. Deleting or correcting the entry therefore leaves the merge in place. `_read_roster_rows` then keeps the old row only through `is_mdb`, `roster_member` or `superseded_dip_person`, and all three are false, so every offline replay drops the record until the next `--enrich mp-roster` build. A wrong entry needs a `splits` entry, and the removal needs the old row to come back from the roster. Latent: both entries are reviewed.
+- (b) **A successor the roster stops listing.** `ingest_mdb_roster` warns when the roster lists a superseded id without its successor, but `upsert_mp` still stores the old record as a non-MdB, so the person has no roster MdB record at all. If DIP dropped 8257 and kept 8054, Krampe's page would lose `is_mdb`, the roster Wahlperioden and the biography until the entry is edited. Consider keeping `is_mdb` on the old record when its successor is not on this roster, or refusing the build. Latent.
+- (c) **The gate's input snapshot runs current code on an un-migrated store.** `person_pages` (and so `collect_abgeordnete`) reads the input store read-only before the replay upgrades it. A store from an older schema that lacks a column the current code reads raises `sqlite3.OperationalError` and the gate writes no receipt. Catch it and record the snapshot as unavailable (then `replay_keeps_input_grouping_and_pages` fails with a reason). Not reproduced: the /ship review (2026-11-13) ran the snapshot on the pre-schema-12 reference store, 1,661 pages and 1,574 DIP person occurrences, without error; only a corrupt or much older store would reach it.
+- (d) **Test gap:** no test drives `run_gate` with the new checks (`replay_keeps_input_grouping_and_pages`, `fresh_build_lists_the_input_roster`, `replay_groups_like_fresh`): the snapshot taken before the replay, and the fresh store passed to `replay_vs_fresh`. A refactor that snapshots after the replay would pass every unit test. Only the full-data receipt shows the checks working.
+- (e) **Efficiency:** `person_registry.dip_successors()` builds its dict from `corrections()` on every call: once per occurrence in `bind` (about 524k on the reference store), per row in `mp_keys` and `_mp_external_ids`, per record in `roster_member`. Compute it once in `_load_corrections`.
+- (f) **`_read_roster_rows` keeps any `mps` row with a superseded DIP id, not only roster rows** (/ship adversarial review, 2026-11-13). A row a report only sampled under 8054 or 7406 would be preserved and re-upserted with roster-style fields (party, `person_roles_json`) it never had; `upsert_mp` still stores it with `is_mdb = 0`. Latent: every cached report samples only the successor ids. Fix: keep a superseded row only when it was a roster row (`function` holds the exact "MdB"), and pin it with a test.
+- (g) **`validate_store_gate._wahlperioden` reads a boolean as a Wahlperiode** (/ship adversarial review). `isinstance(True, int)` holds, so a cached record with `wahlperiode: true` would be listed under WP 1. No cached record has one. Fix: exclude `bool` before the `int` test.
+- (h) **A superseded DIP id with a partition gets no speaker-link alias** (/ship adversarial review, 2026-11-14). `collect_abgeordnete` maps `dip:<old>` to the successor's page, but `mp_keys` writes `dip:<id>:<partition>` for a row in a reviewed partition, and that key gets no alias, so such a link would reach no page. Latent: neither 8054 nor 7406 is in a partition. Fix: alias every key `mp_keys` gives the successor, partitioned ones included, and pin it with a test.
+- (i) **Two gate edges in `validate_store_gate.persist_only`** (/ship outside-voice review, 2026-11-14). First, it takes the roster periods from the cached protocols, while an online build takes them from the protocols it fetched; if the catalog ever lists a Wahlperiode with no cached sitting, the gate's fresh build ingests fewer periods and `fresh_build_lists_the_input_roster` gives a wrong verdict (never a wrong figure). Second, `main` turns every `ValueError` from `persist_only` into "ERROR [gate]: …" with exit 2, so an unrelated `ValueError` from the build code reads like a person-cache problem and loses its traceback. Fix: pass the sitting catalog to `roster_periods`, and catch only the cache error (a dedicated exception from `cached_roster`).
+
+**Effort:** S each
+**Priority:** P3 ((a) and (b) P2 if an entry is ever revised)
 **Depends on:** None
 
 ### Group MP pages by Wahlperiode and write abgeordnete.json without indent
@@ -1022,23 +1043,6 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** None
-
-### Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs
-
-**What:** Before 2026-10-30 the roster ingest flagged every DIP person whose `funktion` contained "MdB" as an MdB, which matched "MdBR" and "Stellv. MdBR" (151 Bundesrat members for WP 21). `person_registry.bind` records that as sticky `ever_mdb` evidence (`person_registry.py`, `evidence["ever_mdb"]`, `was_mdb`), so the registry still treats them as former roster persons: they stay page-eligible and `is_stale_roster_partner` can apply to them. Decide whether `ever_mdb` is re-derived from the exact rule (`derive.is_mdb_funktion`) or reset once for records whose only roster evidence is a Bundesrat funktion.
-
-**Why:** No page now calls them Abgeordnete (the Personenseite derives "Mitglied des Bundestages laut Plenarprotokoll" from Reden, not from `ever_mdb`), but the evidence says something false about 151 people and feeds identity decisions.
-
-**Context:** A.2 registry territory: needs a registry reviewer. Measure first how many person records carry `ever_mdb` with only Bundesrat funktion evidence on the reference store.
-
-**Measured on the A3 merged-tree gate store, 2026-11-01:**
-- `mps` rows with `is_mdb = 1`: 1,360. The 352 Bundesrat roster rows dropped on repersist.
-- The registry still holds 302 retired-only persons. 281 of them are Bundesrat members ("MdBR" in the display name), and 289 of the 302 render a page with no Reden and no votes. Only 8 are linked from the index.
-- These are the persons this evidence most likely keeps page-eligible. See "The carried-forward registry diverges from a fresh build after A3".
-
-**Effort:** S
-**Priority:** P3
 **Depends on:** None
 
 ### Apply the voter-link patch after refetching the WP 18/19 roll-call lists
@@ -2006,6 +2010,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- The carried-forward registry diverges from a fresh build, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs": v0.41.0.0, 2026-11-14, `docs/plans/registry-split-koestering-krampe.md`. The fresh store has no Bundesrat `ever_mdb` record; an offline replay keeps preserved roster rows live, and `dip_successors` joins Köstering/Krampe and Jan Wenzel Schmidt. Persons 1,952 (replay 1,956) → 1,946, Stimmen on pages 417,934 (replay 417,707) → 418,104; the gate checks the replay against its input store and against a fresh build that ingests the cached roster
 - One Fraktion rule on both sides of the withheld share (PR 2 ship review P3, and Codex's Gruppe Die Linke reproduction): v0.39.0.0, #152, 2026-11-13. `_withheld_coverage` labels a withheld Rede with `derive.speech_zusammenschluss` by the Sitzung, as persist labels stored Reden; the reproduction moves from Die Linke 0 stored words, share 1.0 to Gruppe Die Linke 3 and 0.5.
 
 - The E4 repersist owed since #138: closed 2026-11-12, replaced by the owner's fresh online build from 28799ac (`.context/dip-pulse-site`, 718 Sitzungen, gate `all_passed`). E4, #140 inversions, #141 and #143 match their records, except `result_scope` (34 against 24, "Vote direction: what the 2026-11-07 fix left open", item 18). `docs/plans/e4-repersist.md`, "Outcome"

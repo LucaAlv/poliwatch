@@ -1,6 +1,118 @@
 # Registry: retired-only persons, `ever_mdb` from the exact MdB rule, and the Köstering/Krampe duplicate
 
-Status: **plan, 2026-11-10, eng-reviewed (see the report at the end).** Not built. Roadmap Stage 1, item 2, second bullet: TODOS.md "The carried-forward registry diverges from a fresh build after A3" (the open part) together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+Status: **built 2026-11-12** with the owner's decisions after step 0 (R1, R2 for 8054 and 7406 only, the replay-vs-input gate check, D1 dropped). The sections from "Which part this is" on are the original plan of 2026-11-10; "Build" below says what was built and measured. Roadmap Stage 1, item 2, second bullet: TODOS.md "The carried-forward registry diverges from a fresh build after A3" (the open part) together with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+
+## Build (2026-11-12)
+
+### What changed
+
+- **R1, preserved roster rows stay live.** `_rebuild_database_from_entries` no longer removes a replayed roster row from the touched set. A build that fetches no roster (`--offline --repersist`, or online without `--enrich mp-roster`) replays the rows the last roster ingest wrote as that ingest's evidence. An online build with `--enrich mp-roster` preserves no rows, as before.
+- **R2, `dip_successors`.** `scripts/person_corrections.json` lists 8054 → 8257 (Köstering → Krampe) and 7406 → 8220 (Jan Wenzel Schmidt, AfD → fraktionslos). `_load_corrections` refuses a non-canonical id, a self-successor, a duplicate, a chain or cycle, a missing or unknown field, empty evidence and a bad review date.
+- **The mechanism differs from D2's "skip at ingest"** (deviation). Skipping 7406 leaves Schmidt worse: simulated on the fresh store, his speaker keeps no roster record, and `dip:8220` (fraktionslos) stays alone with its empty page, because no Plenarprotokoll prints him as fraktionslos. So the old record stays. Its id reads as the successor's Personenkennung in `mp_keys` and the id-conflict buckets (`person_registry.current_dip_person_id`). Pass 1 then joins the two records durably, and the old record's name and party still match the speaker. `upsert_mp` stores the old record with `is_mdb = 0`, and `bind` clears its `ever_mdb`, so the successor names the page and supplies the biography. `_read_roster_rows` preserves the old row for the replay. `collect_abgeordnete` maps `dip:<old>` to the successor's page for speaker links. The five government-office pairs are not listed.
+- **One predicate.** `person_registry.roster_member(evidence)` (`ever_mdb` or `is_mdb`, not vacated, not superseded) decides page eligibility, roster preservation and the stale-partner rule. Page eligibility used to ignore `vacated`; no record on the fresh store is vacated, so no figure moves.
+- **Gate.** `replayed_store_groups_like_fresh` is replaced by `replay_keeps_input_grouping_and_pages`. Before the replay, the gate takes the input store's grouping over all its bindings and each Personenseite's Reden, Beiträge and Stimmen (`person_pages`, keyed by binding set). After the replay, it requires the same of the replayed store (`replay_vs_input`; the receipt lists lost, gained and changed pages and the totals). On a full store a snapshot takes about 5 s. The review of 2026-11-13 found that this alone checks a replay only against its input, which may itself be a replay, so the gate also builds its fresh and half clones as online `--enrich mp-roster` builds, with the roster answered from `data/dip-person-cache.json` (`CachedRoster`). `replay_groups_like_fresh` then requires the replay to group the fresh store's bindings and render its Personenseiten as the fresh build does (`replay_vs_fresh`), and `fresh_build_lists_the_input_roster` requires the fresh build to see the input store's DIP persons with the same `is_mdb`. The store-less comparison is gone.
+- D1 (the Bundesrat rule) was dropped: the fresh store has no such record.
+
+### Proof
+
+- **Simulation of a fresh online build.** The roster comes from `data/dip-person-cache.json`, which holds all 1,360 roster records, via `~/agent-runs/registry/step0-scripts/sim_online.py`. With main's code it reproduces the reference store exactly: fingerprint `842b878f…`, 1,952 persons. With this branch it gives `886411613d5c…`, 1,946 persons (`~/agent-runs/registry/sim-new`).
+- **The new check fails on main's replay.** Reference store against its replay at 34a4615: `equal: false`, 1,952 → 1,956 groups, Stimmen on pages 417,934 → 417,707, 9 pages lost and 9 gained (`~/agent-runs/registry/old-code-replay-vs-input.json`).
+- **It passes with the fix.** The full gate ran on a clone of the simulated fresh build: `~/agent-runs/registry/gate-new-receipt.json`, see "Gate" below.
+- **The reference replayed with this branch** (what the post-merge repersist does) groups exactly like the fresh build with it: the same fingerprint `886411613d5c…`, and `ever_mdb` 1,358 on both.
+
+### Gate
+
+`validate_store_gate.py` with this branch on a clone of the simulated fresh build (`~/agent-runs/registry/gate-new-receipt.json`) passed every check (`all_passed`). The new `replay_keeps_input_grouping_and_pages` check saw:
+- 1,946 = 1,946 groups with the same fingerprint;
+- 1,658 pages before and after, with 0 lost, 0 gained and 0 changed;
+- Stimmen on pages 418,104 on both sides.
+
+The run took 1,390 s; the input snapshot took 5.5 s.
+
+The store-less comparison, reported only in that run, differs only for Jan Wenzel Schmidt, whom it splits into three groups. Schmidt's `dip:8220` and his fraktionslos roll-call record join him only through `dip:7406`. Only the roster lists 7406, and a store-less build has no roster, so it shows 1,948 groups against the replay's 1,946. That is why the gate's fresh clones now ingest the cached roster.
+
+The gate with those two checks ran on a clone of the reference replayed with this branch (`~/agent-runs/registry/gate-rerun-receipt.json`, 2026-11-13) and passed every check. The fresh clone with the cached roster has 1,946 groups and fingerprint `886411613d5c…`, the same as the simulated online build and the replay. It sees the input's 1,574 DIP person occurrences with the same `is_mdb`. Its 1,658 pages match the replay's with 0 lost, gained or changed, and 418,104 Stimmen. On the stores of step 0, the same comparison fails main's replay against main's simulated online build: 1,952 against 1,956 groups, 9 pages lost and 9 gained, Stimmen 417,934 → 417,707. It fails that replay also when the input is the replay itself, where `replay_keeps_input_grouping_and_pages` passes. On an input store built before this branch, `fresh_build_lists_the_input_roster` reports 8054 and 7406 (their `is_mdb` changes by design), as `replay_keeps_input_grouping_and_pages` reports the regrouping: repersist the reference with the merged code before gating it. The run took 1,472 s.
+
+### Figures
+
+| Figure | Reference (fresh, 28799ac) | Its replay on main | With this branch (fresh build = replay of the reference) | Why the new value is more correct |
+|---|---:|---:|---:|---|
+| Persons | 1,952 | 1,956 | 1,946 | Krampe's 5 persons are 1. Schmidt's dip:8220 record and his fraktionslos roll-call record join him (−2). |
+| Person pages | 1,661 | 1,661 | 1,658 | The empty pages of dip:8257, dip:8054 and dip:8220 are gone. |
+| Reden / Beiträge on pages | 54,937 / 42,626 | same | same | Nothing moves off a page. |
+| Stimmen on pages | 417,934 | 417,707 | 418,104 | +85 Krampe (two roll-call records without a page before), +85 Schmidt (his fraktionslos roll calls). |
+| Empty pages (0/0/0) | 59 | 65 | 56 | The remaining 56 are the name-variant roster duplicates (TODOS.md). |
+| Pageless roll-call persons / their Stimmen | 82 / 7,388 | 86 / 7,615 | 79 / 7,218 | |
+| `ever_mdb` records / `mps.is_mdb = 1` | 1,360 / 1,360 | 1,360 / 1,360 | 1,358 / 1,358 | 8054 and 7406 are no MdB records of their own. |
+| Köstering/Krampe | 3 pages (33 R, 9 B, 0 S on "Jan Köstering"; two empty roster pages) | 2 pages | 1 page "Jan Krampe": 33 R, 9 B, 85 S, MdB | |
+| Jan Wenzel Schmidt | 2 pages (19 R, 3 B, 187 S, AfD; an empty page for dip:8220) | 3 pages | 1 page: 19 R, 3 B, 272 S, fraktionslos, MdB | |
+
+Per person: the only persons whose Reden, Beiträge or Stimmen change are Krampe and Schmidt, who gain records. The Reden, Beiträge and Stimmen totals over all persons are unchanged.
+
+## Step 0 on the fresh reference store (2026-11-12)
+
+The plan below was written against the A3 store, which carried its registry forward from the pre-2026-10-30 substring rule. The reference is now a fresh online build on 28799ac (`.context/dip-pulse-site`: 718 sittings, 6,387 `mps` and `person_records`, 1,952 persons). Measured read-only on it and on an `--offline --repersist` of an APFS clone (`~/agent-runs/registry/base-replay`, code at 34a4615, which differs from 28799ac in docs only; the replay took about 6 minutes). This replay reproduces the gate receipt's `persons` 1,952 → 1,956 (`~/agent-runs/fresh/gate-receipt.json`).
+
+### What the plan expected and what the store holds
+
+| Premise | Plan | Fresh store | Replay of it |
+|---|---|---|---|
+| `ever_mdb` records with Bundesrat-only funktion (root cause A) | 352+ | **0** (all 1,360 `ever_mdb` records carry exactly "MdB") | 0 |
+| G3 (former MdB, now Bundesrat-only funktion) | to count | 0 (the 71 MdBR/Stellv. MdBR `mps` rows have no `ever_mdb`) | 0 |
+| `mps.is_mdb = 1` / with empty funktion | 1,360 / ? | 1,360 / 0 | 1,360 / 0 |
+| Persons (distinct `person_records.person_id`) | — | 1,952 | 1,956 |
+| Person pages (`has_page`) | 1,999 | 1,661 | 1,661 |
+| Pages with 0 Reden, 0 Beiträge, 0 Stimmen | 289 retired-only | 59, all exact-MdB roster records | 65 |
+| Stimmen on persons with a page | — | 417,934 | 417,707 (−227) |
+| Vote-only persons without a page / their Stimmen | — | 82 / 7,388 | 86 / 7,615 |
+| Köstering/Krampe | 1 person + a `dip:8054` duplicate | **5 persons, 3 pages** | 2 persons, 2 pages |
+
+Root cause A does not exist in a fresh store: the exact rule (`derive.is_mdb_funktion`) has written every `is_mdb` since 2026-10-30, and `bind` only carries `ever_mdb` forward from `is_mdb`. D1 would change no record, and the 281 Bundesrat retired-only pages are gone already. The divergence the gate shows has two other causes.
+
+### Root cause R1: an offline replay demotes the roster rows no report samples
+
+`repersist_cached_reports` replays the preserved roster rows but removes them from the touched set ("Preserved biographies are not fresh source evidence for matching", `build_dip_pulse_site.py`, the `DELETE FROM temp.registry_touched` after the preserved-roster `upsert_mp`). A roster record that a cached report also samples (`sampled_people`) stays live. Only the online roster ingest supplies the rest. On this store that is 13 DIP records:
+
+- Bilger 1013, Castellucci 1537, Linnemann 1173, Steiniger 1624 and Otte 615 rejoin their person as stale roster partners (`_stale_roster_partners`): the person has a speaker side.
+- Six rejoin nothing, because their Stimmen sit on a vote-only person with no Redner-ID, and the partner rule requires a speaker side: Gamanov 7901 (85 Stimmen), Schulz 1102 (98), Schavan 1805 (20), Alpers 1004 (51), Pofalla 685 (51), Foullong 7898 (7). After the replay each one has a roster page with 0/0/0 and a pageless vote-only person, so **312 Stimmen leave the pages**.
+- Jan Wenzel Schmidt 7406 finds two live components under its name+party, so it stays alone too. His speaker page keeps its Reden and Stimmen but loses the roster biography (`is_mdb` false), and he gains a third 0/0/0 page (see R2 for the second DIP record).
+- Köstering 8054: see R2.
+
+A simulation (`match_rows` over the fresh store's rows with every record live) reproduces the fresh grouping exactly (1,952 components). So a replay that kept preserved roster rows live would group like the online build that wrote them.
+
+### Root cause R2: DIP re-issues person records, and an online build sees both
+
+The online roster lists the old record. Every cached report names only the new one (all 52 WP 21 reports carrying Krampe's activities sample 8257, never 8054). Searches (step 0.4) over the 13 unsampled roster records, records that share a name across DIP ids, and bundestag.de member numbers under two slugs:
+
+| Old DIP record (online roster only) | New DIP record (reports) | Why re-issued | Effect in the fresh store |
+|---|---|---|---|
+| 8054 Jan Köstering (aktualisiert 2025-03-11) | 8257 Jan Krampe | name change; member number 1045564 under both slugs | **5 persons**: speaker `xml:11005511` (33 Reden, 9 Beiträge, page), `dip:8257` (0/0/0 page), `dip:8054` (0/0/0 page), and two pageless roll-call persons (17 and 68 Stimmen). The Redner-ID prints both names, so it sits in two name+party buckets with one roster record each and joins neither (`match_rows` pass 2, "no unique partner"). |
+| 7406 Jan Wenzel Schmidt, AfD (2025-03-11) | 8220 Jan Wenzel Schmidt, fraktionslos (2026-04-09) | party change | `dip:8220` renders a duplicate 0/0/0 page beside his real page. |
+| 1173 Linnemann, 615 Otte, 1624 Steiniger, 1537 Castellucci, 1013 Bilger (MdB) | 8250, 8226, 8255, 8247, 8251 (Bundesmin., Wehrbeauftr., Parl. Staatssekr., Beauftr.) | government office | The new record is a second person with no page (0/0/0); the MdB page is complete. No page moves. |
+
+The other four renamed member numbers (Cademartori, Benkstein/Lenk, Glogowski-Merten, Santos-Wintz) are one person each.
+
+Simulated with `dip:8054` absent and every other record live (an online build that skips the superseded id), Krampe is one person (`xml:11005511`, `dip:8257` and both roll-call records), and the store has 1,948 persons.
+
+D2 as written ("skip a superseded id at DIP-person ingest") fits Köstering and Schmidt, whose new record is itself an MdB roster record. It is wrong for the government-office class: there the old record is the MdB biography. Skipping it would take `is_mdb` and the roster periods off a complete page. The list would need a direction per entry, or these five would stay out.
+
+### The planned gate check would not catch R1
+
+D5 accounts every replay-only page by `roster_member`. The six roster pages R1 leaves at 0/0/0 are roster members, so the check would pass while 227 Stimmen (312 lost, 85 gained by Krampe) leave the pages. The existing `replayed_store_groups_like_fresh` passes for the same reason: it compares only on the bindings a store-less build has, which excludes exactly these 13 roster bindings. A check that catches it compares the replay with the gate's own input store, the fresh online build: the same grouping over all bindings, and the same Reden, Beiträge and Stimmen per page person. This replay would fail it (1,952 against 1,956 persons).
+
+### Checks the brief asked for
+
+- **Would D1 or D3 remove the page of anyone with Reden, Beiträge or Stimmen?** No. D1 touches 0 records. In the replay, D3 removes only `dip:8054`'s page (0/0/0). Every other retired-only page is a `roster_member`.
+- **Separate finding (not this item):** the fresh store's 59 zero-activity pages are exact-MdB roster records that never joined their speaker and voter person because the names differ, for example "Achim Post (Minden)" beside "Achim Post" (35 Reden, 534 Stimmen) and "Aniko" beside "Anikó Glogowski-Merten". Each is a duplicate page, and the real page lacks the roster biography.
+
+### Decisions for the owner (replacing D1, D3 and D5 below)
+
+- **R1.** Keep preserved roster rows live in an offline replay, so it groups like the online build that wrote the store (simulated: equal). Or extend the stale-partner rule to vote-only targets. The first removes the asymmetry. The second adds a guess and still diverges for Schmidt-like cases. With rows kept live, a replay also reproduces the online Köstering split, so it needs R2.
+- **R2.** A reviewed successor list for Köstering 8054 → 8257 and Schmidt 7406 → 8220, as in D2. Decide whether the five government-office pairs are in scope (no page moves).
+- **Gate.** Replace D5 with "the replay of an unchanged store keeps its grouping and per-page counts", measured against the gate's input store.
+- **D1** (Bundesrat rule): drop. It fixes nothing on a fresh store and can only clear a genuine former MdB's flag.
+
+Step 0's scripts and outputs: `~/agent-runs/registry/` (baseline replay and its log).
 
 ## Which "part" this is
 

@@ -113,7 +113,7 @@ class StableIDsTests(unittest.TestCase):
     def correction_file(self,data):
         # A distinct filename per call: corrections() caches on inode, mtime and size.
         self.corrections_written=getattr(self,'corrections_written',0)+1
-        path=self.root/f'corrections-{self.corrections_written}.json';path.write_text(json.dumps({'version':1,'partitions':[],'assignments':[],'merges':[],'splits':[],**data}))
+        path=self.root/f'corrections-{self.corrections_written}.json';path.write_text(json.dumps({'version':1,'partitions':[],'assignments':[],'merges':[],'splits':[],'dip_successors':[],**data}))
         return mock.patch.object(registry,'CORRECTIONS_PATH',path)
 
     def test_merge_keeps_oldest_and_emits_resolvable_alias_redirect(self):

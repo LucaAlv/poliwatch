@@ -815,6 +815,12 @@ def upsert_mp(
     is_mdb: bool = False,
 ) -> str:
     dip_person_id = canonical_dip_person_id(dip_person_id)
+    if is_mdb and dip_person_id in registry.dip_successors():
+        # A re-issued DIP person record (dip_successors): its successor is the
+        # roster authority for the biography and the page heading. The old record
+        # stays matching evidence, and its id reads as the successor's
+        # Personenkennung (person_registry.mp_keys).
+        is_mdb = False
     if is_mdb and dip_person_id:
         # A DIP roster row names its person by DIP id only. A Redner-ID inherited from
         # a preserved or earlier row would let the roster record collide with a speaker
