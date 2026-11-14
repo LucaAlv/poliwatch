@@ -254,6 +254,8 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 **What:** Main release: automatic per completed Sitzungswoche, published only if every check passes; every one kept, with a date and checksums. Stable release: one frozen main release, reviewed by the owner about every three months, with a DOI; a marker on that release, not a second database. Needed: a written review checklist (coverage per year, figures moved since the last stable, spot checks against protocols, a per-sitting comparison by `rede_id`, surname and tokens with CPP-BT's newest speech metadata, outside the build and with no dependency on it; method in `docs/research/bundestag-corpora-landscape-2026-11.md`, and the first run's script was throwaway, so write one when the checklist is built); the rule that a bug found in review is fixed in a new main release, the change is checked, and that release becomes stable; both downloads and the last review date on the Daten page, which also explains why the two can differ; each page naming its main release; the site showing the age of its data; the `CLAUDE.md` pre-release section rewritten as a stability policy.
 
+**Done on branch `claude/release-review-cpp-bt` (not merged):** `docs/release-review.md`, `scripts/compare_cpp_bt.py` with `scripts/cpp_bt_known_differences.tsv`, and the first run (`docs/release-reviews/cpp-bt-first-run-2026-11-14.md`). **Left:** the owner signs off the token-ratio thresholds (15%, 50 tokens) and the spot-check size; the stability policy in `CLAUDE.md` (plan PR D, after the first `--publish`); the first release's review record and `stable-<version>` tag.
+
 **Why:** The owner cannot review every release once the project is live. Decision Q3.
 
 **Effort:** M
