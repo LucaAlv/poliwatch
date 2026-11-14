@@ -517,7 +517,7 @@ The queries ran on the store itself, opened with `mode=ro`. The A3 store ended a
 
 How each row was checked:
 - **E4, by group.** The script rebuilt `e4-refiled-votes-old-new.tsv` over all 619 votes. The old columns are the page's own rows, `derive.merge_fractions` on the cached reports' `fractions`, with `derive.majority_vote` for the Mehrheit. The new columns are `vote_fractions`. A row is written wherever the two differ. `diff` against the committed file is empty.
-- **E4, by member.** `vote_members` joined to `mps` where `listed_party_id IS NOT party_id`, with the group named in each direction:
+- **E4, by member.** `vote_members` joined to `mps` where `listed_party_id` is set and differs from `party_id` (`listed_party_id IS NOT NULL AND listed_party_id != party_id`), with the group named in each direction:
   - Kamann, 38, fraktionslos → AfD, 2017-12-12 to 2018-12-13;
   - Bülow, 36, fraktionslos → SPD, 2017-12-12 to 2018-11-23;
   - Pasemann, 10, AfD → fraktionslos, 2020-11-18 to 2020-12-11;
@@ -531,7 +531,7 @@ How each row was checked:
 
 **Finding: `result_scope = application` is 34, not 24.** The scope is read when the roll-call detail page is fetched (`validate_dip_protocol.official_vote_result`). A replay keeps it. This store fetched every page afresh, while the A3 store's reports were older. The 34 are 710, 712, 750, 753, 754, 760, 763, 768–771, 780–782, 802, 813, 842, 846, 848, 849, 851, 864, 865, 870, 877, 878, 891, 900, 919, 921, 938, 981, 996 and 1011.
 - In 33 of the 34, the official word agrees with the Ja or Nein majority.
-- 996 reads "rejected" on a Ja majority. It is an inverted Beschlussempfehlung to reject ("Ablehnung eines Antrags zur Reform der Einbürgerungspolitik"), so the word is right. It is a second such vote beside 990, whose box gave the right word.
+- 996 reads "rejected" on a Ja majority. It is an inverted Beschlussempfehlung to reject ("Ablehnung eines Antrags zur Reform der Einbürgerungspolitik"), so the word is right. Unlike 990's, 996's box gives the right word.
 
 Without the old store it is unknown which 10 are new, and whether bundestag.de changed its pages or the old reports predated the scope rule. `docs/source-errors.md` E6's scale sentence is dated to the A3 store. TODOS.md, "Vote direction: what the 2026-11-07 fix left open", records the open question.
 

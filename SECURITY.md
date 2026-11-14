@@ -1,11 +1,10 @@
 # Security policy
 
-**Deutsch:** Sicherheitslücken bitte nicht als öffentliches Issue melden, sondern über die private Meldefunktion von GitHub („Report a vulnerability" im Reiter Security). Diese steht mit der öffentlichen Veröffentlichung des Repositorys zur Verfügung; bis dahin ist das Repository nicht öffentlich. Falsche Zahlen oder Zuordnungen sind keine Sicherheitslücken, sondern Datenfehler: dafür gibt es das Formular „Datenfehler".
+**Deutsch:** Sicherheitslücken bitte nicht als öffentliches Issue melden, sondern über die private Meldefunktion von GitHub („Report a vulnerability" im Reiter Security). Falsche Zahlen oder Zuordnungen sind keine Sicherheitslücken, sondern Datenfehler: dafür gibt es das Formular „Datenfehler".
 
 ## Reporting
 
 - Use GitHub's private vulnerability reporting („Report a vulnerability" on the repository's Security tab).
-- Private reporting opens with the public release; until then the repository is not public.
 - Do not open a public issue for a vulnerability.
 
 ## In scope
