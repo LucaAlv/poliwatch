@@ -518,7 +518,7 @@ BACKFILL_SLEEP_SECONDS = 2.0
 # target sitting decides how many are read. On 2026-10-19 the list reached 2013
 # at offset 720 (page 72), the start of WP 18; 200 leaves room for years of
 # new votes. A smaller budget never marks a sitting structural for good:
-# _structural_vote_gap retries it once the budget is larger than the one used.
+# _structural_gap retries it once the budget is larger than the one used.
 BACKFILL_VOTE_SCAN_PAGES = 200
 
 
@@ -564,12 +564,26 @@ def v1_coverage_floor(catalog: list[dict[str, Any]]) -> str | None:
 _BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
 
 
-def _structural_vote_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
-    """A gap a rescan at the current settings reproduces exactly: votes the list
-    shows that no agenda item claims (only a better match rule closes it), or a
-    scan that ran out of pages at a budget no larger than the one asked for now.
-    ``scan_pages`` is the budget the next acquisition would use."""
-    reasons = gap["reasons"]
+def _acquirable_reasons(gap: dict[str, Any]) -> dict[str, str]:
+    """The gap's reasons without withheld Reden (ADR 0005): re-fetching never
+    releases a withheld Rede, only a parser rule or a reviewed-list change does,
+    through --offline --repersist."""
+    return {
+        domain: reason
+        for domain, reason in gap["reasons"].items()
+        if not (domain == "speeches" and reason == facts.WITHHELD_REDEN)
+    }
+
+
+def _structural_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
+    """A gap a re-acquisition at the current settings reproduces exactly:
+    withheld Reden and nothing else, votes the list shows that no agenda item
+    claims (only a better match rule closes it), or a scan that ran out of pages
+    at a budget no larger than the one asked for now. ``scan_pages`` is the
+    budget the next acquisition would use."""
+    reasons = _acquirable_reasons(gap)
+    if not reasons:
+        return True
     if set(reasons) != {"votes"}:
         return False
     text = reasons["votes"]
@@ -601,7 +615,13 @@ def incomplete_sitting_protocols(
     votes: bool = True,
     scan_pages: int | None = None,
     wahlperiode: int | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]
+]:
+    """(acquirable, waiting, vote_only, structural, withheld): the sittings to
+    acquire, those DIP has no XML for yet, those held back only by votes while
+    votes are off, those a rescan at these settings reproduces, and those held
+    back only by withheld Reden (ADR 0005), which no acquisition releases."""
     stored = []
     for entry in entries:
         protocol = (entry.get("report") or {}).get("protocol") or {}
@@ -619,19 +639,22 @@ def incomplete_sitting_protocols(
     waiting: list[dict[str, Any]] = []
     vote_only: list[dict[str, Any]] = []
     structural: list[dict[str, Any]] = []
+    withheld: list[dict[str, Any]] = []
     for protocol in sorted(catalog, key=protocol_sort_key, reverse=True):
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
         if gap is None or (wahlperiode and wahlperiode_of(protocol) != wahlperiode):
             continue
-        if _structural_vote_gap(gap, scan_pages):
+        if not _acquirable_reasons(gap):
+            withheld.append(protocol)
+        elif _structural_gap(gap, scan_pages):
             structural.append(protocol)
-        elif not votes and set(gap["reasons"]) == {"votes"}:
+        elif not votes and set(_acquirable_reasons(gap)) == {"votes"}:
             # Votes are off, so re-acquiring this sitting would download it
             # again and leave it exactly as incomplete as it is.
             vote_only.append(protocol)
         else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
-    return acquirable, waiting, vote_only, structural
+    return acquirable, waiting, vote_only, structural, withheld
 
 
 def backfill_scope_lines(
@@ -901,7 +924,11 @@ def format_incomplete_report(
     # below raises the budget and judges what it would reach at that budget.
     exhausted = any("scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values())
     raised_pages = max(2 * vote_scan_pages, vote_scan_pages + 30) if exhausted and vote_scan_pages else vote_scan_pages
-    structural = [number for number, gap in gaps.items() if _structural_vote_gap(gap, raised_pages)]
+    structural = [number for number, gap in gaps.items() if _structural_gap(gap, raised_pages)]
+    withheld = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.WITHHELD_REDEN]
+    # The votes reasons of the structural line; a sitting that is structural
+    # only for its withheld Reden gets the withheld line instead.
+    vote_structural = [number for number in structural if _acquirable_reasons(gaps[number])]
     no_xml = [number for number in gaps if not has_xml.get(number, True)]
     acquirable = [number for number in gaps if number not in no_xml and number not in structural]
     lines = [
@@ -912,11 +939,16 @@ def format_incomplete_report(
         lines.append(f"  {len(missing)} listed sittings are not in the store: {_first_numbers(missing, 12)}")
     if waiting:
         lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
-    if structural:
+    if vote_structural:
         lines.append(
-            f"  {len(structural)} sittings a backfill cannot fix now: roll-call votes no agenda item claims (they need "
+            f"  {len(vote_structural)} sittings a backfill cannot fix now: roll-call votes no agenda item claims (they need "
             f"a better match rule), a scan budget already used, or a list "
-            f"that may not have caught up yet ({_first_numbers(structural, 12)})"
+            f"that may not have caught up yet ({_first_numbers(vote_structural, 12)})"
+        )
+    if withheld:
+        lines.append(
+            f"  {len(withheld)} sittings hold withheld Reden (ADR 0005): a parser rule or the reviewed list "
+            f"releases them, not a backfill ({_first_numbers(withheld, 12)})"
         )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
@@ -14928,7 +14960,7 @@ def main() -> int:
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
-            acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
+            acquisition_scope, waiting, vote_only, structural, withheld = incomplete_sitting_protocols(
                 stored_entries,
                 [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
                 votes=args.vote_scan_pages != 0,
@@ -14942,6 +14974,12 @@ def main() -> int:
                     f"[backfill] leaving {len(structural)} sitting(s) a rescan at these settings cannot fix: roll-call "
                     "votes no agenda item claims (they need a better match rule), or a scan that already used "
                     f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
+                    file=sys.stderr,
+                )
+            if withheld:
+                print(
+                    f"[backfill] leaving {len(withheld)} sitting(s) held back only by withheld Reden (ADR 0005): "
+                    "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.",
                     file=sys.stderr,
                 )
             if vote_only:

@@ -32,6 +32,12 @@ Decided by the owner as N1 B on 2026-11-07. The build's shape was settled in the
 - **The page range of the Tagesordnungspunkt.** It still spans the withheld Rede, because the page range describes the printed source.
 - `scripts/check_withhold_one.py` withholds one Rede per Tagesordnungspunkt in every held Sitzung and checks all of this (D6).
 
+## Facts
+
+- **A Sitzung with a withheld Rede is not complete for speeches.** Every Fakt whose basis is speeches, in every week and month that holds it, reads *unvollständig erfasst* and names the Sitzung and the number of withheld Reden ("Sitzung 18/3: 2 Reden zurückgehalten"). A report that records no withheld count is unknown, and unknown is not complete.
+- ***Erste Reden*** counts a person's first Rede in our coverage, stored or withheld, in the metric's own order: Sitzung, Tagesordnungspunkt, position in it (D3). When that first Rede is withheld, the person is not counted in any week. A withheld Rede binds every person who shares its Redner-ID.
+- **A backfill does not re-acquire a Sitzung for its withheld Reden.** Re-fetching never releases one; a parser rule or a change of the reviewed list does, through `--offline --repersist`. A Sitzung with withheld Reden and another gap is still acquired for that gap.
+
 ## Releases (D5, D9)
 
 - **The run summary** names every Rede a rebuild newly withholds or no longer withholds.
@@ -58,6 +64,7 @@ Decided by the owner as N1 B on 2026-11-07. The build's shape was settled in the
 ## Consequences
 
 - **Speech rule 8, store schema 12, export format 17.**
+- **`erste-reden` version 3** (the "Facts" section): its SQL ranks withheld Reden beside stored ones.
 - **`audit_offline_turns.py` is retired (D10).** The parser now withholds by itself. The W1 preflight tool that used it is kept in git history at 36bfd08.
 - **The 85 Sitzungen stay on the exclusion record until T4** acquires their votes, Tagesordnungspunkte and links. At the W1 XML, 71 parse once their refused Reden are withheld (90 Reden), and 4 parse with their reviewed entries applied. Twelve wait on ADR 0004's kinds for presidium and guest Reden, and 18/20 is a source defect.
 - **ADR 0004's presidium kinds land after this decision** and extend it. Their refusal for an unreviewed presidium `<rede>` becomes a third located class. Their kinds join `reviewed_units.json`. Their statuses join the reconciliation.

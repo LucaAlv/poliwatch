@@ -1,6 +1,6 @@
 # Withheld Reden before T4: facts, the release list, and the guards
 
-**Status:** plan, 2026-11-14. Nothing is built yet.
+**Status:** plan, 2026-11-14. The owner accepted all four decisions on 2026-11-14 (see "Decisions for the owner"). PR A and PR B are being built.
 **Parent:** `TODOS.md` "Coverage gate before the first data release", block "Found by PR 2's ship review (2026-11-13)", and item 8 of the same entry (eng review D6).
 **Base:** main 0e6def4 (v0.41.0.0): store schema 12 (`persist_dip_pulse_store.py:37`), export format 18 (`build_dip_pulse_site.py:3441`), speech rule 9. Line numbers below are on that commit.
 **Out of scope:** two parallel sessions are working on vote links (`match_roll_call_votes`, the vote outcome in `derive.py`) and on release docs (`SECURITY.md`, `CITATION.cff`, the DATA.md Vergleich, `docs/agents/review-checklist.md`). This plan touches none of those files.
@@ -118,6 +118,24 @@ Write each test red first, with the repo's `# Value: protects=…; fails_when=�
 2. **T4 rehearsal in a scratch copy**, the one check that shows P1 doing its job before T4. Pick a WP 21 member whose first stored Rede is in the store, and in a scratch worktree add a temporary `withhold` entry for that Rede to `reviewed_units.json`. Run `--offline --repersist` on the copy, then facts. Expected: that week and its month read "unvollständig erfasst: Sitzung 21/N: 1 Rede zurückgehalten" for speeches. The member is in no later `erste-reden` count. The backfill dry run does not select 21/N. Record the old and new values of the facts that moved. Then delete the scratch entry; it must never reach a commit.
 3. **Browser:** open that week's page from the rehearsal at 375px and in dark mode, and read the gap note.
 
+### A8. Outcome (built 2026-11-14)
+
+**Built as planned, with one change to A3.** `incomplete_sitting_protocols` returns a fifth list, the sittings held back only by withheld Reden, so `main`'s `[backfill]` line names them on their own instead of calling them roll-call gaps. A sitting with withheld Reden and a votes gap is still acquired for its votes; with votes off it counts as votes-only.
+
+**Replay (A7.1)** of `.context/dip-pulse-site`: `--offline` on main 0e6def4 into one clone, on PR A into another, then `compare_store_values.py` and a direct diff of `facts`, `fact_sources` and `fact_metrics`. Every table count, every value and every Fakt is equal. The only moves: `facts.metric_version` of the 273 `erste-reden` rows, 2 → 3, and that metric's `fact_metrics` row (version 2 → 3, its SQL and hash). The main build on its clone changed no fact against the reference store either.
+
+**Loop cost (class 12):** the `erste-reden` SQL takes 0.24 s as v2 and 0.17 s as v3 on the full store (best of 3, under load), with identical rows.
+
+**T4 rehearsal (A7.2)**, in a scratch copy of the tree and a third clone of the store: a temporary `withhold` entry for Caroline Bosbach's (CDU/CSU) first Rede, 21/20 `ID212014300` (2025-09-10, 2025-W37; her next Rede is 21/34, 2025-W42), then `--offline --repersist`. Speeches 54,855 → 54,854, `withheld_units` 0 → 1.
+- 2025-W37 and 2025-09 turn incomplete for every speeches Fakt, with the note "Sitzung 21/20: 1 Rede zurückgehalten". Votes Fakten of the week stay complete. Published before, now *unvollständig erfasst*: `erste-reden` 2025-W37 (9), `aktivste-abgeordnete` 2025-09 (10), `meistdiskutierter-vorgang` 2025-09 (203).
+- `erste-reden` 2025-W42: v2 on the same store gives 2 debutants, Bosbach among them, which would be false. v3 gives 1. Bosbach is in no week's count.
+- `compare_store_values.py` against the PR A replay: the only stored change is that Rede (21/20 characters 172,272 → 166,555, CDU/CSU Reden 14,996 → 14,995). 117 of 1,922 Fakt values move, all percentiles and baselines of later periods except the six of W37 and 2025-09; publishable weeks 181 → 180, months 58 → 57.
+- The week leaves every later baseline, so later percentiles move: `erste-reden` 2025-W38 now publishes (9 debutants), while `laengste-sitzung` 2025-W38, `laengste-debatte` and `laengste-rede` 2025-W45 and `laengste-debatte` 2026-W10 fall below the floor. This is the existing rule for an incomplete week.
+- Incomplete periods 102 weeks / 73 months → 103 / 74. The build's report prints "1 sittings hold withheld Reden (ADR 0005): … (21/20)" and its fix still acquires 83 sittings, so 21/20 is not selected.
+- The scratch entry lived only in the scratch tree; `scripts/reviewed_units.json` is unchanged.
+
+**Browser (A7.3):** the rehearsal's `fakt/2025-W37.html` in gstack's headless browser at 375 × 812 with `data-theme="dark"`: no console error, no horizontal scroll (scroll width 375), and the four speeches metrics read "unvollständig erfasst: Sitzung 21/20: 1 Rede zurückgehalten", wrapped on two lines. The two votes metrics keep their own reasons.
+
 ---
 
 ## PR B: the release list, D6 and the guards
@@ -225,6 +243,9 @@ Classes answered per PR. "–" means the PR does not touch it.
 - T4's measurement list (item 7) gains two lines: how many withheld Reden carry a partitioned Redner-ID (A4), and confirmation that `withheld_without_redner_id` is 0.
 
 ## Decisions for the owner
+
+**Decided 2026-11-14:** the owner accepted all four recommendations below as written. D6 is enforced now, in the release's `--publish` only, with no override flag. A person whose first Rede is withheld is dropped from every week's debut count. A withheld Rede with a shared Redner-ID binds every person who shares it. Two PRs, A (P1) then B (P2, D6, the P3 guards); P3e stays in TODOS.md with its fix text corrected.
+
 
 1. **D6, when to enforce the bar.** Recommended: now, in the release's `--publish` only, with no override flag. Every `--publish` is refused until T4 is done and 18/62 and 18/90 are reclassified, and the WP 20/21-first fallback would need its own rule if it is ever chosen. The alternative is to write the check after T4.
 2. **`erste-reden` for a person whose first Rede is withheld.** Recommended: drop that person from every week's debut count, since the period of the real debut is already incomplete. The alternative is to withhold the whole `erste-reden` fact of every week in which such a person's first stored Rede falls. That costs a whole card for one uncertain row.

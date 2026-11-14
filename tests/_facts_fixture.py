@@ -33,6 +33,14 @@ Each spec is a dict:
                    link (they must never count for the week)
   sitzung          optional (start, end) as "09:00"/"14:08" strings, written
                    into protocols.xml_header_json
+  withheld         optional list of withheld Reden (ADR 0005), one
+                   withheld_units row each: {"redner_id":..., "rede_id":...,
+                   "sequence":..., "item":...}. "sequence" shares the speeches'
+                   numbering within the item (D3), so a test places the
+                   withheld Rede before or after a stored one; "redner_id" may
+                   be None. A sitting with one is incomplete for speeches
+                   unless ``complete`` says otherwise, as facts.completeness_
+                   from_reports reads it
   complete         optional {"votes": bool, "speeches": bool} overrides
 
 ``people`` names MPs the specs refer to by alias, so a test can seed two mps
@@ -53,6 +61,7 @@ from pathlib import Path
 from typing import Any
 
 import _support  # noqa: F401
+import derive
 import facts
 import persist_dip_pulse_store as pulse_store
 from stable_ids import stable_key, synthetic_rede_id
@@ -301,7 +310,24 @@ def seed_weeks(
                     _insert_vote(conn, vote_id, spec["date"], title, yes, no, now)
                     vote_ids.append(vote_id)
 
-                complete = {"votes": True, "speeches": True}
+                for offset, entry in enumerate(spec.get("withheld") or []):
+                    rede_id = entry.get("rede_id") or f"W{index + 1}-{offset}"
+                    conn.execute(
+                        """
+                        INSERT INTO withheld_units(id, protocol_id, agenda_item_id, rede_id, sequence, reason,
+                                                   reason_detail, xml_redner_id, speaker_name, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'reviewed', 'fixture', ?, ?, ?, ?)
+                        """,
+                        (
+                            stable_key("withheld", protocol_id, rede_id), protocol_id,
+                            agenda_item_ids[int(entry.get("item", 0))], rede_id, int(entry["sequence"]),
+                            # As persist_withheld stores it, and as upsert_mp keeps the
+                            # speaker's id ("x-Ada Lovelace" -> "x-Ada").
+                            derive.first_redner_id(entry.get("redner_id")), entry.get("speaker_name"), now, now,
+                        ),
+                    )
+
+                complete = {"votes": True, "speeches": not spec.get("withheld")}
                 complete.update(spec.get("complete") or {})
                 result["protocol_ids"][document_number] = protocol_id
                 result["agenda_item_ids"][document_number] = agenda_item_ids
