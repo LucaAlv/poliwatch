@@ -9,7 +9,7 @@ A main release becomes stable when the owner has run every step below on it and 
 - CPP-BT's newest speech metadata from Zenodo (`CPP-BT_<date>_DE_CSV_Reden_Metadaten.zip`, concept DOI 10.5281/zenodo.4542661, CC0). Download it with the owner's approval, and record its version and SHA-256 in the review record. Never commit it.
 
 **1. Coverage per year.** From the candidate's DATA.md, "Abdeckung nach Jahr und zurückgehaltene Reden" and "Ausgeschlossene Sitzungen":
-- every exclusion reads `source_defect` or `not_narrowable`; any `awaiting_rule` or `awaiting_acquisition` stops the review;
+- every exclusion's Grund reads „Fehler der Quelle, der die ganze Sitzung betrifft“ (`source_defect`) or „Ein Fehler, der sich nicht auf einzelne Reden eingrenzen lässt“ (`not_narrowable`); a „Wartet auf …“ Grund (`awaiting_rule`, `awaiting_acquisition`) stops the review. DATA.md prints these labels, not the keys (`EXCLUSION_REASONS` in `scripts/build_dip_pulse_site.py`);
 - per year: sittings, Reden stored, Reden withheld, share withheld. Compared with the last stable, explain every year whose sittings fell or whose withheld share rose;
 - per Wahlperiode: our sittings against CPP-BT's (step 4 prints both).
 
