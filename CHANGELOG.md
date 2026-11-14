@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.41.0.0] - 2026-11-13
+## [0.41.0.0] - 2026-11-14
 
 Jan Krampe and Jan Wenzel Schmidt each have one Personenseite again, and six former MdBs get their roll-call votes back on their own page. An offline replay of the store now groups persons exactly like the online build that wrote it, and the store gate checks that. Reden, Beiträge, votes and Fakten do not move.
 
