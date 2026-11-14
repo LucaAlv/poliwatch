@@ -1535,6 +1535,12 @@
           "unit": "Textcode yes, no, abstain, absent oder unknown.",
           "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
+        },
+        "abweichung": {
+          "meaning": "1, wenn das Einzelvotum eine Abweichung ist: Ja gegen ein Nein-Mehrheitsvotum oder Nein gegen ein Ja-Mehrheitsvotum der Fraktion oder Gruppe, für die die Stimme zählt (party_id); 0 für jedes andere Mitglied einer Fraktion oder Gruppe, deren Namensliste ihre Summe in vote_fractions genau ergibt, auch ohne Ja/Nein-Mehrheitsvotum. NULL, wo das nicht geprüft werden kann: Die Namensliste der Gruppe ergibt ihre Summe nicht genau, die Gruppe hat keine Summe, oder das Mitglied ist fraktionslos oder ohne erkennbaren Zusammenschluss.",
+          "unit": "1, 0 oder NULL; NULL heißt nicht prüfbar, nicht keine Abweichung.",
+          "source": "Beim Speichern aus Namensliste und Gruppensummen berechnet (scripts/derive.py, vote_member_abweichungen); die Abweichler im Abstimmungsfeld des Dossiers sind genau die Mitglieder mit 1.",
+          "license": "eigene-auswertung"
         }
       }
     },
@@ -1728,6 +1734,18 @@
           "meaning": "Quellenausschnitt, der die erkannte Ablehnungsempfehlung belegt.",
           "unit": "Belegausschnitt als Text oder NULL: bei Protokollbeleg die Klausel der Ansage (Leerraum normalisiert, auf 300 Zeichen mit „…“ gekürzt), bei DIP-Beschlussfassung die Drucksache und die Bemerkung zum Abstimmungsergebnis, sonst der ganze Titel, die Beschreibung oder der DIP-Drucksachentitel, der die Ablehnungsempfehlung enthält.",
           "source": "Projektableitung aus der Ansage der Sitzungsleitung im Plenarprotokoll, den Bundestags-Abstimmungsseiten, den verknüpften DIP-Drucksachen und der in DIP verzeichneten Beschlussfassung; siehe genaue Feldbedeutung.",
+          "license": "eigene-auswertung"
+        },
+        "application_result": {
+          "meaning": "Ausgang des Antrags: result_raw, umgekehrt, wo die Abstimmung über eine Beschlussempfehlung lief, die die Ablehnung des Antrags empfiehlt (inverted = 1) und result_scope nicht application ist. NULL, wo result_raw NULL ist.",
+          "unit": "Ergebniscodes accepted/rejected als Text oder NULL.",
+          "source": "Beim Speichern aus result_raw, inverted und result_scope berechnet (scripts/derive.py, vote_outcome); dieselbe Funktion bestimmt das Ergebnisfeld der Abstimmungsseiten.",
+          "license": "eigene-auswertung"
+        },
+        "abweichler_count": {
+          "meaning": "Zahl der Abweichler der Abstimmung: Mitglieder, die Ja gegen ein Nein-Mehrheitsvotum oder Nein gegen ein Ja-Mehrheitsvotum ihrer Fraktion oder Gruppe stimmten; die Summe von vote_members.abweichung. NULL, wo sich nicht jeder Abweichler benennen lässt: Die Namensliste einer Fraktion oder Gruppe ergibt ihre Summe in vote_fractions nicht genau, oder die Gruppensummen ergeben die Gesamtzahl der Abstimmung nicht.",
+          "unit": "Anzahl der Mitglieder als Ganzzahl ab 0 oder NULL; NULL heißt nicht bestimmbar, nicht 0.",
+          "source": "Beim Speichern aus Namensliste und Gruppensummen berechnet (scripts/derive.py, vote_abweichler_count); dieselbe Funktion bestimmt die Abweichlerzahl im Abstimmungsfeld des Dossiers.",
           "license": "eigene-auswertung"
         },
         "xlsx_url": {

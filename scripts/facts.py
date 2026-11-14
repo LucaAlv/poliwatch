@@ -226,7 +226,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "meiste-abweichler",
-        "version": 1,
+        "version": 2,
         "title": "Die meisten Abweichler der Woche",
         "unit": "Abgeordnete, die anders stimmten als die Mehrheit ihrer Fraktion oder Gruppe",
         "direction": "max",
@@ -236,20 +236,16 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # Enthaltung and Abwesenheit are not a counter-vote and do not count
         # (the Suizidhilfe vote reads 179 this way, 202 with Enthaltungen), and
         # neither does a Zusammenschluss without a Mehrheitsvotum (a tie, or
-        # nobody voted: leading_vote is NULL there). Fraktionslose MdBs belong
-        # to no Zusammenschluss and cannot make an Abweichung, so the
-        # pseudo-Fraktion "fraktionslos" is excluded (151 of its members' votes
-        # would otherwise count as deviations).
+        # nobody voted). Fraktionslose MdBs belong to no Zusammenschluss and
+        # cannot make an Abweichung (151 of their votes would otherwise count).
+        # The value is the persisted votes.abweichler_count
+        # (derive.vote_abweichler_count), the count the vote panel and the
+        # archive show: NULL, and so no candidate, where a group's member list
+        # does not add up to its counts. Version 2 since it replaced an SQL
+        # count that also counted the members of such a group.
         "sql": (
             "SELECT v.id, v.title, v.date, v.detail_url,\n"
-            "       CASE WHEN EXISTS (SELECT 1 FROM vote_members vm0 WHERE vm0.vote_id = v.id) THEN (\n"
-            "         SELECT COUNT(*) FROM vote_members vm\n"
-            "         JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
-            "         JOIN parties pa ON pa.id = vm.party_id\n"
-            "         WHERE vm.vote_id = v.id\n"
-            "           AND vm.vote IN ('yes', 'no') AND vf.leading_vote IN ('yes', 'no')\n"
-            "           AND vm.vote <> vf.leading_vote AND pa.name <> 'fraktionslos'\n"
-            "       ) END AS value,\n"
+            "       v.abweichler_count AS value,\n"
             "       (SELECT COUNT(*) FROM vote_members vm3\n"
             "         WHERE vm3.vote_id = v.id AND vm3.vote IN ('yes', 'no')) AS denominator,\n"
             "       p.id AS protocol_id,\n"

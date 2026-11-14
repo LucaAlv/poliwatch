@@ -43,9 +43,12 @@ def _badge_subject(vote: Mapping[str, Any]) -> str | None:
 
 def render_result_badge(vote: dict[str, Any]) -> str:
     """The Angenommen/Abgelehnt pill for the dossier panel and the votes
-    archive; a vote with no recorded result renders no badge.
+    archive; a vote with no recorded result renders no badge. A stored vote
+    (``stored_votes``) carries the persisted ``application_result``; a report's
+    vote is derived by the same function persist wrote it with.
     """
-    result_raw, result_source = derive.vote_outcome(vote), vote.get("result_source")
+    result_raw = vote["application_result"] if "application_result" in vote else derive.vote_outcome(vote)
+    result_source = vote.get("result_source")
     label = result_badge_label(result_raw)
     if not label:
         reason = ("Zweidrittelmehrheit der Mitglieder erforderlich (Art. 79 Abs. 2 GG); kein amtliches Ergebnis gefunden"
@@ -748,7 +751,8 @@ def stored_votes(conn: Any) -> list[StoredVote]:
     result = []
     for row in conn.execute(
         "SELECT v.id, v.protocol_id, p.document_number, v.date, v.topic, v.title, v.description, v.yes_count, v.no_count, "
-        "v.abstain_count, v.absent_count, v.result_raw, v.result_source, v.result_scope, v.procedure_type, v.inverted "
+        "v.abstain_count, v.absent_count, v.result_raw, v.result_source, v.result_scope, v.procedure_type, v.inverted, "
+        "v.application_result, v.abweichler_count "
         "FROM votes v LEFT JOIN protocols p ON p.id = v.protocol_id"
     ):
         vote_id = row["id"]
@@ -764,6 +768,9 @@ def stored_votes(conn: Any) -> list[StoredVote]:
             "result_scope": row["result_scope"],
             "procedure_type": row["procedure_type"],
             "inverted": None if row["inverted"] is None else bool(row["inverted"]),
+            # Persisted by derive.vote_outcome and derive.vote_abweichler_count.
+            "application_result": row["application_result"],
+            "abweichler_count": row["abweichler_count"],
             "document_numbers": numbers.get(vote_id, []),
             "fractions": fractions.get(vote_id, []),
             "members": members.get(vote_id, []),

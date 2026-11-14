@@ -64,7 +64,7 @@ Für Zeilenverknüpfungen die deklarierten Primär-/Fremdschlüssel verwenden, n
 
 > **Abweichler**: “An MdB who makes an Abweichung in a namentliche Abstimmung. In public text this is said as "stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe".”
 
-Eine Abweichung ist also nur Ja gegen ein Nein-Mehrheitsvotum oder Nein gegen ein Ja-Mehrheitsvotum; Enthaltungen, nicht abgegebene Stimmen, ein fehlendes Mehrheitsvotum und fraktionslose Mitglieder ergeben keine. Wie das Rezept `r3-abweichler` daraus zählt, steht im Abschnitt „Veröffentlichte SQL-Rezepte“.
+Eine Abweichung ist also nur Ja gegen ein Nein-Mehrheitsvotum oder Nein gegen ein Ja-Mehrheitsvotum; Enthaltungen, nicht abgegebene Stimmen, ein fehlendes Mehrheitsvotum und fraktionslose Mitglieder ergeben keine. Der Export speichert das Ergebnis je Stimme in `vote_members.abweichung` und je Abstimmung in `votes.abweichler_count`; beide schreibt derselbe Code, der die Abweichler im Abstimmungsfeld des Dossiers nennt, und das Abstimmungsarchiv, das Rezept `r3-abweichler` und die Kennzahl „Die meisten Abweichler der Woche“ lesen diese Spalten. Benannt wird nur, wer zu einer Fraktion oder Gruppe gehört, deren Namensliste ihre Summe in `vote_fractions` genau ergibt: Fehlt ein Mitglied oder hat die Gruppe keine Summe, ist `abweichung` dort für alle NULL und zählt niemand. Mitglieder ohne erkennbaren Zusammenschluss (Partei „Unbekannt“) haben wie fraktionslose keine. `votes.abweichler_count` ist NULL, wenn eine Gruppe so unvollständig ist oder die Gruppensummen die Gesamtzahl nicht ergeben; sonst ist es die Summe von `abweichung`. Wie das Rezept `r3-abweichler` daraus zählt, steht im Abschnitt „Veröffentlichte SQL-Rezepte“.
 
 ## Sitzzahlen
 

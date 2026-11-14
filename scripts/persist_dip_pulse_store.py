@@ -34,7 +34,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -56,6 +56,10 @@ def require_current_schema(conn):
         # Schema 7: initialize() would add vote_passages empty and leave every
         # votes.passage_state NULL.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if votes and not {"application_result", "abweichler_count"} <= votes:
+        # Schema 12: the outcome and the Abweichler figures were computed by
+        # each reader; they are written at persist from the cached reports.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns and not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='party_seats'").fetchone():
         # Schema 8: initialize() would add the seat tables empty and stamp version 9.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
@@ -74,6 +78,8 @@ def require_current_schema(conn):
     if vote_members and "listed_party_id" not in vote_members:
         # Schema 10: every Stimme still counts for the group the page lists, and
         # the correction needs the cached reports.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if vote_members and "abweichung" not in vote_members:
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -437,6 +443,12 @@ def initialize(conn: sqlite3.Connection) -> None:
           inverted INTEGER CHECK (inverted IN (0, 1) OR inverted IS NULL),
           inversion_source TEXT,
           inversion_excerpt TEXT,
+          -- The Antrag's outcome (derive.vote_outcome): result_raw, reversed
+          -- where inverted applies to it.
+          application_result TEXT CHECK (application_result IN ('accepted', 'rejected')),
+          -- derive.vote_abweichler_count; NULL where a group is partial or the
+          -- groups do not add up to the total, never 0 for unknown.
+          abweichler_count INTEGER CHECK (abweichler_count >= 0),
           xlsx_url TEXT,
           debate_url TEXT,
           context_state TEXT CHECK (context_state IN (%(context_states)s)),
@@ -513,6 +525,10 @@ def initialize(conn: sqlite3.Connection) -> None:
           -- prove another one (derive.refile_vote_members); else NULL.
           listed_party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
           vote TEXT NOT NULL,
+          -- derive.vote_member_abweichungen: 1 an Abweichung, 0 none, NULL where
+          -- the member's group is partial or has no counts, or the member is
+          -- fraktionslos or Unbekannt.
+          abweichung INTEGER CHECK (abweichung IN (0, 1)),
           PRIMARY KEY (vote_id, mp_id)
         );
 
@@ -655,6 +671,13 @@ def _migrate_party_names(conn: sqlite3.Connection) -> None:
         # The normal case on every build after the first: read only, no commit,
         # so initialize() never disturbs a caller's own transaction.
         return
+    # A rename or merge can change a vote's groups (a merged row's Mehrheitsvotum,
+    # a group renamed to fraktionslos), so these votes' figures are rewritten.
+    renamed = [party_id for party_id, _name, _clean in plan]
+    marks = ", ".join("?" * len(renamed))
+    touched = sorted({row[0] for row in conn.execute(
+        f"SELECT vote_id FROM vote_fractions WHERE party_id IN ({marks}) "
+        f"UNION SELECT vote_id FROM vote_members WHERE party_id IN ({marks})", (*renamed, *renamed))})
     for party_id, name, clean_name in plan:
         keeper = by_name.get(clean_name)
         if keeper is None or keeper == party_id:
@@ -665,7 +688,47 @@ def _migrate_party_names(conn: sqlite3.Connection) -> None:
         _repoint_party(conn, party_id, keeper)
         conn.execute("DELETE FROM parties WHERE id = ?", (party_id,))
         by_name.pop(name, None)
+    rewrite_vote_figures(conn, touched)
     conn.commit()
+
+
+def stored_vote_groups(conn: sqlite3.Connection, vote_id: str) -> dict[str, Any]:
+    """One stored vote in the shape the derive vote rules read: its total, its
+    vote_fractions rows and its vote_members, each member named by its mps id
+    and placed in the group its Stimme counts for (as
+    ``features.votes.stored_votes`` reads them for the archive)."""
+    total = conn.execute(
+        "SELECT yes_count, no_count, abstain_count, absent_count FROM votes WHERE id = ?", (vote_id,)).fetchone()
+    return {
+        "total": dict(zip(derive.VOTE_COUNT_KEYS, total)) if total else {},
+        "fractions": [
+            {"name": name, "counts": dict(zip(derive.VOTE_COUNT_KEYS, counts)), "total": row_total}
+            for name, *counts, row_total in conn.execute(
+                "SELECT pa.name, vf.yes_count, vf.no_count, vf.abstain_count, vf.absent_count, vf.total_count "
+                "FROM vote_fractions vf JOIN parties pa ON pa.id = vf.party_id WHERE vf.vote_id = ? "
+                "ORDER BY vf.rank, pa.name", (vote_id,))
+        ],
+        "members": [
+            {"name": mp_id, "faction": party, "vote": choice}
+            for mp_id, party, choice in conn.execute(
+                "SELECT vm.mp_id, pa.name, vm.vote FROM vote_members vm LEFT JOIN parties pa ON pa.id = vm.party_id "
+                "WHERE vm.vote_id = ? ORDER BY vm.mp_id", (vote_id,))
+        ],
+    }
+
+
+def rewrite_vote_figures(conn: sqlite3.Connection, vote_ids: list[str]) -> None:
+    """Rewrite ``votes.abweichler_count`` and ``vote_members.abweichung`` of
+    ``vote_ids`` from the stored rows, after a change to the rows that
+    ``persist_vote`` derived them from. The outcome reads no group row and stays."""
+    for vote_id in vote_ids:
+        vote = stored_vote_groups(conn, vote_id)
+        groups = derive.vote_abweichler(vote)
+        conn.execute("UPDATE votes SET abweichler_count = ? WHERE id = ?",
+                     (derive.vote_abweichler_count(vote, groups), vote_id))
+        flags = derive.vote_member_abweichungen(vote, groups)
+        conn.executemany("UPDATE vote_members SET abweichung = ? WHERE vote_id = ? AND mp_id = ?", [
+            (flags[derive.vote_member_identity(member)], vote_id, member["name"]) for member in vote["members"]])
 
 
 def _repoint_party(conn: sqlite3.Connection, old_id: str, new_id: str) -> None:
@@ -1555,15 +1618,19 @@ def persist_vote(
     vote_id = _vote_id(vote)
     total = vote.get("total") or {}
     result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
+    # The figures every SQL reader counts, written by the functions the
+    # dossier panel calls, so the store holds one definition (L4).
+    abweichler_groups = derive.vote_abweichler(vote)
+    abweichungen = derive.vote_member_abweichungen(vote, abweichler_groups)
     conn.execute(
         """
         INSERT INTO votes(
           id, protocol_id, date, topic, title, description, detail_url, yes_count, no_count,
           abstain_count, absent_count, result_raw, result_source, result_scope, procedure_type,
-          inverted, inversion_source, inversion_excerpt, xlsx_url, debate_url,
-          created_at, updated_at
+          inverted, inversion_source, inversion_excerpt, application_result, abweichler_count,
+          xlsx_url, debate_url, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           protocol_id = excluded.protocol_id,
           date = excluded.date,
@@ -1582,6 +1649,8 @@ def persist_vote(
           inverted = excluded.inverted,
           inversion_source = excluded.inversion_source,
           inversion_excerpt = excluded.inversion_excerpt,
+          application_result = excluded.application_result,
+          abweichler_count = excluded.abweichler_count,
           debate_url = CASE WHEN ? THEN excluded.debate_url ELSE COALESCE(excluded.debate_url, votes.debate_url) END,
           -- A copy of the vote without a link (e.g. the same vote attached to
           -- a second agenda item) never erases one already stored, so a
@@ -1619,6 +1688,8 @@ def persist_vote(
             None if vote.get("inverted") is None else int(bool(vote.get("inverted"))),
             clean(vote.get("inversion_source")),
             clean(vote.get("inversion_excerpt")),
+            derive.vote_outcome(vote),
+            derive.vote_abweichler_count(vote, abweichler_groups),
             clean(vote.get("xlsx_url")),
             clean(vote.get("debate_url")),
             now,
@@ -1720,14 +1791,16 @@ def persist_vote(
         )
         conn.execute(
             """
-            INSERT INTO vote_members(vote_id, mp_id, party_id, listed_party_id, vote)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO vote_members(vote_id, mp_id, party_id, listed_party_id, vote, abweichung)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(vote_id, mp_id) DO UPDATE SET
               party_id = excluded.party_id,
               listed_party_id = excluded.listed_party_id,
-              vote = excluded.vote
+              vote = excluded.vote,
+              abweichung = excluded.abweichung
             """,
-            (vote_id, mp_id, party_id, listed_party_id if member.get("refiled_to") else None, clean(member.get("vote")) or "unknown"),
+            (vote_id, mp_id, party_id, listed_party_id if member.get("refiled_to") else None,
+             clean(member.get("vote")) or "unknown", abweichungen[derive.vote_member_identity(member)]),
         )
 
 def _warn_merged_redner_ids(report: dict[str, Any]) -> None:

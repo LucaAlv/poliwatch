@@ -1,6 +1,6 @@
 # Vote links (N10) and the persisted vote figures
 
-**Status (2026-11-14):** plan only, nothing built. Covers two TODOS.md entries: "Check that vote links are right" (P1, decision N10) and "Persist or prove the vote outcome and Abweichler count" (P2, before A4 slice 2). Measured read-only on the reference store `.context/dip-pulse-site` (v0.41.0.0 replay of 2026-11-14, 718 sittings) and, where a query needs `mp_canonical`, on its distribution copy `data/exports/g-083161332932/bundestag-pulse-local.sqlite.gz`. Nothing was fetched online. The decisions the owner has to make are at the end.
+**Status (2026-11-14):** the owner accepted all six recommended decisions (see "Decisions" at the end). PR A (part 2) is built on `claude/plan-vote-links-2ed5ac` (schema 13, export format 19; replay: no figure moved, see TODOS.md "Persist or prove the vote outcome and Abweichler count"); PR B follows on `claude/vote-link-attribution`. The review and PR C wait for the coordinating session. Part 2 also moved the Fakt "meiste-abweichler" onto the persisted count, a fourth definition the measurement below missed. Covers two TODOS.md entries: "Check that vote links are right" (P1, decision N10) and "Persist or prove the vote outcome and Abweichler count" (P2, before A4 slice 2). Measured read-only on the reference store `.context/dip-pulse-site` (v0.41.0.0 replay of 2026-11-14, 718 sittings) and, where a query needs `mp_canonical`, on its distribution copy `data/exports/g-083161332932/bundestag-pulse-local.sqlite.gz`. Nothing was fetched online. The decisions the owner has to make are at the end.
 
 Main is v0.41.0.0, schema 12, export format 18. Every PR below takes the next free numbers at ship time; on today's main that is schema 13 / export 19 for the first one.
 
@@ -41,7 +41,7 @@ So two links in three rest on DIP's Vorgang closure, not on anything the protoco
 
 ### Pilot (12 votes, 32 links, offline evidence only)
 
-Read against the protocol XML (the chair's result announcement, found by the vote's exact Ja/Nein tally) and the cached DIP Vorgang and Drucksache records. Rows and verdicts: [`vote-links-and-figures/pilot.tsv`](vote-links-and-figures/pilot.tsv). All verdicts are provisional until the review.
+Read against the protocol XML (the chair's result announcement, found by the vote's exact Ja/Nein tally) and the cached DIP Vorgang and Drucksache records. Rows and verdicts: [`vote-links-and-figures-pilot.tsv`](vote-links-and-figures-pilot.tsv). All verdicts are provisional until the review.
 
 | Verdict | Links | Cases |
 | --- | --- | --- |
@@ -82,7 +82,7 @@ In all: 329 links in about 155 units. If S4 finds no error, the plain-link error
 2. **DIP** (cached `dip-vorgang-cache.json`, `dip-vorgang-drucksachen-cache.json`, the report's `api.positions`, offline): which Vorgang holds the shared Drucksache, its type and title, and how the position reached this TOP (printed number, title match or `mitberaten`).
 3. **The bundestag.de vote page.** Its parsed fields are in the cached report (`title`, `description`, `vote_heading`, `document_numbers`). The raw page is not kept (TODOS "Keep the raw vote pages"). An online look, two requests per vote, only for links still "unsure" after 1 and 2, and only with the owner's OK and a stated count (owner decision 5).
 
-**The review record: a committed TSV.** `docs/plans/vote-links-review/review.tsv`, one row per link, with a header comment holding the seed, the store and the code revision. The generator pre-fills every column except the verdict columns:
+**The review record: a committed TSV.** `docs/plans/vote-links-review.tsv` (flat in `docs/plans/`, where the pregate's empty lane for `docs/plans/*.tsv` covers it), one row per link, with a header comment holding the seed, the store and the code revision. The generator pre-fills every column except the verdict columns:
 
 | Column | Content |
 | --- | --- |
@@ -163,7 +163,7 @@ How many votes the 85 sittings hold is unknown until they are fetched; the store
 | `scripts/persist_dip_pulse_store.py` | B, C | `agenda_item_votes.basis` (B); `agenda_item_votes.review_note` (C); schema bump each |
 | `scripts/vote_link_review.py` (new, read-only) | B | Writes the review sheet and, with `--fixture`, the oracle fixtures |
 | `scripts/data_dictionary.json`, `docs/data-methods.md` | B, C | The DATA.md text above |
-| `docs/plans/vote-links-review/review.tsv`, `summary.md` | review | The review record and its counts |
+| `docs/plans/vote-links-review.tsv`, `docs/plans/vote-links-review-summary.md` | review | The review record and its counts |
 | `scripts/reviewed_vote_links.json` + loader in `vote_links.py` | C | Drops and flags |
 | `scripts/vote_links.py` | C | The pattern rules the review confirms |
 | `scripts/features/votes.py` | C | The drop and flag line on the vote panel (component per DESIGN.md, checked at build time) |
@@ -297,11 +297,11 @@ Tests first:
 
 Checks no diff review replaces: PR A and PR C each need the replay with old and new values (PR A: none should move); PR C needs the browser check of the panel line at 375px and in dark mode.
 
-## Decisions for the owner
+## Decisions (owner, 2026-11-14: all six recommendations accepted)
 
-1. **What a link means.** Recommended: the TOP that dealt with the voted Vorlage, the most specific sub-item where the protocol splits one; it does not mean the vote settled the TOP alone. This makes the pilot's 17 Haushalt links wrong.
-2. **One-off errors.** Recommended: a wrong link is removed and the vote page says so; an unsure link stays, flagged. Patterns (two or more links, one cause) are fixed in the rule.
-3. **Outcome and Abweichler count.** Recommended: persist both (three columns). They agree on all 619 votes today, but differ by definition on partial groups, so a proof would hold only for today's data.
-4. **Sample size.** Recommended: 329 links in about 155 units (all multi-link cases, all 15 title links, 50 random plain), instead of "about 150 links".
-5. **Online checks.** Recommended: none by default; ask once, with a count, for the links still unsure after protocol and DIP.
-6. **Gate.** Recommended: every release refuses a vote linked to two or more TOPs without a review row.
+1. **What a link means.** A link means the TOP that dealt with the voted Vorlage, the most specific sub-item where the protocol splits one. It does not mean the vote settled that TOP alone. This makes the pilot's 17 Haushalt links wrong.
+2. **One-off errors.** A one-off wrong link is removed and the vote page says so. An unsure link stays, flagged. A pattern (two or more links, one cause) is fixed in the rule.
+3. **Outcome and Abweichler count.** Persist both, in three columns (`votes.application_result`, `votes.abweichler_count`, `vote_members.abweichung`).
+4. **Sample size.** 329 links in about 155 units (all multi-link cases, all 15 title links, 50 random plain).
+5. **Online checks.** None by default. Ask once, with a count, for the links still unsure after protocol and DIP.
+6. **Gate.** Every release refuses a vote linked to two or more TOPs that has no review row.

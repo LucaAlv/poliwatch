@@ -654,7 +654,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written. If a store was there before, restore it from a backup ([Backup and recovery](stable-ids.md#backup-and-recovery)): a rebuilt store issues its person keys anew. Otherwise build one with `--offline --repersist` (no MdB roster) or an online update with `--enrich mp-roster`. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (11), including one without `votes.debate_url`, the quoted Antrag-passage fields, the seat tables or `vote_members.listed_party_id`, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+An offline render always reads the store: it opens it read-only and checks it with `require_current_schema` before reading MP data. Without a store it exits 1 with `error: no store at …; the offline render reads it` before any page is written. If a store was there before, restore it from a backup ([Backup and recovery](stable-ids.md#backup-and-recovery)): a rebuilt store issues its person keys anew. Otherwise build one with `--offline --repersist` (no MdB roster) or an online update with `--enrich mp-roster`. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (13), including one without `votes.abweichler_count`, `votes.debate_url`, the quoted Antrag-passage fields, the seat tables or `vote_members.listed_party_id`, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. A page saying "Antrag … angenommen" on a Ja majority for rejecting that Antrag contradicts itself and is stored with `result_scope = 'proposition'` (`docs/source-errors.md`, E6). The evidence for a rejection is, in this order, the chair's announcement in the Plenarprotokoll, the wording of the vote listing or a matched DIP Drucksache title, and the decision DIP records on the Vorgang position, bound to the vote by its exact tally and a shared Drucksache (a vote with no document numbers: by a tally that occurs once in the sitting). `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -662,16 +662,13 @@ The result badge names its subject where a bare word would read as the outcome o
 
 Legacy reports without `debate_url` still render the lead. `--offline --repersist` adds the nullable column without discovering links; use the existing targeted online vote refresh for those. A completed detail fetch explicitly clears an old link when no unambiguous association remains; failed acquisition keeps the cached report under the existing retention rule.
 
-SQL users can derive the Antrag outcome without changing the source result:
+The Antrag outcome is stored beside the source result:
 
 ```sql
-CASE
-  WHEN result_raw IS NULL THEN NULL
-  WHEN inverted = 1 AND COALESCE(result_scope, '') <> 'application'
-    THEN CASE result_raw WHEN 'accepted' THEN 'rejected' WHEN 'rejected' THEN 'accepted' END
-  ELSE result_raw
-END AS application_result
+SELECT id, result_raw, application_result FROM votes
 ```
+
+`application_result` is written at persist by `derive.vote_outcome`, the function the result badge reads: `result_raw` reversed where `inverted = 1` and `result_scope` is not `application`, else `result_raw`; NULL where `result_raw` is NULL. The Abweichler figures are stored the same way: `vote_members.abweichung` (`derive.vote_member_abweichungen`; 1, 0, or NULL where the member's group's list does not add up to its counts, or the member is fraktionslos or Unbekannt) and `votes.abweichler_count` (`derive.vote_abweichler_count`, their sum, NULL unless every group is complete and the groups cover the total). Recipe r3, the "meiste-abweichler" Fakt and the votes archive read these columns; a `vote_fractions` merge in `initialize` rewrites them (`persist_dip_pulse_store.rewrite_vote_figures`).
 
 A vote without an agenda-item assignment remains tied to its sitting through `votes.protocol_id`; `agenda_item_votes` is an optional topic link. The dossier lists these votes under “TOP nicht zugeordnet”, and the archive links to that sitting section. Sitting-wide counts, MP vote histories, and vote facts include them once; topic-dependent output has no inferred TOP.
 
