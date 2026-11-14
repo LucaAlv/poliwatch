@@ -212,6 +212,11 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 **For PR C:** the rule compares Drucksache numbers as plain strings, as the live rule always did, so a leading zero ("20/0301" against "20/301") shares nothing; `derive.canonical_document_number` would match them. Count such pairs on the store before changing it (a false negative, not covered by the review's sample). The sheet's `tally` column reads `several` for 138 of 329 rows, likely the chair's announcement plus the result annex; tell the reviewer, or keep only the Sitzungsverlauf match.
 
+**Deferred from the PR B code review (2026-11-15), none a wrong figure today:**
+1. **Online run, kept reports.** An online build re-parses only stale cached reports (`unparsed_reports`, `build_dip_pulse_site.py:15078`), so a kept report reaches `persist_report` without `vote_links.attribute_votes`. Today every cached placement equals the rule (replay: 590 = 590 links), but a rule change without a schema bump would make `placement_errors` refuse every kept sitting and stop the online build. PR C bumps the schema, which forces `--offline --repersist` first; any later rule change must too, or attribute every entry before persist.
+2. **Review sheet `shared` column.** `vote_link_review.shared_documents` prefers the DIP entry when a number is both printed under the TOP and Vorgang-linked, so 75 of 91 `drucksache_xml` rows on the replayed store show no `:xml:` entry. The `basis` column is right; mark printed numbers in `shared` too (e.g. `number:type:Vorgang:xml`) before the review runs, or tell the reviewer to read `basis`.
+3. **Two rule runs in `enrich_with_api`.** `candidate_tops` (from list candidates, `validate_dip_protocol.py:4195`) drives the unmatched warnings; `attribute_votes` (from fetched votes) drives placement. They agree because `fetch_roll_call_vote_detail` keeps `title` and `document_numbers`; derive the warnings from `placed` instead.
+
 **Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest errors: an amendment that shares a Drucksache with an unrelated TOP on the same day, and a fuzzy title match that binds a neighbouring TOP (review checklist class 7).
 
 **Effort:** M (human ~2 days / CC ~2 h, estimated)
