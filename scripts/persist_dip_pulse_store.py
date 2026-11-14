@@ -26,6 +26,7 @@ import person_registry as registry
 import politikfelder
 import antrag_text
 import publication_state as publication
+import vote_links
 from stable_ids import (
     canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
     document_number as document_number_canonical,
@@ -34,7 +35,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -59,6 +60,10 @@ def require_current_schema(conn):
     if votes and not {"application_result", "abweichler_count"} <= votes:
         # Schema 12: the outcome and the Abweichler figures were computed by
         # each reader; they are written at persist from the cached reports.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    item_votes = {row[1] for row in conn.execute("PRAGMA table_info(agenda_item_votes)")}
+    if item_votes and "basis" not in item_votes:
+        # Schema 13: the links carried no basis; vote_links works it out from the cached reports.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns and not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='party_seats'").fetchone():
         # Schema 8: initialize() would add the seat tables empty and stamp version 9.
@@ -460,6 +465,10 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS agenda_item_votes (
           agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+          -- What the link rests on (vote_links.top_links): a shared Drucksache
+          -- printed under the TOP, one only a DIP Vorgang of the TOP holds, or
+          -- the unique title match.
+          basis TEXT NOT NULL CHECK (basis IN (%(link_bases)s)),
           PRIMARY KEY (agenda_item_id, vote_id)
         );
 
@@ -581,6 +590,7 @@ def initialize(conn: sqlite3.Connection) -> None:
             "context_states": _sql_list(politikfelder.CONTEXT_STATES),
             "document_states": _sql_list(antrag_text.DOCUMENT_STATES),
             "passage_states": _sql_list(antrag_text.PASSAGE_STATES),
+            "link_bases": _sql_list(vote_links.BASES),
         }
     )
     _migrate_mps_columns(conn)
@@ -1611,7 +1621,6 @@ def _stored_total(total: Mapping[str, Any]) -> tuple[int | None, int | None, int
 def persist_vote(
     conn: sqlite3.Connection,
     vote: dict[str, Any],
-    agenda_item_id: str | None,
     protocol_id: str,
     now: str,
 ) -> None:
@@ -1698,14 +1707,6 @@ def persist_vote(
             bool(vote.get("xlsx_ambiguous")),
         ),
     )
-    if agenda_item_id is not None:
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id)
-            VALUES (?, ?)
-            """,
-            (agenda_item_id, vote_id),
-        )
     conn.execute("DELETE FROM vote_fractions WHERE vote_id = ?", (vote_id,))
     conn.execute("DELETE FROM vote_members WHERE vote_id = ?", (vote_id,))
     conn.execute("DELETE FROM vote_documents WHERE vote_id = ?", (vote_id,))
@@ -1942,6 +1943,14 @@ def persist_report(
         raise ValueError("Report has no protocol.id")
 
     derive.require_vote_shape(report)
+    # The links are the rule's (vote_links), never a placement a cached report
+    # kept from an older rule or a carry-forward.
+    misplaced = vote_links.placement_errors(report)
+    if misplaced:
+        shown = "; ".join(misplaced[:3]) + (f"; and {len(misplaced) - 3} more" if len(misplaced) > 3 else "")
+        raise ValueError(f"Report {protocol.get('dokumentnummer') or protocol_id} places votes against the vote-link rule: "
+                         f"{shown}. Run vote_links.attribute_votes on it (an --offline --repersist does).")
+    vote_bases = vote_links.links(report)
     derive.check_sprechrollen([report])
     _warn_merged_redner_ids(report)
     with conn:
@@ -1974,21 +1983,19 @@ def persist_report(
             persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_contributions(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_withheld(conn, protocol_id, item, agenda_item_id, now)
-        for item, vote in report_vote_pairs:
-            agenda_item_id = None
-            if item is not None:
-                agenda_item_id = agenda_ids.get(source_index(item.get("index")))
-            persist_vote(conn, vote, agenda_item_id, protocol_id, now)
+        for _item, vote in report_vote_pairs:
+            persist_vote(conn, vote, protocol_id, now)
         # iter_report_votes deliberately yields one row per vote. A vote may
-        # still be cited under more than one TOP, so restore every source link.
-        for item in report.get("agenda_items") or []:
+        # still be cited under more than one TOP, so write every link.
+        for position, item in enumerate(report.get("agenda_items") or []):
             agenda_item_id = agenda_ids.get(source_index(item.get("index")))
             if agenda_item_id is None:
                 continue
             for vote in derive.item_votes(item):
+                vote_id = _vote_id(vote)
                 conn.execute(
-                    "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
-                    (agenda_item_id, _vote_id(vote)),
+                    "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, ?)",
+                    (agenda_item_id, vote_id, vote_bases[vote_id][position]),
                 )
         persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
         persist_vote_context(conn, report, vorgang_cache, now)

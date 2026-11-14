@@ -291,7 +291,7 @@ def seed_weeks(
                     vote_id = f"v{index + 1}{offset}"
                     _insert_vote(conn, vote_id, spec["date"], vote["title"], vote["yes"], vote["no"], now)
                     conn.execute(
-                        "INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
+                        "INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, 'drucksache_xml')",
                         (agenda_item_ids[vote["item"]], vote_id),
                     )
                     for rank, (fraction, leading) in enumerate((vote["leading"] or {}).items(), start=1):

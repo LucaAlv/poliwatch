@@ -105,6 +105,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
+import vote_links
 import dip_cache
 import abgeordnetenwatch as aw
 import derive
@@ -2089,9 +2090,11 @@ def reparse_cached_xml(
 ) -> int:
     """Re-read Reden and Beiträge of every cached report from its cached XML,
     where the XML exists, keeping the abgeordnetenwatch profiles its speakers
-    carry or that ``profiles_from`` (default: ``entries``) holds for them, and
-    interpret the report's votes again (what each was about and its outcome),
-    with the chair's announcements from that XML where it exists.
+    carry or that ``profiles_from`` (default: ``entries``) holds for them, place
+    the report's votes under their TOPs again (``vote_links.attribute_votes``,
+    after the re-parse, which can add or renumber TOPs), and interpret them again
+    (what each was about and its outcome), with the chair's announcements from
+    that XML where it exists.
     Returns how many reports it re-parsed."""
     # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
@@ -2110,6 +2113,7 @@ def reparse_cached_xml(
         if not document_number or not path.exists():
             # No XML to read the chair's announcements from: the votes are still
             # re-read from what the report holds, keeping what the XML once gave.
+            vote_links.attribute_votes(report)
             dip.interpret_report_votes(report, None)
             continue
         # By object: a re-parse that adds a TOP renumbers the items around it.
@@ -2130,6 +2134,7 @@ def reparse_cached_xml(
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
             attach_speaker_profiles(item, profiles.get(id(item), {}), by_redner_id)
+        vote_links.attribute_votes(report)
         dip.interpret_report_votes(report, parsed["vote_recommendations"])
         reparsed += 1
     return reparsed
@@ -2894,7 +2899,9 @@ def reuse_existing_dossier_enrichments(
     votes: bool,
     profiles: bool,
 ) -> None:
-    """Carry cached optional data forward when this update does not refresh it."""
+    """Carry cached optional data forward when this update does not refresh it.
+    Carried votes then go where ``vote_links`` puts them under this run's TOPs,
+    never where the cached report had them (review checklist class 2)."""
     carry_forward_vote_provenance(report, existing_report)
     if votes and not report.get("sitting_votes") and (existing_report or {}).get("sitting_votes"):
         report["sitting_votes"] = copy.deepcopy(existing_report["sitting_votes"])
@@ -2921,6 +2928,8 @@ def reuse_existing_dossier_enrichments(
 
         attach_speaker_profiles(item, speaker_profiles(previous))
 
+    if votes:
+        vote_links.attribute_votes(report)
     if not profiles:
         return
 
@@ -3452,6 +3461,8 @@ _COLUMN_SOURCE_DERIVED = {
     ("votes", "application_result"),
     ("votes", "abweichler_count"),
     ("vote_members", "abweichung"),
+    # What a vote's TOP link rests on (vote_links.top_links).
+    ("agenda_item_votes", "basis"),
     ("speeches", "sprechrolle"),
     ("speeches", "unattributed_char_count"),
     # The kind is decided by the parser from the sitting's wording and structure.
@@ -3498,7 +3509,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 19
+EXPORT_FORMAT = 20
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.

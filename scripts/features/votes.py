@@ -73,7 +73,7 @@ def render_result_badge(vote: dict[str, Any]) -> str:
 
 def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
     """Map a Drucksache number to (url, source) using the same XML/DIP objects
-    ``validate_dip_protocol.top_document_numbers`` already matched this vote
+    ``vote_links.top_links`` already matched this vote
     against, so a vote's ``document_numbers`` never need a second URL builder.
     The XML protocol is authoritative (footer: "Das XML-Protokoll ist
     maßgeblich") and wins over the DIP API when both name a URL for the number.

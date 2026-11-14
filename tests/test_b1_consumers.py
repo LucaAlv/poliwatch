@@ -72,7 +72,7 @@ class SittingVoteConsumerTests(unittest.TestCase):
         }
         report = {
             "protocol": {"dokumentnummer": "21/1", "datum": "2026-04-24"},
-            "agenda_items": [{"index": 1, "votes": [{**vote}]}],
+            "agenda_items": [{"index": 1, "votes": []}],  # the vote is linked to no TOP (vote_links), so only the sitting holds it
             "sitting_votes": [vote],
         }
         rows = _site_store_fixture.archive_rows([
@@ -107,6 +107,7 @@ class SittingVoteConsumerTests(unittest.TestCase):
         for item in report["agenda_items"]:
             item["votes"] = []
             item.pop("vote", None)
+        vote["document_numbers"] = []  # no number under any TOP: a sitting vote by vote_links
         report["sitting_votes"] = [vote]
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -147,6 +148,7 @@ class SittingVoteConsumerTests(unittest.TestCase):
         for item in report["agenda_items"]:
             votes.extend(item.get("votes") or [])
             item["votes"] = []
+        votes[0]["document_numbers"] = []  # no number under any TOP: a sitting vote by vote_links
         report["sitting_votes"] = votes[:1]
         html = pulse_html.render_html(report)
         self.assertIn('id="sitting-votes"', html)

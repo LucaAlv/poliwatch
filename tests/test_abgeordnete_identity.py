@@ -67,6 +67,7 @@ def report_with_speaker_and_vote() -> dict[str, Any]:
                 "item_index": 1,
                 "top_id": "TOP 1",
                 "heading": "Beratung",
+                "xml_drucksachen": [{"dokumentnummer": "21/100"}],  # shared with vote-1: vote_links places it here
                 "xml_speakers": [
                     {
                         "rede_id": "rede-1",
@@ -87,6 +88,7 @@ def report_with_speaker_and_vote() -> dict[str, Any]:
                         "id": "vote-1",
                         "date": "2026-01-01",
                         "title": "Namentliche Abstimmung",
+                        "document_numbers": ["21/100"],
                         "total": {"yes": 1, "no": 0, "abstain": 0, "absent": 0},
                         "members": [
                             {
@@ -115,7 +117,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         member.update(name="von Beispiel,\xa0Erika  Maria", faction="BÜNDNIS 90/DIE GRÜNEN")
         item["votes"][0]["detail_url"] = "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1"
         sitting_vote = copy.deepcopy(item["votes"][0])
-        sitting_vote.update(id="vote-2", title="Zweite Abstimmung")
+        sitting_vote.update(id="vote-2", title="Zweite Abstimmung", document_numbers=[])
         report["sitting_votes"] = [sitting_vote]
 
         def roster(conn):
@@ -161,6 +163,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         member["name"] = "von Beispiel, Erika"
         second = copy.deepcopy(report["agenda_items"][0]["votes"][0])
         second["id"] = "vote-2"
+        second["document_numbers"] = []  # a sitting vote: no number under any TOP
         report["sitting_votes"] = [second]
         conn = memory_conn()
         self.addCleanup(conn.close)
@@ -256,6 +259,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 elif case.startswith("different vote namesakes"):
                     second = copy.deepcopy(item["votes"][0])
                     second["id"] = "vote-2"
+                    second["document_numbers"] = []  # a sitting vote: no number under any TOP
                     second["members"][0]["profile_url"] += "-other"
                     report["sitting_votes"] = [second]
                     if case.endswith("with roster"):

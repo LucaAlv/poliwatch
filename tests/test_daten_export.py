@@ -1286,7 +1286,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 19)
+        self.assertEqual(manifest["export_format"], 20)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):

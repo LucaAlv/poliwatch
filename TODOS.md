@@ -192,22 +192,25 @@ Found by the code review of PR A (127e1c2) and PR B (fc1676e) of `docs/plans/wit
 
 ### Check that vote links are right
 
-**What:** A namentliche Abstimmung links to a Tagesordnungspunkt of its own Sitzung in one of two ways, both in `enrich_with_api` (`validate_dip_protocol.py` 4190–4196 and 4270–4287):
-- **Shared Drucksache.** The vote's Drucksachen overlap the Tagesordnungspunkt's: its XML Drucksachen plus the Drucksachen DIP links to its Vorgangspositionen. A vote can link to several Tagesordnungspunkte this way.
-- **Unique title.** A vote whose Drucksachen overlap no Tagesordnungspunkt of the Sitzung is matched by `title_matches` (2092) against each Tagesordnungspunkt's heading and linked Vorgang titles. It is linked only when exactly one Tagesordnungspunkt matches. The match is fuzzy: a substring in either direction, or at least 65% of the vote title's words longer than four letters.
+**What:** A namentliche Abstimmung links to a Tagesordnungspunkt of its own Sitzung in one of two ways. Since PR B of `docs/plans/vote-links-and-figures.md` (branch `claude/vote-link-attribution`, built 2026-11-14) one function, `scripts/vote_links.py`, applies the rule online (`enrich_with_api`), on replay (`reparse_cached_xml`, with and without XML) and after carry-forward, and persist refuses a report that disagrees with it:
+- **Shared Drucksache.** The vote's Drucksachen overlap the Tagesordnungspunkt's: those its XML prints under it plus those DIP links to its Vorgangspositionen, `mitberaten` Vorgänge included. A vote can link to several Tagesordnungspunkte this way.
+- **Unique title.** A vote whose Drucksachen overlap no Tagesordnungspunkt of the Sitzung is matched by `validate_dip_protocol.title_matches` against each Tagesordnungspunkt's heading and linked Vorgang titles. It is linked only when exactly one Tagesordnungspunkt matches. The match is fuzzy: a substring in either direction, or at least 65% of the vote title's words longer than four letters.
 
-Until 2026-11-15 this entry cited `match_roll_call_votes` (3355) as the rule. That helper does not ship: it has had no production caller since v0.10.0.0, and it has no title fallback (see "One module for the link between a namentliche Abstimmung and its Tagesordnungspunkt").
+`agenda_item_votes.basis` records the step: 174 `drucksache_xml`, 401 `drucksache_vorgang`, 15 `title` of the 590 links on the reference store.
 
-No test or gate checks that a link is right. Decision N10 (2026-11-09): review about 150 links before the first release:
-- all 13 votes linked to more than one TOP, six of them to 4 to 7 Haushalt TOPs (votes 894, 898, 960, 961, 979, 980);
-- all 84 TOPs with more than one vote;
-- 50 random plain links.
+Until 2026-11-15 this entry cited `match_roll_call_votes` (3355) as the rule. That helper did not ship: it had no production caller since v0.10.0.0 and no title fallback (see "One module for the link between a namentliche Abstimmung and its Tagesordnungspunkt"). PR B deletes it.
 
-Proposed on 2026-11-15, not yet decided by the owner: also review all 15 title links, which brings the total to about 165. They are votes 317, 369, 374, 432, 495, 514, 535, 595, 638, 703, 704, 758, 759, 805 and 863. Four of them (514, 535, 638, 863) carry no Drucksache at all, so for those the title is the only evidence there can be.
+No test or gate yet checks that a link is right. Decision N10 (2026-11-09), sized in the plan (owner decision 4, 2026-11-14, which includes all title links): review 329 links in about 155 units before the first release:
+- S1: all 13 votes linked to more than one TOP (47 links), ten of them Haushalt votes; six link to 4 to 7 Haushalt TOPs (votes 894, 898, 960, 961, 979, 980);
+- S2: all 84 TOPs with more than one vote (238 links);
+- S3: all 15 title links: votes 317, 369, 374, 432, 495, 514, 535, 595, 638, 703, 704, 758, 759, 805 and 863. Four of them (514, 535, 638, 863) carry no Drucksache at all, so for those the title is the only evidence there can be;
+- S4: 50 random plain links (34 Vorgang-only, 16 printed), seed recorded in the sheet.
 
-Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. Counted again on 2026-11-15 from the cached reports of the 718-sitting reference store: the same 590 links, 575 through a shared Drucksache and 15 through a unique title. Run the review with the N8 review once the 85 sittings are fetched, and add their multi-link and title cases. State in `DATA.md` what a link means: the same Sitzung and a shared Drucksache or, where no Drucksache is shared, a title that matches exactly one Tagesordnungspunkt. Neither means that this vote alone decided that TOP. Report how many reviewed links were right, fixed or flagged.
+Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. Counted again on 2026-11-15 from the cached reports of the 718-sitting reference store: the same 590 links, 575 through a shared Drucksache and 15 through a unique title. `scripts/vote_link_review.py` writes the sheet (`docs/plans/vote-links-review.tsv`). Run the review with the N8 review once the 85 sittings are fetched, and add their multi-link and title cases. A link means the TOP that dealt with the voted Vorlage, the most specific sub-item; it does not mean the vote alone settled that TOP (owner decision 1; `docs/data-methods.md`, "Abstimmungen und Tagesordnungspunkte"). Report how many reviewed links were right, fixed or flagged.
 
-**Open:** fix the matching rule or flag the single link. Recommended: fix the rule where a pattern explains the error, flag one-off cases on the vote page.
+**Decided (2026-11-14):** a pattern is fixed in the rule; a one-off wrong link is dropped and the vote page says so; an unsure link stays, flagged (owner decision 2). Gate: a release refuses a vote linked to two or more TOPs without a review row (decision 6). PR C carries all three.
+
+**For PR C:** the rule compares Drucksache numbers as plain strings, as the live rule always did, so a leading zero ("20/0301" against "20/301") shares nothing; `derive.canonical_document_number` would match them. Count such pairs on the store before changing it (a false negative, not covered by the review's sample). The sheet's `tally` column reads `several` for 138 of 329 rows, likely the chair's announcement plus the result annex; tell the reviewer, or keep only the Sitzungsverlauf match.
 
 **Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest errors: an amendment that shares a Drucksache with an unrelated TOP on the same day, and a fuzzy title match that binds a neighbouring TOP (review checklist class 7).
 
@@ -2109,6 +2112,8 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Effort:** S
 **Priority:** P2
 **Depends on:** None; best before or with "Check that vote links are right"
+
+**Status (2026-11-15):** PR B (`claude/vote-link-attribution`) delivers the module: `scripts/vote_links.py` takes the Tagesordnungspunkte and the votes and returns each link with its reason (`agenda_item_votes.basis`); `enrich_with_api`, the replay and the carry-forward call it, and `match_roll_call_votes` with its test is gone. Still open here: the candidate scan and detail fetch stay inside `enrich_with_api`, so its tests keep their patches; the decision on `find_roll_call_xlsx_url`.
 
 ### One link scheme for pages and anchors
 

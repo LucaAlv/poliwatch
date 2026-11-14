@@ -102,7 +102,7 @@ def make_output(
                     (vote_id, date, NOW, NOW),
                 )
                 conn.execute(
-                    "INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)", (items[number], vote_id)
+                    "INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, 'drucksache_xml')", (items[number], vote_id)
                 )
             conn.execute(
                 "INSERT INTO vote_fractions(vote_id, party_id, leading_vote, rank) VALUES (?, ?, ?, 1)",

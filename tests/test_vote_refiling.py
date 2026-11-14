@@ -244,7 +244,7 @@ class PersistTests(unittest.TestCase):
 
     def persisted(self, the_vote: dict) -> None:
         with self.conn:
-            pulse_store.persist_vote(self.conn, the_vote, protocol_id=None, agenda_item_id=None, now=NOW)
+            pulse_store.persist_vote(self.conn, the_vote, protocol_id=None, now=NOW)
 
     def rows(self, sql: str) -> list[tuple]:
         return [tuple(row) for row in self.conn.execute(sql)]

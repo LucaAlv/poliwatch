@@ -38,6 +38,7 @@ import derive
 import publication_state as publication
 import reviewed_units
 import speech_kinds
+import vote_links
 from stable_ids import source_index
 
 
@@ -3330,57 +3331,12 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     return enriched_vote
 
 
-def top_document_numbers(top: dict[str, Any], linked_drucksachen: list[dict[str, Any]]) -> set[str]:
-    numbers = {
-        str(doc.get("dokumentnummer"))
-        for doc in top.get("drucksachen", [])
-        if doc.get("dokumentnummer")
-    }
-    numbers.update(
-        str(doc.get("dokumentnummer"))
-        for doc in linked_drucksachen
-        if doc.get("dokumentnummer")
-    )
-    return numbers
-
-
 def _days_since(day: str) -> int | None:
     """Whole days from an ISO date to today (UTC); None for a date that does not exist."""
     try:
         return (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days
     except ValueError:
         return None
-
-
-def match_roll_call_votes(
-    top: dict[str, Any],
-    linked_drucksachen: list[dict[str, Any]],
-    candidates: list[dict[str, Any]],
-    cache: dict[str, dict[str, Any]],
-    errors: list[DipError] | None = None,
-) -> list[dict[str, Any]]:
-    """The roll-call votes whose Drucksachen overlap the TOP's.
-
-    With ``errors`` given, a failed detail fetch is appended there and the
-    votes fetched so far are still returned: a later failure must not discard
-    a vote that was fetched successfully. Without it the error propagates.
-    """
-    top_numbers = top_document_numbers(top, linked_drucksachen)
-    matches: list[dict[str, Any]] = []
-    for candidate in candidates:
-        vote_numbers = set(candidate.get("document_numbers") or [])
-        if top_numbers and vote_numbers and top_numbers & vote_numbers:
-            vote_id = str(candidate["id"])
-            if vote_id not in cache:
-                try:
-                    cache[vote_id] = fetch_roll_call_vote_detail(candidate)
-                except DipError as exc:
-                    if errors is None:
-                        raise
-                    errors.append(exc)
-                    break
-            matches.append(cache[vote_id])
-    return matches
 
 
 def configured_summary_provider(args: argparse.Namespace) -> str:
@@ -4158,8 +4114,6 @@ def enrich_with_api(
         return title_matches(top.get("heading"), position.get("titel"))
 
     enriched_tops: list[dict[str, Any]] = []
-    linked_titles_by_top: list[list[str]] = []
-    top_candidate_ids: list[set[str]] = []
     agenda_items = parsed_xml["agenda_items"]
     for top_index, top in enumerate(agenda_items, start=1):
         matching_positions = [position for position in positions if position_matches_top(position, top)]
@@ -4176,26 +4130,6 @@ def enrich_with_api(
             linked_drucksachen.extend(linked_drucksachen_for_vorgang(vorgang_id))
 
         linked_drucksachen = unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url"))
-        linked_titles_by_top.append(
-            list(dict.fromkeys(
-                str(title)
-                for title in [*(position.get("titel") for position in matching_positions), *(
-                    linked.get("titel")
-                    for position in matching_positions
-                    for linked in (position.get("mitberaten") or [])
-                )]
-                if title
-            ))
-        )
-        xml_and_linked_numbers = top_document_numbers(top, linked_drucksachen)
-        candidate_ids = {
-            str(candidate["id"])
-            for candidate in roll_call_candidates
-            if xml_and_linked_numbers and set(candidate.get("document_numbers") or [])
-            and xml_and_linked_numbers & set(candidate.get("document_numbers") or [])
-        }
-        top_candidate_ids.append(candidate_ids)
-        votes: list[dict[str, Any]] = []
 
         enriched_tops.append(
             {
@@ -4212,7 +4146,7 @@ def enrich_with_api(
                         "activities": matching_activities,
                     },
                 },
-                "votes": votes,
+                "votes": [],
             }
         )
         if progress and (top_index % 10 == 0 or top_index == len(agenda_items)):
@@ -4264,27 +4198,10 @@ def enrich_with_api(
         warnings.append("Mindestens ein XML-TOP mit Reden hatte keine passenden DIP-Aktivitäten im Seitenbereich.")
     if len(activities) >= 100:
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
-    # Some Bundestag list entries have no useful Drucksache reference. Try
-    # their existing title matcher against all TOPs and linked Vorgang titles,
-    # accepting only a unique result across the whole sitting.
-    candidate_by_id = {str(candidate["id"]): candidate for candidate in roll_call_candidates}
-    candidate_top_indices: dict[str, set[int]] = {
-        vote_id: {index for index, candidate_ids in enumerate(top_candidate_ids) if vote_id in candidate_ids}
-        for vote_id in candidate_by_id
-    }
-    for candidate in roll_call_candidates:
-        vote_id = str(candidate["id"])
-        if candidate_top_indices[vote_id]:
-            continue
-        matching_top_indices = [
-            index
-            for index, top in enumerate(enriched_tops)
-            if title_matches(top.get("heading"), candidate.get("title"))
-            or any(title_matches(title, candidate.get("title")) for title in linked_titles_by_top[index])
-        ]
-        if len(matching_top_indices) != 1:
-            continue
-        candidate_top_indices[vote_id].add(matching_top_indices[0])
+    # Which TOPs each listed vote belongs to: one rule (vote_links), here and on
+    # every replay. A candidate whose details then fail still counts as matched.
+    candidate_by_id = {derive.vote_identity(candidate): candidate for candidate in roll_call_candidates}
+    candidate_tops = vote_links.top_links(enriched_tops, candidate_by_id.values())
 
     # Fetch every candidate independently: one unavailable detail must not
     # prevent later candidates in the sitting from being preserved.
@@ -4302,16 +4219,17 @@ def enrich_with_api(
                 file=sys.stderr,
             )
             continue
-        vote = roll_call_cache[vote_id]
-        vote["protocol_id"] = protocol_id
-        for top_index in sorted(candidate_top_indices[vote_id]):
-            enriched_tops[top_index]["votes"].append(vote)
     for vote in roll_call_cache.values():
         vote["protocol_id"] = protocol_id
+    placed = vote_links.attribute_votes({
+        "agenda_items": enriched_tops,
+        "api_records": {"roll_call_vote_candidates": roll_call_candidates,
+                        "matched_roll_call_votes": list(roll_call_cache.values())},
+    })
+    sitting_votes = placed["sitting_votes"]
 
-    attributed_vote_ids = {vote_id for vote_id, indices in candidate_top_indices.items() if indices}
-    unmatched_candidates = [candidate for candidate in candidate_by_id.values() if str(candidate["id"]) not in attributed_vote_ids]
-    sitting_votes = [roll_call_cache[str(candidate["id"])] for candidate in unmatched_candidates if str(candidate["id"]) in roll_call_cache]
+    attributed_vote_ids = {vote_id for vote_id, tops in candidate_tops.items() if tops}
+    unmatched_candidates = [candidate for vote_id, candidate in candidate_by_id.items() if vote_id not in attributed_vote_ids]
     # Interpret each vote once from the evidence attributable to its documents
     # and the chair's announcements. A shared vote may have several TOP links;
     # no later TOP can erase evidence. A replay runs the same step.

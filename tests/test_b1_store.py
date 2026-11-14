@@ -30,6 +30,7 @@ class SittingVotePersistenceTests(unittest.TestCase):
             result_scope="proposition",
             procedure_type="ordinary",
         )
+        vote["document_numbers"] = []  # no number under any TOP: a sitting vote by vote_links
         self.report["sitting_votes"] = [vote]
 
         pulse_store.persist_report(self.conn, self.report)
@@ -52,6 +53,7 @@ class SittingVotePersistenceTests(unittest.TestCase):
         vote = self.report["agenda_items"][0]["votes"][0]
         vote["debate_url"] = "https://www.bundestag.de/dokumente/textarchiv/2024/kw11-debatte-123456"
         self.report["agenda_items"][1]["votes"] = [dict(vote)]
+        self.report["agenda_items"][1]["xml_drucksachen"] = [{"dokumentnummer": "20/123"}]  # shared with the vote: vote_links places it here too
         pulse_store.persist_report(self.conn, self.report)
         self.assertEqual(
             self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0],
@@ -60,17 +62,18 @@ class SittingVotePersistenceTests(unittest.TestCase):
 
         sparse = dict(vote)
         sparse.pop("debate_url")
-        pulse_store.persist_vote(self.conn, sparse, None, self.report["protocol"]["id"], "later")
+        pulse_store.persist_vote(self.conn, sparse, self.report["protocol"]["id"], "later")
         self.assertEqual(
             self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0],
             vote["debate_url"],
         )
-        pulse_store.persist_vote(self.conn, {**vote, "debate_url": None}, None, self.report["protocol"]["id"], "later")
+        pulse_store.persist_vote(self.conn, {**vote, "debate_url": None}, self.report["protocol"]["id"], "later")
         self.assertIsNone(self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0])
 
     def test_removed_sitting_vote_is_pruned_when_report_is_replaced(self):
         vote = self.report["agenda_items"][0]["votes"][0]
         self.report["agenda_items"][0]["votes"] = []
+        vote["document_numbers"] = []  # no number under any TOP: a sitting vote by vote_links
         self.report["sitting_votes"] = [vote]
         pulse_store.persist_report(self.conn, self.report)
         self.report["sitting_votes"] = []
@@ -82,6 +85,7 @@ class SittingVotePersistenceTests(unittest.TestCase):
     def test_duplicate_vote_keeps_each_top_link_while_stored_once(self):
         vote = self.report["agenda_items"][0]["votes"][0]
         self.report["agenda_items"][1]["votes"] = [dict(vote)]
+        self.report["agenda_items"][1]["xml_drucksachen"] = [{"dokumentnummer": "20/123"}]  # shared with the vote: vote_links places it here too
 
         pulse_store.persist_report(self.conn, self.report)
 
