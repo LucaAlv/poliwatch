@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.45.0.0] - 2026-11-15
+
+A vote is now linked to the Tagesordnungspunkte of its sitting by one rule, whether the build fetches the sitting online, replays it from the cache or carries an older report forward, and the store records why each link was made. The codebook says what a link means and that the links are not yet checked by hand. No link moves: a replay of the 718-sitting store keeps the same 590 links, and every report, dossier, recipe CSV and Fakt value stays equal.
+
+### Changed
+
+- **One rule links a vote to its TOPs.** A vote links to every TOP of its sitting that shares a Drucksache with it, printed in the Plenarprotokoll or held by a DIP Vorgang of the TOP; with no shared Drucksache, to the one TOP whose title it matches. The online build, the replay of cached reports and the carry-forward of an older report all place votes this way, so a cached placement never outlives the rule. Persist refuses a report whose placement disagrees.
+- **Each link says what it rests on.** `agenda_item_votes.basis` is `drucksache_xml` (174 of today's 590 links), `drucksache_vorgang` (401) or `title` (15).
+- **The codebook says what a link means.** `agenda_item_votes` points to the TOP under which the Bundestag dealt with the voted Vorlage, and says the links are not yet checked by hand against protocol and DIP, so a link can still hit a TOP that did not deal with it. The methods page gains a section on votes and Tagesordnungspunkte.
+- **Schema 14, export format 20.** A build store from before is refused with the instruction to rebuild it.
+
+### Added
+
+- **A review sheet for the vote links.** `scripts/vote_link_review.py` picks the links to check by hand from a store (three groups in full, plus a sample drawn with `--seed`) and writes them as a TSV sheet. It only reads the store.
+
 ## [0.44.0.0] - 2026-11-15
 
 Every reader of a vote's outcome and its Abweichler now reads one stored figure, the one the vote panel shows. The store keeps each vote's outcome, its Abweichler count and, per MdB, whether they deviated. The Fakt *Die meisten Abweichler der Woche*, recipe r3, the votes archive and its badge read those columns instead of recomputing them in SQL of their own. No figure moves: a replay of the 718-sitting store keeps all 619 outcomes, the 3,720 Abweichungen, every recipe CSV, every Fakt value, the archive and every dossier equal.
