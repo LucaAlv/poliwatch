@@ -240,12 +240,14 @@ def seed_store(path: Path) -> dict[str, Any]:
             )
             # speaker_mp (SPD) votes 'no' while their Fraktion's leading vote is
             # 'yes': one deviation. vote_only_mp (CDU/CSU) also deviates on v2.
+            # The seeded member lists are not whole, so abweichung is set as
+            # persist sets it for a group whose list adds up to its counts.
             conn.execute(
-                "INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'no')",
+                "INSERT INTO vote_members(vote_id, mp_id, party_id, vote, abweichung) VALUES ('v1', ?, ?, 'no', 1)",
                 (speaker_mp, party_spd),
             )
             conn.execute(
-                "INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v2', ?, ?, 'no')",
+                "INSERT INTO vote_members(vote_id, mp_id, party_id, vote, abweichung) VALUES ('v2', ?, ?, 'no', 1)",
                 (vote_only_mp, party_cdu),
             )
 

@@ -3448,6 +3448,10 @@ _COLUMN_SOURCE_DERIVED = {
     ("documents", "forderung_version"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
+    # derive.vote_outcome and the Abweichler rules, written at persist.
+    ("votes", "application_result"),
+    ("votes", "abweichler_count"),
+    ("vote_members", "abweichung"),
     ("speeches", "sprechrolle"),
     ("speeches", "unattributed_char_count"),
     # The kind is decided by the parser from the sitting's wording and structure.
@@ -3494,7 +3498,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 18
+EXPORT_FORMAT = 19
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3727,14 +3731,10 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "FROM vote_members vm\n"
             "JOIN votes v ON v.id = vm.vote_id\n"
             "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
-            "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
             "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "JOIN parties pa ON pa.id = vm.party_id\n"
-            "WHERE vm.vote IN ('yes', 'no')\n"
-            "  AND vf.leading_vote IN ('yes', 'no')\n"
-            "  AND vm.vote <> vf.leading_vote\n"
-            "  AND pa.name <> 'fraktionslos'\n"
+            "WHERE vm.abweichung = 1\n"
             "GROUP BY mc.canonical_id, wahlperiode, pa.name\n"
             "ORDER BY wahlperiode DESC, abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
             "LIMIT 5;"
@@ -3743,16 +3743,18 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "mp_id", "meaning": _MP_ID_MEANING, "align": "text", "hidden": True},
             {"name": "wahlperiode", "meaning": _WP_VOTE_MEANING, "align": "num"},
             {"name": "display_name", "meaning": _DISPLAY_NAME_MEANING, "align": "text", "link": "mp"},
-            {"name": "fraktion", "meaning": "Fraktion oder Gruppe laut Stimme (vote_members.party_id); Stimmen fraktionsloser Mitglieder sind ausgeschlossen.", "align": "text"},
+            {"name": "fraktion", "meaning": "Fraktion oder Gruppe laut Stimme (vote_members.party_id); Stimmen fraktionsloser Mitglieder und solcher ohne erkennbaren Zusammenschluss sind ausgeschlossen.", "align": "text"},
             {"name": "abweichungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit eigenem Ja/Nein entgegen dem Ja/Nein-Mehrheitsvotum der eigenen Fraktion oder Gruppe, je Person, Wahlperiode und Fraktion oder Gruppe.", "align": "num"},
         ),
         "depends_on": "votes",
         "caveat": "Je Wahlperiode gezählt, die jüngste zuerst.",
         "method": (
             "Gezählt werden unterschiedliche Abstimmungen je konsolidierter Person, Wahlperiode und Fraktion oder Gruppe, "
-            "nicht einzelne Stimmen; wer die Fraktion gewechselt hat, erscheint mit einer Zeile je Fraktion. Stimme und "
-            "Gruppensumme (vote_fractions) müssen beide vorliegen. Enthaltungen, nicht abgegebene Stimmen, Abstimmungen "
-            "ohne Ja/Nein-Mehrheitsvotum und fraktionslose Mitglieder zählen nicht. Reihenfolge: Wahlperiode absteigend, "
+            "nicht einzelne Stimmen; wer die Fraktion gewechselt hat, erscheint mit einer Zeile je Fraktion. Gezählt wird "
+            "vote_members.abweichung = 1: Die Stimmen der Namensliste müssen die Gruppensumme (vote_fractions) genau "
+            "ergeben; fehlt einer Gruppe ein Mitglied oder hat sie keine Summe, zählt in ihr niemand (abweichung NULL). "
+            "Enthaltungen, nicht abgegebene Stimmen, Abstimmungen ohne Ja/Nein-Mehrheitsvotum, fraktionslose Mitglieder "
+            "und Mitglieder ohne erkennbaren Zusammenschluss zählen nicht. Reihenfolge: Wahlperiode absteigend, "
             "dann Abweichungen absteigend, dann Anzeigename, Personenkennung und Fraktion. " + _WP_LIMIT_METHOD
         ),
     },
@@ -6232,9 +6234,11 @@ def votes_archive_rows(database_path: Path) -> list[dict[str, Any]]:
 
     The store is read once (``votes_feature.stored_votes``) and each vote runs
     through the rules the dossier panel runs (plan R5): ``derive.merge_fractions``
-    and ``_fraction_position``, ``derive.vote_abweichler_count``,
-    ``_vote_procedure_type``, ``politikfelder.shown`` on the stored tags, and the
-    item's links through ``votes_feature.document_source_links``. With no store
+    and ``_fraction_position``, ``_vote_procedure_type``, ``politikfelder.shown``
+    on the stored tags, and the item's links through
+    ``votes_feature.document_source_links``. The Abweichler count and the outcome
+    are the persisted ``votes.abweichler_count`` and ``votes.application_result``,
+    written with the derive functions the panel calls. With no store
     file the archive is empty, as the Fakten pages are; ``main`` refuses an
     offline render without a store before any page is written."""
     if not database_path.exists():
@@ -6263,7 +6267,7 @@ def votes_archive_rows(database_path: Path) -> list[dict[str, Any]]:
             "document_chambers": votes_feature.document_source_chambers(item) if item else {},
             "fraction_positions": fraction_positions,
             "procedure_type": _vote_procedure_type(vote, item, entry.sitting_documents),
-            "abweichler": derive.vote_abweichler_count(vote),
+            "abweichler": vote["abweichler_count"],
             # The vote's own panel (D9), on the dossier the build writes for the
             # sitting under the same slug (report_paths).
             "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,

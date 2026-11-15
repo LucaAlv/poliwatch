@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.44.0.0] - 2026-11-15
+
+Every reader of a vote's outcome and its Abweichler now reads one stored figure, the one the vote panel shows. The store keeps each vote's outcome, its Abweichler count and, per MdB, whether they deviated. The Fakt *Die meisten Abweichler der Woche*, recipe r3, the votes archive and its badge read those columns instead of recomputing them in SQL of their own. No figure moves: a replay of the 718-sitting store keeps all 619 outcomes, the 3,720 Abweichungen, every recipe CSV, every Fakt value, the archive and every dossier equal.
+
+### Changed
+
+- **One stored outcome per vote.** `votes.application_result` holds the outcome after inversion and scope (330 accepted, 269 rejected, 20 unknown), written at persist by the rule the panel uses. The archive badge and the SQL snippet in the project documentation read it.
+- **One stored Abweichler count per vote, and a flag per MdB.** `votes.abweichler_count` and `vote_members.abweichung` are written at persist and rewritten when two parties are merged. Recipe r3, the Fakt *Die meisten Abweichler der Woche* (metric version 1 → 2) and the archive read them. Nobody in a Fraktion whose member list does not add up to its counts, and nobody in Unbekannt, counts as an Abweichler. No vote in today's store has such a group.
+- **The store gate checks the count against the flags.** `validate_store_gate.py` fails when a vote's `abweichler_count` differs from the sum of its members' `abweichung`.
+- **Schema 13, export format 19.** A build store from before is refused with the instruction to rebuild it. The README, the data dictionary, the methods page and the stable-ID notes describe the three columns.
+
 ## [0.43.0.0] - 2026-11-15
 
 A release can no longer publish data the coverage bar has not cleared, and its list of withheld Reden must match the rows a reader downloads. Stale cached reports say why they are stale. The store gate catches two more ways withheld Reden could go wrong. No figure moves: a replay of the 718-sitting store leaves every table, value and Fakt equal.

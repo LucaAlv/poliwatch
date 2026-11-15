@@ -793,6 +793,29 @@ def vote_abweichler_count(vote: Mapping[str, Any], groups: Mapping[str, Mapping[
     return sum(len(group["members"]) for group in groups.values())
 
 
+def vote_member_abweichungen(vote: Mapping[str, Any], groups: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, int | None]:
+    """Each member's Abweichung, by ``vote_member_identity``, as persist stores
+    it in ``vote_members.abweichung``: 1 for a member ``vote_abweichler`` names,
+    0 for any other member of a complete group (a tie or an Enthaltung
+    Mehrheitsvotum included, where no Stimme is one), None where nobody can be
+    named: the member's group is partial or has no fraction row, or the member is
+    fraktionslos or Unbekannt. Where ``vote_abweichler_count`` is a number, the
+    1s add up to it. ``groups`` is ``vote_abweichler(vote)``, passed by a caller
+    that already has it."""
+    groups = vote_abweichler(vote) if groups is None else groups
+    named = {
+        vote_member_identity(member)
+        for group in groups.values() if group["state"] == "complete"
+        for member in group["members"]
+    }
+    flags: dict[str, int | None] = {}
+    for member in vote.get("members") or []:
+        key = vote_member_identity(member)
+        group = groups.get(member_group(member))
+        flags[key] = None if group is None or group["state"] != "complete" else int(key in named)
+    return flags
+
+
 _VOTE_SUBJECT_RECOMMENDATION = re.compile(r"^\W*(?:Beschreibung:\s*)?(?:(?:Zweite|Dritte|Erste)\s+)?Beschlussempfehlung", re.I)
 _VOTE_SUBJECT_TEMPLATE = re.compile(
     r"^\W*(?:Beschreibung:\s*)?(?:Gesetzentwurf|Gesetzesentwurf|Entwurf|Antrag|Änderungsantrag|Entschließungsantrag|Geschäftsordnungsantrag|Artikel|Teile)\b",

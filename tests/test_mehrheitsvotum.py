@@ -141,21 +141,38 @@ class StaleCachedReportTests(unittest.TestCase):
 
 
 class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
-    """Every reader of vote_fractions.leading_vote filters on yes/no, so a NULL
-    row is skipped, not counted."""
+    """Every reader of the Abweichung counts the persisted
+    ``vote_members.abweichung``, which is 0 where the Mehrheitsvotum is NULL
+    and for nobody in fraktionslos."""
 
-    def store(self, tmp: str) -> sqlite3.Connection:
+    #: SPD ties (no Mehrheitsvotum), nobody in the CDU/CSU voted, the FDP's
+    #: Mehrheitsvotum is Ja and fraktionslos has a "minority".
+    BASE = [
+        ("Sara SPD", "SPD", "yes"), ("Sven SPD", "SPD", "no"),
+        ("Carl CDU", "CDU/CSU", "absent"), ("Cora CDU", "CDU/CSU", "absent"),
+        ("Fia FDP", "FDP", "yes"), ("Fynn FDP", "FDP", "yes"),
+        ("Frieda Frei", "fraktionslos", "yes"), ("Fritz Frei", "fraktionslos", "yes"), ("Fred Frei", "fraktionslos", "no"),
+    ]
+
+    @staticmethod
+    def roll_call(vote_id: str, rows: list[tuple[str, str, str]]) -> dict:
+        members = [{"name": name, "faction": faction, "vote": stimme} for name, faction, stimme in rows]
+        for member in members:
+            # One profile per name, so a member who changes Fraktion stays one MdB.
+            member["profile_url"] = f"https://www.bundestag.de/abgeordnete/{member['name'].replace(' ', '-').lower()}"
+        fractions = fractions_of(members)
+        return {
+            "id": vote_id, "title": f"Abstimmung {vote_id}", "date": "2024-05-15",
+            "detail_url": f"https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id={vote_id}",
+            "document_numbers": [], "fractions": fractions, "members": members,
+            "total": {key: sum(row["counts"][key] for row in fractions) for key in derive.VOTE_COUNT_KEYS},
+        }
+
+    def store(self, tmp: str, *votes: list[tuple[str, str, str]]) -> sqlite3.Connection:
         conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
         pulse_store.initialize(conn)
-        report = stale_report()
-        # A Mitglied of every Fraktion, each voting Ja.
-        vote = report["agenda_items"][0]["votes"][0]
-        vote["members"] = [
-            {"name": f"Mitglied {party}", "faction": party, "vote": "yes"} for party in ("SPD", "CDU/CSU", "FDP")
-        ] + [{"name": "Frieda Frei", "faction": "fraktionslos", "vote": "no"}]
-        vote["fractions"].append(
-            {"name": "fraktionslos", "counts": {"yes": 0, "no": 1, "abstain": 0, "absent": 0}, "total": 1}
-        )
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        report["agenda_items"][0]["votes"] = [self.roll_call(str(901 + index), rows) for index, rows in enumerate(votes)]
         with conn:
             pulse_store.persist_report(conn, report)
         return conn
@@ -170,23 +187,17 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
 
     def test_r3_abweichler_skips_a_null_mehrheitsvotum_and_excludes_fraktionslos(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            conn = self.store(tmp)
+            conn = self.store(tmp, self.BASE)
             try:
-                # SPD and CDU/CSU have none (tie / nobody voted), FDP's is Ja
-                # and its member voted Ja, fraktionslos has Nein and its member
-                # voted Nein: nobody deviates.
+                # The SPD's Nein has no Mehrheitsvotum to break, the FDP agrees
+                # on Ja, and fraktionslos is no Zusammenschluss: nobody deviates.
                 self.assertEqual(self.r3_rows(conn), [])
-                # A fraktionslos MdB voting against the pseudo-Fraktion's own
-                # "Mehrheitsvotum" is no Abweichung: no Zusammenschluss.
-                conn.execute(
-                    "UPDATE vote_members SET vote = 'yes' WHERE party_id = "
-                    "(SELECT id FROM parties WHERE name = 'fraktionslos')"
-                )
-                self.assertEqual(self.r3_rows(conn), [])
-                # ...whereas the same deviation in a real Fraktion counts.
-                conn.execute(
-                    "UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'FDP')"
-                )
+            finally:
+                conn.close()
+        with tempfile.TemporaryDirectory() as tmp:
+            # ...whereas a Nein against the FDP's Ja counts.
+            conn = self.store(tmp, [*self.BASE, ("Fiete FDP", "FDP", "yes"), ("Flo FDP", "FDP", "no")])
+            try:
                 self.assertEqual([row[3:] for row in self.r3_rows(conn)], [("FDP", 1)])
             finally:
                 conn.close()
@@ -194,22 +205,15 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
     # Value: protects=a Fraktion switcher's deviations are counted per Fraktion with a fixed row order, each row naming the Fraktion it was measured against; fails_when=r3 groups by person only (an arbitrary vote row names the Fraktion) or the order has non-unique ties; why_new=every fixture member had one Fraktion; seam=none; no_claim=a real switcher in the reference store
     def test_r3_counts_a_fraktion_switcher_once_per_fraktion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            conn = self.store(tmp)
+            # Wanda votes Nein against the FDP's Ja, then, in the SPD, against its Ja.
+            conn = self.store(
+                tmp,
+                [("Fia FDP", "FDP", "yes"), ("Fynn FDP", "FDP", "yes"), ("Wanda Wechsel", "FDP", "no")],
+                [("Sara SPD", "SPD", "yes"), ("Sven SPD", "SPD", "yes"), ("Wanda Wechsel", "SPD", "no")],
+            )
             try:
-                conn.execute("UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'FDP')")
-                # A second vote in which the same person sits in the SPD,
-                # whose Mehrheitsvotum is Ja, and votes Nein again.
-                for table in ("votes", "vote_fractions", "vote_members"):
-                    key = "id" if table == "votes" else "vote_id"
-                    conn.execute(f"CREATE TEMP TABLE copy_{table} AS SELECT * FROM {table}")
-                    conn.execute(f"UPDATE copy_{table} SET {key} = {key} || '-b'")
-                    conn.execute(f"INSERT INTO {table} SELECT * FROM copy_{table}")
-                spd = "(SELECT id FROM parties WHERE name = 'SPD')"
-                fdp = "(SELECT id FROM parties WHERE name = 'FDP')"
-                conn.execute(f"UPDATE vote_fractions SET leading_vote = 'yes' WHERE vote_id LIKE '%-b' AND party_id = {spd}")
-                conn.execute(f"UPDATE vote_members SET party_id = {spd} WHERE vote_id LIKE '%-b' AND party_id = {fdp}")
                 rows = self.r3_rows(conn)
-                self.assertEqual([row[3:] for row in rows], [("FDP", 1), ("SPD", 1)])
+                self.assertEqual([row[2:] for row in rows], [("Wanda Wechsel", "FDP", 1), ("Wanda Wechsel", "SPD", 1)])
                 self.assertEqual(rows[0][0], rows[1][0])
             finally:
                 conn.close()
@@ -227,40 +231,31 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
         import facts
 
         metric = facts.REGISTRY_BY_ID["meiste-abweichler"]
-        with tempfile.TemporaryDirectory() as tmp:
-            conn = self.store(tmp)
-            try:
-                # Everyone in a real Fraktion with a NULL leading_vote is
-                # ignored; FDP's members agree with Ja.
-                rows = conn.execute(metric["sql"]).fetchall()
-                self.assertEqual([row["value"] for row in rows], [0])
-                conn.execute(
-                    "UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'SPD')"
-                )
-                # SPD has no Mehrheitsvotum (tie): its Nein-voter is no Abweichler.
-                self.assertEqual([row["value"] for row in conn.execute(metric["sql"]).fetchall()], [0])
-                conn.execute(
-                    "UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'FDP')"
-                )
-                self.assertEqual([row["value"] for row in conn.execute(metric["sql"]).fetchall()], [1])
-            finally:
-                conn.close()
+        cases = [
+            # The SPD's Nein breaks no Mehrheitsvotum (a tie), the FDP agrees.
+            (self.BASE, 0),
+            # A Nein against the FDP's Ja counts.
+            ([*self.BASE, ("Fiete FDP", "FDP", "yes"), ("Flo FDP", "FDP", "no")], 1),
+        ]
+        for rows, expected in cases:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as tmp:
+                conn = self.store(tmp, rows)
+                try:
+                    self.assertEqual([row["value"] for row in conn.execute(metric["sql"]).fetchall()], [expected])
+                finally:
+                    conn.close()
 
 
 class AbweichlerParityTests(unittest.TestCase):
-    """C1: ``derive.vote_abweichler`` names the same (vote, MdB) pairs a per-vote
-    SQL with the r3 predicate finds in the store. r3 itself counts per MdB and Fraktion."""
+    """C1: ``derive.vote_abweichler`` names the same (vote, MdB) pairs the store
+    holds with ``vote_members.abweichung = 1``, r3's predicate. r3 itself counts per MdB and Fraktion."""
 
     R3_PAIRS = (
         "SELECT vm.vote_id, m.display_name, p.name\n"
         "FROM vote_members vm\n"
-        "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
         "JOIN mps m ON m.id = vm.mp_id\n"
         "JOIN parties p ON p.id = vm.party_id\n"
-        "WHERE vm.vote IN ('yes', 'no')\n"
-        "  AND vf.leading_vote IN ('yes', 'no')\n"
-        "  AND vm.vote <> vf.leading_vote\n"
-        "  AND p.name <> 'fraktionslos'"
+        "WHERE vm.abweichung = 1"
     )
 
     @staticmethod

@@ -299,11 +299,22 @@ def seed_weeks(
                             "INSERT INTO vote_fractions(vote_id, party_id, leading_vote, rank) VALUES (?, ?, ?, ?)",
                             (vote_id, party_id(fraction), leading, rank),
                         )
+                    # The Abweichung figures as persist writes them for groups
+                    # whose member list is whole (derive.vote_member_abweichungen):
+                    # the seeded lists stand for the whole group.
+                    flags = []
                     for name, member_party, cast in vote["members"]:
+                        leading = (vote["leading"] or {}).get(member_party, "missing")
+                        flag = (None if leading == "missing" or member_party in derive.NO_ZUSAMMENSCHLUSS
+                                else int(leading in {"yes", "no"} and cast in {"yes", "no"} and cast != leading))
+                        flags.append(flag)
                         conn.execute(
-                            "INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES (?, ?, ?, ?)",
-                            (vote_id, mp_id(name, member_party), party_id(member_party), cast),
+                            "INSERT INTO vote_members(vote_id, mp_id, party_id, vote, abweichung) VALUES (?, ?, ?, ?, ?)",
+                            (vote_id, mp_id(name, member_party), party_id(member_party), cast, flag),
                         )
+                    if vote["members"]:
+                        conn.execute("UPDATE votes SET abweichler_count = ? WHERE id = ?",
+                                     (sum(flag or 0 for flag in flags), vote_id))
                     vote_ids.append(vote_id)
                 for offset, (yes, no, title) in enumerate(spec.get("unlinked_votes") or []):
                     vote_id = f"u{index + 1}{offset}"

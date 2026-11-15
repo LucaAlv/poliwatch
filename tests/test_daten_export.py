@@ -1286,7 +1286,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 18)
+        self.assertEqual(manifest["export_format"], 19)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1958,10 +1958,8 @@ class RecipeRepresentativeTests(unittest.TestCase):
             CREATE TABLE agenda_items (id TEXT PRIMARY KEY, protocol_id TEXT);
             CREATE TABLE agenda_item_votes (agenda_item_id TEXT, vote_id TEXT);
             CREATE TABLE speeches (mp_id TEXT, protocol_id TEXT, char_count INTEGER);
-            CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT, party_id TEXT, vote TEXT);
-            CREATE TABLE vote_fractions (vote_id TEXT, party_id TEXT, leading_vote TEXT);
+            CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT, party_id TEXT, vote TEXT, abweichung INTEGER);
             INSERT INTO parties VALUES ('spd', 'SPD');
-            INSERT INTO vote_fractions VALUES ('v1', 'spd', 'yes');
             INSERT INTO protocols VALUES ('pp-1', '21/1');
             INSERT INTO votes VALUES ('v1', 'pp-1');
             """
@@ -1970,7 +1968,7 @@ class RecipeRepresentativeTests(unittest.TestCase):
             conn.execute("INSERT INTO mps VALUES (?, ?, ?, ?, 'spd', ?, ?)", (mp_id, identity, person, name, is_mdb, xml))
             conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1)", (mp_id, person))
             conn.execute("INSERT INTO speeches VALUES (?, 'pp-1', 100)", (mp_id,))
-            conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no')", (mp_id,))
+            conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no', 1)", (mp_id,))
         try:
             return {
                 recipe_id: {row[0]: row[1:] for row in conn.execute(b.RECIPES_BY_ID[recipe_id]["sql"])}

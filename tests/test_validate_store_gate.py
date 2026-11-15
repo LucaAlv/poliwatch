@@ -318,7 +318,7 @@ class IntegrityTest(unittest.TestCase):
 
 class WithheldGateTest(unittest.TestCase):
     def persisted_store(self, tmp: str) -> Path:
-        """A one-sitting schema 12 store with R1 stored and R2 withheld."""
+        """A one-sitting store at the current schema, with R1 stored and R2 withheld."""
         refused = (
             '<rede id="R2"><p klasse="redner"><redner id="R2-r"><name><nachname>Zwei</nachname><fraktion>SPD</fraktion></name></redner></p>'
             '<p klasse="J">Rede von Zwei.</p><p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>Grüne</fraktion></name></redner></p>'
@@ -339,7 +339,7 @@ class WithheldGateTest(unittest.TestCase):
         conn.close()
         return path
 
-    # Value: protects=the gate flags a withheld Rede whose rede_id is also a stored Rede; fails_when=a withheld Rede reaches speeches unnoticed or the check is dropped; why_new=the withheld tables are new in schema 12; seam=none
+    # Value: protects=the gate flags a withheld Rede whose rede_id is also a stored Rede; fails_when=a withheld Rede reaches speeches unnoticed or the check is dropped; why_new=the withheld tables are new in schema 12; seam=none  # pregate-literal: SCHEMA_VERSION=12 the schema that added the withheld tables, on purpose
     def test_flags_a_withheld_rede_that_is_also_counted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = self.persisted_store(tmp)
@@ -414,9 +414,9 @@ class WithheldGateTest(unittest.TestCase):
             conn.close()
 
     # Value: protects=run_gate counts the owner's store before the replay that upgrades it, so store_counts reads a store
-    #   without the schema 12 withheld tables as None instead of crashing, and counts them once present;
+    #   without the schema 12 withheld tables as None instead of crashing, and counts them once present;  # pregate-literal: SCHEMA_VERSION=12 the schema that added the withheld tables, on purpose
     #   fails_when=store_counts queries withheld_units unconditionally (OperationalError on a schema 11 store, Codex P1 at ship);
-    #   why_new=no test counted a store from before schema 12; seam=none
+    #   why_new=no test counted a store from before schema 12; seam=none  # pregate-literal: SCHEMA_VERSION=12 the schema that added the withheld tables, on purpose
     def test_counts_a_store_from_before_the_withheld_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = self.persisted_store(tmp)

@@ -877,7 +877,9 @@ class RepairedReportsTests(unittest.TestCase):
         self.repersist()
         conn = sqlite3.connect(self.database)
         with conn:
-            conn.execute("UPDATE votes SET inverted = NULL, inversion_source = NULL, inversion_excerpt = NULL WHERE id = '906'")
+            # As persist writes a vote with no inversion: the outcome is result_raw.
+            conn.execute("UPDATE votes SET inverted = NULL, inversion_source = NULL, inversion_excerpt = NULL, "
+                         "application_result = result_raw WHERE id = '906'")
         conn.close()
         self.assertIsNone(derive.abstimmungsgegenstand({"title": VOTES["906"]["title"]}))
         archive = build.render_votes_archive_index(build.votes_archive_rows(self.database))

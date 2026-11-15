@@ -337,6 +337,21 @@ def withheld_without_redner_id(database_path: Path) -> list[str]:
         conn.close()
 
 
+def abweichler_count_mismatches(database_path: Path) -> list[str]:
+    """Up to five votes whose persisted Abweichler count is not the sum of their
+    members' persisted Abweichungen. Persist writes both from one derive call,
+    so a difference is a registry merge folding two listed members into one
+    row, or a writer that skipped one of the columns."""
+    conn = _open_readonly(database_path)
+    try:
+        return [f"{vote_id} abweichler_count {count}, SUM(abweichung) {total}" for vote_id, count, total in conn.execute(
+            "SELECT v.id, v.abweichler_count, COALESCE(SUM(vm.abweichung), 0) FROM votes v "
+            "LEFT JOIN vote_members vm ON vm.vote_id = v.id WHERE v.abweichler_count IS NOT NULL "
+            "GROUP BY v.id HAVING v.abweichler_count <> COALESCE(SUM(vm.abweichung), 0) ORDER BY v.id LIMIT 5")]
+    finally:
+        conn.close()
+
+
 def _store_identity(database_path: Path) -> dict[str, Any]:
     status = database_path.stat()
     return {"sha256": _sha256(database_path), "bytes": status.st_size, "mtime_ns": status.st_mtime_ns, "inode": status.st_ino}
@@ -550,6 +565,8 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         checks["no_withheld_rede_counted"] = not receipt["withheld_also_counted"]
         receipt["withheld_without_redner_id"] = withheld_without_redner_id(database_path)
         checks["every_withheld_rede_has_a_redner_id"] = not receipt["withheld_without_redner_id"]
+        receipt["abweichler_count_mismatches"] = abweichler_count_mismatches(database_path)
+        checks["abweichler_count_matches_members"] = not receipt["abweichler_count_mismatches"]
         receipt["counts"] = store_counts(database_path)
         receipt["counts_vs_2026_10_05"] = {
             key: {"old": old, "new": receipt["counts"][key], "delta": receipt["counts"][key] - old}
