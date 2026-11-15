@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.1.0] - 2026-11-15
+
+Ten units that would have been counted wrongly in two sittings that are still to be acquired, 18/158 and 19/18, are now withheld. A review of the 82 sittings that come back with the next acquisition found them in the protocols' XML. Today's store holds neither sitting, so no figure in it moves. Once the two sittings are acquired, they count 10 fewer Reden and 8 fewer Zwischenfragen than the parser alone would give, and their withheld list grows by 10.
+
+### Fixed
+
+- **18/158: Zwischenfragen printed as their own `<rede>`.** In this sitting the XML starts a new `<rede>` for 11 Zwischenfragen. Seven of them would have counted as a Rede of the asker. In five of those, the Redner's answer and the rest of their Rede sit inside the asker's `<rede>` and would have counted as a Zwischenfrage. After two others, the Redner's answer follows as a further `<rede>` and would have counted as a second Rede of the same Redner. All nine units are withheld, each with its reason.
+- **19/18: a whole Rede inside another.** Katharina Dröge's Rede is printed inside Klaus Ernst's `<rede>` after the chair calls her name ("Als Nächstes für Bündnis 90/Die Grünen …"), so it would have counted as one Zwischenfrage of Ernst's Rede. The unit the parser emits, Ernst's Rede with Dröge's inside, is withheld.
+- **The figures, on the 82 sittings' XML:** withheld Reden 94 → 104, stored Reden 6,451 → 6,441, Zwischenfragen 498 → 490. Each entry names its Redner-ID, and the build refuses a sitting whose source names another owner.
+
 ## [0.46.0.0] - 2026-11-15
 
 A release can now be reviewed against the Bundestag's own corpus. `docs/release-review.md` lists the steps the owner runs on a release before it becomes the stable one, and `scripts/compare_cpp_bt.py` runs the step that compares every sitting with CPP-BT, the corpus of the Plenarprotokolle on Zenodo. Nothing in the build, the release script or the site changes: a replay of the 718-sitting store moves no figure, and no export, page or schema differs.
