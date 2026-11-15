@@ -9,6 +9,8 @@
     "scripts/release_changes.py": ["tests/test_release_changes.py", "tests/test_publish_dip_pulse_data.py"],
     "scripts/release_version.py": ["tests/test_release_version.py"],
     "CITATION.cff": ["tests/test_citation_file.py"],
+    "scripts/compare_cpp_bt.py": ["tests/test_compare_cpp_bt.py"],
+    "scripts/cpp_bt_known_differences.tsv": ["tests/test_compare_cpp_bt.py"],
     "VERSION": ["tests/test_bills.py"],
     ".github/workflows/ci.yml": ["tests/test_bills.py"],
     "scripts/vote_links.py": [

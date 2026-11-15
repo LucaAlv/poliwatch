@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.0.0] - 2026-11-15
+
+A release can now be reviewed against the Bundestag's own corpus. `docs/release-review.md` lists the steps the owner runs on a release before it becomes the stable one, and `scripts/compare_cpp_bt.py` runs the step that compares every sitting with CPP-BT, the corpus of the Plenarprotokolle on Zenodo. Nothing in the build, the release script or the site changes: a replay of the 718-sitting store moves no figure, and no export, page or schema differs.
+
+### Added
+
+- **A release review checklist.** `docs/release-review.md` has six steps: coverage per year, the figures that moved since the last stable release, spot checks against the protocols, the comparison with CPP-BT, the claims on the Daten page, and the verdict. It says when a release is stable, and that a bug found in review is fixed in a new main release, never patched into the candidate.
+- **A per-sitting comparison with CPP-BT.** `scripts/compare_cpp_bt.py` joins our Reden to CPP-BT's by `rede_id` and writes a TSV: one row per sitting, one per difference (an id only CPP-BT has, a surname or Fraktion that differs, a word-to-token ratio far from its sitting's median) and a summary with the SHA-256 of both inputs. It uses only the standard library and imports nothing of this project, so a bug in the project cannot hide in its own check. It exits 2, with a message, when an input is unreadable or nothing could be compared, so a changed CPP-BT format cannot read as a pass. `scripts/cpp_bt_known_differences.tsv` lists the 96 differences already read by hand, each with a reason.
+- **The first run, on the reference store.** `docs/release-reviews/cpp-bt-first-run-2026-11-14.md` records it: 718 sittings, no id of ours missing from CPP-BT in a shared sitting, and CPP-BT's side matching the research note of 2026-11-07 exactly. The token-ratio thresholds (15% and 50 tokens) are first values for the owner to sign off.
+
 ## [0.45.0.0] - 2026-11-15
 
 A vote is now linked to the Tagesordnungspunkte of its sitting by one rule, whether the build fetches the sitting online, replays it from the cache or carries an older report forward, and the store records why each link was made. The codebook says what a link means and that the links are not yet checked by hand. No link moves: a replay of the 718-sitting store keeps the same 590 links, and every report, dossier, recipe CSV and Fakt value stays equal.
