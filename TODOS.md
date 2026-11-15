@@ -1149,7 +1149,7 @@ The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia He
 
 **Deferred from the PR A code review (2026-11-15), none a wrong figure today:**
 1. **Replay comparer.** `scripts/compare_store_values.py` compares r3's rows but not `votes.application_result`, `votes.abweichler_count` or `vote_members.abweichung`, so the README recipe "Validate a data correction" cannot show these columns moving (PR C, the T4 sittings). Add them, old and new per vote.
-2. **Registry fold.** `persist_vote` counts Abweichler from the report's members keyed by `derive.vote_member_identity`, but `registry.bind` can keep two identity keys on one `mps` record; `ON CONFLICT(vote_id, mp_id)` then folds them into one row and the gate check `abweichler_count_matches_members` refuses the store. 0 such votes on the replayed store (3,720 = 3,720); if the gate ever fires, the fix is in the fold, not the gate.
+2. **Registry fold.** `persist_vote` counts Abweichler from the report's members keyed by `derive.vote_member_identity`, but `registry.bind` can keep two identity keys on one `mps` record; `ON CONFLICT(vote_id, mp_id)` then folds them into one row and the gate check `abweichler_count_matches_members` refuses the store. The ship's Codex pass (2026-11-15) found the quieter variant: when the folded members all agree, the count is 0 = SUM(abweichung), so the gate passes, yet the stored group no longer adds up to its counts and a re-derive from the stored rows gives NULL. 0 such votes on the replayed store: re-deriving all 619 votes from their stored rows gives every persisted count and flag. Fix: derive the figures from the rows after the fold (or refuse a fold that merges two members of one vote), not in the gate.
 3. **Badge source by key presence.** `features.votes.render_result_badge` reads `application_result` only where the dict has the key, else recomputes; a store reader that forgets the column silently recomputes. Pass the source explicitly once the dossier panel reads the store (A4 slice 4).
 4. **Two stored-vote readers.** `persist_dip_pulse_store.stored_vote_groups` re-reads totals, fraction rows and members in the derive shape, as `features.votes.stored_votes` does for the archive; share one reader.
 5. **Facts fixture.** `tests/_facts_fixture.py` writes `abweichler_count = sum(flag or 0)` even where a member's group has no fraction row (flag None), where `derive.vote_abweichler_count` gives NULL; compute it with the derive function.
@@ -2035,6 +2035,16 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Effort:** L
 **Priority:** P3
 **Depends on:** Best after the store and feature-axis items above
+
+### The pre-gate's `literals` check reads every Wahlperiode 18 as export format 18
+
+**What:** gstack-pregate's `literals` check (installed gstack 1.99.2, `lib/pregate/checks/literals.ts`) searches every test file that names a changed constant or its module for the constant's old value. For a two-digit value it needs no other context, so a format or schema bump flags every Wahlperiode, Drucksache (`18/84`), date and item number holding that value. On the 18 → 19 / 12 → 13 bump (vote PR A, v0.44.0.0) that was about 420 lines in about 40 test files that import `build_dip_pulse_site` or `persist_dip_pulse_store`. It reports one line per file per run, has no config switch, and `gstack-ship-release finish` and the push re-run it. PR A sorted the hits by hand: the real format literals (`tests/test_release_changes.py`'s current manifest) now use `EXPORT_FORMAT`; value cards meaning schema 12 carry `# pregate-literal:` markers; the rest is noise, and the PR was pushed and opened by hand outside `finish`. Vote PR B (schema 13 → 14, format 19 → 20) hits the same, worse with every WP 19 line. Fix upstream (require the constant's name or a version-like key such as `export_format`/`schema` on the line for short numeric values), or add a repo-level allowlist to `.gstack/pregate.json` if gstack offers one.
+
+**Why:** Without it every schema or format bump either fails the pre-gate or needs hundreds of marker comments, so a real stale literal is lost in the noise.
+
+**Effort:** S (upstream heuristic)
+**Priority:** P2
+**Depends on:** gstack upstream
 
 ## Completed
 
