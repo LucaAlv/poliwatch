@@ -217,19 +217,19 @@ def read_cpp_bt(path: Path):
 def load_ours(connection: sqlite3.Connection) -> dict:
     """Per sitting: source rede ids by table, one name and Fraktion per id, our word count."""
     sittings: dict[str, dict] = {}
-    protocol_key: dict[object, str] = {}
+    sitting_of_protocol: dict[object, str] = {}
     skipped = Counter()
     for protocol_id, number in connection.execute("SELECT id, document_number FROM protocols"):
         key = sitting_key(number)
         if key is None:
             skipped["protocol_number_unparsed"] += 1
             continue
-        protocol_key[protocol_id] = key
+        sitting_of_protocol[protocol_id] = key
         sittings.setdefault(key, {"speech": set(), "contribution": set(), "withheld": set(), "name": {},
                                   "fraktion": {}, "words": Counter()})
 
     def add(table: str, protocol_id, rede_id, name, fraktion, text) -> None:
-        key = protocol_key.get(protocol_id)
+        key = sitting_of_protocol.get(protocol_id)
         if key is None:
             return
         source = source_rede_id(rede_id)
