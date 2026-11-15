@@ -9,6 +9,7 @@ from datetime import date
 
 import _support  # noqa: F401
 import release_changes as rc
+from build_dip_pulse_site import EXPORT_FORMAT
 
 
 def manifest(**overrides):
@@ -199,15 +200,15 @@ class WithheldListTests(unittest.TestCase):
 
     # Value: protects=a current manifest without a usable withheld list is refused, never read as "none withheld"; fails_when=withheld_changes reads a missing, null or malformed list as []; why_new=P2 (Codex at PR 2's ship); seam=assemble
     def test_a_current_manifest_needs_a_well_formed_list(self) -> None:
-        previous = manifest(tag="2026.11.01", export_format=18)
+        previous = manifest(tag="2026.11.01", export_format=EXPORT_FORMAT)
         cases = {
-            "absent": {k: v for k, v in manifest(export_format=18).items() if k != "withheld_reden"},
-            "null": manifest(export_format=18, withheld_reden=None),
-            "an object": manifest(export_format=18, withheld_reden={"18/7": "R1"}),
-            "an entry that is no object": manifest(export_format=18, withheld_reden=["18/7 R1"]),
-            "a blank rede_id": manifest(export_format=18, withheld_reden=[{**self.UNIT, "rede_id": " "}]),
-            "a reason that is no text": manifest(export_format=18, withheld_reden=[{**self.UNIT, "reason": 3}]),
-            "a duplicate": manifest(export_format=18, withheld_reden=[self.UNIT, dict(self.UNIT)]),
+            "absent": {k: v for k, v in manifest(export_format=EXPORT_FORMAT).items() if k != "withheld_reden"},
+            "null": manifest(export_format=EXPORT_FORMAT, withheld_reden=None),
+            "an object": manifest(export_format=EXPORT_FORMAT, withheld_reden={"18/7": "R1"}),
+            "an entry that is no object": manifest(export_format=EXPORT_FORMAT, withheld_reden=["18/7 R1"]),
+            "a blank rede_id": manifest(export_format=EXPORT_FORMAT, withheld_reden=[{**self.UNIT, "rede_id": " "}]),
+            "a reason that is no text": manifest(export_format=EXPORT_FORMAT, withheld_reden=[{**self.UNIT, "reason": 3}]),
+            "a duplicate": manifest(export_format=EXPORT_FORMAT, withheld_reden=[self.UNIT, dict(self.UNIT)]),
         }
         for label, current in cases.items():
             with self.subTest(label), self.assertRaisesRegex(rc.ChangesError, "withheld_reden"):

@@ -340,7 +340,7 @@ class StoreTests(unittest.TestCase):
         conn.execute("UPDATE speech_rule_inputs SET reviewed_digest = ?", (reviewed_units.sitting_digest("18/2"),))
         store.require_current_speech_rules(conn)
 
-    # Value: protects=a schema 11 store (speech_rule_inputs without reviewed_digest) is refused with the repersist instruction, never stamped 12 with no withheld Reden;
+    # Value: protects=a schema 11 store (speech_rule_inputs without reviewed_digest) is refused with the repersist instruction, never stamped 12 with no withheld Reden;  # pregate-literal: SCHEMA_VERSION=12 the schema that added reviewed_digest, on purpose
     #   fails_when=require_current_schema stops checking reviewed_digest; why_new=schema 12 is new; seam=none
     def test_a_schema_11_store_without_reviewed_digest_is_refused(self):
         conn = self.persisted(sitting(rede("R1")), reviewed=[])

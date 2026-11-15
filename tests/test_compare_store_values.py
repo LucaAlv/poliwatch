@@ -368,7 +368,7 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertEqual(line_of(out, "Regierung (Reden)", section), "Regierung (Reden) 1 -> 0 -1")
         self.assertEqual(line_of(out, "Sprechrolle bundesregierung (Reden)", section), "Sprechrolle bundesregierung (Reden) 0 -> 1 +1")
 
-    # Value: protects=the comparison lists each withheld Rede a new store adds, releases or re-words, and says "unavailable" for a store before schema 12;
+    # Value: protects=the comparison lists each withheld Rede a new store adds, releases or re-words, and says "unavailable" for a store before schema 12;  # pregate-literal: SCHEMA_VERSION=12 the schema that added withheld_units, on purpose
     #   fails_when=measure() drops withheld_units or the per-reason and per-Rede sections stop printing old -> new; why_new=withheld tables are new in schema 12
     #   and no compare test touched them; seam=none; no_claim=the real store (tiny fixture stores)
     def test_withheld_reden_are_compared_per_reason_and_per_rede(self) -> None:
