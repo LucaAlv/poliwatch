@@ -187,63 +187,63 @@
       "rede_id": "ID1815821700",
       "redner_id": "11003763",
       "kind": "withhold",
-      "reason": "The XML prints Heike Hänsel's Zwischenfrage in Reinhold Gall's Rede as its own <rede> (1,148 chars), which would count as a Rede; Reinhold Gall's answer follows as a further <rede> (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "The XML prints Heike Hänsel's Zwischenfrage in Reinhold Gall's Rede as its own <rede> (1,148 chars), which would count as a Rede; Reinhold Gall's answer follows as a further <rede> (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815821800",
       "redner_id": "999990041",
       "kind": "withhold",
-      "reason": "Reinhold Gall's answer to Heike Hänsel's Zwischenfrage and the rest of the Rede, printed as a further <rede> after it, which would count as a second Rede of Reinhold Gall (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Reinhold Gall's answer to Heike Hänsel's Zwischenfrage and the rest of the Rede, printed as a further <rede> after it, which would count as a second Rede of Reinhold Gall (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815822100",
       "redner_id": "11004181",
       "kind": "withhold",
-      "reason": "The XML prints Kathrin Vogler's Zwischenfrage in Nina Warken's Rede as its own <rede> (1,586 chars), which would count as a Rede; Nina Warken's answer follows as a further <rede> (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "The XML prints Kathrin Vogler's Zwischenfrage in Nina Warken's Rede as its own <rede> (1,586 chars), which would count as a Rede; Nina Warken's answer follows as a further <rede> (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815822200",
       "redner_id": "11004437",
       "kind": "withhold",
-      "reason": "Nina Warken's answer to Kathrin Vogler's Zwischenfrage and the rest of the Rede, printed as a further <rede> after it, which would count as a second Rede of Nina Warken (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Nina Warken's answer to Kathrin Vogler's Zwischenfrage and the rest of the Rede, printed as a further <rede> after it, which would count as a second Rede of Nina Warken (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815824500",
       "redner_id": "11002625",
       "kind": "withhold",
-      "reason": "Swap: the XML prints Volker Beck's Zwischenfrage in Michael Frieser's Rede as its own <rede>, and Michael Frieser's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Swap: the XML prints Volker Beck's Zwischenfrage in Michael Frieser's Rede as its own <rede>, and Michael Frieser's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815830200",
       "redner_id": "11004087",
       "kind": "withhold",
-      "reason": "Swap: the XML prints Ulrich Lange's Zwischenfrage in Matthias Gastel's Rede as its own <rede>, and Matthias Gastel's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Swap: the XML prints Ulrich Lange's Zwischenfrage in Matthias Gastel's Rede as its own <rede>, and Matthias Gastel's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815831300",
       "redner_id": "11003578",
       "kind": "withhold",
-      "reason": "Swap: the XML prints Markus Kurth's Zwischenfrage in Peter Weiß's Rede as its own <rede>, and Peter Weiß's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Swap: the XML prints Markus Kurth's Zwischenfrage in Peter Weiß's Rede as its own <rede>, and Peter Weiß's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815832200",
       "redner_id": "11004072",
       "kind": "withhold",
-      "reason": "Swap: the XML prints Maria Klein-Schmeink's Zwischenfrage in Heike Baehrens's Rede as its own <rede>, and Heike Baehrens's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Swap: the XML prints Maria Klein-Schmeink's Zwischenfrage in Heike Baehrens's Rede as its own <rede>, and Heike Baehrens's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/158",
       "rede_id": "ID1815832700",
       "redner_id": "11003609",
       "kind": "withhold",
-      "reason": "Swap: the XML prints Sibylle Pfeiffer's Zwischenfrage in Uwe Kekeritz's Rede as its own <rede>, and Uwe Kekeritz's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Swap: the XML prints Sibylle Pfeiffer's Zwischenfrage in Uwe Kekeritz's Rede as its own <rede>, and Uwe Kekeritz's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "18/173",
@@ -439,7 +439,7 @@
       "rede_id": "ID191802600",
       "redner_id": "11003753",
       "kind": "withhold",
-      "reason": "Holds Katharina Dröge's whole Rede counted as one Zwischenfrage in Klaus Ernst's Rede: the chair's 'Als Nächstes für Bündnis 90/Die Grünen die Kollegin Katharina Dröge' is outside the split's floor forms (N8, docs/plans/t4-acquire/n8-review.md)"
+      "reason": "Holds Katharina Dröge's whole Rede counted as one Zwischenfrage in Klaus Ernst's Rede: the chair's 'Als Nächstes für Bündnis 90/Die Grünen die Kollegin Katharina Dröge' is outside the split's floor forms (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
       "sitting": "19/19",

@@ -242,7 +242,7 @@ class ReviewedListTests(unittest.TestCase):
         self.assertEqual(sorted(number for number, units in withhold.items() if units),
                          ["18/158", "18/2", "18/29", "18/83", "19/18", "19/25"])
         self.assertEqual(sum(len(v) for v in withhold.values()), 15)
-        # N8 (docs/plans/t4-acquire/n8-review.md): 18/158's Zwischenfragen printed as their own <rede>,
+        # N8 (the review of the restored sittings, 2026-11-15): 18/158's Zwischenfragen printed as their own <rede>,
         # and the two Redner continuations printed after them; 19/18's unsplit Dröge Rede.
         self.assertEqual(sorted(e["rede_id"] for e in withhold["18/158"]),
                          ["ID1815821700", "ID1815821800", "ID1815822100", "ID1815822200", "ID1815824500",
