@@ -3910,6 +3910,19 @@ def kind_mismatch_warnings(mismatches: list[dict[str, Any]]) -> list[str]:
     return [f"{KIND_MISMATCH_WARNING}{m['xml']} {label(m)}, DIP {m['dip']}." for m in mismatches]
 
 
+def xml_sitting_mismatch(document_number: str, parsed_xml: dict[str, Any]) -> str | None:
+    """Why the parsed XML is not the sitting ``document_number`` (WP/NR), or None.
+    One comparison for every path that parses: the online build, --fetch-xml and
+    the re-parse. The parse keys the reviewed list by the XML's own number and
+    persist by ``dokumentnummer``, so only an equal pair may reach the store."""
+    wahlperiode, _, sitzung = document_number.partition("/")
+    xml_protocol = parsed_xml.get("xml_protocol") or {}
+    found = (str(xml_protocol.get("wahlperiode") or ""), str(xml_protocol.get("sitzung_nr") or ""))
+    if found != (wahlperiode, sitzung):
+        return f"it is the XML of {found[0]}/{found[1]}, not of {document_number}"
+    return None
+
+
 def check_xml_belongs_to_report(
     report: dict[str, Any], parsed_xml: dict[str, Any], by_index: dict[Any, Any]
 ) -> None:
@@ -3921,11 +3934,9 @@ def check_xml_belongs_to_report(
     if cached_sha and cached_sha != parsed_xml.get("xml_sha256"):
         raise ValueError("cached report/XML SHA-256 mismatch; reacquire the sitting report")
     number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
-    wahlperiode, _, sitzung = number.partition("/")
-    xml_protocol = parsed_xml.get("xml_protocol") or {}
-    found = (str(xml_protocol.get("wahlperiode") or ""), str(xml_protocol.get("sitzung_nr") or ""))
-    if number and found != (wahlperiode, sitzung):
-        raise ValueError(f"it is the XML of {found[0]}/{found[1]}, not of {number}")
+    mismatch = xml_sitting_mismatch(number, parsed_xml) if number else None
+    if mismatch:
+        raise ValueError(mismatch)
     if not parsed_xml["agenda_items"]:
         raise ValueError("it holds no agenda items (not a Plenarprotokoll?)")
     # A cached report may hold its index as text ("3"); the XML numbers items as ints.
@@ -4499,6 +4510,10 @@ def build_report(
         parsed_xml = parse_protocol_xml(xml_text)
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
+    # Before enrichment, so no DIP request is spent on the wrong file (P3f).
+    mismatch = xml_sitting_mismatch(str(protocol.get("dokumentnummer") or ""), parsed_xml)
+    if mismatch:
+        raise DipError(f"{document_number}: protocol source rejected: {mismatch}", source_rejected=True)
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
     progress(
         f"Parsed XML: {len(parsed_xml['agenda_items'])} agenda item(s), "

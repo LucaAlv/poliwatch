@@ -89,8 +89,12 @@ def load(path: Path = PATH) -> dict[str, list[dict[str, str]]]:
     if path not in _cache:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            data = {"entries": []}
+        except FileNotFoundError as exc:
+            # The file is checked in. Read as empty, a deleted or renamed list
+            # would release every reviewed Rede on the next repersist (P3c).
+            raise ReviewedUnitsError(
+                f"{path} is missing; it is checked in, restore it (git checkout -- scripts/reviewed_units.json)"
+            ) from exc
         except (OSError, ValueError, RecursionError) as exc:
             raise ReviewedUnitsError(f"{path} cannot be read ({exc})") from exc
         _cache[path] = _check(data, path)

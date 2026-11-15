@@ -104,11 +104,15 @@ def build_demo_store(
     entries = [{"report": copy.deepcopy(report)} for report in reports]
     stale = site.unparsed_reports(entries)
     if stale:
-        found = (stale[0]["report"].get("validation_summary") or {}).get("speech_kinds_version")
+        report = stale[0]["report"]
+        found = (report.get("validation_summary") or {}).get("speech_kinds_version")
+        reasons = {
+            "rule": f"was made under speech rule {'(none)' if found is None else found}, not the current rule {speech_kinds.VERSION}",
+            "reviewed": "was parsed under other entries of scripts/reviewed_units.json than it holds now for its sitting",
+        }
         raise DemoFixtureError(
-            f"the fixture was made under speech rule {'(none)' if found is None else found}, "
-            f"not the current rule {speech_kinds.VERSION}. Fix: regenerate it from the official XML "
-            "with scripts/extract_demo_fixture.py"
+            f"the fixture {' and '.join(reasons[cause] for cause in site.stale_causes(report))}. "
+            "Fix: regenerate it from the official XML with scripts/extract_demo_fixture.py"
         )
     database_path = output_dir / "data" / "bundestag-pulse.sqlite"
     site.rebuild_database_from_entries(database_path, entries, preserve_roster=True)

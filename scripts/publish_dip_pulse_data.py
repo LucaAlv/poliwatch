@@ -11,13 +11,16 @@ Typical use (see scripts/publish_dip_pulse_data.sh for the wrapper):
 The default is a dry run: it checks the export, writes the release directory
 (``<output-dir>/data-<version>/``) and prints the ``gh release create`` command it
 would run. ``--publish`` creates the release through ``gh`` and refuses unless
-the export carries a licence string (ADR 0003). This script never pushes, tags
-or uploads by itself; the only remote command is the one printed.
+the export carries a licence string (ADR 0003) and every exclusion on its record
+is final, ``source_defect`` or ``not_narrowable`` (ADR 0005, "Coverage and the
+bar"). This script never pushes, tags or uploads by itself; the only remote
+command is the one printed.
 
 The release is refused unless its export was built with a release tag, from a
 clean commit that exists in this repository (the manifest's, not HEAD), from the
-authored inputs that commit holds, with the MdB-Stammdaten loaded, and every
-file matches the manifest. The export's LICENSE-DATA.md is one of those files:
+authored inputs that commit holds, with the MdB-Stammdaten loaded, every
+file matches the manifest, and the manifest's withheld_reden list matches the
+exported withheld_units rows. The export's LICENSE-DATA.md is one of those files:
 non-empty and equal to the one that commit holds.
 """
 
@@ -29,6 +32,8 @@ if __name__ == "__main__":
     require_supported_python()
 
 import argparse
+import csv
+import gzip
 import hashlib
 import json
 import os
@@ -90,7 +95,75 @@ def previous_manifest_problem(previous: Any) -> str | None:
             problems.append(f"{key} needs {'/'.join(fields)}")
     if type(previous.get("total_rows")) is not int:
         problems.append("total_rows is not an integer")
+    if "export_format" in previous and type(previous["export_format"]) is not int:
+        # It decides whether the previous withheld list may be absent (release_changes.WITHHELD_LIST_FORMAT).
+        problems.append("export_format is not an integer")
     return f"is not a usable datenstand.json: {'; '.join(problems)}" if problems else None
+
+
+def _csv_rows(path: Path) -> list[dict[str, str]]:
+    # A withheld Rede's text is one field and may run past csv's default 128 KiB.
+    csv.field_size_limit(2**31 - 1)
+    with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def withheld_export_problem(manifest: dict[str, Any], generation_dir: Path) -> str | None:
+    """P2 (ADR 0005): why the manifest's withheld_reden list does not match the
+    exported withheld_units rows, or None. The cap and the changelog read the
+    list, a reader downloads the rows; verify_export has already matched both
+    files' hashes. The sqlite file of the generation comes from the same
+    snapshot, so the CSV stands for it."""
+    tables: dict[str, list[str]] = {}
+    for entry in manifest.get("files") or []:
+        if entry.get("kind") == "table_csv":
+            tables.setdefault(str(entry["name"]).partition("-")[0], []).append(entry["name"])
+    for table in ("withheld_units", "protocols"):
+        if len(tables.get(table, [])) != 1:
+            return f"the export lists {len(tables.get(table, []))} {table} tables, not one; export it again"
+    try:
+        numbers = {row["id"]: row["document_number"] for row in _csv_rows(generation_dir / tables["protocols"][0])}
+        exported: dict[str, str] = {}
+        for row in _csv_rows(generation_dir / tables["withheld_units"][0]):
+            unit = {"document_number": numbers.get(row["protocol_id"]), "rede_id": row["rede_id"]}
+            exported[release_changes._withheld_key(unit)] = row["reason"]
+    except (OSError, EOFError, KeyError, ValueError, csv.Error) as exc:
+        return f"cannot read the exported withheld_units or protocols table ({exc}); export it again"
+    listed = {key: unit["reason"] for key, unit in release_changes.withheld_list(manifest, "the manifest").items()}
+    problems = []
+    if only := sorted(exported.keys() - listed.keys()):
+        problems.append(f"only in the export: {', '.join(only)}")
+    if only := sorted(listed.keys() - exported.keys()):
+        problems.append(f"only in the manifest: {', '.join(only)}")
+    problems.extend(
+        f"{key}: reason {listed[key]} in the manifest, {exported[key]} in the export"
+        for key in sorted(listed.keys() & exported.keys())
+        if listed[key] != exported[key]
+    )
+    if problems:
+        return f"the manifest's withheld_reden does not match the exported withheld_units rows ({'; '.join(problems)}); export it again"
+    return None
+
+
+def awaiting_exclusions(manifest: dict[str, Any]) -> list[str]:
+    """The sittings the export's exclusion record keeps out on their way back
+    (ADR 0005, "Coverage and the bar"): every reason outside
+    FINAL_EXCLUSION_REASONS. Raises ReleaseError when the record cannot be read."""
+    excluded = (manifest.get("coverage") or {}).get("excluded") if isinstance(manifest.get("coverage"), dict) else None
+    if not isinstance(excluded, list):
+        raise ReleaseError("the manifest carries no coverage.excluded list (ADR 0005); export it again")
+    waiting = []
+    for index, entry in enumerate(excluded):
+        if not isinstance(entry, dict) or not all(isinstance(entry.get(field), str) and entry[field].strip() for field in ("document_number", "reason")):
+            raise ReleaseError(f"coverage.excluded[{index}] needs a document_number and a reason; export it again")
+        if entry["reason"] not in _site().FINAL_EXCLUSION_REASONS:
+            waiting.append(entry["document_number"])
+    return waiting
+
+
+def awaiting_text(waiting: list[str]) -> str:
+    shown = ", ".join(waiting[:12]) + (", …" if len(waiting) > 12 else "")
+    return f"{len(waiting)} exclusions still await acquisition or a rule (ADR 0005, \"Coverage and the bar\": {shown})"
 
 
 def withheld_cap_problem(changes: dict[str, Any], confirmed: list[str]) -> str | None:
@@ -248,6 +321,14 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         except ValueError as exc:
             raise ReleaseError(str(exc)) from exc
     manifest, version, full_commit = verify_export(args.exports_dir, repo_root)
+    problem = withheld_export_problem(manifest, args.exports_dir / manifest["generation"])
+    if problem:
+        raise ReleaseError(problem)
+    # D6 (owner, 2026-11-14): the bar holds for every published release, the
+    # first one included; a dry run still builds the directory to rehearse it.
+    waiting = awaiting_exclusions(manifest)
+    if args.publish and waiting:
+        raise ReleaseError(f"--publish refused: {awaiting_text(waiting)}. Acquire or reclassify them first.")
     if args.publish and not str(manifest.get("license") or "").strip():
         raise ReleaseError(
             "--publish refused: the export carries no licence string (manifest field license). Rebuild it with --data-license "
@@ -298,6 +379,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         )
         if not str(manifest.get("license") or "").strip():
             out("licence string: empty in the export; --publish refuses until the export is rebuilt with --data-license.")
+        if waiting:
+            out(f"--publish would refuse: {awaiting_text(waiting)}.")
         return
     result = run(command, cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:

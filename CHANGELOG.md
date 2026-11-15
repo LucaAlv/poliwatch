@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.43.0.0] - 2026-11-15
+
+A release can no longer publish data the coverage bar has not cleared, and its list of withheld Reden must match the rows a reader downloads. Stale cached reports say why they are stale. The store gate catches two more ways withheld Reden could go wrong. No figure moves: a replay of the 718-sitting store leaves every table, value and Fakt equal.
+
+### Changed
+
+- **`--publish` refuses while an excluded sitting still awaits acquisition or a rule.** Only an exclusion whose reason is final (`source_defect`, `not_narrowable`) may stand in a published release. Today all 85 exclusions await (83 `awaiting_acquisition`, 2 `awaiting_rule`), so every `--publish` is refused until T4 is done. The refusal gives the count and names the first 12 sittings. A dry run still builds and prints "--publish would refuse: …". A missing or unreadable exclusion record is refused too.
+- **The release's withheld list must match the export.** Before building the release directory, the release compares the manifest's `withheld_reden` list with the exported `withheld_units` rows. It names every row that is only in the export, only in the list, or has a changed reason. A list that is missing, malformed or holds a duplicate is refused. From export format 17 on, the previous release must carry the list as well.
+- **A stale cached report says why.** The refusal and the warning name each cause that applies: reports parsed under an older speech rule, and reports parsed under other entries of `scripts/reviewed_units.json` than it holds now. A report with no reviewed digest counts as stale. All 718 reports in today's store carry one. The demo fixture now carries the digest of its sitting.
+- **A missing `scripts/reviewed_units.json` stops the build** with a message saying how to restore it. Before, it was read as an empty list.
+- **An online build refuses another sitting's XML.** If the Plenarprotokoll XML's header names a sitting other than the one DIP's record gives, the online parse, the re-parse and `--fetch-xml` all refuse it, using the same check.
+
+### Added
+
+- **Two store-gate checks for withheld Reden.** `validate_store_gate.py` fails when a withheld Rede has no Redner-ID, and when a Beitrag nested inside a withheld Rede is still counted. A Kurzintervention or Erwiderung that answers a withheld Rede is its own Rede and is not flagged.
+
 ## [0.42.0.0] - 2026-11-15
 
 A withheld Rede now counts as a gap. Its sitting is no longer complete for speeches, so the speech-based Fakten of its week and month read *unvollständig erfasst* and name it. *Erste Reden* no longer counts someone as a debutant when their real first Rede was withheld. Today's store holds no withheld Rede, so no figure moves. The change matters once the 85 sittings still awaiting acquisition are fetched.

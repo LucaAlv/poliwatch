@@ -306,13 +306,33 @@ def integrity(database_path: Path) -> dict[str, Any]:
 
 def withheld_also_counted(database_path: Path) -> list[str]:
     """Up to five withheld Reden whose rede_id is also a stored Rede or Beitrag
-    of the same sitting. A withheld Rede is outside every count (ADR 0005)."""
+    of the same sitting, or that a stored Beitrag names as its parent (a
+    nested Beitrag inside it). A withheld Rede is outside every count (ADR
+    0005). Only a nested Beitrag (``nested:…``) is inside its parent: a
+    Kurzintervention or Erwiderung is its own ``<rede>`` whose parent_rede_id
+    names the Rede it answers, and it stays counted when that Rede is withheld.
+    The parent is compared exactly: when only a split part ``R:n`` is withheld,
+    the outer ``R`` stays stored (D4) and may have Beiträge."""
     conn = _open_readonly(database_path)
     try:
         return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
             "SELECT w.protocol_id, w.rede_id FROM withheld_units w WHERE EXISTS (SELECT 1 FROM speeches s "
             "WHERE s.protocol_id = w.protocol_id AND s.rede_id = w.rede_id) OR EXISTS (SELECT 1 FROM contributions c "
-            "WHERE c.protocol_id = w.protocol_id AND c.rede_id = w.rede_id) LIMIT 5")]
+            "WHERE c.protocol_id = w.protocol_id AND (c.rede_id = w.rede_id "
+            "OR (c.parent_rede_id = w.rede_id AND substr(c.rede_id, 1, 7) = 'nested:'))) LIMIT 5")]
+    finally:
+        conn.close()
+
+
+def withheld_without_redner_id(database_path: Path) -> list[str]:
+    """Up to five withheld Reden with no Redner-ID. erste-reden binds a withheld
+    Rede to its speaker by Redner-ID (ADR 0005 "Facts"); one without binds no
+    one, so the owner reads it before the gate passes."""
+    conn = _open_readonly(database_path)
+    try:
+        return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
+            "SELECT protocol_id, rede_id FROM withheld_units WHERE xml_redner_id IS NULL OR TRIM(xml_redner_id) = '' "
+            "ORDER BY protocol_id, rede_id LIMIT 5")]
     finally:
         conn.close()
 
@@ -528,6 +548,8 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         checks["no_foreign_key_violations"] = receipt["integrity"]["foreign_key_violations"] == 0
         receipt["withheld_also_counted"] = withheld_also_counted(database_path)
         checks["no_withheld_rede_counted"] = not receipt["withheld_also_counted"]
+        receipt["withheld_without_redner_id"] = withheld_without_redner_id(database_path)
+        checks["every_withheld_rede_has_a_redner_id"] = not receipt["withheld_without_redner_id"]
         receipt["counts"] = store_counts(database_path)
         receipt["counts_vs_2026_10_05"] = {
             key: {"old": old, "new": receipt["counts"][key], "delta": receipt["counts"][key] - old}

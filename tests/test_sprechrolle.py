@@ -198,7 +198,8 @@ class RoleTableTests(unittest.TestCase):
 
 def report(number: str, *speakers: dict) -> dict:
     return {
-        "protocol": {"id": f"p-{number}", "dokumentnummer": number, "datum": "2026-01-01"},
+        "protocol": {"id": f"p-{number}", "dokumentnummer": number, "datum": "2026-01-01",
+                     "reviewed_digest": _support.reviewed_units.sitting_digest(number)},
         "validation_summary": {"speech_kinds_version": speech_kinds.VERSION},
         "agenda_items": [
             {

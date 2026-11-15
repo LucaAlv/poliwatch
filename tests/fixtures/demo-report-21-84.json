@@ -20,7 +20,8 @@
       "sitzung_end": "15:36",
       "start_page": "10219"
     },
-    "xml_sha256": "3fd2ef65cc4a6aa34e04f36c4c941d4c97b43497568d36dd19aa0feed06c7790"
+    "xml_sha256": "3fd2ef65cc4a6aa34e04f36c4c941d4c97b43497568d36dd19aa0feed06c7790",
+    "reviewed_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
   },
   "sampled_people": [],
   "agenda_items": [

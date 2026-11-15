@@ -697,6 +697,12 @@ EXCLUSION_REASONS: dict[str, str] = {
 }
 
 
+#: The codes that may keep a sitting out of a published release (ADR 0005,
+#: "Coverage and the bar"). An allow-list, so a code added later is refused by
+#: the release until someone adds it here on purpose.
+FINAL_EXCLUSION_REASONS = ("source_defect", "not_narrowable")
+
+
 class CoverageExclusionsError(Exception):
     """The exclusion record (D2) cannot be read. ``main`` reads it before any
     work and prints this instead of a traceback; the record is hand-editable."""
@@ -2002,35 +2008,54 @@ def newly_withheld_lines(previous_path: Path, staged_path: Path) -> list[str]:
     return lines
 
 
-def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Cached reports with missing or older speech-counting rule provenance, or
-    parsed under other reviewed-list entries than scripts/reviewed_units.json
-    holds now for their sitting (R3): both are re-read from their XML."""
-    def stale(report: dict[str, Any]) -> bool:
-        if (report.get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION:
-            return True
-        protocol = report.get("protocol") or {}
-        if "reviewed_digest" not in protocol:
-            # Every rule-8 parse records it (persist reads the same rule).
-            return False
-        number = normalized_document_number(protocol.get("dokumentnummer")) or ""
-        return protocol["reviewed_digest"] != reviewed_units.sitting_digest(number)
+def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
+    """Why a cached report must be re-read from its XML: "rule" when its
+    speech_kinds_version is missing or older, "reviewed" when it was parsed under
+    other entries of scripts/reviewed_units.json than the file holds now for its
+    sitting (R3), or has no reviewed_digest at all (P3b: every parse since rule 8
+    records one, so its absence proves nothing about the list). Empty when current."""
+    causes = []
+    if (report.get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION:
+        causes.append("rule")
+    protocol = report.get("protocol") or {}
+    number = normalized_document_number(protocol.get("dokumentnummer")) or ""
+    if protocol.get("reviewed_digest") != reviewed_units.sitting_digest(number):
+        causes.append("reviewed")
+    return tuple(causes)
 
-    return [entry for entry in entries if stale(entry["report"])]
+
+def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cached reports that must be re-read from their XML (``stale_causes``)."""
+    return [entry for entry in entries if stale_causes(entry["report"])]
+
+
+def _report_number(entry: dict[str, Any]) -> str:
+    return normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) or "?"
+
+
+def stale_clauses(stale: list[dict[str, Any]]) -> list[str]:
+    """One clause per cause that occurs among ``stale``, each naming its sittings;
+    a report stale for both causes is named in both."""
+    clauses = []
+    for cause, text in (
+        ("rule", f"predate the current speech-counting rule ({speech_kinds.VERSION})"),
+        ("reviewed", "were parsed under other entries of scripts/reviewed_units.json than it holds now"),
+    ):
+        numbers = sorted(_report_number(entry) for entry in stale if cause in stale_causes(entry["report"]))
+        if numbers:
+            clauses.append(f"{len(numbers)} {text} ({', '.join(numbers)})")
+    return clauses
 
 
 def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
     """Refuse stale rule inputs before mixing them into the store's counts."""
     stale = unparsed_reports(entries)
     if stale:
-        def number(entry: dict[str, Any]) -> str:
-            return normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) or "?"
-
         # Most of them only lack the XML, which --fetch-xml downloads. Only a
         # report with no xml_url has to go: the plain online update re-fetches
         # just the newest sittings, so the fix names those by number.
         unfetchable = sorted(
-            number(entry) for entry in stale if not (entry["report"].get("protocol") or {}).get("xml_url")
+            _report_number(entry) for entry in stale if not (entry["report"].get("protocol") or {}).get("xml_url")
         )
         fix = "Fix: run --fetch-xml, then --offline --repersist"
         if unfetchable:
@@ -2040,8 +2065,8 @@ def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
                 f"with an online update and {flags}"
             )
         raise CachedReportError(
-            f"{len(stale)} cached reports predate the current speech-counting rule and have no cached XML in data/xml/ to re-read "
-            f"them from ({', '.join(sorted(map(number, stale)))})",
+            f"{len(stale)} cached reports have no cached XML in data/xml/ to re-read them from: "
+            + "; ".join(stale_clauses(stale)),
             fix=fix,
         )
 
@@ -2051,8 +2076,8 @@ def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep
     stale = unparsed_reports(entries)
     if stale:
         print(
-            f"warning: {len(stale)} of {len(entries)} cached reports predate the current speech-counting rule and {keeping} "
-            "their older classifications, so Reden counts, Redeanteil and Fakten may mix rule versions. "
+            f"warning: {len(stale)} of {len(entries)} cached reports are stale and {keeping} their older classifications "
+            f"({'; '.join(stale_clauses(stale))}), so Reden counts, Redeanteil and Fakten may mix rule versions. "
             "Fix: run --fetch-xml if XML is missing, then --offline --repersist.",
             file=sys.stderr,
         )
@@ -2135,13 +2160,12 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
             text = pacer.fetch(protocol["xml_url"]) if pacer is not None else dip.fetch_text(protocol["xml_url"])
             # An error or maintenance page served with HTTP 200 must not become the cache.
             root = dip.ET.fromstring(text)
-            wahlperiode, _, sitzung = document_number.partition("/")
-            if (root.tag, root.attrib.get("wahlperiode"), root.attrib.get("sitzung-nr")) != (
-                "dbtplenarprotokoll",
-                wahlperiode,
-                sitzung,
-            ):
+            if root.tag != "dbtplenarprotokoll":
                 raise ValueError(f"it is not the Plenarprotokoll XML of {document_number}")
+            header = {"wahlperiode": root.attrib.get("wahlperiode"), "sitzung_nr": root.attrib.get("sitzung-nr")}
+            mismatch = dip.xml_sitting_mismatch(document_number, {"xml_protocol": header})
+            if mismatch:
+                raise ValueError(mismatch)
             if not root.findall("./sitzungsverlauf/tagesordnungspunkt"):
                 raise ValueError("it holds no agenda items (not a Plenarprotokoll?)")
         except (dip.DipError, dip.ET.ParseError, ValueError, publication.PublicationStateError) as exc:

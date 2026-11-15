@@ -291,6 +291,24 @@ class DemoSiteTests(unittest.TestCase):
                 self.assertEqual(demo.main(), 1)
             self.assertIn("extract_demo_fixture.py", stderr.getvalue())
 
+    # Value: protects=a demo fixture parsed under other reviewed entries is refused and the message blames the reviewed list, not the speech rule (P3a/P3b); fails_when=build_demo_store names the rule for every stale fixture, or reads an absent reviewed_digest as current; why_new=test_a_fixture_under_an_old_speech_rule_is_refused covers only the rule cause; seam=none; no_claim=the production require_parsed_reports wording
+    def test_a_fixture_under_other_reviewed_entries_is_refused_by_cause(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for label, edit in (("other digest", lambda protocol: protocol.update(reviewed_digest="0" * 64)),
+                                ("no digest", lambda protocol: protocol.pop("reviewed_digest"))):
+                with self.subTest(label):
+                    report = json.loads(demo.DEFAULT_FIXTURE.read_text(encoding="utf-8"))
+                    edit(report["protocol"])
+                    fixture = root / "stale.json"
+                    fixture.write_text(json.dumps(report), encoding="utf-8")
+                    with self.assertRaises(demo.DemoFixtureError) as caught:
+                        demo.build_demo(root / "site", fixture)
+                    message = str(caught.exception)
+                    self.assertIn("scripts/reviewed_units.json", message)
+                    self.assertNotIn("speech rule", message)
+                    self.assertIn("extract_demo_fixture.py", message)
+
     # Value: protects=the demo's grouped Antrag TOP lists each Antrag's own title at equal weight on puls.html, as a real build does; fails_when=the fixture or extractor copies the joint "a) … b) …" heading into both titles, which collapses them into one bold .radar-title block; why_new=the demo was the only place the four-line block appeared; seam=none; no_claim=wording of real DIP titles beyond these two Drucksachen
     def test_demo_radar_lists_each_antrag_title_not_the_joint_heading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

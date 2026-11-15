@@ -329,7 +329,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
         self.database.write_bytes(b"previous store")
         with self.assertRaises(build.CachedReportError) as caught:
             build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
-        self.assertIn("1 cached reports predate the current speech-counting rule and have no cached XML", str(caught.exception))
+        self.assertIn("1 cached reports have no cached XML in data/xml/ to re-read them from: 1 predate the current speech-counting rule", str(caught.exception))
         self.assertIn("(21/6)", str(caught.exception))
         self.assertIn("--fetch-xml", caught.exception.fix)
         self.assertEqual(self.database.read_bytes(), b"previous store")
@@ -338,14 +338,15 @@ class ReparseCachedXmlTests(unittest.TestCase):
     #   fails_when=the warning drops the count, --fetch-xml or --offline --repersist, fires for a marked report, or the return count is wrong;
     #   why_new=the warning text was only checked as a side effect of repersist_cached_reports on one report; seam=none
     def test_warn_unparsed_reports_names_the_stale_count_and_the_fix(self) -> None:
-        current = {"report": {"validation_summary": {"speech_kinds_version": speech_kinds.VERSION}}}
-        old = {"report": {"validation_summary": {"xml_speech_count": 1}}}
+        current = {"report": _support.stamp_reviewed({"validation_summary": {"speech_kinds_version": speech_kinds.VERSION}})}
+        old = {"report": _support.stamp_reviewed({"validation_summary": {"xml_speech_count": 1}})}
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             self.assertEqual(build.warn_unparsed_reports([current, old]), 1)
         message = stderr.getvalue()
         self.assertEqual(message.count("warning:"), 1)
-        self.assertIn("1 of 2 cached reports predate the current speech-counting rule", message)
+        self.assertIn("1 of 2 cached reports are stale", message)
+        self.assertIn("1 predate the current speech-counting rule", message)
         self.assertIn("--fetch-xml", message)
         self.assertIn("--offline --repersist", message)
         stderr = io.StringIO()
@@ -370,7 +371,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             self.assertEqual(build.warn_unparsed_reports(entries), 1)
-        self.assertIn("1 of 2 cached reports predate", stderr.getvalue())
+        self.assertIn("1 of 2 cached reports are stale", stderr.getvalue())
 
     # Value: protects=a cached XML that is not XML stops the re-parse with an error naming the file and --fetch-xml, and the repersist leaves the store file untouched;
     #   fails_when=reparse_cached_xml lets the ParseError escape unwrapped, drops the path or the --fetch-xml fix, or the store is replaced before the error;
@@ -450,17 +451,17 @@ class ReparseCachedXmlTests(unittest.TestCase):
         xml_dir = self.output_dir / "data" / "xml"
         (xml_dir / "plenarprotokoll-21-6.xml").unlink()
         entries = [{"report": {"protocol": {"dokumentnummer": "21/6", "xml_url": "https://dserver.bundestag.de/6.xml"}}}]
-        for name, text in (
-            ("not a protocol", "<html><body>Wartung</body></html>"),
-            ("another sitting", protocol_xml("21/7")),
-            ("the right numbers on the wrong root", '<html wahlperiode="21" sitzung-nr="6"/>'),
+        for name, text, said in (
+            ("not a protocol", "<html><body>Wartung</body></html>", "it is not the Plenarprotokoll XML of 21/6"),
+            ("another sitting", protocol_xml("21/7"), "it is the XML of 21/7, not of 21/6"),
+            ("the right numbers on the wrong root", '<html wahlperiode="21" sitzung-nr="6"/>', "it is not the Plenarprotokoll XML of 21/6"),
         ):
             with self.subTest(name):
                 stderr = io.StringIO()
                 with mock.patch.object(build.dip, "fetch_text", return_value=text), contextlib.redirect_stderr(stderr):
                     self.assertEqual(build.fetch_missing_xml(self.output_dir, entries, pause=0), (0, 1))
                 self.assertEqual(list(xml_dir.iterdir()), [])
-                self.assertIn("warning: 21/6: it is not the Plenarprotokoll XML of 21/6", stderr.getvalue())
+                self.assertIn(f"warning: 21/6: {said}", stderr.getvalue())
 
     # Value: protects=--fetch-xml refuses a download that is not XML (an error page served with HTTP 200): counted failed, named by document number, nothing cached;
     #   fails_when=fetch_missing_xml stops parsing the text before writing, so an HTML page becomes the cached XML the next repersist trips over;
@@ -561,6 +562,7 @@ class RepersistTests(unittest.TestCase):
         for fixture, slug in (("report.json", "20-999"), ("demo-report-21-84.json", "21-84")):
             report = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))
             report.setdefault("validation_summary", {})["speech_kinds_version"] = speech_kinds.VERSION
+            _support.stamp_reviewed(report)
             (self.output_dir / "data" / f"plenarprotokoll-{slug}.json").write_text(
                 json.dumps(report), encoding="utf-8"
             )

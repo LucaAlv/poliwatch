@@ -20,6 +20,7 @@ def manifest(**overrides):
         "total_rows": 1000,
         "protocols": {"count": 285, "first": "18/1", "last": "21/84", "from": "2013-10-22", "to": "2025-11-06"},
         "votes": {"count": 400, "members": 250000},
+        "withheld_reden": [],
     }
     base.update(overrides)
     return base
@@ -184,6 +185,45 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Erste Veröffentlichung", text)
         self.assertNotIn("| Tabelle |", text)
         self.assertIn("Keine Korrekturen", text)
+
+
+class WithheldListTests(unittest.TestCase):
+    """P2 (ADR 0005, D5/D9): the cap and the changelog read the manifest's
+    withheld list, so the list must be there and well formed."""
+
+    UNIT = {"document_number": "18/7", "rede_id": "R1", "reason": "reviewed"}
+
+    def assemble(self, current, previous):
+        return rc.assemble(version="2026.11.02", released=date(2026, 11, 2), manifest=current,
+                           previous_manifest=previous, authored={"summary": "Test."})
+
+    # Value: protects=a current manifest without a usable withheld list is refused, never read as "none withheld"; fails_when=withheld_changes reads a missing, null or malformed list as []; why_new=P2 (Codex at PR 2's ship); seam=assemble
+    def test_a_current_manifest_needs_a_well_formed_list(self) -> None:
+        previous = manifest(tag="2026.11.01", export_format=18)
+        cases = {
+            "absent": {k: v for k, v in manifest(export_format=18).items() if k != "withheld_reden"},
+            "null": manifest(export_format=18, withheld_reden=None),
+            "an object": manifest(export_format=18, withheld_reden={"18/7": "R1"}),
+            "an entry that is no object": manifest(export_format=18, withheld_reden=["18/7 R1"]),
+            "a blank rede_id": manifest(export_format=18, withheld_reden=[{**self.UNIT, "rede_id": " "}]),
+            "a reason that is no text": manifest(export_format=18, withheld_reden=[{**self.UNIT, "reason": 3}]),
+            "a duplicate": manifest(export_format=18, withheld_reden=[self.UNIT, dict(self.UNIT)]),
+        }
+        for label, current in cases.items():
+            with self.subTest(label), self.assertRaisesRegex(rc.ChangesError, "withheld_reden"):
+                self.assemble(current, previous)
+        with self.subTest("initial release"), self.assertRaisesRegex(rc.ChangesError, "withheld_reden"):
+            rc.assemble(version="2026.11.02", released=date(2026, 11, 2), manifest=cases["absent"],
+                        previous_manifest=None, authored=None)
+
+    # Value: protects=a previous manifest of format 17 or later must carry its list; an older one held none; fails_when=a stripped previous list makes every withheld Rede read as newly added, or an old one is refused; why_new=P2; seam=assemble
+    def test_a_previous_manifest_needs_its_list_from_format_17(self) -> None:
+        stripped = {k: v for k, v in manifest(tag="2026.11.01").items() if k != "withheld_reden"}
+        for label, fmt in (("format 17", 17), ("format 18", 18), ("a format that is no integer", "17")):
+            with self.subTest(label), self.assertRaisesRegex(rc.ChangesError, "previous manifest .*withheld_reden"):
+                self.assemble(manifest(export_format=fmt, withheld_reden=[self.UNIT]), {**stripped, "export_format": fmt})
+        changes = self.assemble(manifest(export_format=16, withheld_reden=[self.UNIT]), {**stripped, "export_format": 16})
+        self.assertEqual((changes["withheld_reden_added"], changes["withheld_reden_released"]), ([self.UNIT], []))
 
 
 class LoadAuthoredTests(unittest.TestCase):
