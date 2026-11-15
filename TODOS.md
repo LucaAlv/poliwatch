@@ -192,16 +192,24 @@ Found by the code review of PR A (127e1c2) and PR B (fc1676e) of `docs/plans/wit
 
 ### Check that vote links are right
 
-**What:** A vote links to a TOP when both are on the same date and share any Drucksache (`match_roll_call_votes`, `validate_dip_protocol.py:3355`). No test or gate checks that a link is right. Decision N10 (2026-11-09): review about 150 links before the first release:
+**What:** A namentliche Abstimmung links to a Tagesordnungspunkt of its own Sitzung in one of two ways, both in `enrich_with_api` (`validate_dip_protocol.py` 4190–4196 and 4270–4287):
+- **Shared Drucksache.** The vote's Drucksachen overlap the Tagesordnungspunkt's: its XML Drucksachen plus the Drucksachen DIP links to its Vorgangspositionen. A vote can link to several Tagesordnungspunkte this way.
+- **Unique title.** A vote whose Drucksachen overlap no Tagesordnungspunkt of the Sitzung is matched by `title_matches` (2092) against each Tagesordnungspunkt's heading and linked Vorgang titles. It is linked only when exactly one Tagesordnungspunkt matches. The match is fuzzy: a substring in either direction, or at least 65% of the vote title's words longer than four letters.
+
+Until 2026-11-15 this entry cited `match_roll_call_votes` (3355) as the rule. That helper does not ship: it has had no production caller since v0.10.0.0, and it has no title fallback (see "One module for the link between a namentliche Abstimmung and its Tagesordnungspunkt").
+
+No test or gate checks that a link is right. Decision N10 (2026-11-09): review about 150 links before the first release:
 - all 13 votes linked to more than one TOP, six of them to 4 to 7 Haushalt TOPs (votes 894, 898, 960, 961, 979, 980);
 - all 84 TOPs with more than one vote;
 - 50 random plain links.
 
-Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. Run it with the N8 review once the 85 sittings are fetched, and add their multi-link cases. State in `DATA.md` what a link means: same sitting and a shared Drucksache, which does not mean that this vote alone decided that TOP. Report how many reviewed links were right, fixed or flagged.
+Proposed on 2026-11-15, not yet decided by the owner: also review all 15 title links, which brings the total to about 165. They are votes 317, 369, 374, 432, 495, 514, 535, 595, 638, 703, 704, 758, 759, 805 and 863. Four of them (514, 535, 638, 863) carry no Drucksache at all, so for those the title is the only evidence there can be.
+
+Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. Counted again on 2026-11-15 from the cached reports of the 718-sitting reference store: the same 590 links, 575 through a shared Drucksache and 15 through a unique title. Run the review with the N8 review once the 85 sittings are fetched, and add their multi-link and title cases. State in `DATA.md` what a link means: the same Sitzung and a shared Drucksache or, where no Drucksache is shared, a title that matches exactly one Tagesordnungspunkt. Neither means that this vote alone decided that TOP. Report how many reviewed links were right, fixed or flagged.
 
 **Open:** fix the matching rule or flag the single link. Recommended: fix the rule where a pattern explains the error, flag one-off cases on the vote page.
 
-**Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest error is an amendment that shares a Drucksache with an unrelated TOP on the same day.
+**Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest errors: an amendment that shares a Drucksache with an unrelated TOP on the same day, and a fuzzy title match that binds a neighbouring TOP (review checklist class 7).
 
 **Effort:** M (human ~2 days / CC ~2 h, estimated)
 **Priority:** P1
@@ -465,6 +473,16 @@ Open: (3) and (4) below.
 
 **Effort:** M
 **Priority:** P2
+**Depends on:** None
+
+### compare_store_values cannot find a tagged export's SQLite copy
+
+**What:** `compare_store_values._recipe_rows` (`scripts/compare_store_values.py` 370–394) runs recipe r3 on the distribution copy, which it finds by globbing `data/exports/*/bundestag-pulse-local.sqlite.gz`. A `--data-tag <version>` export names the copy `bundestag-pulse-<version>.sqlite.gz` (`build_dip_pulse_site.py` 4976), and each export removes every other generation (4837–4839). So on a store whose last export carried a release tag, the glob finds nothing, and the comparison reports r3 as unavailable instead of counting it. Fix: take the copy's name from `datenstand.json` (its first file, which the export itself reads as the SQLite copy at 4841) instead of the glob. If "One reader for a Daten export on disk" lands first, use its reader.
+
+**Why:** The comparison is the replay check for every data correction (README "Validate a data correction"). Comparing two release stores before a stable release is exactly where it would meet tagged exports. Latent today: the replay recipe builds with the default tag `local`. Found by the architecture review of 2026-11-15, by reading the code; not run.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### Codebook follow-ups: licence layers and test hygiene
@@ -2045,6 +2063,202 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Effort:** S (upstream heuristic)
 **Priority:** P2
 **Depends on:** gstack upstream
+
+### Read a Tagesordnungspunkt's turns once
+
+**What:** Give "who speaks in a `<rede>`" one module. It reads each Tagesordnungspunkt once into a sequence of turns that nothing edits afterwards. Each turn's speaker is resolved once: Sitzungsleitung, the Rede's owner, another MdB, someone speaking for the Bundesregierung, or unplaced. Each turn also carries its marker ordinal, label tail, paragraphs, and the Rede or split part it belongs to. Reviewed kinds, the Fraktionsrede role strip and roleless chairs become facts on that sequence instead of tree edits. Today (main ccb0aa0, v0.44.0.0):
+- Eight walks over a `<rede>` keep their own chair, marker and continuation state: `speech_kinds.py` 361–371, 497–507, 643–680; `validate_dip_protocol.py` 917–931, 1067–1100, 1179–1355, 1776–1784, 2332–2348.
+- "Is this marker the Sitzungsleitung" exists in four forms: a raw role regex (`validate_dip_protocol.py` 1039–1042), a name-stripped test through `derive` (`speech_kinds.py` 244–254), a raw `rolle_lang` Vizepräsident test (`validate_dip_protocol.py` 968–988) and a name match against `<name>` chairs (902–935). `derive.py` 408–420 repeats the test on the report.
+- The passes talk to each other by editing the tree: `sitzungsleitung="1"` (934), `reviewed_kind` (964), a removed `<rolle>` (988), `top_source` (1027) and inserted split `<rede>`s (1091–1097). So the pass order in `parse_protocol_xml` (1677–1718) is an unwritten invariant, and `parse_vote_recommendations` (2042) reads the edited tree.
+
+**Why:** The open WP 18/19 work is mostly "who is speaking" cases: "WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns", "20/11: the chair's handover exchange…", the `<name>` speakers in "ADR 0004 follow-ups". Each case has to be taught to every walk, and each walk has its own idea of the chair. Tests reach a rule only through a whole sitting's XML. Six test files write their own XML builders: `test_a3_rule5.py`, `test_a3_round2.py`, `test_presidium_kinds.py`, `test_rede_reconciliation.py`, `test_withholding.py` and `test_rede_text.py`.
+
+**Context:** Found by the architecture review of 2026-11-15 (main 0e6def4). In-process, so no adapter is needed. Chair recognition is then tested once, rule tests feed in turns, and the six builders become one. "Decide each nested turn in one place" takes this sequence as its input. Judged fine and left alone: `reconcile_reden`/`raw_rede_inventory`, `fragestunde_turns`, the annex tables in `written_contributions`, `adopt_reden_outside_tops`. A replay of the reference store must move no figure.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** None; best before the next WP 18/19 rule round
+
+### Decide each nested turn in one place
+
+**What:** One module takes one Rede's turns (from "Read a Tagesordnungspunkt's turns once") plus its neighbours' labels. It returns exactly one treatment per turn, with its evidence: a Beitrag Kind, procedural, merged into a named Rede, or withheld with a reason code. `parse_protocol_xml` only stores the result. Today:
+- Evidence travels from `speech_segments` (`validate_dip_protocol.py` 1193–1383) as an untyped dict of about 14 keys. Pass 1 decides procedural or merged and sets `unsupported_reply` (1800–1850). Pass 2 combines about nine flags into a Zwischenfrage, a Befragung kind or a `LocatedRefusal` (1918–1935).
+- The 20/113 and 20/191 Kurzintervention exceptions are coded twice, with the same regexes: `speech_kinds.py` 511–520 and `validate_dip_protocol.py` 1819–1847. If the two copies drift, the Rede is withheld through `unsupported_reply` without a message.
+- Located refusals are stored in one pass (1758, 1764, 1854) and raised in the other (1924, 1933). Nothing lists the refusal sites, so `tests/test_withholding.py` 82–87 counts `reason="…"` strings in the source file.
+- `speech_text_and_paragraphs` (1387) is a one-line wrapper over `speech_segments(rede)[0]` with no production caller. Its 8 tests in `test_rede_text.py` check raw own text that pass 1 later blanks or extends (1858, 1864–1868).
+
+**Why:** Each queued rule has to be written into `speech_segments`, pass 1 and pass 2, and an exchange-shaped rule into `classify_reden` as well. This is the code with the most churn since October.
+
+**Context:** Found by the architecture review of 2026-11-15. Each rule then becomes a turns-in, treatment-out test, and the source-grep test becomes an assertion on reason codes. When `speech_text_and_paragraphs` goes, repoint "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion" to `speech_segments`; it cites the wrapper as the place where `<kommentar>` leaves the Rede text.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** "Read a Tagesordnungspunkt's turns once"
+
+### One module for the link between a namentliche Abstimmung and its Tagesordnungspunkt
+
+**What:** Move the rule that links a namentliche Abstimmung to a Tagesordnungspunkt into one module. It takes the Sitzung's date, its Tagesordnungspunkte's Drucksachen and titles (heading and linked Vorgang titles) and the roll-call candidates. It returns the links, with the reason each link was made. Fetching stays outside it. Today:
+- The shipped rule sits inline in `enrich_with_api` (`validate_dip_protocol.py` 4097–4467): the Drucksache overlap at 4190–4196, the unique-title fallback at 4270–4287, the detail fetch at 4290–4308.
+- The tested helper `match_roll_call_votes` (3355) has had no production caller since a0061a0 (v0.10.0.0); only `tests/test_review_fixes.py` 102–106 calls it. It differs from the shipped rule: it stops at the first failed detail fetch and has no title fallback.
+- `find_roll_call_xlsx_url` (3021) is test-only too. Keep it only if "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" will use it.
+
+**Why:** The rule has no interface, so the tested helper is not the rule that ships, and the P1 "Check that vote links are right" cited the helper until 2026-11-15. Checking one link takes a DIP FakeClient, a parsed agenda, patches of `fetch_html`, `fetch_roll_call_vote_detail`, `fetch_roll_call_vote_candidates` and `overlaps`, and a reset of a module global (`tests/test_vote_acquisition.py` 155, 16 patches).
+
+**Context:** Found by the architecture review of 2026-11-15. In-process; the fetcher is local-substitutable. Link tests become plain data: Tagesordnungspunkte plus candidates give links. With each link's reason returned, the N10 review can sample by reason. The scan-state vocabulary stays with "Typed completeness gaps instead of reason strings".
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None; best before or with "Check that vote links are right"
+
+### One link scheme for pages and anchors
+
+**What:** One module knows where each page lives (Dossier, Abstimmung, Personenseite, Gesetzesvorhaben), which id each anchor carries (Tagesordnungspunkt, Rede, Beitrag, Abstimmung), and the href from any page depth. Pages emit ids and links through it. Whether a Person has a Personenseite stays with "One Persons module over the person registry". Today five partial helpers each own a piece: `report_paths` (`build_dip_pulse_site.py` 1236), `resolve_entity_link` (5233, depth 0 only), `dossier_href` (6869), `speech_anchor` (`render_dip_pulse_html.py` 1309) and `vote_anchor_id` (`features/votes.py` 429). Around them:
+- The Dossier path is written out by hand at 13 places in `build_dip_pulse_site.py` (6159, 6262, 6562, 6648–6649, 7095, 7228, 8011, 9953, 10005, 11159, 11513, 12353), plus `week_radar_feed.py` 93 and `build_demo_site.py` 209.
+- `render_dip_pulse_html.py` 3287 writes the anchor `id="top-N"`, and eleven places rebuild `#top-N` by hand: render 2286, 2993, 3171; build 6158, 6648, 6649, 7058, 7095, 8100; `week_radar_feed.py` 93, 102.
+- Page depth travels as strings: `mp_prefix`/`site_prefix` (`features/votes.py` 154–156) and `"../"` literals.
+- `week_radar_feed.py` 12–13 says the dossier link function is passed in, yet line 93 writes the formula out itself.
+- `_bill_event_href` (`build_dip_pulse_site.py` 8868) checks the site's own hrefs against a regex.
+
+**Why:** Renaming a page or an anchor means editing about 30 places in four modules. No test short of a full build proves that an href lands on an id the page emits: `validate_store_gate.audit_links` is the only check. About 77 test lines pin literal link strings.
+
+**Context:** Found by the architecture review of 2026-11-15. A gap in `docs/plans/render-layer-and-order.md`: its `href()` only checks schemes, and `render/common.py` does not name this. Build it before render-layer step 3, or each per-page move copies the formulas into a new module. A round-trip test ("the href for Tagesordnungspunkt X hits the id the Dossier emits") then runs without a build, and `audit_links` stays as the backstop. In-process.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None; before render-layer step 3
+
+### One request module for every outside source
+
+**What:** One module owns outgoing requests per host: pace and budget, which errors are retried, the cut-off after an outage, timeouts and the request log. DIP, bundestag.de, abgeordnetenwatch, the MdB-Stammdaten and the LLM providers ask it for text, bytes or JSON. Production uses a urllib adapter, tests one fake adapter. Today five `urlopen` paths each have their own policy:
+- `ApiClient` (`validate_dip_protocol.py` 273): 2 retries, `DipBreaker`, logged.
+- `_fetch_page` (363) for bundestag.de and the dserver: 2 retries, logged, no cut-off of its own. The roll-call outage is a `"monotonic|message"` string under `__outage__` in the page-cache dict (352, 3132–3146), and it guards list pages only. Detail and member pages (3299–3300) have no cut-off. The Namenslisten page (2993–2999) is not memoised on failure, so it is requested again for every vote.
+- `abgeordnetenwatch.py` 296–336: retries only on 429, does not retry a connection error, cuts off after 8 failures (`MAX_CONSECUTIVE_FAILURES`, 55), not logged. `measure_aw_match_share.py` 71 has a second cut-off.
+- `stammdaten.py` 320: one attempt, not logged.
+- `post_json` (`validate_dip_protocol.py` 603) and `build_dip_pulse_site.py` 5200.
+- `fetch_html` and `fetch_text` (555, 599) are one-line pass-throughs that exist as patch points.
+
+Tests fake HTTP six ways: the global `urllib.request.urlopen` (`test_abgeordnetenwatch.py` 8 times, `test_stammdaten.py`, `test_measure_aw_match_share.py`), `dip.urllib.request.urlopen`, `dip.fetch_html` (39 patches in 6 files), injected callables (the `sitzungskalender` FakeSource, the `XmlPacer` clock and sleep), and resets of `dip._namenslisten_entries` (3 sites).
+
+**Why:** What "this host stopped answering" means, and whether a request reaches `DIP_REQUEST_LOG`, depends on which module asks. TODOS.md lists the symptoms one source at a time, and each fix lands in one copy: "C1 seat counts: deferred findings" items 1 and 32, "A3 /gstack-ship review: deferred findings (2026-11-01)" adversarial pass (a), "A3 item 1.5 review (2026-11-13): deferred findings" items 1, 5 and 6.
+
+**Context:** Found by the architecture review of 2026-11-15. This is not the source seam in "A build pipeline module behind `main()`", which replays DIP data from cached reports; this one is about requests to every host. Two real adapters, live and fake, justify the seam. A data-level seam for all sources is not justified: each source records a different shape (raw XML and zip, parsed profiles, parsed report JSON), so it would have one adapter. `sitzungskalender` and `XmlPacer` already inject their side effects. Close the symptom items above when this lands.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### One reader for a Daten export on disk
+
+**What:** The export module owns its layout in both directions. It opens an exports directory through `datenstand.json`, exposes the generation, its listed files and the SQLite copy, and runs one verification that returns typed problems (missing, extra, size, hash), with a cheap mode for reuse. The release checks (tag, commit, licence) stay in `publish_dip_pulse_data.py`. Today three places check a generation against `datenstand.json`, each differently, and a fourth reads the export by its own route:
+- `_manifest_reusable` (`build_dip_pulse_site.py` 4014) checks sizes and hashes only the small files.
+- `validate_store_gate.check_export` (224) hashes every listed file and ignores extra files.
+- `publish_dip_pulse_data.verify_export` (205) hashes every file and refuses extra or missing ones.
+- `compare_store_values._recipe_rows` (375–376) finds the SQLite copy by a glob (see "compare_store_values cannot find a tagged export's SQLite copy").
+- "Release pipeline: deferred /ship review findings" item 5 asks for one more check (re-verify staging before the rename).
+- The SHA-256 helper is copied at `validate_store_gate.py` 216, `publish_dip_pulse_data.py` 68 and `build_dip_pulse_site.py` 3904.
+
+**Why:** The store gate passes an export with an extra file that the release then refuses. Each consumer knows the layout, and each verifier's tests build a real export and tamper with it on their own (`test_validate_store_gate.py` 525, `test_publish_dip_pulse_data.py` 247–265, `test_daten_export.py` 1635ff).
+
+**Context:** Found by the architecture review of 2026-11-15. This is the reading half of the `export(store, out_dir) -> manifest` module that "Split the dataset from the site" proposes, so build both together. Local-substitutable (a temp directory). The tamper cases are then tested once, and the gate and publish tests keep only their own checks.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None; best with the export move in "Split the dataset from the site"
+
+### The reviewed list applied and checked by its own module
+
+**What:** `reviewed_units.py` decides what `reviewed_units.json` says for a Sitzung's units at both grains (a whole `<rede>` before the split, a withheld unit after it) and raises on a stale entry. It also owns the check that a parse is current under the list, which build and persist call. Today the module only loads, validates and digests the list, and tests inject entries two ways (the global `use()` at 104 and a `reviewed=` parameter):
+- Matching sits in the parser, at two grains: whole-`<rede>` entries before the split, each checked against its owner (`validate_dip_protocol.py` 941–965), and withhold entries after it, with a second owner check (1891–1901) and an unmatched check (2028–2033).
+- Kind names are string literals in `reviewed_units.py` 36, `derive.py` 325, `speech_kinds.py` 472 and `validate_dip_protocol.py` 1063.
+- The currency check is written twice: in `build_dip_pulse_site.stale_causes` (2011–2024) for cached reports and in `persist_dip_pulse_store.require_current_speech_rules` (111–123) for the store. `persist_report` (1949–1954) still stamps the current digest on a report without one, relying on the speech-rule version to refuse such a report.
+
+**Why:** "ADR 0004 follow-ups" still lists a symptom: a candidate flagged on a 6c split part can never be listed, because presidium entries are matched before the split. Listing a split part under a presidium kind today touches five places. PR B of `docs/plans/withheld-before-t4.md` (v0.42/v0.43) closed three more symptoms, the PR 2 ship review P3s in "Coverage gate before the first data release", one at a time, in the parser, in `stale_causes` and in the demo fixture.
+
+**Context:** Found by the architecture review of 2026-11-15. Since PR B made the currency check sound, what remains is mainly the matching at two grains. Local-substitutable. Owner and currency checks become unit tests without XML, and `use()` can go.
+
+**Effort:** M
+**Priority:** P4
+**Depends on:** None
+
+### One projection from a parsed Plenarprotokoll to its report
+
+**What:** One function owns the report's XML half: protocol stamps, per-Tagesordnungspunkt fields, sitting-level Beiträge, the validation summary and the DIP mismatch warnings. Pre-release, the parser could emit that shape directly. Today:
+- The XML half is put together by hand in `build_report` (`validate_dip_protocol.py` 4560–4588, plus 4203, 4364, 4452), in `reparse_report_xml` (4011–4057) and in `extract_demo_fixture.py` 99–153.
+- Four test helpers copy it: `test_withholding.py` 46–52, `test_a1_followups.py` 26–31, `test_wp18_19_pipeline.py` 17–24, `test_reden_outside_tops.py` 25–37.
+- The parser's shape and the report's shape differ (3830–3874), and readers decode a unit's category from its id prefix (`check_withhold_one.py` 57–125, `render_dip_pulse_html.py` 1887).
+
+**Why:** The copies drift, and each drift has been a separate fix. Reparse skips `xml_drucksache_count` ("Reden outside a TOP: what the ship review left open" item 9). The demo fixture dropped `reviewed_digest` until PR B of `docs/plans/withheld-before-t4.md` added it by hand. `test_withholding.py` now carries it too, but the other three test copies still omit it.
+
+**Context:** Found by the architecture review of 2026-11-15. In-process. "Reparse equals a fresh build's XML half" becomes a test, and the four helpers become one call. This is the write side: "Split the dataset from the site" is the read side, and "Correct a cached report's XML Drucksache references at the source" covers one of its fields.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### A Publication domain's page notice from its Presentation state
+
+**What:** `publication_state` maps a Publication domain's facts to the notice a page shows (state, wording, source link), and every page renders that notice. Today each domain dict carries both `acquisition_state` and `presentation_state` (`publication_state.py` 240–241), but only the sources page reads `presentation_state` (`build_dip_pulse_site.py` 12394, defaulting to "unavailable"). Three places read `acquisition_state` instead, default it to "complete" and keep their own wording:
+- votes `_STATUS_COPY` (`features/votes.py` 439, 553);
+- `_mp_domain_notice` (`build_dip_pulse_site.py` 9749, called at 9859–9860 and 10058–10059);
+- the Dossier's profile notice (`render_dip_pulse_html.py` 3340–3348, the same strings as build 9754–9756).
+
+None of them goes through `derive_presentation_state` (`publication_state.py` 96), which folds in the record and rejection counts.
+
+**Why:** CONTEXT.md says a Presentation state is derived and never set directly. Today the meaning of each state and its wording live in four places, and a missing state shows as complete. That is latent: the build always fills the state in (`build_dip_pulse_site.py` 2996–3066), so only direct render callers and tests reach the default.
+
+**Context:** Found by the architecture review of 2026-11-15. A gap in `docs/plans/render-layer-and-order.md`: L2 names a `provenance` gap component but not what feeds it. This is the display side; "Typed completeness gaps instead of reason strings" covers the reasons used by backfill and the manifest. The wording per state is then tested on one function. In-process.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None; fits render-layer L2
+
+### One module for a versioned source cache file
+
+**What:** One module for "a versioned cache file": one load policy for a damaged or old file, an atomic save, a fetch time per entry. Each source supplies only its record shape and expiry rule. Today each cache treats a damaged or old file differently:
+- `dip_cache.py` 33–42, 88–108: an unreadable file reads as empty and is overwritten, through `write_text_atomic` (a fixed temp name and no fsync; `validate_dip_protocol.py` 4059).
+- `politikfelder.py` 224–372 and `antrag_text.py` 617–671: another version is refused, a corrupt file is moved aside, the save fsyncs.
+- `abgeordnetenwatch.py` 236–270: an unreadable or other-version file is dropped silently and overwritten on save.
+- `sitzungskalender.py` 200–215: warns and keeps the file.
+- `stammdaten.py` 395–420: its own mkstemp and sweep.
+- The roll-call page cache travels as `getattr(args, "roll_call_page_cache")` (`validate_dip_protocol.py` 4531), and the Namenslisten cache is a module global (2990).
+- `measure_aw_match_share.py` 284–302 keeps a second answers file with its own atomic write, because the abgeordnetenwatch cache records no failures, candidate counts or fetch time.
+
+**Why:** Whether a damaged cache is refused, kept or lost depends on which source wrote it. Losing the abgeordnetenwatch cache costs about 43 minutes of requests ("A3 item 1.5 review (2026-11-13): deferred findings" item 1).
+
+**Context:** Found by the architecture review of 2026-11-15. Latent: no figure is wrong today. Local-substitutable (a temp directory); the corrupt-file, version and atomicity tests are written once. `dip_cache`'s expiry and closed-Wahlperiode rule earn their keep and become its shape and expiry. Related: the gate and prefetch robustness item in "A3 /gstack-ship review: deferred findings (2026-11-01)", where a build and `prefetch_dip_bulk` rewrite the same `data/dip-*-cache.json` without the writer lock.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### One reading of a printed MdB name for every source
+
+**What:** Parse each source's name format (the roll-call "surname, given name", the Plenarprotokoll `<redner>`, abgeordnetenwatch) into given name, surname and title words in one place. Each consumer still builds its own key from the parts. Today one roll-call name is read three ways:
+- `derive.person_name_key` (`derive.py` 1146), for E4 re-filing: drops every word ending in a full stop and anything in parentheses, and ignores word order.
+- `person_registry._normalized_mp_name` and `_name_words` (853–905), for Namensabgleich: 15 title words, leading ones only, and 10 particles including Freiherr and Graf.
+- `build_dip_pulse_site._vote_member_name_parts` (1039–1094), for the abgeordnetenwatch name query at 1171: 3 title words, and 23 particles without Freiherr and Graf.
+- `measure_aw_match_share.py` 269 imports the private `_name_words`.
+
+**Why:** A title or role rule change lands in one reading only, for example dropping role words ("Shared Redner-IDs: what the fix leaves open" item 12).
+
+**Context:** Found by the architecture review of 2026-11-15. Speculative: no disagreement between the readings was found in the data. In-process. Test with one table of real spellings across sources.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
+### Architecture review 2026-11-15: smaller findings
+
+**What:**
+1. **Page scripts without a home in the render-layer plan.** In `docs/plans/render-layer-and-order.md`, L2 gives `render/assets/site.js` only the theme toggle, the data age and the filter chips. The other inline `<script>` blocks have no target: `render_dip_pulse_html.py` 902, 939, 1128, 1161, 1205, 1231 (the Dossier sidebar among them) and `build_dip_pulse_site.py` 5496, 6441, 7173, 8258, 8417, 9654, 11572. About 30 test lines match their source text, and L5 has no row for them. Add them to the plan before the per-page moves.
+2. **Table descriptions have two sources.** `DATABASE_TABLE_DESCRIPTIONS` (`build_dip_pulse_site.py` 144–180, shown on the Daten page at 5591) and the table meanings in `scripts/data_dictionary.json` (DATA.md) describe the same tables in different words. Q10 moves the schema to DATA.md: when the Daten page's schema section goes, merge the richer prose into the dictionary and delete the dict.
+3. **`tests/_votes_fixture.panel_for` copies the panel wiring of `render_html`** (`render_dip_pulse_html.py` 3142–3153) and leaves out `vote_passages`, so a fixture panel never shows Antrag passages. Give the page and the fixture one constructor.
+
+**Why:** Found by the architecture review of 2026-11-15. None is a correctness defect.
+
+**Effort:** S each
+**Priority:** P3 (1), P4 (2, 3)
+**Depends on:** None
 
 ## Completed
 

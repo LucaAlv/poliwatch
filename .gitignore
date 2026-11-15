@@ -19,3 +19,5 @@ docs/agents/skill-guidance.md
 
 # graphify knowledge graph (local, rebuilt by git hooks)
 graphify-out/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
