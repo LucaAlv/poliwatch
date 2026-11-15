@@ -156,7 +156,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
-    "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung und sind keiner Person zugeordnet; nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
+    "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005). Nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
@@ -4522,9 +4522,13 @@ def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
              "eindeutig lesen kann, oder eine Rede auf der geprüften Liste (`scripts/reviewed_units.json`). Die Sitzung "
              "bleibt mit allen übrigen Reden, Tagesordnungspunkten und Abstimmungen erhalten; die Rede steht mit Grund und "
              "Text in `withheld_units` (die Beiträge anderer Redner darin in `withheld_turns`) und in keiner Zählung, weder "
-             "als Rede noch als Beitrag noch für eine Person oder Fraktion. Nicht zu verwechseln mit einem "
-             "**zurückgehaltenen Fakt** (`facts.withheld`): einem Fakt, der wegen einer fehlenden Sitzung nicht "
-             "veröffentlicht wird.", "",
+             "als Rede noch als Beitrag noch für eine Person oder Fraktion. Ausnahme *Erste Reden*: Die erste Rede einer "
+             "Person in unserer Abdeckung kann eine zurückgehaltene sein, gebunden über ihre Redner-ID an jede Person mit "
+             "dieser ID; dann zählt diese Person in keiner Woche als Debütantin oder Debütant (ADR 0005, „Facts“). Eine "
+             "Sitzung mit zurückgehaltenen Reden ist für Reden nicht vollständig erfasst: Jeder Fakt auf Basis der Reden "
+             "in ihrer Woche und ihrem Monat bleibt *unvollständig erfasst*. Nicht zu verwechseln mit einem "
+             "**zurückgehaltenen Fakt** (`facts.withheld`): einem Fakt, der nicht veröffentlicht wird, etwa weil eine "
+             "Sitzung seines Zeitraums fehlt, nicht vollständig erfasst ist oder Reden zurückhält.", "",
              "Anteil = zurückgehaltene eigene Wörter / (eigene Wörter gespeicherter Reden + zurückgehaltene eigene "
              "Wörter); Wörter sind durch Leerraum getrennte Tokens. Beiträge anderer Redner in einer zurückgehaltenen "
              "Rede zählen nicht mit. `speeches.sequence` ist die Stelle der Rede im Tagesordnungspunkt; eine "

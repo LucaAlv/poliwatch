@@ -1846,7 +1846,7 @@
       }
     },
     "withheld_units": {
-      "meaning": "Zurückgehaltene Reden (ADR 0005): eine Rede, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder eine Rede auf der geprüften Liste. Sie steht in keiner Zählung, weder als Rede noch als Beitrag, und ist keiner Person zugeordnet; Text und Grund bleiben hier erhalten. Nicht zu verwechseln mit facts.withheld (ein Fakt, der wegen einer fehlenden Sitzung zurückgehalten wird).",
+      "meaning": "Zurückgehaltene Reden (ADR 0005): eine Rede, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder eine Rede auf der geprüften Liste. Sie steht in keiner Zählung, weder als Rede noch als Beitrag; Text und Grund bleiben hier erhalten. Nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt diese Person in keiner Woche als Debüt, und ihre Sitzung ist für Reden nicht vollständig erfasst (ADR 0005, „Facts“). Nicht zu verwechseln mit facts.withheld (ein Fakt, der nicht veröffentlicht wird, etwa weil eine Sitzung seines Zeitraums fehlt, nicht vollständig erfasst ist oder Reden zurückhält).",
       "columns": {
         "id": {
           "meaning": "Projektseitige Kennung aus Protokollkennung und Rede-ID.",

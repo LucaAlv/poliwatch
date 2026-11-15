@@ -120,6 +120,15 @@ Withholding works on the whole `<rede>`, as decided. After round 2's rules that 
 **Priority:** P1
 **Depends on:** the correctness P1s of stage 1
 
+### Withheld-Reden PRs A and B: deferred review findings (2026-11-15)
+
+Found by the code review of PR A (127e1c2) and PR B (fc1676e) of `docs/plans/withheld-before-t4.md`. None moves a figure today; fix when the code is next touched.
+
+- **A, console: the incomplete report's last line can be false.** `build_dip_pulse_site.format_incomplete_report` prints "Fix: none available now; run an online update once DIP publishes the missing protocols" whenever `acquirable` is empty. After T4 a store whose only gaps are withheld-Reden sittings gets that line, though nothing awaits DIP: the line above it ("N sittings hold withheld Reden …") names the real remedy. The same false line predates PR A for a store whose only gaps are structural vote gaps. Fix: say which remedy applies (parser rule or reviewed list, then `--offline --repersist`; a better match rule; a larger `--vote-scan-pages`) and keep "online update" for the not-yet-published case.
+- **A, console: the partial counter prints the reason code.** The same function lists "speeches: withheld_reden (N×)" under "in the store but not fully acquired" (a deliberate choice of PR A, so the count does not split per number). A sitting with withheld Reden and a votes gap, built with votes off, lands in `incomplete_sitting_protocols`'s `vote_only` list ("held back only by votes"), so main's `[backfill]` withheld line does not name it. Word both for a reader.
+- **A, latent: `facts.gap_note` renders "None Reden zurückgehalten"** for a gap with reason `withheld_reden` and no count (`gap.get("withheld_reden")` has no fallback). `completeness_from_reports` always sets the count with the reason, and `period_gaps` copies it, so no input reaches it today.
+- **A, hygiene:** the comment of `test_a_sitting_held_back_only_by_withheld_reden_is_not_reacquired` (`tests/test_backfill.py`) still names `_structural_vote_gap`, renamed `_structural_gap` by PR A.
+
 ### Keep the raw vote pages and DIP sitting records (check thoroughly first)
 
 **Status: idea, not specced. Do not build it until the checks below are done and the owner has seen their result.**
@@ -1930,7 +1939,7 @@ The "corrected speaker, `rede_id`, `occurrence_id` of a Rede" recipe is copied i
 - `validate_dip_protocol` creates them as `failure_reasons` and `roll_call_scan_end`.
 - `build_dip_pulse_site.annotate_report_acquisition` rewrites them.
 - `facts.completeness_from_reports` flattens them into display text ("votes partial (source_stale)", "scan_budget_exhausted after N pages").
-- `build_dip_pulse_site._structural_vote_gap` parses that text back with `text.index("(")` and `_BUDGET_PAGES_RE` to decide whether `--backfill-incomplete` rescans a Sitzung.
+- `build_dip_pulse_site._structural_gap` parses that text back with `text.index("(")` and `_BUDGET_PAGES_RE` to decide whether `--backfill-incomplete` rescans a Sitzung.
 - `build_publication_manifest` and `features/votes.py` read the raw dicts again.
 
 Done when the backfill decision, the Completeness basis and the manifest consume the typed gap, and text is produced only for display.
