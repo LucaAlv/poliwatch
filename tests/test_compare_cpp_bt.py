@@ -366,6 +366,30 @@ class CompareCppBtTests(unittest.TestCase):
         path.write_text("field\trede_id\tours\ttheirs\treason\nsurname\nsurname\tID1\ta\tb\treason\n", encoding="utf-8")
         self.assertEqual(len(cmp.known_differences(path)), 1)
 
+    # Value: protects=a Rede whose stored text is empty is listed as a ratio outlier against CPP-BT's tokens, not skipped as unknown; fails_when=an empty speech text drops out of the ratio again; why_new=the worst case, no text at all, was the one silent case; seam=none; no_claim=why the text is empty
+    def test_empty_speech_text_is_a_ratio_outlier(self) -> None:
+        db = sqlite3.connect(self.export)
+        db.execute("UPDATE speeches SET text = '' WHERE rede_id = 'ID1800100500'")
+        db.commit()
+        db.close()
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        self.assertEqual(self.run_main(cpp)[0], 0)
+        row = next(r for r in self.sections()["differences"] if r["kind"] == "ratio" and r["rede_id"] == "ID1800100500")
+        self.assertEqual(row["ours"], "0")
+
+    # Value: protects=a run whose join found nothing to compare ends in exit 2 instead of a vacuous pass: unreadable CPP-BT protocol numbers, unreadable tokens; fails_when=such a run exits 0 with ids_only_ours 0; why_new=a changed CPP-BT format would satisfy the written pass rule with no sitting compared; seam=none; no_claim=other format changes
+    def test_a_comparison_that_compared_nothing_is_refused(self) -> None:
+        for column, value, needle in ((1, "181", "no sitting is held by both"), (6, "115.0", "token count")):
+            rows = cpp_rows()
+            for row in rows:
+                row[column] = value
+            cpp = self.dir / f"bad{column}.csv"
+            write_cpp(cpp, rows)
+            code, message = self.run_main(cpp)
+            self.assertEqual(code, 2, message)
+            self.assertIn(needle, message)
+
     # Value: protects=the shipped known-differences file parses with a reason on every row and only the field names the report writes; fails_when=a row loses its reason or names a field the report never emits; why_new=the file is read by the review's pass rule; seam=none; no_claim=that each reason is true
     def test_shipped_known_differences_file(self) -> None:
         path = ROOT / "scripts" / "cpp_bt_known_differences.tsv"

@@ -9,7 +9,7 @@ Not a release review: the first run on the reference store, to check the join ag
 | Export | `.context/dip-pulse-site/data/bundestag-pulse.sqlite`, replayed on v0.41.0.0 on 2026-11-14, 718 sittings. SHA-256 `4e17622b82c4480da893cd5a305a72a7a36e31c157e1ddb0b17c336ee7e6c1e5` |
 | Source XML | `.context/dip-pulse-site/data/xml/`, 718 files |
 | CPP-BT | `CPP-BT_2026-09-19_DE_CSV_Reden_Metadaten.zip`, Zenodo record 22844952, version 2026-09-19 (still the latest), 10,714,166 bytes, CC0. SHA-256 `d40cd969f96f34fd48cd56ee1f747b909f269cd4a9a22b49274997ce5b186dee`, the digest the research note records. Zenodo's own MD5 `4c82f8f95b92f30f3c8208d9b482ba08` matches. Downloaded with the owner's approval, kept outside the repository |
-| Run | `uv run --python 3.13 python -I scripts/compare_cpp_bt.py ...`, about 4 seconds, exit 0. The full TSV (802 sitting rows, 3,522 difference rows: 1,486 ratio, 1,752 only theirs, 282 surname, 2 Fraktion) is not committed: it is reproducible from the inputs above |
+| Run | `uv run --python 3.13 python -I scripts/compare_cpp_bt.py ...`, about 4 seconds, exit 0. The full TSV (802 sitting rows, 3,523 difference rows: 1,487 ratio, 1,752 only theirs, 282 surname, 2 Fraktion) is not committed: it is reproducible from the inputs above |
 
 ## Join figures against the research note
 
@@ -36,24 +36,28 @@ The sittings columns match the note's for WP 18 to 20. WP 21 holds 105 sittings 
 
 ## Token ratio, and the thresholds for sign-off
 
-On 53,818 shared Reden with more than 50 CPP-BT tokens, the ratio of our words (`text.split()` of our speeches, summed over a split element's parts) to their tokens has a sitting median between 0.85 and 0.89 in 99% of the 705 sittings it can be computed for (all lie between 0.826 and 1.069; the middle 80% between 0.864 and 0.874).
+On 53,819 shared Reden with more than 50 CPP-BT tokens, the ratio of our words (`text.split()` of our speeches, summed over a split element's parts) to their tokens has a sitting median between 0.85 and 0.89 in 99% of the 705 sittings it can be computed for (all lie between 0.826 and 1.069; the middle 80% between 0.864 and 0.874).
 
 With the first values, a 15% deviation from the sitting's median and a 50-token floor:
 
 | Deviation above | Reden listed | of them with fewer words than their tokens suggest |
 |---:|---:|---:|
-| 15% | 1,486 (2.8%) | 962 |
-| 25% | 568 | 452 |
-| 40% | 205 | 188 |
-| 60% | 89 | 83 |
-| 80% | 24 | 20 |
+| 15% | 1,487 (2.8%) | 963 |
+| 25% | 569 | 453 |
+| 40% | 206 | 189 |
+| 60% | 90 | 84 |
+| 80% | 25 | 21 |
 
 Three of the largest were read: 19/72 `ID197202600` (our 16 words, their 1,457 tokens), 19/7 `ID19709200` and 18/44 `ID1804401200` (259 against 5,275). In each the XML `<rede>` runs on past the speech into the rest of the sitting's business (19/72 and 19/7 are an AfD motion on the Beschlussfähigkeit, whose element goes on to the chair's remarks, and in 19/7 to the end of the sitting; 18/44 ends with the chair resuming the Haushaltsberatungen), so CPP-BT counts all of it as one Rede and the parser stores the speech part. This is the pattern of `docs/source-errors.md` C1 and TODOS.md "WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns"; nothing here is new to the store. Adding our nested Zwischenfragen, Kurzinterventionen and Erwiderungen to our words made the fit worse (3,425 listed), so CPP-BT's token count does not include them and the script does not add them.
 
 **For the owner to sign off:**
-- **15% and 50 tokens:** the list is 1,486 long, so the 20-largest rule does the reading, not the threshold. Raising the tolerance to 25% would list 568 and keep every deviation the 20 largest show. Recommendation: keep 15% as the listing threshold (a listing costs nothing), keep the 20-largest reading rule, and re-run on every stable review to watch the count move.
+- **15% and 50 tokens:** the list is 1,487 long, so the 20-largest rule does the reading, not the threshold. Raising the tolerance to 25% would list 569 and keep every deviation the 20 largest show. Recommendation: keep 15% as the listing threshold (a listing costs nothing), keep the 20-largest reading rule, and re-run on every stable review to watch the count move.
 - **Five sittings in the spot check (step 3):** this run did not exercise step 3; the size stays a first value.
 
 ## What the run did not find
 
-No id of ours is missing from CPP-BT in a shared sitting (`ids_only_ours` 0). No id only CPP-BT has is `unclassified`, `outside_top`, `annex_zu_protokoll` or `annex_other`. After the known-differences file, the only rows left for a person to read are the 1,486 ratio rows.
+No id of ours is missing from CPP-BT in a shared sitting (`ids_only_ours` 0). No id only CPP-BT has is `unclassified`, `outside_top`, `annex_zu_protokoll` or `annex_other`. After the known-differences file, the only rows left for a person to read are the 1,487 ratio rows.
+
+## Correction after review
+
+The first version of the script skipped a Rede whose stored text is empty, so the worst case, no words at all, was the one silent case. It now counts such a Rede as 0 words and lists it. On this store that adds one row, the largest of all: 19/2 `ID19205800` (Altmaier), 0 words against 1,000 CPP-BT tokens. It is the speech with an empty `<redner id>`, which the store keeps as an unattributed speech without its text (`docs/source-errors.md` E2: 6,180 characters, counted as unattributed). A review reading the 20 largest will meet it first each time. Every figure above that moved by it moved by one (ratio rows 1,486 to 1,487, compared Reden 53,818 to 53,819, and each row of the threshold table by one); no other figure changed. The same store replays to the same bytes twice.

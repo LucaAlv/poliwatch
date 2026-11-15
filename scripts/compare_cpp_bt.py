@@ -243,8 +243,8 @@ def load_ours(connection: sqlite3.Connection) -> dict:
                 sitting["name"].setdefault(source, our_surname_text(name))
             if fraktion:
                 sitting["fraktion"].setdefault(source, fraktion)
-        if text and table == "speech":
-            sitting["words"][source] += len(text.split())
+        if table == "speech":
+            sitting["words"][source] += len((text or "").split())  # a speech with no text counts 0, not "unknown"
 
     for row in connection.execute(
             "SELECT s.protocol_id, s.rede_id, m.display_name, s.fraktion, s.text FROM speeches s "
@@ -401,7 +401,7 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
             for rede_id in sorted(both):
                 tokens = their["ids"][rede_id]["tokens"]
                 words = mine["words"].get(rede_id)
-                if tokens and tokens > RATIO_MIN_TOKENS and words:
+                if tokens and tokens > RATIO_MIN_TOKENS and words is not None:
                     ratios[rede_id] = words / tokens
             totals["ratio_compared"] += len(ratios)
             if ratios:
@@ -422,6 +422,19 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
 
 
 # ---------------------------------------------------------------- output
+
+def refuse_empty_comparison(result: dict) -> None:
+    """Stop a run whose join found nothing to compare: a changed format must not read as a pass."""
+    totals = result["totals"]
+    if totals["sittings_both"] == 0:
+        raise InputError("no sitting is held by both sides: the protocol numbers of one input did not parse")
+    unparsed = result["theirs_skipped"]["row_unparsed"]
+    read = sum(totals[name] for name in ("ids_both", "ids_only_theirs", "theirs_ids_in_sittings_we_lack"))
+    if unparsed * 100 > unparsed + read:
+        raise InputError(f"{unparsed} CPP-BT rows have no readable protocol number or rede id (over 1%): the format changed")
+    if totals["ids_both"] and totals["ratio_compared"] == 0:
+        raise InputError("no Rede could be compared by token count: the tokens column did not parse")
+
 
 def tsv_line(values) -> str:
     cleaned = []
@@ -541,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
                 result = compare(connection, read_cpp_bt(args.cpp_bt), args.xml_dir, args.wp_min)
             finally:
                 connection.close()
+            refuse_empty_comparison(result)
             inputs = [("export", sha256_of(args.export), args.export.name),
                       ("cpp_bt", sha256_of(args.cpp_bt), args.cpp_bt.name),
                       ("xml_files", str(len(list(args.xml_dir.glob("plenarprotokoll-*.xml")))), str(args.xml_dir.name))]
