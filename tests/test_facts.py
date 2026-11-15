@@ -1561,14 +1561,14 @@ class CompletenessTests(StoreCase):
         month = specs[4]["date"][:7]
         by = {(row["metric_id"], row["period_key"]): row for row in rows}
         for metric in facts.ALL_REGISTRY:
-            key = (metric["id"], month if metric.get("period_kind") == "month" else week)
-            if key not in by:
+            cell = (metric["id"], month if metric.get("period_kind") == "month" else week)
+            if cell not in by:
                 continue
             with self.subTest(metric["id"]):
                 expected = 0 if metric["coverage"] == "speeches" else 1
-                self.assertEqual(by[key]["complete"], expected)
+                self.assertEqual(by[cell]["complete"], expected)
                 if not expected:
-                    self.assertEqual(by[key]["publishable"], 0)
+                    self.assertEqual(by[cell]["publishable"], 0)
         self.assertEqual(by[(LAENGSTE, week)]["complete"], 0)
         self.assertEqual(by[(KNAPPSTE, week)]["complete"], 1)
         notes = facts.gap_notes(facts.load_protocols(self.conn), completeness, seeded["catalog"])
