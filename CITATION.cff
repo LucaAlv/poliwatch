@@ -7,6 +7,7 @@ authors:
     given-names: "Luca"
 abstract: "A dataset and static site of Bundestag plenary proceedings: sittings, agenda items, speeches, roll-call votes and members, built from DIP, the Plenarprotokoll XML and bundestag.de. The code is MIT-licensed. The data is not under one licence: DIP-derived data keeps the DIP terms of use, roll-call data follows the Bundestag, abgeordnetenwatch profile data is CC0 1.0, and our own derived work is CC BY 4.0 (ADR 0003). The product name is not final; the title will change."
 license: MIT
+repository-code: "https://github.com/LucaAlv/poliwatch"
 keywords:
   - Bundestag
   - parliament

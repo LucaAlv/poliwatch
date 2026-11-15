@@ -35,7 +35,8 @@ class CitationFileTests(unittest.TestCase):
         self.assertIn('family-names: "Veh"', self.text)
         self.assertIn("ADR 0003", self.text)
         self.assertIn("layers", self.text)
-        for key in ("doi", "version", "date-released", "identifiers", "repository-code"):
+        self.assertIn('repository-code: "https://github.com/LucaAlv/poliwatch"', self.text)
+        for key in ("doi", "version", "date-released", "identifiers", "url"):
             self.assertNotIn(key, self.keys)
 
 

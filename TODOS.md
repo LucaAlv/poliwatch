@@ -288,9 +288,15 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 ### Public repository: follow-ups
 
-**What:** The repository is public, though `SECURITY.md` (lines 3 and 8) says it is not (the TODOS entries that said so were corrected on 2026-11-14). Fix it; the owner turned on GitHub private vulnerability reporting on 2026-11-06, so `SECURITY.md` can say it is available. Add `repository-code` and `url` to `CITATION.cff`. Scan the full history for secrets, and look through plans and docs for anything that should not be public.
+**Done 2026-11-14** (`docs/plans/release-readiness.md`, item 1): `SECURITY.md` no longer says the repository is not public; `CITATION.cff` has `repository-code` (its test asserts the line). `url` stays out until the site has a host (owner decision).
 
-**Why:** Found by the v1 scope review. `SECURITY.md` wrongly says the repository is not public.
+**Full-history scan, 2026-11-14, clean.** gitleaks 8.30.1 (`--redact`) over a mirror clone: 153 `refs/pull/*` and 22 branches, 1,068 commits scanned, 27 findings. 22 are test fixtures of the vendored gstack in `e5f86e1` under `.claude/skills/gstack/` (AWS, GCP, GitHub-PAT, JWT and generic-key shapes). The other 5 were read by hand and are false positives, all rule `generic-api-key`: three are the test placeholders at `tests/test_dip_request_log.py:19` (commits `4705fb3`, `8b93eb5`, `874fa3f`), two match the words "keys, A2-coordinated contract" at `docs/plans/a1-followups.md:350` (commits `92e4946`, `ae1886b`). No secret in the history; no value is written down here.
+
+**What is left:**
+- The owner turns on secret scanning and push protection (Settings → Code security), and "Block command line pushes that expose my email". The commit history stays as it is (decided 2026-11-14); this repo's `user.email` is the GitHub noreply address.
+- One sentence in the roll-call e-mail ("Settle the roll-call source for redistribution"): are test excerpts of the roll-call pages in a public code repository covered (`tests/fixtures/roll_call_detail_*.html`, `member_votes.html`, `namenslisten_list.html`, `roll_call_1002.json`, and named Stimmen in `docs/plans/e4-refiled-votes-old-new.tsv`)?
+
+**Why:** Found by the v1 scope review.
 
 **Effort:** S
 **Priority:** P1
@@ -830,20 +836,6 @@ Found while fixing how vote pages state the outcome of a Beschlussempfehlung to 
 **Priority:** P3
 **Depends on:** None
 
-### Fresh-store record and E8: four sentences that say something false
-
-**What:** Found by the /gstack-ship review of the stage-1 fix plans branch, 2026-11-13 (inline review and Codex), all checked read-only on `.context/dip-pulse-site`. No figure moves.
-1. `docs/plans/a3-phase4.md`, "Reconciliation against the recorded figures", says the by-member check joined `vote_members` to `mps` "where `listed_party_id IS NOT party_id`". `listed_party_id` is NULL on 425,222 of the 425,322 rows, so that condition as written selects every row. The figure is right: `listed_party_id IS NOT NULL AND listed_party_id != party_id` gives the 100 moves in 55 votes. Say "where `listed_party_id` is set and differs from `party_id`".
-2. The same section's finding on `result_scope` ends "It is a second such vote beside 990, whose box gave the right word." 990's box gave the wrong word (`docs/source-errors.md` E6); 996's gave the right one. Say "Unlike 990's, 996's box gives the right word."
-3. `docs/source-errors.md` E8 (#150), "Scale": "the 802 WP 18/19 sittings held (718 in the A3 store, 84 of the excluded sittings)". The A3 store held 716; 718 is the fresh reference store, across WP 18–21, of which 400 are WP 18/19. So the 802 are sittings of WP 18–21 (718 held plus 84 excluded WP 18/19 sittings), not WP 18/19 sittings. Re-check the 799 annex blocks against that base.
-4. ~~"Coverage gate before the first data release", the paragraph on withholding the whole `<rede>`, says "89 Reden in 70 sittings (W1 run, re-audited after #147)". That is the intermediate run. After #150 the W1 result is 90 Reden in 71 sittings again, as item 6 of the same entry and `docs/plans/withholding-preflight/report.md` say.~~ **Done by #151:** the paragraph says 90 Reden in 71 sittings.
-
-**Why:** Someone replaying item 1 from its text gets 425,322 rows. Items 2 and 3 contradict E6 and the stores' own counts, and item 3 is in a reader-facing file. All predate or sit outside the change that found them, so the CLAUDE.md fix-now-or-defer rule sends them here.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ## Protokoll-Dossier
 
 ### Split or filter overview.html by Wahlperiode
@@ -1253,7 +1245,7 @@ The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia He
 ### Contribution governance: the half that needs the domain
 
 **What:** The parts of ADR 0003 D5 that need no domain shipped in v0.28.0.0 (2026-11-01): `SECURITY.md`, `CODE_OF_CONDUCT.md` (linked from `CONTRIBUTING.md`), the „Datenfehler" and „Fehler auf der Seite" issue forms with triage labels, `config.yml` with `blank_issues_enabled: false` and a security contact link, and the documented `issues_url` that pre-fills the page in the Datenfehler form. Left:
-- ~~Switch on GitHub private vulnerability reporting when the repository goes public.~~ Done 2026-11-06 (owner); the repository is public. SECURITY.md still says it is not: "Public repository: follow-ups".
+- ~~Switch on GitHub private vulnerability reporting when the repository goes public.~~ Done 2026-11-06 (owner); the repository is public. SECURITY.md said it was not until 2026-11-14.
 - `/.well-known/security.txt` on the site.
 - A `config.yml` contact link to the Impressum e-mail for private matters (GDPR, corrections from the people concerned, press).
 
@@ -1583,7 +1575,7 @@ Since v0.30.0.0 every export carries `LICENSE-DATA.md`, and items 6 and 10 of "R
 
 ### A DOI per release and a citation file
 
-**Done:** `CITATION.cff` at the repository root (v0.26.0.0, #123), guarded by `tests/test_citation_file.py`. It claims no DOI, version, date or `repository-code` yet; the repository is public, so add `repository-code` and `url` now or with the rename ("Public repository: follow-ups"). The root `LICENSE` (MIT, code only) exists since v0.30.0.0.
+**Done:** `CITATION.cff` at the repository root (v0.26.0.0, #123), guarded by `tests/test_citation_file.py`. It claims no DOI, version or date. `repository-code` is in since 2026-11-14; `url` waits for the site's host (the rename updates both). The root `LICENSE` (MIT, code only) exists since v0.30.0.0.
 
 **What is left:**
 - Archive each release's data files through Zenodo's upload API from the release script. Zenodo's GitHub integration archives only the source zip, not the release assets. The upload gives a concept DOI plus one DOI per version.
@@ -2281,6 +2273,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Fresh-store record and E8: four sentences that said something false: 2026-11-14, `docs/plans/release-readiness.md`, item 4. `docs/plans/a3-phase4.md` (by-member join, 996's box) and `docs/source-errors.md` E8 "Scale" (802 sittings of WP 18–21: 718 held, 84 excluded; the 799 annex blocks hold). No figure moved; item 4 was closed by #151
 - The carried-forward registry diverges from a fresh build, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs": v0.41.0.0, 2026-11-14, `docs/plans/registry-split-koestering-krampe.md`. The fresh store has no Bundesrat `ever_mdb` record; an offline replay keeps preserved roster rows live, and `dip_successors` joins Köstering/Krampe and Jan Wenzel Schmidt. Persons 1,952 (replay 1,956) → 1,946, Stimmen on pages 417,934 (replay 417,707) → 418,104; the gate checks the replay against its input store and against a fresh build that ingests the cached roster
 - One Fraktion rule on both sides of the withheld share (PR 2 ship review P3, and Codex's Gruppe Die Linke reproduction): v0.39.0.0, #152, 2026-11-13. `_withheld_coverage` labels a withheld Rede with `derive.speech_zusammenschluss` by the Sitzung, as persist labels stored Reden; the reproduction moves from Die Linke 0 stored words, share 1.0 to Gruppe Die Linke 3 and 0.5.
 

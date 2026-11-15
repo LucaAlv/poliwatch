@@ -116,6 +116,7 @@ The operator is one person with limited time, the audience is mostly not develop
 - **Labels:** the forms apply `needs-triage`, plus `datenfehler` or `bug`; a label missing from the repository is skipped silently.
 - **E-mail channel:** the „Private Anliegen" contact link in `config.yml`, the e-mail address in `SECURITY.md` and conduct rule 4, and `security.txt` wait for the Impressum and the final domain. Until then the forms say private matters do not belong in a public issue and name no alternative.
 - **Security reporting:** GitHub private vulnerability reporting can be switched on only for a public repository, so it follows the visibility flip. `SECURITY.md` says so until then.
+- **Amended 2026-11-15:** the repository has been public since 2026-11-06 and GitHub private vulnerability reporting is on (owner, 2026-11-06); `SECURITY.md` has said so since 2026-11-14. The „while the repository is private" and „until then" wording in the 2026-11-01 entries above describes that date, not today.
 
 ## Open questions for a lawyer before launch
 
