@@ -314,6 +314,58 @@ class CompareCppBtTests(unittest.TestCase):
         self.assertEqual(self.export.read_bytes(), before)
         self.assertEqual(sorted(path.name for path in self.dir.glob("export.sqlite*")), ["export.sqlite"])
 
+    # Value: protects=an id only CPP-BT has, inside a TOP and spoken by a presidium role, is read by hand as docs/release-review.md step 4 says, never passed as classified; fails_when=in_top_presidium leaves READ_BY_HAND or the known file stops being consulted for it; why_new=the first run had no such id, so no other test reaches the class; seam=none; no_claim=which presidium words the role list holds
+    def test_presidium_id_only_theirs_is_read_by_hand(self) -> None:
+        (self.xml / "plenarprotokoll-18-1.xml").write_text(
+            XML_18_1.replace("    </tagesordnungspunkt>", '      <rede id="ID1800100600"><p klasse="redner">Chair</p></rede>\n    </tagesordnungspunkt>'),
+            encoding="utf-8")
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows() + [["k", "18/1", "ID1800100600", "Chair", "NA", "Präsident", "20"]])
+        self.assertEqual(self.run_main(cpp)[0], 0)
+        row = next(r for r in self.sections()["differences"] if r["rede_id"] == "ID1800100600")
+        self.assertEqual((row["kind"], row["status"]), ("only_theirs:in_top_presidium", "read_by_hand"))
+        self.known.write_text("field\trede_id\tours\ttheirs\treason\nonly_theirs\tID1800100600\t\t\tchair, reviewed\n", encoding="utf-8")
+        self.run_main(cpp)
+        row = next(r for r in self.sections()["differences"] if r["rede_id"] == "ID1800100600")
+        self.assertEqual(row["status"], "known")
+
+    # Value: protects=two runs on the same inputs write the same bytes and the ratio rows of a sitting come largest deviation first, which step 4's 'read the 20 largest' relies on; fails_when=ratio rows follow set order again; why_new=nothing compared two runs; seam=none; no_claim=order across sittings (sorted by sitting number)
+    def test_ratio_rows_are_ordered_and_runs_repeat(self) -> None:
+        cpp = self.dir / "cpp.csv"
+        rows = cpp_rows()
+        rows[0][6], rows[1][6], rows[4][6] = "400", "60", "300"
+        write_cpp(cpp, rows)
+        self.run_main(cpp)
+        first = self.out.read_text(encoding="utf-8")
+        self.run_main(cpp)
+        self.assertEqual(self.out.read_text(encoding="utf-8"), first)
+        deviations = [float(r["detail"].split("deviation ")[1]) for r in self.sections()["differences"] if r["kind"] == "ratio"]
+        self.assertGreaterEqual(len(deviations), 2)
+        self.assertEqual(deviations, sorted(deviations, reverse=True))
+
+    # Value: protects=--out never overwrites an input or a directory and a refused run leaves an earlier report whole (no .part file); fails_when=--out equal to --cpp-bt, --export or --known-differences is accepted, or a half-written report replaces a good one; why_new=the review runs it on the release's own SQLite and the downloaded CPP-BT zip; seam=none; no_claim=a power cut during os.replace
+    def test_out_never_overwrites_an_input(self) -> None:
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        before = cpp.read_bytes()
+        for target in (cpp, self.export, self.known, self.dir):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cmp.main(["--export", str(self.export), "--xml-dir", str(self.xml), "--cpp-bt", str(cpp),
+                                 "--out", str(target), "--known-differences", str(self.known)])
+            self.assertEqual(code, 2, target)
+        self.assertEqual(cpp.read_bytes(), before)
+        self.out.write_text("earlier report", encoding="utf-8")
+        self.assertEqual(self.run_main(self.dir / "absent.csv")[0], 2)
+        self.assertEqual(self.out.read_text(encoding="utf-8"), "earlier report")
+        self.assertEqual(sorted(path.name for path in self.dir.glob("*.part")), [])
+
+    # Value: protects=a known-differences row with fewer than five fields is ignored, as its docstring says, instead of crashing; fails_when=a short row raises AttributeError; why_new=csv.DictReader fills missing fields with None; seam=none; no_claim=that the shipped file is complete
+    def test_short_known_differences_row_is_ignored(self) -> None:
+        path = self.dir / "short.tsv"
+        path.write_text("field\trede_id\tours\ttheirs\treason\nsurname\nsurname\tID1\ta\tb\treason\n", encoding="utf-8")
+        self.assertEqual(len(cmp.known_differences(path)), 1)
+
     # Value: protects=the shipped known-differences file parses with a reason on every row and only the field names the report writes; fails_when=a row loses its reason or names a field the report never emits; why_new=the file is read by the review's pass rule; seam=none; no_claim=that each reason is true
     def test_shipped_known_differences_file(self) -> None:
         path = ROOT / "scripts" / "cpp_bt_known_differences.tsv"

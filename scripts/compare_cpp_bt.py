@@ -35,6 +35,7 @@ import csv
 import gzip
 import hashlib
 import io
+import os
 import re
 import shutil
 import sqlite3
@@ -56,7 +57,6 @@ CPP_COLUMNS = (
 #: First values, to be calibrated on the first run and written into the checklist.
 RATIO_TOLERANCE = 0.15
 RATIO_MIN_TOKENS = 50
-RATIO_LISTED = 20
 
 #: The annex rules of ``validate_dip_protocol.ANNEX_EXCLUSIONS``, copied so the script
 #: imports no project module (a test pins both lists to the same rule names).
@@ -71,7 +71,7 @@ CLASSES = (
     "in_top_other", "annex_zu_protokoll", "annex_other", "outside_top", "unclassified",
 )
 #: Classes the review reads by hand; the rest are named and explained by a rule.
-READ_BY_HAND = {"in_top_other", "annex_zu_protokoll", "annex_other", "outside_top", "unclassified"}
+READ_BY_HAND = {"in_top_presidium", "in_top_other", "annex_zu_protokoll", "annex_other", "outside_top", "unclassified"}
 PRESIDIUM_ROLES = ("praesident", "präsident", "vizepraesident", "vizepräsident", "alterspraesident",
                    "alterspräsident", "sitzungsleitung")
 
@@ -398,7 +398,7 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
             totals["surname_diffs"] += surname_diffs
             totals["fraktion_diffs"] += fraktion_diffs
             ratios = {}
-            for rede_id in both:
+            for rede_id in sorted(both):
                 tokens = their["ids"][rede_id]["tokens"]
                 words = mine["words"].get(rede_id)
                 if tokens and tokens > RATIO_MIN_TOKENS and words:
@@ -407,8 +407,8 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
             if ratios:
                 median = statistics.median(ratios.values())
                 row["ratio_median"] = round(median, 3)
-                outliers = [(abs(value / median - 1), rede_id, value) for rede_id, value in ratios.items()
-                            if abs(value / median - 1) > RATIO_TOLERANCE]
+                outliers = sorted(((abs(value / median - 1), rede_id, value) for rede_id, value in ratios.items()
+                                   if abs(value / median - 1) > RATIO_TOLERANCE), key=lambda item: (-item[0], item[1]))
                 row["ratio_outliers"] = len(outliers)
                 totals["ratio_outliers"] += len(outliers)
                 for deviation, rede_id, value in outliers:
@@ -442,10 +442,10 @@ def known_differences(path: Path | None) -> set[tuple[str, str, str, str]]:
     known = set()
     with path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle, delimiter="\t"):
-            if row.get("field") and row.get("reason", "").strip():
-                known.add((row["field"], row.get("rede_id", "").strip(),
-                           fold_difference(row["field"], row.get("ours", "")),
-                           fold_difference(row["field"], row.get("theirs", ""))))
+            if row.get("field") and (row.get("reason") or "").strip():
+                known.add((row["field"], (row.get("rede_id") or "").strip(),
+                           fold_difference(row["field"], row.get("ours") or ""),
+                           fold_difference(row["field"], row.get("theirs") or "")))
     return known
 
 
@@ -529,6 +529,12 @@ def main(argv: list[str] | None = None) -> int:
             raise InputError(f"--xml-dir {args.xml_dir}: not a directory")
         if not args.out.parent.is_dir():
             raise InputError(f"--out {args.out}: the directory does not exist")
+        if args.out.is_dir():
+            raise InputError(f"--out {args.out}: is a directory")
+        for flag, other in (("--export", args.export), ("--cpp-bt", args.cpp_bt),
+                            ("--known-differences", args.known_differences)):
+            if other is not None and args.out.resolve() == other.resolve():
+                raise InputError(f"--out {args.out}: is the same file as {flag}, which the report would overwrite")
         with tempfile.TemporaryDirectory() as workdir:
             connection = open_export(args.export, Path(workdir))
             try:
@@ -538,8 +544,13 @@ def main(argv: list[str] | None = None) -> int:
             inputs = [("export", sha256_of(args.export), args.export.name),
                       ("cpp_bt", sha256_of(args.cpp_bt), args.cpp_bt.name),
                       ("xml_files", str(len(list(args.xml_dir.glob("plenarprotokoll-*.xml")))), str(args.xml_dir.name))]
-        write_report(result, args.out, inputs, known_differences(args.known_differences),
-                     by_wahlperiode(result["rows"]))
+        partial = args.out.with_name(args.out.name + ".part")
+        try:
+            write_report(result, partial, inputs, known_differences(args.known_differences),
+                         by_wahlperiode(result["rows"]))
+            os.replace(partial, args.out)  # a stopped run leaves the earlier report whole, never half a new one
+        finally:
+            partial.unlink(missing_ok=True)
     except InputError as error:
         print(f"compare_cpp_bt: {error}", file=sys.stderr)
         return 2
