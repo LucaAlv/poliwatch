@@ -1455,6 +1455,41 @@ def annex_exclusion(block: ET.Element) -> str | None:
     return next((rule for rule, pattern, _ in ANNEX_EXCLUSIONS if pattern.fullmatch(title)), None)
 
 
+def exclude_annex_reden_in_verlauf(root: ET.Element, statuses: dict[str, str]) -> None:
+    """18/158 prints the 37 Erklärungen nach § 31 GO of its Anlage 7 in the
+    Sitzungsverlauf, as the ``<rede>``s of a headingless TOP "Geschaeftsordnung",
+    and leaves Anlage 7 with its title alone (docs/source-errors.md E9). The
+    Inhaltsverzeichnis still lists each under "Anlage 7". A ``<rede>`` of the
+    Sitzungsverlauf that the Inhaltsverzeichnis lists under an "Anlage N" block,
+    where the annex "Anlage N" is one block, kept out by an ``ANNEX_EXCLUSIONS``
+    rule and holding no ``<rede>`` of its own, takes that rule's status as an
+    annex Rede does and leaves the tree; a TOP it leaves empty goes too. In the
+    802 WP 18-21 sittings held, only 18/158's 37 match."""
+    annexes: dict[str, ET.Element] = {}
+    for anlage in root.findall("./anlagen/anlage"):
+        blocks = anlage.findall("anlagen-text")
+        title = elem_text(anlage.find("anlagen-titel"))
+        if title and len(blocks) == 1 and blocks[0].find(".//rede") is None:
+            annexes[title] = blocks[0]
+    rules: dict[str, str] = {}
+    for block in root.findall("./vorspann/inhaltsverzeichnis/ivz-block"):
+        title = elem_text(block.find("ivz-block-titel"))
+        annex = annexes.get(title) if title else None
+        rule = annex_exclusion(annex) if annex is not None else None
+        if rule is not None:
+            rules.update({xref.get("rid"): rule for xref in block.iter("xref") if xref.get("rid")})
+    verlauf = root.find("sitzungsverlauf")
+    if not rules or verlauf is None:
+        return
+    for top in [verlauf, *verlauf.findall("tagesordnungspunkt")]:
+        for rede in top.findall("rede"):
+            if rede.get("id") in rules:
+                record_status(statuses, rede.get("id"), f"excluded_annex:{rules[rede.get('id')]}")
+                top.remove(rede)
+        if top is not verlauf and len(top) == 0:
+            verlauf.remove(top)
+
+
 def annex_rede_key(block_index: int, sequence: int) -> str:
     """The key of an annex ``<rede>`` without an id: its block among all
     ``anlagen-text`` blocks and its place among the block's direct ``<rede>``s."""
@@ -1678,6 +1713,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     inventory = raw_rede_inventory(root)
     statuses: dict[str, str] = {}
     split_parts: set[str] = set()
+    exclude_annex_reden_in_verlauf(root, statuses)
     adopt_reden_outside_tops(root)
     toc = parse_toc(root)
     rid_pages: dict[str, dict[str, Any]] = {}

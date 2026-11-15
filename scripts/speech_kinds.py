@@ -163,13 +163,20 @@ def _text(elem: ET.Element | None) -> str:
     return _clean("".join(elem.itertext())) if elem is not None else ""
 
 
+def _unspaced(value: str) -> str:
+    return re.sub(r"\s+", "", value)
+
+
 def heading_formats(heading: str | None) -> frozenset[str]:
     """The question formats a heading names. 20/136 merges both into one
     heading ("Befragung der Bundesregierung Fragestunde"): its ``<rede>``s are
-    a Befragung and its flat turns a Fragestunde."""
-    heading = _clean(heading)
+    a Befragung and its flat turns a Fragestunde. Compared with all whitespace
+    removed, because 19/13 prints "Befr agung der Bundesregierung"
+    (docs/source-errors.md E10); in the 802 WP 18-21 sittings held, no other
+    heading changes format by it."""
+    heading = _unspaced(_clean(heading))
     formats = set()
-    if heading.startswith(BEFRAGUNG_PREFIXES):
+    if heading.startswith(tuple(_unspaced(prefix) for prefix in BEFRAGUNG_PREFIXES)):
         formats.add(BEFRAGUNG)
         if FRAGESTUNDE_PREFIX in heading:
             formats.add(FRAGESTUNDE)

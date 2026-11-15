@@ -143,6 +143,23 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** of the 799 annex blocks with an "entschuldigt" title in 802 sittings of WP 18–21 (the 718 of the reference store and 84 excluded sittings: 50 of WP 18, 33 of WP 19 and 20/11), this is the only one holding a `<rede>`, and the only block in the 802 with a Zu-Protokoll heading under another title. Counted 2026-11-14.
 - **Our side:** fixed 2026-11-13. `scripts/validate_dip_protocol.py` reads a block under that title by its first `Anlage_3` heading when the heading says "Zu Protokoll gegebene Rede(n)" or "… Fortsetzung" (`MISTITLED_ZU_PROTOKOLL`), so the text is a `zu_protokoll` Beitrag under TOP 5. Before #147 the parser dropped it without a word; from #147 until this fix the sitting refused (`docs/plans/withholding-preflight/report.md`, "19/36").
 
+### E9. 18/158: the 37 declarations of Anlage 7 are printed in the Sitzungsverlauf
+
+- **Status:** verified 2026-11-15, on the XML fetched 2026-11-12 (`~/agent-runs/w1/xml`, sha256 as in `docs/plans/withholding-preflight/preflight.json`).
+- **Source:** `https://dserver.bundestag.de/btp/18/18158.xml`. After the sitting's close ("Die Sitzung ist geschlossen.", "(Schluss: 21.16 Uhr)") the `<sitzungsverlauf>` goes on with `<tagesordnungspunkt top-id="Geschaeftsordnung">`, which has no heading and holds 37 `<rede>`s, `ID18158106000` (Heike Baehrens, SPD) to `ID18158109600` (Gülistan Yüksel, SPD). Each opens with its Redner's marker and runs straight into the text, as an annex declaration does ("Heike Baehrens (SPD): Angesichts der großen Zahl der Flüchtlinge …").
+- **What is wrong:** these are the Erklärungen nach § 31 GO to the vote on the Asylpaket II (TOP 3 a). `<anlage>` "Anlage 7" holds only their title, `<anlagen-text anlagen-typ="Erklärungen nach § 31 GO">` with its heading and the line "zu der namentlichen Abstimmung über … (Tagesordnungspunkt 3 a)", and no `<rede>`. The protocol's Inhaltsverzeichnis lists all 37 under "Anlage 7", from page 15617 C.
+- **What it should be:** the 37 `<rede>`s inside Anlage 7, as Anlage 15 holds its 9 declarations. Anlagen 2 to 6 and 8 to 14 print theirs as paragraphs, without a `<rede>`.
+- **Scale:** of the 802 sittings of WP 18–21 held (the 718 of the reference store and the 84 excluded files), 18/158 is the only one with a `<rede>` of the Sitzungsverlauf that the Inhaltsverzeichnis lists under an "Anlage" block. Counted 2026-11-15.
+- **Our side:** fixed 2026-11-15, before the sitting is stored. `exclude_annex_reden_in_verlauf` in `scripts/validate_dip_protocol.py` gives such a `<rede>` the status of the annex it is listed under, when that annex is a single block an `ANNEX_EXCLUSIONS` rule keeps out and holds no `<rede>` of its own, and drops the TOP it leaves empty. The 37 are excluded as § 31 declarations, as the 9 in Anlage 15 are. They are not withheld, so they count against no coverage share. Without the rule they were 37 Reden (`docs/plans/t4-acquire/n8-review.md`, on branch `claude/clever-ellis-b1cafc`).
+
+### E10. 19/13: the heading of the Befragung der Bundesregierung has a space inside a word
+
+- **Status:** verified 2026-11-15, on the XML fetched 2026-11-12.
+- **Source:** `https://dserver.bundestag.de/btp/19/19013.xml`, `<tagesordnungspunkt top-id="Tagesordnungspunkt 1">`: `<p klasse="T_fett">Befr agung der Bundesregierung</p>`. The Inhaltsverzeichnis spells it "Befragung der Bundesregierung: Verordnung zur Änderung der Schweinepest-Verordnung …". The same file also prints "Tagesordnung spunkt" in the chair's text.
+- **What it should be:** "Befragung der Bundesregierung".
+- **Scale:** in the 802 sittings of WP 18–21 held, no other heading that names a Befragung or a Fragestunde is broken this way. A scan for a word split by a space (both halves rare, the joined word common in the corpus) finds eight other headings in seven sittings, none of them in a word that decides what a turn counts as: 19/37 "Drucksach e 19/2509", 19/63 "h ier" (twice), 19/67 "Ver einbarte Debatte", 19/69 "Bun desregierung", 19/74 and 19/86 "Immissionsschutzgesetze s", 19/101 "Sammelübersich t 247". Counted 2026-11-15.
+- **Our side:** fixed 2026-11-15, before the sitting is stored. `speech_kinds.heading_formats` compares a heading with all whitespace removed, so TOP 1 is a Befragung: the minister's report stays the one Rede and the 60 other `<rede>`s are Fragen and Antworten. Without the fix, 57 of them were Reden and 3 (`ID191304800`, `ID191305000`, `ID191306000`) were withheld as refused Zwischenfragen. The eight other split headings keep their spelling on the pages.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
