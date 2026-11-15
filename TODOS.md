@@ -147,6 +147,19 @@ Found by the code review of PR A (127e1c2) and PR B (fc1676e) of `docs/plans/wit
 **Priority:** P1, before the first release
 **Depends on:** None
 
+### N8 findings that are not N8 entries (2026-11-15)
+
+From the N8 review of the 82 restored sittings ([n8-review.md](docs/plans/t4-acquire/n8-review.md); rows in `n8-review.tsv` by `class`). The 10 wrong units N8 fixes with withhold entries are on branch `claude/t4-reviewed-units`. Two sitting-level defects need the owner before T4's fetch: 18/158's 37 § 31 declarations printed in the Sitzungsverlauf, and 19/13's Befragung under the broken heading "Befr agung". Those are in the review record, not here. What follows applies to all 801 sittings:
+
+- **Beiträge stored as Reden** (`storewide_beitrag_as_rede`, 33 in the 82): Kurzinterventionen and Erwiderungen announced in wording `classify_reden` does not read ("hat die Möglichkeit, zu reagieren", "zu einer Erwiderung", a bare name), Erklärungen nach § 30 and § 32 printed as a `<rede>`, and one procedural exchange (19/192 Thomae). This is ADR 0002's precision-first detector. In the 718 stored sittings, 0.6 % (WP 18) and 0.9 % (WP 19) of stored Reden are under 2,500 characters and open without a salutation, against about 1 % in the 82. Measure the class in all 801 sittings, decide a rule with the owner, and replay it with old and new figures. Kurzintervention and Erwiderung counts are checked against DIP's `aktivitaetsart`, which helps: ADR 0002 measured 636 against DIP's 682.
+- **Reden zu Protokoll printed inside a TOP** (`storewide_zu_protokoll_in_top`): 18/60 TOPs 17 and 18 and the kept 18/39, 18/46 and 18/54 print the TOP's Reden zu Protokoll as `<rede>`s, which are stored as Reden. The decision of 2026-09-30 types written submissions as `zu_protokoll`. Check whether that decision covers these, and count them.
+- **A presidium member's Zwischenfrage read as the chair** (`presidium_member_as_mdb`): 18/113 `ID1811302500`. Pau, printed with her Vizepräsidentin role, asks Castellucci a question, and the turn is ruled `procedural`. Widen D4's rule for 18/62 and 18/90 (`docs/plans/t4-acquire.md`, step 5) to cover it.
+- **45 withheld Reden whose refused turn is admissible** (`withheld_admissible`): ordinary granted Zwischenfragen ("Gerne", "Ja, bitte") and announced Kurzinterventionen whose grant wording the rules do not read. They cost coverage, not correctness. The rule rounds of "WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns" can take them as test cases.
+- **A floor form `split_nested_reden` misses:** "Als Nächstes für <Fraktion> die Kollegin <Name>" (19/18, Dröge). N8 withholds that Rede by entry. A `NESTED_REDE_FLOOR` form for "Als Nächste(s)" would keep Ernst's and Dröge's Reden instead, but it applies to every sitting, so it needs a replay.
+
+**Priority:** P2. The 33 Beiträge stored as Reden are P1 before the first release if the owner reads them as wrong figures.
+**Depends on:** T4 (it measures all 801 sittings).
+
 ### Keep the raw vote pages and DIP sitting records (check thoroughly first)
 
 **Status: idea, not specced. Do not build it until the checks below are done and the owner has seen their result.**
