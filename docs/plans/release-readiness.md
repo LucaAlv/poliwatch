@@ -1,6 +1,6 @@
 # Release readiness: public repo, release review, comparison, four false sentences
 
-Plan, 2026-11-14, against main v0.41.0.0 (0e6def4). Nothing here is implemented yet. It covers four TODOS.md entries of stage 1:
+Plan, 2026-11-14, against main v0.41.0.0 (0e6def4). Nothing was implemented when it was written; the "Holds?" column below is as of 0e6def4, and PR A has since done items 1 and 4. It covers four TODOS.md entries of stage 1:
 
 1. "Public repository: follow-ups" (P1)
 2. "Main and stable releases" (P1 for the checklist and the policy)
