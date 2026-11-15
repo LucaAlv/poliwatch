@@ -752,6 +752,87 @@ class ErsteRedenTests(StoreCase):
         ).fetchone()[0]
         self.assertEqual(split, 2)
 
+    # --- ADR 0005 "Facts": a withheld Rede counts as a person's Rede for the debut ---
+
+    def withheld_people(self):
+        return [
+            {"document_number": "21/1", "date": "2025-03-25", "speeches": [(100, "Karl Marx", "IDK1")]},
+            {"document_number": "21/2", "date": "2025-04-08",
+             "speeches": [(100, "Ada Lovelace", "IDA2"), (100, "Grace Hopper", "IDG2")]},
+        ]
+
+    def debut_rows(self):
+        """The metric's rows with every sitting judged complete: these tests
+        are about who debuts, not about the gap a withheld Rede opens."""
+        complete = {n: {"votes": True, "speeches": True} for n in self.seeded["completeness"]}
+        return self.rows_for(facts.compute(self.conn, facts.REGISTRY, complete, catalog=self.seeded["catalog"]), ERSTE)
+
+    def debut_values(self):
+        return [row["value"] for row in self.debut_rows()]
+
+    # Value: protects=a person whose first Rede in our coverage is withheld posts no debut later (ADR 0005, owner decision 2); fails_when=erste-reden ranks only stored speeches, so Ada's first stored Rede in week 2 reads as her debut; why_new=no erste-reden test seeds withheld_units; seam=the metric SQL
+    def test_a_withheld_first_rede_removes_the_person_from_every_debut_count(self) -> None:
+        weeks = self.withheld_people()
+        self.seed(weeks)
+        self.assertEqual(self.debut_values(), [1, 2])
+        self.fresh_store()
+        weeks[0]["withheld"] = [{"redner_id": "x-Ada Lovelace", "rede_id": "IDA1", "sequence": 5}]
+        self.seed(weeks)
+        first, second = self.debut_rows()
+        self.assertEqual((first["value"], second["value"]), (1, 1))
+        self.assertEqual(second["citation"]["speakers"], ["Grace Hopper"])
+
+    # Value: protects="on or before" is the metric's own order, so a withheld Rede later the same day leaves the debut; fails_when=the withheld union ranks by day only or puts withheld rows first; why_new=the edge the plan names; seam=the metric SQL
+    def test_a_withheld_rede_after_the_stored_first_one_leaves_the_debut(self) -> None:
+        for label, withheld, expected in (
+            ("later in the same item", {"sequence": 5, "item": 0}, [1]),
+            ("in an earlier item of the same sitting", {"sequence": 1, "item": 0}, [0]),
+        ):
+            with self.subTest(label):
+                self.fresh_store()
+                speech_item = 0 if label.startswith("later") else 1
+                self.seed([{
+                    "document_number": "21/1", "date": "2025-03-25",
+                    "items": [{}, {}],
+                    "speeches": [{"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA1", "item": speech_item}],
+                    "withheld": [{"redner_id": "x-Ada Lovelace", "rede_id": "IDA0", **withheld}],
+                }])
+                self.assertEqual(self.debut_values(), expected)
+
+    # Value: protects=a withheld Rede binds only the person with its Redner-ID; fails_when=the union joins withheld rows to the wrong person or to none; why_new=cross-binding guard; seam=the metric SQL
+    def test_another_persons_withheld_rede_leaves_a_debut_standing(self) -> None:
+        weeks = self.withheld_people()
+        weeks[0]["withheld"] = [{"redner_id": "x-Grace Hopper", "rede_id": "IDG1", "sequence": 5}]
+        self.seed(weeks)
+        first, second = self.debut_rows()
+        self.assertEqual((first["value"], second["value"]), (1, 1))
+        self.assertEqual(second["citation"]["speakers"], ["Ada Lovelace"])
+
+    # Value: protects=a withheld Rede with a Redner-ID shared by two people binds both (owner decision 3); fails_when=the binding picks one sharer or none; why_new=person_corrections.json partitions 7 shared ids; seam=the metric SQL
+    def test_a_withheld_rede_with_a_shared_redner_id_binds_every_sharer(self) -> None:
+        weeks = self.withheld_people()
+        weeks[0]["withheld"] = [{"redner_id": "999990108", "rede_id": "IDX1", "sequence": 5}]
+        self.seed(weeks)
+        conn = self.writable()
+        conn.execute("UPDATE mps SET xml_redner_id = '999990108' WHERE display_name IN ('Ada Lovelace', 'Grace Hopper')")
+        conn.commit()
+        self.assertEqual(self.debut_values(), [1, 0])
+
+    # Value: protects=a withheld Rede with no Redner-ID binds nobody, though some mps rows also have an empty id; fails_when=the union drops its `xml_redner_id <> ''` guard and the Rede binds every person without an id; why_new=the other withheld tests all carry a real id; seam=none; no_claim=does not say which Reden carry no id in real data
+    def test_a_withheld_rede_without_a_redner_id_binds_no_one(self) -> None:
+        weeks = self.withheld_people()
+        weeks[0]["withheld"] = [{"redner_id": "x-Ada Lovelace", "rede_id": "IDN1", "sequence": 5}]
+        self.seed(weeks)
+        conn = self.writable()
+        conn.execute("UPDATE withheld_units SET xml_redner_id = ''")
+        conn.execute("UPDATE mps SET xml_redner_id = '' WHERE display_name IN ('Ada Lovelace', 'Grace Hopper')")
+        conn.commit()
+        self.assertEqual(self.debut_values(), [1, 2])
+
+    def fresh_store(self) -> None:
+        """A new store file, so one test can seed a variant of its weeks."""
+        self.path = self.path.with_name(f"store-{len(list(self.path.parent.iterdir()))}.sqlite")
+
 
 # ---------------------------------------------------------------------------
 # T11: the two monthly metrics ("grouped_extreme": sum a candidate row's
@@ -1361,19 +1442,19 @@ class CompletenessTests(StoreCase):
         reports = [
             {
                 "protocol": {"dokumentnummer": "21/91"},
-                "validation_summary": {"xml_speech_count": 10, "roll_call_vote_candidate_count": 0},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_vote_candidate_count": 0},
                 "acquisition": {"votes": {"acquisition_state": "not_requested"}},
             },
             {
                 "protocol": {"dokumentnummer": "21/90"},
-                "validation_summary": {"xml_speech_count": 10, "roll_call_scan_end": "date_passed"},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed"},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             },
             {
                 # Stamped complete by a build that did not yet record how the
                 # scan ended: it was also given to scans that ran out of pages.
                 "protocol": {"dokumentnummer": "20/97"},
-                "validation_summary": {"xml_speech_count": 10},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             },
             {
@@ -1382,7 +1463,7 @@ class CompletenessTests(StoreCase):
                 # ever read for this sitting, so its votes are unknown, and
                 # unknown is incomplete.
                 "protocol": {"dokumentnummer": "20/100"},
-                "validation_summary": {"xml_speech_count": 10, "roll_call_vote_candidate_count": 3},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_vote_candidate_count": 3},
             },
             {
                 "protocol": {"dokumentnummer": "20/99"},
@@ -1393,7 +1474,7 @@ class CompletenessTests(StoreCase):
                 # Votes reused from a cache that never stamped them: complete
                 # on paper, unknown in fact.
                 "protocol": {"dokumentnummer": "20/98"},
-                "validation_summary": {"xml_speech_count": 10},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None}},
             },
         ]
@@ -1417,13 +1498,103 @@ class CompletenessTests(StoreCase):
         self.assertIsNone(completeness["21/90"]["reasons"]["votes"])
         self.assertEqual(completeness["20/99"]["reasons"]["speeches"], "XML speeches not parsed")
 
+    @staticmethod
+    def parsed_report(number: str, **summary) -> dict:
+        return {
+            "protocol": {"dokumentnummer": number},
+            "validation_summary": {"xml_speech_count": 10, "roll_call_scan_end": "date_passed", **summary},
+            "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
+        }
+
+    # Value: protects=a sitting that withheld a Rede is not complete for speeches (ADR 0005 "Facts", P1); fails_when=speeches read xml_speech_count alone; why_new=no completeness test carries withheld_rede_count; seam=completeness_from_reports
+    def test_a_sitting_that_withheld_a_rede_is_incomplete_for_speeches(self) -> None:
+        completeness = facts.completeness_from_reports([
+            self.parsed_report("18/3", withheld_rede_count=2),
+            self.parsed_report("18/4", withheld_rede_count=0),
+            self.parsed_report("18/5"),
+            *(self.parsed_report(f"18/{6 + n}", withheld_rede_count=bad) for n, bad in enumerate((-1, "2", None, True, 1.5))),
+        ])
+        self.assertEqual(
+            completeness["18/3"],
+            {"votes": True, "speeches": False, "withheld_reden": 2,
+             "reasons": {"votes": None, "speeches": "withheld_reden"}},
+        )
+        self.assertEqual((completeness["18/4"]["speeches"], completeness["18/4"]["reasons"]["speeches"]), (True, None))
+        # Absent is unknown, and unknown is incomplete (class 5); a malformed
+        # count is the same unknown, never a crash.
+        for number in ("18/5", "18/6", "18/7", "18/8", "18/9", "18/10"):
+            with self.subTest(number):
+                self.assertFalse(completeness[number]["speeches"])
+                self.assertEqual(completeness[number]["reasons"]["speeches"], "no withheld count (report predates it)")
+                self.assertNotIn("withheld_reden", completeness[number])
+        # Votes are judged as before.
+        self.assertTrue(completeness["18/5"]["votes"])
+
+    # Value: protects=the build and the replay agree on a sitting with withheld Reden; fails_when=one path reads the count and the other does not; why_new=A6.6; seam=completeness_from_entries
+    def test_the_build_and_the_replay_agree_on_withheld_reden(self) -> None:
+        reports = [self.parsed_report("18/3", withheld_rede_count=2)]
+        self.assertEqual(
+            facts.completeness_from_entries([{"report": reports[0]}]), facts.completeness_from_reports(reports)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "plenarprotokoll-18-3.json").write_text(json.dumps(reports[0]), encoding="utf-8")
+            self.assertEqual(facts.load_completeness(Path(tmp)), facts.completeness_from_reports(reports))
+
+    # Value: protects=the gap note names withheld Reden instead of "Reden nicht erfasst"; fails_when=every speeches reason falls through to the not-parsed text; why_new=the text would be false for a sitting whose other Reden are stored; seam=gap_note
+    def test_the_gap_note_names_the_withheld_reden(self) -> None:
+        self.assertEqual(
+            facts.gap_note([{"document_number": "18/3", "date": "2014-01-01", "reason": "withheld_reden",
+                             "withheld_reden": "2"}], "speeches"),
+            "Sitzung 18/3: 2 Reden zurückgehalten",
+        )
+        self.assertEqual(
+            facts.gap_note([{"document_number": "18/26", "date": "2014-01-01", "reason": "withheld_reden",
+                             "withheld_reden": "1"}], "speeches"),
+            "Sitzung 18/26: 1 Rede zurückgehalten",
+        )
+        self.assertEqual(
+            facts.gap_note([{"document_number": "18/3", "date": "2014-01-01", "reason": "XML speeches not parsed"}], "speeches"),
+            "Sitzung 18/3: Reden nicht erfasst",
+        )
+
+    # Value: protects=every speeches Fakt of the week and month that holds the sitting is incomplete, votes untouched; fails_when=withheld Reden reach a published Fakt; why_new=end to end through compute; seam=compute
+    def test_a_withheld_rede_keeps_its_week_and_month_incomplete_for_speeches_only(self) -> None:
+        specs = week_specs(10)
+        specs[4]["withheld"] = [{"redner_id": "x-Ada Lovelace", "rede_id": "IDW", "sequence": 9}]
+        seeded = self.seed(specs)
+        completeness = facts.completeness_from_reports([
+            self.parsed_report(spec["document_number"], withheld_rede_count=1 if spec.get("withheld") else 0)
+            for spec in specs
+        ])
+        rows = facts.compute(self.conn, facts.ALL_REGISTRY, completeness, catalog=seeded["catalog"], built={"votes"})
+        year, iso_week, _ = facts.date.fromisoformat(specs[4]["date"]).isocalendar()
+        week = f"{year}-W{iso_week:02d}"
+        month = specs[4]["date"][:7]
+        by = {(row["metric_id"], row["period_key"]): row for row in rows}
+        for metric in facts.ALL_REGISTRY:
+            cell = (metric["id"], month if metric.get("period_kind") == "month" else week)
+            if cell not in by:
+                continue
+            with self.subTest(metric["id"]):
+                expected = 0 if metric["coverage"] == "speeches" else 1
+                self.assertEqual(by[cell]["complete"], expected)
+                if not expected:
+                    self.assertEqual(by[cell]["publishable"], 0)
+        self.assertEqual(by[(LAENGSTE, week)]["complete"], 0)
+        self.assertEqual(by[(KNAPPSTE, week)]["complete"], 1)
+        notes = facts.gap_notes(facts.load_protocols(self.conn), completeness, seeded["catalog"])
+        sitting = specs[4]["document_number"]
+        self.assertEqual(notes[("week", week, "speeches")], f"Sitzung {sitting}: 1 Rede zurückgehalten")
+        self.assertEqual(notes[("month", month, "speeches")], f"Sitzung {sitting}: 1 Rede zurückgehalten")
+        self.assertNotIn(("week", week, "votes"), notes)
+
     def test_the_build_and_the_replay_derive_the_same_map(self) -> None:
         # D10: one function, fed the build's in-memory entries or the same
         # reports read back from data/plenarprotokoll-*.json.
         reports = [
             {
                 "protocol": {"dokumentnummer": "21/90"},
-                "validation_summary": {"xml_speech_count": 10},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             }
         ]
@@ -1601,7 +1772,7 @@ class CatalogCompletenessTests(StoreCase):
         specs = week_specs(10)
         seeded = self.seed(specs)
         reports = [
-            {"protocol": {"dokumentnummer": spec["document_number"]}, "validation_summary": {"xml_speech_count": 5}}
+            {"protocol": {"dokumentnummer": spec["document_number"]}, "validation_summary": {"xml_speech_count": 5, "withheld_rede_count": 0}}
             for spec in specs
         ]
         completeness = facts.completeness_from_reports(reports)
@@ -1615,7 +1786,7 @@ class CatalogCompletenessTests(StoreCase):
         reports = [
             {
                 "protocol": {"dokumentnummer": spec["document_number"]},
-                "validation_summary": {"xml_speech_count": 5, "roll_call_scan_end": "date_passed"},
+                "validation_summary": {"xml_speech_count": 5, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed"},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None if index == 4 else "2026-09-28T10:00:00Z"}},
             }
             for index, spec in enumerate(specs)

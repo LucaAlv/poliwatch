@@ -173,6 +173,11 @@ def _minutes_of(expression: str) -> str:
 
 _SITZUNG_START = "json_extract(p.xml_header_json, '$.sitzung_start')"
 _SITZUNG_END = "json_extract(p.xml_header_json, '$.sitzung_end')"
+#: 0 for a sitting number of the form WP/number, else 1 (sorted after them).
+_MALFORMED_NUMBER = (
+    "CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*' AND p.document_number NOT GLOB '*[^0-9/]*' "
+    "AND p.document_number NOT GLOB '*/*/*' THEN 0 ELSE 1 END"
+)
 
 # The registry mirrors RECIPES (build_dip_pulse_site.py). ``sql`` lists every
 # candidate row with the protocol it belongs to; ``compute`` groups the rows
@@ -371,7 +376,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "erste-reden",
-        "version": 2,
+        "version": 3,
         "title": "Die meisten ersten Reden der Woche",
         "unit": "Abgeordnete mit ihrer ersten Rede",
         "direction": "max",
@@ -382,12 +387,20 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # on the 2026-09-19 store), and grouping by mps.id turned 4 debutants in
         # 2026-W37 into 233. Not by xml_redner_id either: a Person with two
         # Redner-IDs (an MdB id and one for a government role) would debut twice.
+        #
+        # v3 (ADR 0005 "Facts"): a person's debut is their first Rede in our
+        # coverage, stored or withheld. A withheld Rede is bound to every
+        # Person with an mps row of its Redner-ID (a Redner-ID shared by several
+        # people binds them all: it can drop a real debutant, never post a false
+        # one), and when it ranks first the person has no debut row at all: the
+        # week of the real debut is already incomplete for speeches, and every
+        # later Rede is not a first one. withheld_units.sequence and
+        # speeches.sequence are one numbering within a TOP (ADR 0005 D3).
         "sql": (
             "WITH speaker AS (\n"
-            "  SELECT s.id AS speech_id, p.date AS day, p.document_number AS document_number,\n"
-            "         CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*'\n"
-            "                   AND p.document_number NOT GLOB '*[^0-9/]*'\n"
-            "                   AND p.document_number NOT GLOB '*/*/*' THEN 0 ELSE 1 END AS malformed_number,\n"
+            "  SELECT s.id AS speech_id, NULL AS withheld_id, 0 AS withheld,\n"
+            "         p.date AS day, p.document_number AS document_number,\n"
+            f"         {_MALFORMED_NUMBER} AS malformed_number,\n"
             "         ai.item_index AS item_index, s.sequence AS sequence,\n"
             "         'p#' || mc.canonical_id AS person_key\n"
             "  FROM speeches s\n"
@@ -396,6 +409,18 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "  JOIN protocols p ON p.id = s.protocol_id\n"
             "  JOIN agenda_items ai ON ai.id = s.agenda_item_id\n"
             "  WHERE s.mp_id IS NOT NULL\n"
+            "  UNION ALL\n"
+            "  SELECT DISTINCT NULL, w.id, 1,\n"
+            "         p.date, p.document_number,\n"
+            f"         {_MALFORMED_NUMBER},\n"
+            "         ai.item_index, w.sequence,\n"
+            "         'p#' || mc.canonical_id\n"
+            "  FROM withheld_units w\n"
+            "  JOIN mps m ON m.xml_redner_id = w.xml_redner_id\n"
+            "  JOIN mp_canonical mc ON mc.mp_id = m.id\n"
+            "  JOIN protocols p ON p.id = w.protocol_id\n"
+            "  JOIN agenda_items ai ON ai.id = w.agenda_item_id\n"
+            "  WHERE w.xml_redner_id <> ''\n"
             "),\n"
             "first_day AS (\n"
             "  SELECT person_key, MIN(day) AS day FROM speaker GROUP BY person_key\n"
@@ -405,17 +430,20 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             # number after the well-formed ones, by its text), then agenda item,
             # then position in it. Not the smallest speech key: keys are content
             # hashes. stable_ids.document_sort_key is the same order in Python.
+            # The ids close the order (a stored and a withheld Rede never share a
+            # TOP position, D3), so it is total.
             "first_speech AS (\n"
             "  SELECT person_key, speech_id FROM (\n"
-            "    SELECT sp.person_key AS person_key, sp.speech_id AS speech_id,\n"
+            "    SELECT sp.person_key AS person_key, sp.speech_id AS speech_id, sp.withheld AS withheld,\n"
             "           ROW_NUMBER() OVER (PARTITION BY sp.person_key\n"
             "                              ORDER BY sp.malformed_number,\n"
             "                                       CASE WHEN sp.malformed_number = 0 THEN CAST(substr(sp.document_number, 1, instr(sp.document_number, '/') - 1) AS INTEGER) END,\n"
             "                                       CASE WHEN sp.malformed_number = 0 THEN CAST(substr(sp.document_number, instr(sp.document_number, '/') + 1) AS INTEGER) END,\n"
-            "                                       sp.document_number, sp.item_index, sp.sequence, sp.speech_id) AS rank\n"
+            "                                       sp.document_number, sp.item_index, sp.sequence,\n"
+            "                                       sp.speech_id, sp.withheld_id) AS rank\n"
             "    FROM speaker sp\n"
             "    JOIN first_day fd ON fd.person_key = sp.person_key AND fd.day = sp.day\n"
-            "  ) WHERE rank = 1\n"
+            "  ) WHERE rank = 1 AND withheld = 0\n"
             ")\n"
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant, 1 AS value,\n"
             "       NULL AS denominator, m.display_name,\n"
@@ -917,12 +945,20 @@ def sitting_months(
 #: How a roll-call scan may end for its votes to count as verified.
 COMPLETE_SCAN_ENDS = ("date_passed", "list_end")
 
+#: The speeches reason code of a sitting that withheld Reden (ADR 0005). A
+#: code, not text: the gap note words it and the backfill recognizes it.
+WITHHELD_REDEN = "withheld_reden"
+
 
 def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """document_number -> {"votes": bool, "speeches": bool, "reasons": {...}}.
 
     Speeches are complete when the XML was parsed (``xml_speech_count`` is
-    present). Votes are complete only with evidence: the report's vote
+    present) and the sitting withheld no Rede (ADR 0005 "Facts"). A sitting
+    that withheld some carries the reason code ``WITHHELD_REDEN`` and the
+    count under ``"withheld_reden"``; one whose report has no valid
+    ``withheld_rede_count`` is unknown, and unknown is incomplete, as for
+    votes. Votes are complete only with evidence: the report's vote
     acquisition state is ``complete`` *and* carries ``acquired_at``. A report
     without an ``acquisition`` block (every report cached before the state was
     recorded) and votes reused from cache without ``acquired_at`` are unknown,
@@ -938,6 +974,15 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
             continue
         summary = report.get("validation_summary") or {}
         speeches = summary.get("xml_speech_count") is not None
+        speeches_reason: str | None = None if speeches else "XML speeches not parsed"
+        withheld = summary.get("withheld_rede_count")
+        withheld_count: int | None = None
+        if speeches:
+            if type(withheld) is not int or withheld < 0:
+                # bool is an int subclass; the parser always writes a plain int.
+                speeches, speeches_reason = False, "no withheld count (report predates it)"
+            elif withheld > 0:
+                speeches, speeches_reason, withheld_count = False, WITHHELD_REDEN, withheld
         acquisition = (report.get("acquisition") or {}).get("votes")
         votes_reason: str | None = None
         if not acquisition:
@@ -973,11 +1018,10 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
         result[str(number)] = {
             "votes": votes,
             "speeches": speeches,
-            "reasons": {
-                "votes": votes_reason,
-                "speeches": None if speeches else "XML speeches not parsed",
-            },
+            "reasons": {"votes": votes_reason, "speeches": speeches_reason},
         }
+        if withheld_count is not None:
+            result[str(number)]["withheld_reden"] = withheld_count
     return result
 
 
@@ -1035,7 +1079,10 @@ def period_gaps(
             gaps.append({"document_number": number, "date": day, "reason": "no_report"})
         elif not state.get(domain):
             reason = (state.get("reasons") or {}).get(domain) or f"{domain} incomplete"
-            gaps.append({"document_number": number, "date": day, "reason": str(reason)})
+            gap = {"document_number": number, "date": day, "reason": str(reason)}
+            if reason == WITHHELD_REDEN:
+                gap["withheld_reden"] = str(state.get("withheld_reden"))
+            gaps.append(gap)
     return gaps
 
 
@@ -1141,6 +1188,10 @@ def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) 
             parts.append(f"Sitzung {number}: kein Bericht")
         elif reason == "date_changed":
             parts.append(f"Sitzung {number}: Datum laut DIP geändert")
+        elif reason == WITHHELD_REDEN:
+            count = gap.get("withheld_reden")
+            noun = "Rede" if count == "1" else "Reden"
+            parts.append(f"Sitzung {number}: {count} {noun} zurückgehalten")
         else:
             parts.append(f"Sitzung {number}: {_GAP_DOMAIN_TEXT[domain]}")
     if len(gaps) > shown:

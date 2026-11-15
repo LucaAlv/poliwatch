@@ -131,15 +131,15 @@ class BudgetStuckSittingsAreNotRedownloadedTests(unittest.TestCase):
     GAP = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages)"}}
 
     def test_a_scan_that_used_its_pages_is_structural_until_the_budget_grows(self) -> None:
-        self.assertTrue(build._structural_vote_gap(self.GAP, 30))
-        self.assertTrue(build._structural_vote_gap(self.GAP, 20))
-        self.assertFalse(build._structural_vote_gap(self.GAP, 60))
-        self.assertFalse(build._structural_vote_gap(self.GAP, None))
-        self.assertFalse(build._structural_vote_gap({"reasons": {"votes": "votes partial (scan_budget_exhausted)"}}, 30))
+        self.assertTrue(build._structural_gap(self.GAP, 30))
+        self.assertTrue(build._structural_gap(self.GAP, 20))
+        self.assertFalse(build._structural_gap(self.GAP, 60))
+        self.assertFalse(build._structural_gap(self.GAP, None))
+        self.assertFalse(build._structural_gap({"reasons": {"votes": "votes partial (scan_budget_exhausted)"}}, 30))
 
     def test_completeness_names_the_budget_that_was_not_enough(self) -> None:
         report = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        report["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_pages": 30}
+        report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "roll_call_scan_pages": 30}
         state = facts.completeness_from_reports([report])["21/90"]
         self.assertEqual(state["reasons"]["votes"], "votes partial (scan_budget_exhausted after 30 pages)")
 
@@ -156,7 +156,7 @@ class BudgetStuckSittingsAreNotRedownloadedTests(unittest.TestCase):
 
     def test_backfill_at_the_same_budget_leaves_it_alone_and_a_larger_one_takes_it(self) -> None:
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
+        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
         stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
         catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
         same = build.incomplete_sitting_protocols([{"report": stuck}], catalog, scan_pages=30)
@@ -207,13 +207,13 @@ class StaleListIsNotAVerifiedZeroVoteSittingTests(unittest.TestCase):
 class NonConvergingGapsAreKnownTests(unittest.TestCase):
     def test_a_budget_gap_is_not_structural_when_votes_are_off(self) -> None:
         gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages)"}}
-        self.assertFalse(build._structural_vote_gap(gap, 0))
+        self.assertFalse(build._structural_gap(gap, 0))
         # So it is a vote-only gap, and the votes-off hint applies.
         catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
+        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
         stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
-        _acq, _wait, vote_only, structural = build.incomplete_sitting_protocols([{"report": stuck}], catalog, votes=False, scan_pages=0)
+        _acq, _wait, vote_only, structural, _withheld = build.incomplete_sitting_protocols([{"report": stuck}], catalog, votes=False, scan_pages=0)
         self.assertEqual(([p["dokumentnummer"] for p in vote_only], structural), (["21/1"], []))
 
     def test_source_stale_is_left_alone_only_while_the_list_may_be_catching_up(self) -> None:
@@ -222,8 +222,8 @@ class NonConvergingGapsAreKnownTests(unittest.TestCase):
         today = dip.datetime.now(dip.timezone.utc).date()
         recent = {"date": (today - _dt.timedelta(days=3)).isoformat(), "reasons": {"votes": "votes partial (source_stale)"}}
         old = {"date": (today - _dt.timedelta(days=30)).isoformat(), "reasons": {"votes": "votes partial (source_stale)"}}
-        self.assertTrue(build._structural_vote_gap(recent, 30))
-        self.assertFalse(build._structural_vote_gap(old, 30))  # now a rescan can settle it
+        self.assertTrue(build._structural_gap(recent, 30))
+        self.assertFalse(build._structural_gap(old, 30))  # now a rescan can settle it
 
 
 
@@ -231,8 +231,8 @@ class NonConvergingGapsAreKnownTests(unittest.TestCase):
 class CombinedReasonsAreParsedNotMatchedAsTextTests(unittest.TestCase):
     def test_a_budget_reason_combined_with_unmatched_is_structural_at_any_budget(self) -> None:
         gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages, unmatched_candidate)"}}
-        self.assertTrue(build._structural_vote_gap(gap, 30))
-        self.assertTrue(build._structural_vote_gap(gap, 90))
+        self.assertTrue(build._structural_gap(gap, 30))
+        self.assertTrue(build._structural_gap(gap, 90))
 
     def test_the_scan_budget_travels_through_a_no_scan_rebuild(self) -> None:
         prior = votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP)
@@ -381,21 +381,21 @@ class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
     def test_a_budget_exhausted_sitting_that_also_has_unmatched_votes_is_structural(self) -> None:
         # A wider scan settles the budget part, but the unmatched part survives it.
         gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted, unmatched_candidate)"}}
-        self.assertTrue(build._structural_vote_gap(gap))
-        self.assertTrue(build._structural_vote_gap({"reasons": {"votes": "votes partial (unmatched_candidate)"}}))
+        self.assertTrue(build._structural_gap(gap))
+        self.assertTrue(build._structural_gap({"reasons": {"votes": "votes partial (unmatched_candidate)"}}))
 
     def test_a_sitting_held_back_only_by_unmatched_votes_is_not_reacquired(self) -> None:
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("unmatched_candidate",), acquired_at=STAMP, attempted_at=STAMP))
-        stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_end": "date_passed"}
+        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed"}
         stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
         legacy = report_with(1, None)
         legacy["protocol"] = {"dokumentnummer": "21/2", "datum": "2026-06-12"}
-        legacy["validation_summary"] = {"xml_speech_count": 3}
+        legacy["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0}
         catalog = [
             {"id": "pp-2", "dokumentnummer": "21/2", "datum": "2026-06-12", "fundstelle": {"xml_url": "https://example.test/2.xml"}},
             {"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}},
         ]
-        acquirable, waiting, vote_only, structural = build.incomplete_sitting_protocols(
+        acquirable, waiting, vote_only, structural, _withheld = build.incomplete_sitting_protocols(
             [{"report": stuck}, {"report": legacy}], catalog
         )
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/2"])
@@ -425,7 +425,7 @@ class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
 class UnmatchedVotesHoldACachedReportBackTests(unittest.TestCase):
     def test_a_report_stamped_complete_that_records_unmatched_votes_is_not_complete(self) -> None:
         report = report_with(1, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        report["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_end": "date_passed",
+        report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed",
                                         "unmatched_roll_call_vote_count": 2}
         state = facts.completeness_from_reports([report])["21/90"]
         self.assertFalse(state["votes"])

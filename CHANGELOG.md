@@ -2,7 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.41.0.0] - 2026-11-14
+## [0.42.0.0] - 2026-11-15
+
+A withheld Rede now counts as a gap. Its sitting is no longer complete for speeches, so the speech-based Fakten of its week and month read *unvollständig erfasst* and name it. *Erste Reden* no longer counts someone as a debutant when their real first Rede was withheld. Today's store holds no withheld Rede, so no figure moves. The change matters once the 85 sittings still awaiting acquisition are fetched.
+
+### Changed
+
+- **A sitting with withheld Reden is not complete for speeches.** Every speech-based Fakt in its week and month reads "unvollständig erfasst: Sitzung 21/20: 1 Rede zurückgehalten" (or "2 Reden"), and votes Fakten stay as they are. A cached report that does not record how many Reden it withheld also counts as incomplete, with the reason "no withheld count (report predates it)". Every report in today's store records the count. Rehearsed on a copy of the store with one withheld first Rede (Caroline Bosbach, 21/20): 2025-W37 and 2025-09 turn incomplete, and *Erste Reden* 2025-W42 goes from 2 debutants to 1.
+- **A withheld first Rede rules out a debut.** *Erste Reden* (metric version 2 → 3) looks for a person's first Rede in our coverage among both stored and withheld Reden. A person whose first Rede is withheld is counted as a debutant in no week. A withheld Rede binds every person who shares its Redner-ID and binds no one if it has none. On today's store the only change is `facts.metric_version` 2 → 3 on the 273 *Erste Reden* rows.
+- **A backfill leaves a sitting that is held back only by withheld Reden.** Fetching the sitting again never releases a withheld Rede; only a parser rule or a reviewed-list change does. `--backfill-incomplete` skips such a sitting and says so on its own `[backfill]` line, and the incomplete report names those sittings. A sitting that also has a roll-call gap is still fetched, for its votes.
+- The data codebook, data dictionary, methods page and README describe both rules.
+
 
 Jan Krampe and Jan Wenzel Schmidt each have one Personenseite again, and six former MdBs get their roll-call votes back on their own page. An offline replay of the store now groups persons exactly like the online build that wrote it, and the store gate checks that. Reden, Beiträge, votes and Fakten do not move.
 

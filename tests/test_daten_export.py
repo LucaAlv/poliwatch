@@ -320,6 +320,11 @@ class ExportDistributionDataTests(unittest.TestCase):
         codebook = (gen_dir / "DATA.md").read_text(encoding="utf-8")
         self.assertIn("## Abdeckung nach Jahr und zurückgehaltene Reden", codebook)
         self.assertIn("**zurückgehaltenen Fakt** (`facts.withheld`)", codebook)
+        # erste-reden v3 (ADR 0005 "Facts"): a withheld Rede does reach one person
+        # figure, and it keeps its week incomplete; the codebook must not say "none".
+        self.assertIn("Ausnahme *Erste Reden*", codebook)
+        self.assertIn("Sitzung mit zurückgehaltenen Reden", codebook)
+        self.assertNotIn("sind keiner Person zugeordnet", codebook)
         self.assertIn("| 18/7 | 2015-04-23 | 1 | 3 |", codebook)
         self.assertIn("1 Rede zurückgehalten (3 Wörter,", b.render_daten_datenstand(manifest))
         previous = {**manifest, "tag": "2026.11.01", "withheld_reden": []}

@@ -221,12 +221,14 @@ The `facts` pages name the missing sitting too (`unvollständig erfasst: Sitzung
 | `votes not_requested` | The sitting was built with `--no-votes`, `--vote-scan-pages 0` or a `-votes` config entry. |
 | `votes partial` / `votes failed` | The scan ran out of pages (`scan_budget_exhausted`: raise `--vote-scan-pages`), a request failed (`source_unavailable`) or the Bundestag markup changed (`source_changed`). |
 | `XML speeches not parsed` | The dossier has no parsed speeches. |
+| `withheld_reden` | The sitting withheld one or more Reden (ADR 0005), so its speeches are not complete; the Fakt card names the count. A backfill does not fix it: a parser rule or an entry of `scripts/reviewed_units.json` releases them, then `--offline --repersist`. The backfill leaves a sitting with no other gap alone. |
+| `no withheld count (report predates it)` | The cached report records no withheld count, so its speeches are unknown; re-read it with `--offline --repersist`. |
 | `no scan-end evidence` | The votes were stamped complete by a build that did not record how the scan ended. |
 | `date_changed` | DIP now dates the sitting differently from the store; the backfill refreshes it. |
 | `source_stale` | A sitting of the last two weeks with no roll call on a list whose newest entry is older: the list may not have caught up. It settles by itself after 14 days, or on the next backfill once the list catches up. |
 | `scan_budget_exhausted after N pages` | A backfill at the same `--vote-scan-pages` reproduces it, so the backfill leaves the sitting alone and the printed fix raises the budget. |
 
-One recipe fixes all of them:
+One recipe fixes all of them except `withheld_reden`:
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --output-dir .context/dip-pulse-site --backfill-incomplete
@@ -469,7 +471,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 |---|---|
 | `error: DIP_API_KEY is not set.` | Online mode without a key. Put it in `.env.local`. A `DIP_API_KEY=... scripts/preview_dip_pulse_site.sh update ...` prefix only works when `.env.local` does not define the key at all — an empty `DIP_API_KEY=` line overwrites it (§2). |
 | `error: No cached protocols found in .context/dip-pulse-site/data.` | Offline build on an empty cache. Run one online update first (§2). |
-| Weeks or months read `unvollständig erfasst` and no Fakt is posted | Their sittings are missing or not fully acquired. The build prints which, and the command that fixes it: see "Backfill incomplete sittings" in §4b. |
+| Weeks or months read `unvollständig erfasst` and no Fakt is posted | Their sittings are missing, not fully acquired, or withheld Reden (ADR 0005). The build prints which, and for the first two the command that fixes it: see "Backfill incomplete sittings" in §4b. Withheld Reden come back only through a parser rule or `scripts/reviewed_units.json`, then `--offline --repersist`. |
 | Port already in use | `PORT=9000 scripts/preview_dip_pulse_site.sh` |
 | Votes or profile links are unavailable | Check `sources.html#datenstand` for whether acquisition was skipped, partial, or failed. Votes are acquired by default, so `not_requested` means `--no-votes`, `--vote-scan-pages 0` or a `-votes` config entry was in effect: run an online update without it. `partial` or `failed` with `scan_budget_exhausted` means the roll-call scan ran out of pages before reaching the sitting's date: raise `--vote-scan-pages`. Profile links need `--enrich aw-profiles` (§5). |
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |

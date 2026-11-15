@@ -60,7 +60,7 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
         for vote in item.get("votes") or []:
             vote["id"] = f"{n}{vote['id']}"
             vote["detail_url"] = f"{vote['detail_url']}{n}"
-    report["validation_summary"] = {"xml_speech_count": 3, "speech_kinds_version": speech_kinds.VERSION}
+    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION}
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}
         # The evidence a scan records (how it ended); a report cached before
@@ -369,7 +369,7 @@ class BackfillSelectionTests(unittest.TestCase):
             catalog_protocol("21/1", "pp-1", "2026-06-11"),
             catalog_protocol("20/9", "pp-old", "2020-01-01"),
         ]
-        acquirable, waiting, vote_only, structural = build.incomplete_sitting_protocols(entries, catalog)
+        acquirable, waiting, vote_only, structural, _withheld = build.incomplete_sitting_protocols(entries, catalog)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/5", "21/3", "21/2"])
         self.assertEqual([p["dokumentnummer"] for p in waiting], ["21/4"])
 
@@ -387,7 +387,7 @@ class BackfillSelectionTests(unittest.TestCase):
         stored = self.entries(report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
         for entries, expected in ((stored, ["20/9", "18/2", "18/1"]), ([], ["21/1", "20/9", "18/2", "18/1"])):
             with self.subTest(stored=bool(entries)):
-                acquirable, waiting, _vote_only, _structural = build.incomplete_sitting_protocols(entries, catalog)
+                acquirable, waiting, _vote_only, _structural, _withheld = build.incomplete_sitting_protocols(entries, catalog)
                 self.assertEqual([p["dokumentnummer"] for p in acquirable], expected)
                 self.assertEqual(waiting, [])
 
@@ -412,10 +412,10 @@ class BackfillSelectionTests(unittest.TestCase):
             {**report_for(3, acquisition=COMPLETE_VOTES), "validation_summary": {}},  # speeches not parsed
         )
         catalog = [catalog_protocol(f"21/{n}", f"pp-{n}", f"2026-06-{10 + n:02d}") for n in (4, 3, 2, 1)]
-        acquirable, _waiting, vote_only, _structural = build.incomplete_sitting_protocols(entries, catalog, votes=False)
+        acquirable, _waiting, vote_only, _structural, _withheld = build.incomplete_sitting_protocols(entries, catalog, votes=False)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/4", "21/3"])
         self.assertEqual([p["dokumentnummer"] for p in vote_only], ["21/2"])
-        acquirable, _waiting, vote_only, _structural = build.incomplete_sitting_protocols(entries, catalog)
+        acquirable, _waiting, vote_only, _structural, _withheld = build.incomplete_sitting_protocols(entries, catalog)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/4", "21/3", "21/2"])
         self.assertEqual(vote_only, [])
 
@@ -445,10 +445,63 @@ class BackfillSelectionTests(unittest.TestCase):
         self.assertIn("skipping 1 sitting(s) held back only by votes", stderr.getvalue())
         self.assertIn("add --enrich votes", stderr.getvalue())
 
+    # Value: protects=a backfill never re-acquires a sitting for its withheld Reden (ADR 0005 "Facts"); fails_when=_structural_vote_gap judges only votes-only gaps, so every sitting with a withheld Rede is selected on every run; why_new=P1 makes these sittings incomplete; seam=incomplete_sitting_protocols
+    def test_a_sitting_held_back_only_by_withheld_reden_is_not_reacquired(self) -> None:
+        def withheld(report: dict, count: int) -> dict:
+            report["validation_summary"]["withheld_rede_count"] = count
+            return report
+
+        entries = self.entries(
+            withheld(report_for(1, acquisition=COMPLETE_VOTES), 2),
+            withheld(report_for(2, acquisition={"acquisition_state": "partial", "failure_reasons": ["request_failed"]}), 1),
+            withheld(report_for(3, acquisition={"acquisition_state": "not_requested", "failure_reasons": []}), 1),
+        )
+        catalog = [catalog_protocol(f"21/{n}", f"pp-{n}", f"2026-06-{10 + n:02d}") for n in (3, 2, 1)]
+        acquirable, waiting, vote_only, structural, withheld = build.incomplete_sitting_protocols(entries, catalog)
+        self.assertEqual([p["dokumentnummer"] for p in withheld], ["21/1"])
+        # Its votes gap is still acquirable; the withheld Reden stay withheld.
+        self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/3", "21/2"])
+        self.assertEqual((waiting, vote_only, structural), ([], [], []))
+        # With votes off, a votes gap beside withheld Reden is a votes-only gap.
+        acquirable, _waiting, vote_only, structural, withheld = build.incomplete_sitting_protocols(
+            entries, catalog, votes=False
+        )
+        self.assertEqual([p["dokumentnummer"] for p in vote_only], ["21/3", "21/2"])
+        self.assertEqual([p["dokumentnummer"] for p in withheld], ["21/1"])
+        self.assertEqual((acquirable, structural), ([], []))
+
+    # Value: protects=the backfill run says it leaves withheld-Reden sittings and acquires none of them; fails_when=main calls them roll-call gaps or acquires them; why_new=main's own message is the sibling of the selection; seam=main
+    def test_backfill_says_it_leaves_sittings_held_back_only_by_withheld_reden(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            for name in ("protocols", "data"):
+                (output_dir / name).mkdir(parents=True)
+            report = report_for(1, acquisition=COMPLETE_VOTES)
+            report["validation_summary"]["withheld_rede_count"] = 2
+            write_cached(output_dir, report)
+            catalog = [catalog_protocol("21/1", "pp-1", "2026-06-11")]
+            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
+                    "--backfill-incomplete"]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(build, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
+                mock.patch.object(build, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
+                mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+                mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build.main()
+        self.assertEqual(code, 0, stderr.getvalue())
+        self.assertEqual(build_dossiers.call_args.args[0], [])
+        self.assertIn("leaving 1 sitting(s) held back only by withheld Reden (ADR 0005)", stderr.getvalue())
+        self.assertNotIn("a rescan at these settings cannot fix", stderr.getvalue())
+
     def test_nothing_is_selected_when_every_sitting_is_complete(self) -> None:
         entries = self.entries(report_for(1, acquisition=COMPLETE_VOTES), report_for(2, acquisition=COMPLETE_VOTES))
         catalog = [catalog_protocol("21/2", "pp-2", "2026-06-12"), catalog_protocol("21/1", "pp-1", "2026-06-11")]
-        self.assertEqual(build.incomplete_sitting_protocols(entries, catalog), ([], [], [], []))
+        self.assertEqual(build.incomplete_sitting_protocols(entries, catalog), ([], [], [], [], []))
 
     def test_backfill_incomplete_acquires_exactly_those_ignoring_detail_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -903,6 +956,27 @@ class IncompleteReportTests(StoreCase):
         self.assertIn("Fix: none available now", text)
         self.assertNotIn("--backfill-incomplete", text)
 
+    # Value: protects=the build's incomplete report names withheld Reden as a parser or reviewed-list matter, once, and offers no backfill for them; fails_when=they are counted per count or sent to the backfill command; why_new=A3; seam=format_incomplete_report
+    def test_withheld_reden_are_named_once_and_left_out_of_the_fix(self) -> None:
+        gaps = {
+            "18/3": {"date": "2013-11-18", "reasons": {"speeches": facts.WITHHELD_REDEN}},
+            "18/6": {"date": "2013-12-17", "reasons": {"speeches": facts.WITHHELD_REDEN}},
+            "18/7": {"date": "2013-12-18", "reasons": {"speeches": facts.WITHHELD_REDEN,
+                                                        "votes": "votes partial (request_failed)"}},
+        }
+        catalog = [catalog_protocol(n, f"pp-{n}", gap["date"]) for n, gap in gaps.items()]
+        text = "\n".join(self.lines({"incomplete_periods": [], "sitting_gaps": gaps}, catalog))
+        self.assertEqual(text.count("hold withheld Reden"), 1)
+        self.assertIn(
+            "3 sittings hold withheld Reden (ADR 0005): a parser rule or the reviewed list releases them, "
+            "not a backfill (18/3, 18/6, 18/7)",
+            text,
+        )
+        self.assertIn("speeches: withheld_reden (3×)", text)
+        self.assertIn("votes: votes partial (request_failed) (1×)", text)
+        self.assertNotIn("sittings a backfill cannot fix now", text)
+        self.assertIn("(acquires 1 sittings;", text)
+
     def test_incompletely_acquired_sittings_are_counted_by_reason(self) -> None:
         seeded = self.seed(week_specs(10))
         completeness = {n: dict(state) for n, state in seeded["completeness"].items()}
@@ -1002,7 +1076,7 @@ class IncompleteReportTests(StoreCase):
 
     def test_run_data_pipeline_prints_the_report_on_every_build(self) -> None:
         report, catalog_protocols = self.report_for_week()
-        entries = [{"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3},
+        entries = [{"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0},
                                "acquisition": {"votes": COMPLETE_VOTES}}} for n in self.seeded["completeness"]]
         args = SimpleNamespace(vote_scan_pages=None, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False)
@@ -1047,7 +1121,7 @@ class WithheldCellNamesTheMissingSittingTests(StoreCase):
             encoding="utf-8",
         )
         entries = [
-            {"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3},
+            {"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0},
                         "acquisition": {"votes": COMPLETE_VOTES}}}
             for n in seeded["completeness"]
         ]
