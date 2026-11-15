@@ -1,6 +1,6 @@
 # T4: acquire the excluded sittings
 
-**Status:** plan, 2026-11-15. The owner accepted all nine recommended decisions on 2026-11-15 (see "Decisions" at the end). Nothing is fetched yet.
+**Status:** plan, 2026-11-15. The owner accepted all nine recommended decisions on 2026-11-15 (see "Decisions" at the end). Nothing is fetched yet. N8 ran offline on 2026-11-15 ([n8-review.md](t4-acquire/n8-review.md)) and does not pass yet: 10 withhold entries wait on branch `claude/t4-reviewed-units`, and 18/158's § 31 declarations and 19/13's Befragung heading wait on the owner.
 **Parent:** `TODOS.md` "Coverage gate before the first data release", steps 6 (acquire), 7 (measure) and 8 (gate), with N8 (review of restored sittings) and N10 (vote links).
 **Base:** main fd4760d (v0.46.0.0): store schema 14, export format 20, speech rule 9. The reference store `.context/dip-pulse-site` (main checkout) is still at schema 12: it was last replayed on v0.41.0.0 (2026-11-14) and holds 718 sittings, 619 votes and 590 vote links.
 **Read for this plan:** `CLAUDE.md`, `docs/agents/review-checklist.md`, ADR 0005, `docs/plans/withholding-preflight/report.md`, `docs/plans/withheld-before-t4.md`, `docs/plans/vote-links-and-figures.md`, `docs/release-review.md`, `docs/release-reviews/cpp-bt-first-run-2026-11-14.md`, `~/agent-runs/fresh/run.sh` and its `requests.log`.
@@ -29,7 +29,7 @@ W1 fetched the 84 XML files on 2026-11-12 (`~/agent-runs/w1/xml`; 18/20 was reje
 - **18/62 and 18/90 parse but cannot persist:** the persist role check stops on Pau's and Singhammer's unmapped presidium roles (`coverage-gate-pr2.md`, "Persist check for T4"). They stay on the record.
 - **Withheld in the 82 sittings: 94 Reden in 74 sittings.** 89 are located refusals (`refused_nested_contribution`) and 5 are reviewed entries (N7: 18/2 one, 18/29 one, 18/83 two, 19/25 one). Own words 76,912; the other speakers' turns inside them hold 25,539 more, which go to `withheld_turns`.
 - **Against W1's report:** W1 counted 90 Reden in 71 sittings, before the reviewed list existed. 18/1 no longer withholds anything, because ADR 0004 reads its election acceptance (90 − 1 = 89), and the reviewed list adds 5. W1's 94,707 words were own plus nested words; the store counts own words in `withheld_units.word_count` and nested words in `nested_word_count`.
-- **Plus 21/106:** one more Rede, so **T4 expects 95 withheld Reden in 75 sittings**. The 21/106 XML has never been fetched, so its words are unknown.
+- **Plus 21/106:** one more Rede, so T4 expected 95 withheld Reden in 75 sittings. **With N8's 10 withhold entries (branch `claude/t4-reviewed-units`, [n8-review.md](t4-acquire/n8-review.md)) it expects 105 in 75**: 104 in the 82 (89 refused, 15 reviewed; own words 80,249, nested 29,084) plus 21/106's one. The 21/106 XML has never been fetched, so its words are unknown. Figures before the N8 entries are kept above as measured.
 - **Redner-IDs:** all 94 withheld Reden carry one: 78 distinct ids for 79 printed names. None is one of the 7 partitioned ids in `scripts/person_corrections.json`. Every one is held by an `mps` row of the reference store. So `every_withheld_rede_has_a_redner_id` should read true, and A4's two expected zeros of `withheld-before-t4.md` hold [measured on W1's XML].
 - **Stored in the 82:** 1,021 TOPs and 6,451 Reden, 52 of them split parts. Beiträge: 498 Zwischenfragen, 482 zu Protokoll, 424/419 Fragestunde questions/answers, 143 Kurzinterventionen, 143/135 Befragung, 118 Erwiderungen, 14 Ansprachen. 102 pass-1 diagnostics: 55 `merged_zwischenfrage` and 47 `procedural`.
 - **Own words withheld per year:** 2013 4,593; 2014 16,005; 2015 19,475; 2016 9,338; 2017 4,868; 2018 11,360; 2019 1,731; 2020 5,634; 2021 3,010; 2022 898. By Fraktion: CDU/CSU 51,961; Grüne 8,296; SPD 7,259; Linke 4,531; AfD 2,468; none 1,551; FDP 846. Three sittings withhold more than two Reden: 18/158 (4), 18/26 (3) and 19/13 (3).
@@ -120,7 +120,7 @@ step 04-21-106 build "${BUILD[@]}" --document-number 21/106 --include-document-n
 
 - **V1, record:** `coverage-exclusions.json` holds exactly three entries: 18/20 `source_defect`, 18/62 and 18/90 `awaiting_rule`.
 - **V2, coverage:** 801 protocols (718 + 83), 801 reports, 801 files in `data/xml/`. No v1 catalog sitting with an XML URL is missing: rerun `backfill_scope.py` on the new store, which must select none. Its 75 withheld-only sittings land in the fifth list (`withheld`), not in `acquirable`.
-- **V3, the parse equals the prediction:** each fetched XML's sha256 equals W1's `xml_sha256` (82 files; 21/106 has none). `withheld_units` has 95 rows in 75 sittings: 90 `refused_nested_contribution` and 5 `reviewed`, own words 76,912 plus 21/106's. Every row has a Redner-ID. The run summary names the 95 as newly withheld (ADR 0005, D5).
+- **V3, the parse equals the prediction:** each fetched XML's sha256 equals W1's `xml_sha256` (82 files; 21/106 has none). `withheld_units` has 105 rows in 75 sittings: 90 `refused_nested_contribution` and 15 `reviewed`, own words 80,249 plus 21/106's (with N8's entries on main; 95 rows, 76,912 words without them). Every row has a Redner-ID. The run summary names the 105 as newly withheld (ADR 0005, D5). Any decision on 18/158's § 31 declarations or 19/13's Befragung (N8) moves these figures again, and its PR names the new ones.
 - **V4, requests:** totals per host and endpoint from `requests.log`, against the budget above, in the outcome section.
 - **V5, the store gate** (`validate_store_gate.py`, as in `~/agent-runs/fresh/gate.sh`, on an APFS clone with its private directory): `all_passed: true`, including `no_withheld_rede_counted`, `every_withheld_rede_has_a_redner_id` and `abweichler_count_matches_members`. This is step 8's gate run. Step 8 passes only once N8 has passed too (N8 A).
 
@@ -186,7 +186,7 @@ From TODOS step 7 and `withheld-before-t4.md` A4:
 
 Run `compare_store_values.py` between `.pre-t4` and the T4 store, once with `--cohort shared` and once with `--cohort all`.
 - **Shared cohort:** only cross-sitting values may move: person totals, registry groupings, facts of periods that gain a sitting. Every move is named.
-- **All:** protocols 718 → 801; Reden 54,855 → about 61,300 (+6,451 in the 82, plus 21/106); Beiträge; `withheld_units` 0 → 95; votes; `vote_members`; Personenseiten (1,658); Abweichungen (3,720); r3 rows (1,390); publishable facts; incomplete periods (102 weeks / 73 months).
+- **All:** protocols 718 → 801; Reden 54,855 → about 61,300 (+6,441 in the 82 with N8's entries, plus 21/106); Beiträge; `withheld_units` 0 → 105; votes; `vote_members`; Personenseiten (1,658); Abweichungen (3,720); r3 rows (1,390); publishable facts; incomplete periods (102 weeks / 73 months).
 - **Facts:** periods that held only excluded sittings had every domain `not_persisted`. After T4 their votes facts may publish, and their speech facts stay *unvollständig erfasst*, now with the note naming the withheld Reden (ADR 0005, "Facts").
 
 ### M7. Coverage by year, for N9
@@ -210,7 +210,7 @@ The export's `coverage.withheld` (`by_year`, `by_fraktion`, `by_sitting`) and DA
 
 **Effort:** CC about half a day plus the owner's disagreements; human about 3 days [estimated, N8].
 
-**If the review finds wrong units:** the entries land in one PR before the online run. If the run has already happened, they land after it, and `--offline --repersist` on the T4 store applies them; the store refuses to render until it has (ADR 0005, "The list and the store"). A withheld count above 95 is then expected and named in the outcome.
+**If the review finds wrong units:** the entries land in one PR before the online run. If the run has already happened, they land after it, and `--offline --repersist` on the T4 store applies them; the store refuses to render until it has (ADR 0005, "The list and the store"). A withheld count above 105 is then expected and named in the outcome.
 
 ## Step 4: N10, the vote-link review with the restored sittings
 
@@ -232,7 +232,7 @@ N8 and N10 can share one batch of reader work over the restored sittings, but th
 
 **A gap in the bar (found here).** The release check reads only `coverage.excluded`. A v1 catalog sitting with an XML URL that is neither stored nor excluded passes `--publish`, and an interrupted `--include-document-number` run leaves exactly that, because the include drops the number before acquisition is known (step 1). T4's V2 check covers T4 itself. For every later release: refuse `--publish` while any v1 catalog sitting with XML is neither in the store nor on the record (the manifest already carries `catalog_count` and `dossier_count`), or have the include drop only sittings the run stored. A small PR before the first release (decision 6), filed in TODOS.md as "Refuse a release while a v1 sitting is neither stored nor excluded".
 
-**What else the first release needs from T4.** The withheld list in the manifest lists all 95, and the first release has no cap (ADR 0005, D5). The release review's step 1 stops on any "Wartet auf …" reason. N8 passed (step 3). PR C's multi-TOP review gate (step 4). And step 8's gate on the final store.
+**What else the first release needs from T4.** The withheld list in the manifest lists all of them (105 with N8's entries), and the first release has no cap (ADR 0005, D5). The release review's step 1 stops on any "Wartet auf …" reason. N8 passed (step 3). PR C's multi-TOP review gate (step 4). And step 8's gate on the final store.
 
 ## The review checklist applied to this plan
 
