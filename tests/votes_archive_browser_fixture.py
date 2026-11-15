@@ -72,7 +72,8 @@ def build_rows() -> list[dict[str, Any]]:
             vote["inverted"] = True
         top["api"]["positions"] = []
         top["api"]["linked_drucksachen"] = []
-        top["xml_drucksachen"] = []
+        # The vote's Drucksache is printed under its TOP, so vote_links places it there.
+        top["xml_drucksachen"] = [{"dokumentnummer": f"20/{number}00"}]
         # DIP knows the number and names no Vorgang: an untagged vote, not an unfetched one.
         numbers[f"20/{number}00"] = []
         if sachgebiete:
