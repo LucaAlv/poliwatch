@@ -215,8 +215,8 @@ def seed_store(path: Path) -> dict[str, Any]:
                 """,
                 (now, now),
             )
-            conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, 'v1')", (agenda_item_1,))
-            conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, 'v2')", (agenda_item_2,))
+            conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, 'v1', 'drucksache_xml')", (agenda_item_1,))
+            conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, 'v2', 'drucksache_vorgang')", (agenda_item_2,))
             conn.execute(
                 """
                 INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count, total_count, leading_vote, rank)

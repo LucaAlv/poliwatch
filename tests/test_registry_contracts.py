@@ -42,8 +42,9 @@ def report_with_vote(member, url, party="SPD"):
     """A sitting with one roll call whose only member is ``member`` (a vote-only
     record: no Rede, no DIP id)."""
     r = report(names=("Ada Example",))
+    r["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/100"}]  # shared with the vote: vote_links places it here
     r["agenda_items"][0]["votes"] = [{
-        "id": "vote-1", "date": "2026-06-10", "title": "Namentliche Abstimmung",
+        "id": "vote-1", "date": "2026-06-10", "title": "Namentliche Abstimmung", "document_numbers": ["21/100"],
         "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1",
         "total": {"yes": 1, "no": 0, "abstain": 0, "absent": 0},
         "members": [{"name": member, "faction": party, "vote": "yes", "profile_url": url}],

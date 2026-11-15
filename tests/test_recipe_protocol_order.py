@@ -41,7 +41,7 @@ def add_vote(conn: sqlite3.Connection, vote_id: str, *agenda_items: str) -> None
         (vote_id, STAMP, STAMP),
     )
     for item_id in agenda_items:
-        conn.execute("INSERT INTO agenda_item_votes (agenda_item_id, vote_id) VALUES (?, ?)", (item_id, vote_id))
+        conn.execute("INSERT INTO agenda_item_votes (agenda_item_id, vote_id, basis) VALUES (?, ?, 'drucksache_xml')", (item_id, vote_id))
 
 
 class RecipeProtocolOrderTests(unittest.TestCase):

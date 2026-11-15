@@ -162,6 +162,8 @@ class VoteContextPersistTests(unittest.TestCase):
                         report["agenda_items"][0]["votes"] = copies
                     else:
                         report["agenda_items"][0]["votes"] = []
+                        for copy in copies:
+                            copy["document_numbers"] = []  # no number under any TOP: a sitting vote by vote_links
                         report["sitting_votes"] = copies
                     pulse_store.persist_report(conn, report, cache)
                     self.assertEqual(self.rows(conn, "SELECT id, title FROM votes"), [("v1", "erste")])

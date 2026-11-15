@@ -83,29 +83,6 @@ class ScanEndEvidenceTests(unittest.TestCase):
 
 
 
-class LaterDetailFailureKeepsTheVotesAlreadyFetchedTests(unittest.TestCase):
-    def test_the_first_vote_of_a_top_survives_a_failure_on_the_second(self) -> None:
-        candidates = [
-            {"id": "1", "document_numbers": ["21/1"]},
-            {"id": "2", "document_numbers": ["21/1"]},
-        ]
-
-        def detail(candidate: dict) -> dict:
-            if candidate["id"] == "2":
-                raise dip.DipError("timeout")
-            return {**candidate, "fractions": [], "members": []}
-
-        top = {"drucksachen": [{"dokumentnummer": "21/1"}]}
-        cache: dict = {}
-        errors: list = []
-        with mock.patch.object(dip, "fetch_roll_call_vote_detail", side_effect=detail):
-            matches = dip.match_roll_call_votes(top, [], candidates, cache, errors)
-            self.assertEqual([m["id"] for m in matches], ["1"])
-            self.assertEqual(len(errors), 1)
-            with self.assertRaises(dip.DipError):  # without a collector the error still propagates
-                dip.match_roll_call_votes(top, [], candidates, {}, None)
-
-
 class DateCorrectionBeforeTheJudgedRangeStillCountsTests(StoreCase):
     def test_a_stored_sitting_moved_to_before_the_range_is_a_gap(self) -> None:
         seeded = self.seed(week_specs(6))
@@ -334,11 +311,16 @@ class ScanResultStandsAsItIsTests(unittest.TestCase):
 
     def test_a_no_scan_run_copies_cached_votes_into_items_without_votes_only(self) -> None:
         existing = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        for cached in existing["agenda_items"][0]["votes"]:
+            cached["document_numbers"] = ["21/1"]
         empty = report_with(0, None)
+        # shared with the cached votes: vote_links keeps them under this TOP
+        empty["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/1"}]
         build.reuse_existing_dossier_enrichments(empty, existing, votes=True, profiles=True)
         self.assertEqual([v["id"] for v in empty["agenda_items"][0]["votes"]], ["1", "2"])
         has_votes = report_with(0, None)
-        has_votes["agenda_items"][0]["votes"] = [vote("9")]
+        has_votes["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/1"}]
+        has_votes["agenda_items"][0]["votes"] = [{**vote("9"), "document_numbers": ["21/1"]}]
         build.reuse_existing_dossier_enrichments(has_votes, existing, votes=True, profiles=True)
         self.assertEqual([v["id"] for v in has_votes["agenda_items"][0]["votes"]], ["9"])
 

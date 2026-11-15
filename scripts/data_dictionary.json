@@ -90,19 +90,25 @@
       }
     },
     "agenda_item_votes": {
-      "meaning": "Verknüpfungen von Abstimmungen und Tagesordnungspunkten.",
+      "meaning": "Verknüpfungen namentlicher Abstimmungen mit Tagesordnungspunkten derselben Sitzung, gefunden über eine gemeinsame Drucksache oder einen eindeutigen Titelabgleich (basis). Gemeint ist der Tagesordnungspunkt, der die abgestimmte Vorlage behandelte; die Verknüpfungen sind noch nicht von Hand gegen Protokoll und DIP geprüft, und eine kann auch einen Tagesordnungspunkt treffen, der die Vorlage nicht behandelte (docs/data-methods.md). Eine Abstimmung kann mit mehreren Tagesordnungspunkten verknüpft sein; eine ohne Zeile hängt nur über votes.protocol_id an ihrer Sitzung.",
       "columns": {
         "agenda_item_id": {
-          "meaning": "Kennung des Tagesordnungspunkts, auf dem die Abstimmung verzeichnet ist.",
+          "meaning": "Kennung eines Tagesordnungspunkts derselben Sitzung, der mit der Abstimmung eine Drucksache teilt oder dessen Titel sie als einziger trifft (basis). Sagt nicht, dass diese Abstimmung allein über den Tagesordnungspunkt entschied.",
           "unit": "Projektkennung des Tagesordnungspunkts als Text.",
-          "source": "Bundestags-Abstimmung mit DIP-Protokoll/Tagesordnungspunkt über Sitzungs- und Kontextverknüpfung verbunden.",
+          "source": "Projektregel (scripts/vote_links.py, top_links): gemeinsame Drucksachennummer der Abstimmung (Abstimmungsliste auf bundestag.de) und des Tagesordnungspunkts (im Plenarprotokoll gedruckt oder über DIP-Vorgänge des Punkts), sonst ein eindeutiger Titelabgleich in derselben Sitzung.",
           "license": "bundestag-abstimmungen"
         },
         "vote_id": {
-          "meaning": "Kennung der namentlichen Abstimmung, die auf diesem Tagesordnungspunkt liegt.",
+          "meaning": "Kennung der namentlichen Abstimmung, die mit diesem Tagesordnungspunkt verknüpft ist.",
           "unit": "Kennung der Abstimmung als Text.",
-          "source": "Bundestags-Abstimmung mit DIP-Protokoll/Tagesordnungspunkt über Sitzungs- und Kontextverknüpfung verbunden.",
+          "source": "Projektregel (scripts/vote_links.py, top_links): gemeinsame Drucksachennummer der Abstimmung (Abstimmungsliste auf bundestag.de) und des Tagesordnungspunkts (im Plenarprotokoll gedruckt oder über DIP-Vorgänge des Punkts), sonst ein eindeutiger Titelabgleich in derselben Sitzung.",
           "license": "bundestag-abstimmungen"
+        },
+        "basis": {
+          "meaning": "Worauf die Verknüpfung beruht: drucksache_xml, wenn eine Drucksache der Abstimmung im Plenarprotokoll unter dem Tagesordnungspunkt gedruckt ist; drucksache_vorgang, wenn sie nur über einen DIP-Vorgang verbunden ist, dessen Vorgangsposition dem Tagesordnungspunkt zugeordnet ist (mitberatene Vorgänge eingeschlossen); title, wenn die Abstimmung mit keinem Tagesordnungspunkt der Sitzung eine Drucksache teilt und ihr Titel genau einen Tagesordnungspunkt trifft (Überschrift oder Titel seiner DIP-Vorgangspositionen).",
+          "unit": "Textcode drucksache_xml, drucksache_vorgang oder title; nie leer.",
+          "source": "Projektregel (scripts/vote_links.py, top_links): gemeinsame Drucksachennummer der Abstimmung (Abstimmungsliste auf bundestag.de) und des Tagesordnungspunkts (im Plenarprotokoll gedruckt oder über DIP-Vorgänge des Punkts), sonst ein eindeutiger Titelabgleich in derselben Sitzung.",
+          "license": "eigene-auswertung"
         }
       }
     },

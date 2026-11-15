@@ -692,7 +692,7 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     """Drucksache numbers an agenda item names, in first-seen order.
 
     The XML parser's ``xml_drucksachen`` and the API's ``linked_drucksachen``
-    (the numbers ``validate_dip_protocol.top_document_numbers`` reads), then
+    (the numbers ``vote_links.top_links`` reads), then
     numbers in the heading. A heading also carries case numbers of other
     shapes ("10/21", "1/22" in Streitsachen lists), so every number counts only
     when ``plausible_document_number`` accepts it. The same rules as persist

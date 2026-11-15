@@ -164,7 +164,8 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
         return {
             "id": vote_id, "title": f"Abstimmung {vote_id}", "date": "2024-05-15",
             "detail_url": f"https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id={vote_id}",
-            "document_numbers": [], "fractions": fractions, "members": members,
+            "document_numbers": ["20/123"],  # printed under TOP 1 of the fixture: vote_links places the vote there
+            "fractions": fractions, "members": members,
             "total": {key: sum(row["counts"][key] for row in fractions) for key in derive.VOTE_COUNT_KEYS},
         }
 
@@ -275,7 +276,7 @@ class AbweichlerParityTests(unittest.TestCase):
     def report(self) -> dict:
         report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
         report["agenda_items"][0]["votes"] = [
-            self.roll_call("901", [
+            {**self.roll_call("901", [
                 # SPD: Ja majority; one Nein (counts), one Enthaltung (never).
                 ("Ada Eins", "SPD", "yes"), ("Bea Eins", "SPD", "yes"), ("Cem Eins", "SPD", "yes"),
                 ("Dora Eins", "SPD", "no"), ("Emil Eins", "SPD", "abstain"),
@@ -283,7 +284,7 @@ class AbweichlerParityTests(unittest.TestCase):
                 ("Finn Eins", "CDU/CSU", "no"), ("Gus Eins", "CDU/CSU", "no"), ("Hanna Eins", "CDU/CSU", "yes"),
                 # fraktionslos: a "minority" is never an Abweichung.
                 ("Ida Eins", "fraktionslos", "yes"), ("Jan Eins", "fraktionslos", "yes"), ("Kai Eins", "fraktionslos", "no"),
-            ]),
+            ]), "document_numbers": ["20/123"]},  # printed under TOP 1 of the fixture: vote_links places the vote there
         ]
         report["sitting_votes"] = [
             self.roll_call("902", [

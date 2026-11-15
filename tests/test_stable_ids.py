@@ -397,7 +397,10 @@ class DocumentKeyTests(unittest.TestCase):
             r = documents_report()
             r['agenda_items'][0]['api']['linked_drucksachen'] = [docs[i] for i in order]
             r['agenda_items'][0]['xml_drucksachen'] = []
-            r['agenda_items'][0]['votes'][0]['document_numbers'] = []
+            vote = r['agenda_items'][0]['votes'][0]
+            vote['document_numbers'] = []
+            r['agenda_items'][0]['votes'] = []  # a vote without numbers is a sitting vote (vote_links)
+            r['sitting_votes'] = [vote]
             results.append(self.documents(self.persisted(r)))
         self.assertEqual(results[0], results[1]); self.assertEqual(results[0], results[2])
         by_number = {d['document_number']: d for d in results[0]}

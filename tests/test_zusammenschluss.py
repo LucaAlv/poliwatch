@@ -226,9 +226,11 @@ class PersistTests(unittest.TestCase):
 
     def test_every_spelling_of_a_gruppe_in_vote_data_is_one_parties_row(self) -> None:
         item = report("20/98", "2024-02-21")
+        item["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "20/1"}]  # shared with the vote: vote_links places it here
         item["agenda_items"][0]["votes"] = [
             {
                 "id": "v1",
+                "document_numbers": ["20/1"],
                 "total": {},
                 "fractions": [
                     {"name": "Gruppe BSW", "counts": {"yes": 1}, "total": 1},

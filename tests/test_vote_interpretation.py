@@ -725,8 +725,11 @@ class RepairedReportsTests(unittest.TestCase):
             return {key: value for key, value in vote(vote_id, **fields).items()
                     if key not in (*INTERPRETATION_KEYS, "official_result")}
 
-        def top(index: int, top_id: str, votes: list[dict]) -> dict:
-            return {"index": index, "top_id": top_id, "heading": top_id, "votes": votes}
+        def top(index: int, top_id: str, votes: list[dict], *numbers: str) -> dict:
+            # A Drucksache of a DIP Vorgang of the TOP, shared with its votes:
+            # the evidence vote_links places them by on the replay.
+            linked = [{"dokumentnummer": number, "herausgeber": "BT"} for number in numbers]
+            return {"index": index, "top_id": top_id, "heading": top_id, "votes": votes, "api": {"linked_drucksachen": linked}}
 
         recorded = legacy("996")  # an official Antrag result an earlier targeted refresh stored
         recorded.update(official_result="rejected", result_raw="rejected", result_source="official", result_scope="application")
@@ -735,9 +738,9 @@ class RepairedReportsTests(unittest.TestCase):
             "sampled_people": [],
             "agenda_items": [
                 top(1, "Tagesordnungspunkt 7", [legacy("906")]),
-                top(2, "Tagesordnungspunkt 10", [legacy("811"), legacy("810")]),
-                top(3, "Tagesordnungspunkt 8", [legacy("1005")]),
-                top(4, "Tagesordnungspunkt 12", [legacy("811"), legacy("926")]),  # 811 under a second TOP too
+                top(2, "Tagesordnungspunkt 10", [legacy("811"), legacy("810")], "20/4360"),
+                top(3, "Tagesordnungspunkt 8", [legacy("1005")], "21/2234"),
+                top(4, "Tagesordnungspunkt 12", [legacy("811"), legacy("926")], "20/4053", "20/11752"),  # 811 under a second TOP too
             ],
             "api_records": {"sitting_votes": [recorded]},
         }

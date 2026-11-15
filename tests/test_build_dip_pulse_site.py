@@ -281,7 +281,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
             "agenda_items": [{
                 "index": 1,
                 "top_id": "T1",
-                "votes": [{"id": "vote-1", "members": []}],
+                "votes": [{"id": "vote-1", "document_numbers": ["21/1"], "members": []}],
                 "xml_speakers": [{"speaker": {
                     "xml_redner_id": "11001",
                     "first_name": "Ada",
@@ -294,6 +294,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
             "agenda_items": [{
                 "index": 1,
                 "top_id": "T1",
+                "xml_drucksachen": [{"dokumentnummer": "21/1"}],  # shared with the cached vote: vote_links keeps it here
                 "xml_speakers": [{"speaker": {
                     "xml_redner_id": "11001",
                     "first_name": "Ada",
@@ -2795,7 +2796,9 @@ class VotesArchiveTests(unittest.TestCase):
         }
 
     def _item(self, index: int, votes: list[dict[str, Any]]) -> dict[str, Any]:
-        return {"index": index, "votes": votes, "xml_drucksachen": [], "api": {}}
+        # The heading carries its votes' titles: vote_links places a vote by title where no Drucksache is shared.
+        heading = " / ".join(str(vote["title"]) for vote in votes if vote.get("title"))
+        return {"index": index, "heading": heading, "votes": votes, "xml_drucksachen": [], "api": {}}
 
     def test_archive_keeps_explicit_bundesrat_issuer_for_document_pills(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/1"]}
@@ -2806,8 +2809,11 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertIn('href="https://dip.bundestag.de/x">BR-Drs. 21/1</a>', markup)
 
     def test_collect_deduplicates_a_vote_attached_to_two_agenda_items(self) -> None:
-        shared = {"id": "v1", "date": "2026-06-10", "title": "Geteilt", "total": {"yes": 1, "no": 0}}
-        entry = self._entry("2026-06-10", "21/82", [self._item(1, [shared]), self._item(2, [shared])])
+        shared = {"id": "v1", "date": "2026-06-10", "title": "Geteilt", "document_numbers": ["21/1"], "total": {"yes": 1, "no": 0}}
+        first, second = self._item(1, [shared]), self._item(2, [shared])
+        for item in (first, second):
+            item["xml_drucksachen"] = [{"dokumentnummer": "21/1"}]  # shared with the vote: vote_links places it under both TOPs
+        entry = self._entry("2026-06-10", "21/82", [first, second])
         rows = _site_store_fixture.archive_rows([entry])
         self.assertEqual(len(rows), 1)
 
@@ -2902,6 +2908,7 @@ class VotesArchiveTests(unittest.TestCase):
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/9999"]}
         item = {
             "index": 1,
+            "heading": "T",  # the vote shares no number with the TOP: vote_links places it by title
             "votes": [vote],
             "xml_drucksachen": [],
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
@@ -2914,19 +2921,22 @@ class VotesArchiveTests(unittest.TestCase):
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
         other = {
             "index": 2,
-            "votes": [],
+            "votes": [vote],  # the number is linked here, so vote_links places the vote here too
             "xml_drucksachen": [],
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Beschlussempfehlung und Bericht"}]},
         }
-        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [self._item(1, [vote]), other])])
+        own = self._item(1, [vote])
+        own["xml_drucksachen"] = [{"dokumentnummer": "21/6561"}]  # printed without a DIP type: the type comes from the other TOP
+        rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [own, other])])
         self.assertEqual(rows[0]["procedure_type"], "Beschlussempfehlung und Bericht")
 
     def test_procedure_type_of_a_sitting_vote_comes_from_the_sitting_map(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        # DIP spells the number "21/06561": the sitting map reads it as 21/6561, vote_links (plain strings) shares no number, so the vote stays a sitting vote.
         entry = self._entry(
             "2026-06-10",
             "21/82",
-            [{"index": 1, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Antrag"}]}}],
+            [{"index": 1, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/06561", "drucksachetyp": "Antrag"}]}}],
         )
         entry["report"]["sitting_votes"] = [vote]
         rows = _site_store_fixture.archive_rows([entry])
@@ -2940,7 +2950,7 @@ class VotesArchiveTests(unittest.TestCase):
             "xml_drucksachen": [],
             "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
         }
-        other = {"index": 2, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/1", "drucksachetyp": "Antrag"}]}}
+        other = {"index": 2, "votes": [vote], "api": {"linked_drucksachen": [{"dokumentnummer": "21/1", "drucksachetyp": "Antrag"}]}}  # vote_links links the vote here too
         rows = _site_store_fixture.archive_rows([self._entry("2026-06-10", "21/82", [other, own])])
         self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
 
@@ -3076,7 +3086,8 @@ class VotesArchiveTests(unittest.TestCase):
         # The same vote under a second TOP renders twice; its anchor must not.
         other = next(item for item in report["agenda_items"] if item is not voted)
         other["votes"] = list(voted["votes"])
-        report["sitting_votes"] = [{**voted["votes"][0], "id": 99, "title": "Ohne TOP"}]
+        other["xml_drucksachen"] = [{"dokumentnummer": "20/123"}]  # shared with the vote: vote_links places it here too
+        report["sitting_votes"] = [{**voted["votes"][0], "id": 99, "title": "Ohne TOP", "document_numbers": []}]
         rows = _site_store_fixture.archive_rows([{"report": report, "page_path": Path("plenarprotokoll-x.html")}])
         page = pulse_html.render_html(report)
         self.assertEqual(len(rows), 2)
