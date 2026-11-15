@@ -818,6 +818,17 @@ class ErsteRedenTests(StoreCase):
         conn.commit()
         self.assertEqual(self.debut_values(), [1, 0])
 
+    # Value: protects=a withheld Rede with no Redner-ID binds nobody, though some mps rows also have an empty id; fails_when=the union drops its `xml_redner_id <> ''` guard and the Rede binds every person without an id; why_new=the other withheld tests all carry a real id; seam=none; no_claim=does not say which Reden carry no id in real data
+    def test_a_withheld_rede_without_a_redner_id_binds_no_one(self) -> None:
+        weeks = self.withheld_people()
+        weeks[0]["withheld"] = [{"redner_id": "x-Ada Lovelace", "rede_id": "IDN1", "sequence": 5}]
+        self.seed(weeks)
+        conn = self.writable()
+        conn.execute("UPDATE withheld_units SET xml_redner_id = ''")
+        conn.execute("UPDATE mps SET xml_redner_id = '' WHERE display_name IN ('Ada Lovelace', 'Grace Hopper')")
+        conn.commit()
+        self.assertEqual(self.debut_values(), [1, 2])
+
     def fresh_store(self) -> None:
         """A new store file, so one test can seed a variant of its weeks."""
         self.path = self.path.with_name(f"store-{len(list(self.path.parent.iterdir()))}.sqlite")
