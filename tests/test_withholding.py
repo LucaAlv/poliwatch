@@ -234,13 +234,20 @@ class ReviewedListTests(unittest.TestCase):
         self.assertEqual(len(by_reason["awaiting_acquisition"]), 83)
         self.assertIn("19/36", by_reason["awaiting_acquisition"])
 
-    # Value: protects=the committed list loads and each N7 entry names its sitting's real unit (W8);
+    # Value: protects=the committed list loads and each N7 and N8 entry names its sitting's real unit (W8);
     #   fails_when=an entry is malformed or its owner drifts; why_new=new entries; seam=none
     def test_the_committed_list_is_well_formed(self):
         entries = reviewed_units.load(_support.ROOT / "scripts/reviewed_units.json")
         withhold = {number: [e for e in units if e["kind"] == reviewed_units.WITHHOLD] for number, units in entries.items()}
-        self.assertEqual(sorted(number for number, units in withhold.items() if units), ["18/2", "18/29", "18/83", "19/25"])
-        self.assertEqual(sum(len(v) for v in withhold.values()), 5)
+        self.assertEqual(sorted(number for number, units in withhold.items() if units),
+                         ["18/158", "18/2", "18/29", "18/83", "19/18", "19/25"])
+        self.assertEqual(sum(len(v) for v in withhold.values()), 15)
+        # N8 (the review of the restored sittings, 2026-11-15): 18/158's Zwischenfragen printed as their own <rede>,
+        # and the two Redner continuations printed after them; 19/18's unsplit Dröge Rede.
+        self.assertEqual(sorted(e["rede_id"] for e in withhold["18/158"]),
+                         ["ID1815821700", "ID1815821800", "ID1815822100", "ID1815822200", "ID1815824500",
+                          "ID1815830200", "ID1815831300", "ID1815832200", "ID1815832700"])
+        self.assertEqual([(e["rede_id"], e["redner_id"]) for e in withhold["19/18"]], [("ID191802600", "11003753")])
 
     # Value: protects=the digest names a sitting's entries regardless of order, and changes with any field;
     #   fails_when=reordering or rewording leaves the store stale silently; why_new=R3; seam=none
