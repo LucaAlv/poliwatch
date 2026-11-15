@@ -639,6 +639,30 @@ class FollowUpReleaseTests(ReleaseTestCase):
         code, _, stderr = self.run_script("--initial")
         self.assertEqual(code, 0, stderr)
 
+    # Value: protects=a withheld-list check that cannot read the export is refused with its own message, never passed as "nothing to compare" (class 9); fails_when=withheld_export_problem returns None when a table is missing, listed twice, or unreadable; why_new=the mismatch test only reaches the row comparison of a well-formed export; seam=none; no_claim=verify_export's hash check, which runs first in a release
+    def test_an_unreadable_withheld_export_is_refused(self) -> None:
+        manifest = json.loads((self.exports_copy / "datenstand.json").read_text(encoding="utf-8"))
+        tables = [entry for entry in manifest["files"] if entry["kind"] == "table_csv"]
+        withheld = next(e for e in tables if e["name"].startswith("withheld_units"))
+        protocols = next(e for e in tables if e["name"].startswith("protocols"))
+        generation = self.exports_copy / manifest["generation"]
+        cases = (
+            ("no protocols table", {**manifest, "files": [e for e in manifest["files"] if e is not protocols and e["name"] != protocols["name"]]},
+             "lists 0 protocols tables, not one"),
+            ("two withheld tables", {**manifest, "files": [*manifest["files"], {**withheld, "name": "withheld_units-other.csv.gz"}]},
+             "lists 2 withheld_units tables, not one"),
+        )
+        for label, edited, fragment in cases:
+            with self.subTest(label):
+                problem = publish.withheld_export_problem(edited, generation)
+                self.assertIsNotNone(problem)
+                self.assertIn(fragment, problem)
+        with self.subTest("a table that is no gzip"), tempfile.TemporaryDirectory() as tmp:
+            for entry in (withheld, protocols):
+                (Path(tmp) / entry["name"]).write_bytes(b"not gzip")
+            problem = publish.withheld_export_problem(manifest, Path(tmp))
+            self.assertIn("cannot read the exported withheld_units or protocols table", problem or "")
+
     # Value: protects=a previous manifest whose export_format is not an integer is refused (class 9); fails_when=previous_manifest_problem only checks the field is present, so "17" decides whether the withheld list may be absent; why_new=P2; seam=main
     def test_a_previous_manifest_needs_an_integer_export_format(self) -> None:
         for value in ("17", None, True, 17.0):
