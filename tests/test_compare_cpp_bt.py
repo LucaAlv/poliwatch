@@ -378,6 +378,19 @@ class CompareCppBtTests(unittest.TestCase):
         row = next(r for r in self.sections()["differences"] if r["kind"] == "ratio" and r["rede_id"] == "ID1800100500")
         self.assertEqual(row["ours"], "0")
 
+    # Value: protects=a sitting whose median ratio is 0 (every text empty) lists its Reden instead of dividing by zero; fails_when=ZeroDivisionError returns; why_new=the 0-word rule made a zero median possible; seam=none; no_claim=what the median means when most texts are missing
+    def test_zero_median_sitting_lists_its_reden(self) -> None:
+        db = sqlite3.connect(self.export)
+        db.execute("UPDATE speeches SET text = ''")
+        db.commit()
+        db.close()
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        self.assertEqual(self.run_main(cpp)[0], 0)
+        ratios = [r for r in self.sections()["differences"] if r["kind"] == "ratio"]
+        self.assertGreaterEqual(len(ratios), 3)
+        self.assertTrue(all("deviation 1.000" in r["detail"] for r in ratios))
+
     # Value: protects=a run whose join found nothing to compare ends in exit 2 instead of a vacuous pass: unreadable CPP-BT protocol numbers, unreadable tokens; fails_when=such a run exits 0 with ids_only_ours 0; why_new=a changed CPP-BT format would satisfy the written pass rule with no sitting compared; seam=none; no_claim=other format changes
     def test_a_comparison_that_compared_nothing_is_refused(self) -> None:
         for column, value, needle in ((1, "181", "no sitting is held by both"), (6, "115.0", "token count")):

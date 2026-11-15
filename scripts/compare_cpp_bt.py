@@ -407,8 +407,10 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
             if ratios:
                 median = statistics.median(ratios.values())
                 row["ratio_median"] = round(median, 3)
-                outliers = sorted(((abs(value / median - 1), rede_id, value) for rede_id, value in ratios.items()
-                                   if abs(value / median - 1) > RATIO_TOLERANCE), key=lambda item: (-item[0], item[1]))
+                # a median of 0 (most Reden of the sitting have no stored text) leaves no scale: list every Rede, deviation 1
+                deviations = {rede_id: (abs(value / median - 1) if median > 0 else 1.0) for rede_id, value in ratios.items()}
+                outliers = sorted(((deviations[rede_id], rede_id, value) for rede_id, value in ratios.items()
+                                   if deviations[rede_id] > RATIO_TOLERANCE), key=lambda item: (-item[0], item[1]))
                 row["ratio_outliers"] = len(outliers)
                 totals["ratio_outliers"] += len(outliers)
                 for deviation, rede_id, value in outliers:
