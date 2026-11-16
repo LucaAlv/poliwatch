@@ -1,6 +1,6 @@
 # N8: review of the 82 restored sittings, on W1's XML
 
-**Status:** done offline, 2026-11-15, before the T4 fetch (decision D3). Code: main fd4760d, speech rule 9, `scripts/reviewed_units.json` as committed there. **Result: N8 does not pass yet.** It found 10 wrong units that withhold entries fix (branch `claude/t4-reviewed-units`). It also found two sitting-level defects, 94 units in all, that need an owner decision before the fetch. It found one store-wide class that the T4 fetch neither causes nor fixes.
+**Status:** done offline, 2026-11-15, before the T4 fetch (decision D3). Code: main fd4760d, speech rule 9, `scripts/reviewed_units.json` as committed there. **Result: N8 does not pass yet.** It found 10 wrong units that withhold entries fix (landed in #165, v0.46.1.0). It also found two sitting-level defects, 94 units in all; the owner approved a parser rule for each (landed in #166, v0.46.2.0). It found one store-wide class that the T4 fetch neither causes nor fixes.
 **Row record:** [`n8-review.tsv`](n8-review.tsv), one row per item (sitting, unit, set, reader verdict, final verdict, class, action, reason).
 
 ## Method
