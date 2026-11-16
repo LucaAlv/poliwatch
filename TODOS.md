@@ -389,6 +389,23 @@ Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay
 **Priority:** P3
 **Depends on:** None
 
+### T4 parser rules for 18/158 and 19/13: what they leave open (2026-11-15)
+
+**What:** The two rules of branch `claude/t4-parser-rules` (`docs/source-errors.md` E9, E10) leave these:
+1. **`scripts/compare_cpp_bt.py` will list 18/158's 37 declarations as `in_top_other`.** The script copies `ANNEX_EXCLUSIONS` but not the new rule, by design (it imports no project module). Once 18/158 is stored, the release review reads 37 ids only CPP-BT has by hand, if CPP-BT keeps them as it keeps annex declarations. Either copy the rule into `_classify_element` (a `<rede>` the Inhaltsverzeichnis lists under an "Anlage" block takes that annex's class) or add the 37 to `scripts/cpp_bt_known_differences.tsv` after the first review that meets them.
+2. **The 18/158 rule needs the annex number to match.** In 18/212, 18/237, 19/71, 20/66 and 20/73 the Inhaltsverzeichnis numbers its "Anlage" blocks differently from the `<anlage>`s (18/212's "Anlage 8" lists the Reden of Anlage 10), and 18/221 writes "Anlage16"; their Reden all stand in the annexes, so nothing is lost. A future sitting with both an offset and Reden printed in the Sitzungsverlauf would store those Reden as Reden without a word. Refusing a Sitzungsverlauf `<rede>` that the Inhaltsverzeichnis lists under any "Anlage" block the rule does not place would make that visible; no sitting of the 802 does it today.
+3. **Eight other headings split a word** (E10's list, all WP 19 and all stored). They decide no count, but the pages print them as the source does, and `title_matches` loses the split word ("Bun desregierung" in 19/69) when it scores a heading against a DIP title. Fix the display with a general join only if one can be found that the 38,011 headings of the 802 sittings do not contradict.
+4. **The moved declarations leave the Fragestunde asker candidates** (code-review, 2026-11-16). `exclude_annex_reden_in_verlauf` removes the `<rede>`s before `speech_kinds.asker_candidates(root.iter("redner"))` runs, so their markers no longer count as candidates, while § 31 declarants in a real annex still do. 18/158 has no Fragestunde, so nothing moves today. In a future sitting with both, a read-out question could get a different `mp_id`, or none, than it would if the same declaration were printed in an annex. Build the candidates before the move, or collect the moved markers and pass them in.
+5. **`heading_formats` rebuilds the unspaced prefixes on every call** (code-review, 2026-11-16). Make `tuple(_unspaced(p) for p in BEFRAGUNG_PREFIXES)` a module constant; the parser calls the function once per TOP and the renderer once per agenda item.
+6. **Three walks map a rid to its Inhaltsverzeichnis block** (code-review, 2026-11-16): `exclude_annex_reden_in_verlauf` (later block wins), `adopt_reden_outside_tops` (first block wins) and `parse_toc` (keyed by title, see "A repeated Inhaltsverzeichnis title loses the page of Reden"). One shared helper would let a fix to one reach the others.
+7. **The empty-TOP cleanup also drops TOPs that were empty in the source** (ship red team, 2026-11-16). In a sitting where the rule finds anything to move, `exclude_annex_reden_in_verlauf` removes every childless `<tagesordnungspunkt>`, not only the ones it emptied, which can change the agenda and `seen_formats`. Only 18/158 triggers the rule, and it has no such TOP; childless TOPs exist in 21/18, 21/28, 21/42, 21/45 and 21/93, which the rule does not touch. Remove only the TOPs the rule emptied.
+
+**Why:** None moves a figure of the 718 stored sittings or of the two sittings the rules are for; CLAUDE.md sends them here.
+
+**Effort:** S each
+**Priority:** P3
+**Depends on:** T4 storing 18/158 (item 1)
+
 ### A repeated Inhaltsverzeichnis title loses the page of Reden
 
 **What:** `parse_toc` keys blocks by title, so of two blocks with one title only the last survives and the first block's `rid_pages` are lost. 87 of the 716 XML files repeat a title. 1,459 of 54,718 stored Reden in 36 sittings (the same 1,459 of 54,937 in 36 sittings on the fresh 718-sitting store, 2026-11-14) have no `source_page` [measured on the A3 reports, 2026-11-07]; the mechanism was read on 18/44, where 13 Reden of "Tagesordnungspunkt II (Fortsetzung)" have none, and the other sittings were not checked one by one.

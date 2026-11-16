@@ -307,6 +307,39 @@ class BefragungTests(unittest.TestCase):
         self.assertEqual(sk.heading_formats("Beratung des Antrags: Befragung der Bundesregierung reformieren"), frozenset())
         self.assertEqual(sk.heading_formats(None), frozenset())
 
+    # Value: protects=a heading printed with a space inside a word still names its format (19/13 "Befr agung der
+    #   Bundesregierung", docs/source-errors.md E10); fails_when=heading_formats matches the spaced prefix only again;
+    #   why_new=the only broken format heading in the 802 files; seam=none
+    def test_a_heading_with_a_space_inside_a_word_names_its_format(self):
+        self.assertEqual(sk.heading_formats("Befr agung der Bundesregierung"), {"befragung"})
+        self.assertEqual(sk.heading_formats("Befragung derBundesregierung"), {"befragung"})
+        self.assertEqual(sk.heading_formats("Regierungs befragung"), {"befragung"})
+        self.assertEqual(sk.heading_formats("Frage stunde"), {"fragestunde"})
+        self.assertEqual(sk.heading_formats("Befr agung der Bundesregierung Frage stunde"), {"befragung", "fragestunde"})
+        # Still a prefix: a spaced phrase mid-heading names no format.
+        self.assertEqual(sk.heading_formats("Antrag: Befr agung der Bundesregierung reformieren"), frozenset())
+
+    # Value: protects=19/13's Befragung (real excerpt) keeps the minister's report as its one Rede, reads every later
+    #   <rede> as a Frage or an Antwort, and withholds none (ID191304800 was withheld as a refused Zwischenfrage);
+    #   fails_when=the split heading is not read, so the Fragen count as Reden and nested Antworten refuse;
+    #   why_new=N8 found it; no fixture had a broken heading; seam=none
+    def test_19_13_befragung_with_a_split_heading_is_recognised(self):
+        parsed = dip.parse_protocol_xml((FIXTURES / "t4-rules/19-13-befr-agung.xml").read_text(encoding="utf-8"))
+        [top] = parsed["agenda_items"]
+        self.assertEqual(top["heading"], "Befr agung der Bundesregierung")
+        self.assertEqual(top["question_formats"], ["befragung"])
+        self.assertEqual([s["rede_id"] for s in top["speeches"]], ["ID191300100"])
+        self.assertEqual(top["withheld"], [])
+        self.assertEqual(set(kinds(top)), {"befragung_frage", "befragung_antwort"})
+        self.assertEqual(
+            {c["rede_id"] for c in top["contributions"] if not c["parent_rede_id"]},
+            {"ID191300200", "ID191300300", "ID191304700", "ID191304800", "ID191304900"},
+        )
+        # Peterka's Frage, and Schmidt's hand-over to the BMZ printed inside it, which refused as a Zwischenfrage.
+        peterka = [(c["kind"], c["speaker"]["display_name"]) for c in top["contributions"]
+                   if "ID191304800" in (c["rede_id"], c["parent_rede_id"])]
+        self.assertEqual(peterka, [("befragung_frage", "Tobias Matthias Peterka"), ("befragung_antwort", "Christian Schmidt")])
+
 
 class FragestundeTests(unittest.TestCase):
     def setUp(self) -> None:

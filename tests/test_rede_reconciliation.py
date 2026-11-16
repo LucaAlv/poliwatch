@@ -122,6 +122,85 @@ class SourceShapeTests(unittest.TestCase):
         self.assertEqual([c["rede_id"] for c in parsed["sitting_contributions"]], ["annex:2:1", "annex:2:2"])
 
 
+def statuses_of(xml):
+    """The status ``parse_protocol_xml`` records for each ``<rede>``, and its result."""
+    seen = {}
+
+    def spy(sitting_id, inventory, statuses, split_parts):
+        seen.update(statuses)
+        return original(sitting_id, inventory, statuses, split_parts)
+
+    original = dip.reconcile_reden
+    with patch.object(dip, "reconcile_reden", spy):
+        parsed = dip.parse_protocol_xml(xml, reviewed=[])
+    return seen, parsed
+
+
+def listed_in_annex(rids, annex_number="Anlage 7"):
+    """An Inhaltsverzeichnis block for ``annex_number`` that lists ``rids``."""
+    entries = "".join(f'<ivz-eintrag><xref pnr="15617" ref-type="rede" rid="{rid}"/></ivz-eintrag>' for rid in rids)
+    return (f"<vorspann><inhaltsverzeichnis><ivz-block><ivz-block-titel>{annex_number}</ivz-block-titel>"
+            f"<ivz-eintrag><ivz-eintrag-inhalt>Erklärungen nach § 31 GO</ivz-eintrag-inhalt></ivz-eintrag>"
+            f"{entries}</ivz-block></inhaltsverzeichnis></vorspann>")
+
+
+def numbered_annex(number, title, body=""):
+    return (f'<anlage><anlagen-titel>{number}</anlagen-titel><anlagen-text anlagen-typ="{title}">'
+            f'<p klasse="Anlage_2">{title}</p>{body}</anlagen-text></anlage>')
+
+
+class AnnexRedenInVerlaufTests(unittest.TestCase):
+    """18/158 prints the § 31 declarations of its Anlage 7 in the Sitzungsverlauf
+    (docs/source-errors.md E9)."""
+
+    # Value: protects=18/158's Erklärungen nach § 31 GO, printed as <rede>s of a headingless TOP "Geschaeftsordnung"
+    #   while Anlage 7 holds only its title, are excluded as the annex ones are: no Rede, not withheld, the empty TOP gone
+    #   (real excerpt); fails_when=the rule is dropped (37 § 31 declarations count as Reden) or they are withheld (they
+    #   would count against the coverage shares); why_new=N8 found the shape, in no other of the 802 files; seam=reconcile_reden spy
+    def test_18_158_declarations_printed_in_the_verlauf_are_excluded_as_paragraph_31(self):
+        xml = (FIXTURES / "t4-rules/18-158-paragraph-31-in-verlauf.xml").read_text(encoding="utf-8")
+        statuses, parsed = statuses_of(xml)
+        self.assertEqual(statuses["ID18158106000"], "excluded_annex:paragraph_31")
+        self.assertEqual(statuses["ID18158106100"], "excluded_annex:paragraph_31")
+        self.assertEqual(statuses["ID1815832400"], "speech")
+        self.assertEqual([t["top_id"] for t in parsed["agenda_items"]], ["Tagesordnungspunkt 18"])
+        [top] = parsed["agenda_items"]
+        self.assertEqual([s["rede_id"] for s in top["speeches"]], ["ID1815832400"])
+        self.assertEqual(top["withheld"], [])
+        self.assertEqual(parsed["sitting_contributions"], [])
+
+    # Value: protects=the rule stays as narrow as the 18/158 shape: an annex no ANNEX_EXCLUSIONS rule keeps out
+    #   (Zu Protokoll), an annex that holds its own <rede>, or a Rede the Inhaltsverzeichnis lists under no Anlage stays
+    #   a Rede; a TOP that keeps other content after the move stays; fails_when=the rule widens to any Rede the
+    #   Inhaltsverzeichnis lists under an Anlage, or drops a TOP that still holds a Rede; why_new=new rule; seam=none
+    def test_only_a_rede_listed_under_an_empty_excluded_annex_moves(self):
+        declaration = numbered_annex("Anlage 7", "Erklärungen nach § 31 GO")
+        go_top = f'<tagesordnungspunkt top-id="Geschaeftsordnung">{rede("G1", "Erst")}{rede("G2", "Zweit")}</tagesordnungspunkt>'
+
+        def parse(listing, annexes, verlauf=go_top):
+            xml = (f'<dbtplenarprotokoll wahlperiode="18" sitzung-nr="7">{listing}<sitzungsverlauf>'
+                   f'<tagesordnungspunkt top-id="T1"><p klasse="T_NaS">Beratung</p>{rede("R1")}</tagesordnungspunkt>'
+                   f"{verlauf}</sitzungsverlauf><anlagen>{annexes}</anlagen></dbtplenarprotokoll>")
+            return statuses_of(xml)
+
+        statuses, parsed = parse(listed_in_annex(["G1"]), declaration)
+        self.assertEqual(statuses["G1"], "excluded_annex:paragraph_31")
+        go = next(t for t in parsed["agenda_items"] if t["top_id"] == "Geschaeftsordnung")
+        self.assertEqual([s["rede_id"] for s in go["speeches"]], ["G2"])
+        for name, listing, annexes in [
+            ("Zu Protokoll annex", listed_in_annex(["G1", "G2"]), numbered_annex("Anlage 7", "Zu Protokoll gegebene Reden")),
+            ("annex with its own Rede", listed_in_annex(["G1", "G2"]),
+             numbered_annex("Anlage 7", "Erklärungen nach § 31 GO", rede("A1", "Anlage"))),
+            ("another annex number", listed_in_annex(["G1", "G2"], "Anlage 6"), declaration),
+            ("no titles on either side", listed_in_annex(["G1", "G2"], ""),
+             declaration.replace("<anlagen-titel>Anlage 7</anlagen-titel>", "")),
+            ("no listing", "", declaration),
+        ]:
+            with self.subTest(name):
+                statuses, parsed = parse(listing, annexes)
+                self.assertEqual((statuses["G1"], statuses["G2"]), ("speech", "speech"))
+
+
 class ReconcileTests(unittest.TestCase):
     # Value: protects=a part split_nested_reden made needs its own status, and no unit gets a status the source lacks;
     #   fails_when=PR 2's withholding or a new kind forgets to record a part, or ids are mangled; why_new=no XML shape triggers it today; seam=reconcile_reden called directly
