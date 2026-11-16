@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.2.0] - 2026-11-16
+
+Two sittings still to be acquired, 18/158 and 19/13, will now be read as what they are, not as 94 Reden. Each protocol's XML misprints one thing, and a parser rule reads around each. Today's store holds neither sitting, so no figure in it moves, and the other 800 of the 802 XML files parse exactly as before. Once the two are acquired, they store 94 fewer Reden, withhold 3 fewer, and count 64 Fragen and Antworten of the Befragung der Bundesregierung that would otherwise have been Reden.
+
+### Fixed
+
+- **18/158: § 31 declarations printed as Reden.** The XML prints the 37 Erklärungen nach § 31 GO to the vote on the Asylpaket II as `<rede>`s after the sitting's close, under a Tagesordnungspunkt with no heading, and leaves its Anlage 7 with only their title. The Inhaltsverzeichnis still lists them under Anlage 7. They are now excluded as § 31 declarations, as the 9 printed in Anlage 15 are, and are not withheld, so they count against no coverage share. Stored Reden 137 → 100 with the withhold entries of 0.46.1.0, § 31 declarations excluded 9 → 46.
+- **19/13: a Befragung der Bundesregierung under a broken heading.** The heading of Tagesordnungspunkt 1 is printed "Befr agung der Bundesregierung", so the Befragung was not recognised and every Frage and Antwort counted as a Rede. Headings are now compared with the whitespace removed. The minister's report stays the one Rede; stored Reden 70 → 13, withheld Reden 3 → 0, and 64 Fragen and Antworten of the Befragung. 19/13 leaves the list of sittings that withhold more than two Reden.
+- **Both are listed as source errors** (E9, E10 in `docs/source-errors.md`), each with the scan that found the shape in no other file of the 802.
+
 ## [0.46.1.0] - 2026-11-15
 
 Ten units that would have been counted wrongly in two sittings that are still to be acquired, 18/158 and 19/18, are now withheld. A review of the 82 sittings that come back with the next acquisition found them in the protocols' XML. Today's store holds neither sitting, so no figure in it moves. Once the two sittings are acquired, they count 10 fewer Reden and 8 fewer Zwischenfragen than the parser alone would give, and their withheld list grows by 10.
