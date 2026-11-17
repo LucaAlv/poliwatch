@@ -8,6 +8,7 @@ import copy
 import csv
 import io
 import json
+import shutil
 import tempfile
 import time
 import unittest
@@ -26,17 +27,19 @@ Beschlussempfehlung auf Drucksache 20/123 bekannt: abgegebene Stimmen 17. Mit Ja
 mit Nein haben gestimmt 5, Enthaltungen 2.</p></sitzungsverlauf></dbtplenarprotokoll>"""
 
 
-def sitting() -> dict[str, Any]:
+def sitting(repeated: bool = False) -> dict[str, Any]:
     """The fixture sitting with one vote per stratum, placed by the rule:
     12345 (printed 20/123) and v2 (DIP 20/456) share TOP 1 (S2); v4 links TOP 3
-    and TOP 4 (S1); v3 is a title link (S3); v5 and v6 are plain (S4)."""
+    and TOP 4 (S1); v3 is a title link (S3); v5 and v6 are plain (S4).
+    ``repeated`` adds two TOPs with the same ``top_id`` "TR": v7 under the first
+    (printed 20/701), v8 under the second (20/702 printed and DIP-linked)."""
     report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
     base = report["agenda_items"][0]["votes"][0]
     template = report["agenda_items"][1]
 
-    def top(index: int, heading: str, printed: list[str] = (), linked: list[str] = ()) -> dict:
+    def top(index: int, heading: str, printed: list[str] = (), linked: list[str] = (), top_id: str = "") -> dict:
         new = copy.deepcopy(template)
-        new.update(index=index, top_id=f"T{index}", heading=heading, votes=[], xml_speakers=[],
+        new.update(index=index, top_id=top_id or f"T{index}", heading=heading, votes=[], xml_speakers=[],
                    xml_drucksachen=[{"dokumentnummer": n} for n in printed],
                    api={"linked_drucksachen": [{"dokumentnummer": n, "herausgeber": "BT", "drucksachetyp": "Antrag",
                                                 "vorgang_id": f"vg-{n}"} for n in linked]})
@@ -51,6 +54,10 @@ def sitting() -> dict[str, Any]:
 
     votes = [base, copy_of("v2", ["20/456", "20/999"], "Testgesetz"), copy_of("v3", [], "Fragestunde"),
              copy_of("v4", ["20/777", "20/888"], "Lesungen"), copy_of("v5", ["20/555"], "Mandat"), copy_of("v6", ["20/666"], "Haushalt")]
+    if repeated:
+        report["agenda_items"] += [top(7, "TOP R Erste Beratung", printed=["20/701"], top_id="TR"),
+                                   top(8, "TOP R Zweite Beratung", printed=["20/702"], linked=["20/702"], top_id="TR")]
+        votes += [copy_of("v7", ["20/701"], "Erste Beratung"), copy_of("v8", ["20/702"], "Zweite Beratung")]
     report["agenda_items"][0]["votes"] = []
     report["api_records"] = {"roll_call_vote_candidates": votes, "matched_roll_call_votes": votes}
     return vote_links.attribute_votes(report)
@@ -61,18 +68,27 @@ class SheetTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.site = Path(tmp.name) / "site"
-        report = _site_store_fixture.persistable([{"report": sitting()}])[0]["report"]
+        self.report = self.make_site(sitting())
+
+    def make_site(self, built: dict[str, Any]) -> dict[str, Any]:
+        """Persist ``built`` into a fresh store under ``self.site`` and cache it
+        beside the store as the replay would; returns the persisted report."""
+        report = _site_store_fixture.persistable([{"report": built}])[0]["report"]
         _site_store_fixture.build_site_store(self.site, [{"report": report}])
-        (self.site / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(report), encoding="utf-8")
+        self.write_cached(report)
         (self.site / "data" / "xml").mkdir(parents=True, exist_ok=True)
         (self.site / "data" / "xml" / "plenarprotokoll-20-999.xml").write_text(XML, encoding="utf-8")
+        return report
 
-    def run_sheet(self, *extra: str) -> tuple[int, str, str]:
+    def write_cached(self, report: dict[str, Any]) -> None:
+        (self.site / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(report), encoding="utf-8")
+
+    def run_sheet(self, *extra: str, vorgang: str = "1", xml: str = "1") -> tuple[int, str, str]:
         out = self.site.parent / "review.tsv"
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            code = review.main(["--output-dir", str(self.site), "--out", str(out), "--sample-vorgang", "1",
-                                "--sample-xml", "1", *extra])
+            code = review.main(["--output-dir", str(self.site), "--out", str(out), "--sample-vorgang", vorgang,
+                                "--sample-xml", xml, *extra])
         return code, out.read_text(encoding="utf-8") if out.exists() else "", stderr.getvalue()
 
     def rows(self, text: str) -> list[dict[str, str]]:
@@ -97,6 +113,61 @@ class SheetTests(unittest.TestCase):
                           for row in rows.values()}, {""})
         self.assertIn("# units: 5", text)
         self.assertIn("# seed: 20261114", text)
+
+    def test_a_repeated_top_id_reads_each_occurrence_and_marks_printed_numbers(self) -> None:
+        shutil.rmtree(self.site)
+        self.make_site(sitting(repeated=True))
+        code, text, _ = self.run_sheet(xml="3")
+        self.assertEqual(code, 0)
+        rows = {row["vote_id"]: row for row in self.rows(text)}
+        self.assertEqual((rows["v7"]["top_id"], rows["v7"]["top_occurrence"]), ("TR", "1"))
+        self.assertEqual((rows["v8"]["top_id"], rows["v8"]["top_occurrence"]), ("TR", "2"))
+        self.assertEqual(rows["v7"]["shared"], "20/701:xml:-")
+        # A number printed under the TOP and linked to its Vorgang shows both.
+        self.assertEqual(rows["v8"]["shared"], "20/702:Antrag:vg-20/702:xml")
+        self.assertEqual(rows["v8"]["basis"], "drucksache_xml")
+
+    def test_evidence_is_read_by_top_id_and_occurrence_not_item_index(self) -> None:
+        # A replay that adopts a TOP renumbers the store but not the cached
+        # JSON: here the cached indices of T5 and T6 are swapped.
+        cached = copy.deepcopy(self.report)
+        by_top = {item["top_id"]: item for item in cached["agenda_items"]}
+        by_top["T5"]["index"], by_top["T6"]["index"] = by_top["T6"]["index"], by_top["T5"]["index"]
+        self.write_cached(cached)
+        code, text, _ = self.run_sheet()
+        self.assertEqual(code, 0)
+        rows = {row["vote_id"]: row for row in self.rows(text)}
+        self.assertEqual(rows["v5"]["shared"], "20/555:xml:-")
+        self.assertEqual(rows["v6"]["shared"], "20/666:Antrag:vg-20/666")
+
+    def test_a_repeated_top_id_the_cached_report_holds_fewer_times_shows_unknown(self) -> None:
+        # The store holds "TR" twice, the cached report once: the occurrences
+        # cannot be paired, so neither row borrows the other TOP's evidence.
+        shutil.rmtree(self.site)
+        report = self.make_site(sitting(repeated=True))
+        cached = copy.deepcopy(report)
+        cached["agenda_items"] = [item for item in cached["agenda_items"] if item["heading"] != "TOP R Erste Beratung"]
+        self.write_cached(cached)
+        code, text, _ = self.run_sheet(xml="3")
+        self.assertEqual(code, 0)
+        shared = {row["vote_id"]: row["shared"] for row in self.rows(text)}
+        self.assertEqual((shared["v7"], shared["v8"]), ("?", "?"))
+        self.assertEqual(shared["v5"], "20/555:xml:-")
+
+    def test_a_malformed_cached_index_is_refused_with_a_message(self) -> None:
+        cached = copy.deepcopy(self.report)
+        cached["agenda_items"][0]["index"] = "erste"
+        self.write_cached(cached)
+        code, _, err = self.run_sheet()
+        self.assertEqual((code, "cannot be read" in err), (2, True))
+
+    def test_a_top_missing_from_the_cached_report_shows_unknown(self) -> None:
+        cached = copy.deepcopy(self.report)
+        cached["agenda_items"] = [item for item in cached["agenda_items"] if item["top_id"] != "T5"]
+        self.write_cached(cached)
+        code, text, _ = self.run_sheet()
+        self.assertEqual(code, 0)
+        self.assertEqual({row["vote_id"]: row["shared"] for row in self.rows(text)}["v5"], "?")
 
     def test_the_same_seed_writes_the_same_sheet(self) -> None:
         self.assertEqual(self.run_sheet()[1], self.run_sheet()[1])
@@ -129,7 +200,7 @@ class TallyTests(unittest.TestCase):
         hostile = "ja " + "9" * 200_000 + " nein " + "x" * 200_000 + " ja " * 20_000
         started = time.monotonic()
         self.assertEqual(review.find_tally(hostile, 380, 270), ("none", []))
-        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLess(time.monotonic() - started, 2.0)  # gstack-timing-ok: checklist class 8 times hostile text; the linear scan of 600 kB takes milliseconds, a backtracking one far longer
 
 
 if __name__ == "__main__":
