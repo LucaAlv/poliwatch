@@ -4183,11 +4183,11 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-", suffix=".tmp")
     tmp_path = Path(tmp_name)
-    os.fchmod(fd, 0o644)  # published files are world-readable; mkstemp makes them 0600
     row_count = 0
     replacements = 0
     try:
         with os.fdopen(fd, "wb") as raw:
+            os.fchmod(fd, 0o644)  # published files are world-readable; mkstemp makes them 0600
             gz = gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=6, mtime=0)
             try:
                 text = io.TextIOWrapper(gz, encoding="utf-8", errors="replace", newline="")
@@ -4752,7 +4752,10 @@ def export_distribution_data(
 
     exports_dir.mkdir(parents=True, exist_ok=True)
     work_dir = export_work_dir(exports_dir)
-    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Through ensure_private_dir, parent first: a symlinked or foreign private
+    # directory is refused before anything is created in it.
+    registry.ensure_private_dir(work_dir.parent)
+    registry.ensure_private_dir(work_dir)
     if work_dir.stat().st_dev != exports_dir.stat().st_dev:
         raise RuntimeError(f"export: {work_dir} and {exports_dir} must be on one file system (the generation is renamed into place)")
     with _export_lock(work_dir):
