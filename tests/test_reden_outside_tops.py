@@ -169,6 +169,14 @@ class RepeatedInhaltsverzeichnisTitleTests(unittest.TestCase):
         repeated = [b for b in toc if b["title"] == "Tagesordnungspunkt II: (Fortsetzung)"]
         self.assertEqual([len(b["rid_pages"]) for b in repeated], [13, 0])
 
+    # Value: protects=toc_block_count counting every printed block; fails_when=blocks are keyed by title again and the repeated one drops out; why_new=no test read toc_block_count; seam=none; no_claim=not a check of any consumer
+    def test_toc_block_count_counts_a_repeated_title_twice(self):
+        root = dip.ET.fromstring(source("18-44"))
+        printed = len(root.findall("./vorspann/inhaltsverzeichnis/ivz-block"))
+        self.assertEqual(dip.parse_protocol_xml(source("18-44"))["toc_block_count"], printed)
+        self.assertGreater(printed, len({dip.elem_text(b.find("ivz-block-titel"))
+                                         for b in root.findall("./vorspann/inhaltsverzeichnis/ivz-block")}))
+
     def test_reden_under_a_repeated_title_keep_their_page_and_the_top_its_range(self):
         item = dip.parse_protocol_xml(source("18-44"))["agenda_items"][2]
         self.assertEqual(item["top_id"], "Tagesordnungspunkt II (Fortsetzung)")
