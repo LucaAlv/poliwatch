@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.4.0] - 2026-11-17
+
+The vote-link review sheet now shows each reviewer the evidence of the right Tagesordnungspunkt, and says when a Drucksache is printed under it. `scripts/vote_link_review.py` writes the sheet the owner fills in before the first release, to judge whether each namentliche Abstimmung is linked to the right Tagesordnungspunkt. Nothing in the build, the store, the release or the site changes, and no figure moves.
+
+### Fixed
+
+- **A Drucksache printed under the Tagesordnungspunkt and linked to its Vorgang now shows both.** The `shared` column used to show only the Vorgang entry for such a number, so a link resting on the printed number looked as if it rested on the Vorgang alone; on the replayed store of 2026-11-15, 75 of the 91 rows linked through a printed number showed no printed entry. Such a number now reads `number:type:Vorgang:xml`; a number only the protocol prints still reads `number:xml:-`.
+- **The evidence comes from the same Tagesordnungspunkt as the link.** The sheet read a Tagesordnungspunkt's Drucksachen from the cached report by its position, which a replay that adds a Tagesordnungspunkt renumbers in the store but not in the cached report, so a row could show a neighbour's Drucksachen. It now pairs them by the Tagesordnungspunkt's id and how often that id has occurred so far in the sitting, as the sheet's own key does, and shows `?` when the cached report lacks the Tagesordnungspunkt or holds its id a different number of times than the store.
+- **A cached report with a malformed item index** is refused with a message and exit code 2 instead of a traceback.
+
 ## [0.46.3.0] - 2026-11-17
 
 The replay comparison (`scripts/compare_store_values.py`, the README recipe "Validate a data correction") now shows each vote's stored outcome and Abweichler figures moving, and finds the distribution copy of an export made with a release tag. Nothing in the build, the store, the export or the site changes. On the 718-sitting store before and after the vote-figure change, it reports 330 accepted, 269 rejected and 20 NULL outcomes, 3,720 Abweichungen and 0 moved votes, and r3 at 1,390 rows on both sides.
