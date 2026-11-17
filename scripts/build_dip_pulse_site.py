@@ -1687,7 +1687,7 @@ def refile_entry_votes(entries: list[dict[str, Any]], database_path: Path) -> No
     that cannot be read."""
     try:
         cached = read_cached_stammdaten(database_path)
-        source = (derive.refiling_source(derive.mdb_zugehoerigkeiten(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE), cached.stand)
+        source = (derive.stammdaten_refiling_source(cached.records, cached.stand, since_wahlperiode=V1_FIRST_WAHLPERIODE)
                   if cached else None)
     except derive.StammdatenError as exc:
         raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
