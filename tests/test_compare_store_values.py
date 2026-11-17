@@ -260,6 +260,74 @@ class CompareStoreValuesTests(unittest.TestCase):
             "rows without LIMIT (recipe of this tree) unavailable -> 3",
         )
 
+    # Value: protects=a store from before schema 13 reads "unavailable" in the vote figure rows and the list of moved votes is skipped, never a crash or a 0; fails_when=the figure columns are read without the has() guard or a missing side counts as zero; why_new=the new test fills both stores, so the older-store branches are unexercised; seam=none
+    def test_an_older_store_without_the_vote_figure_columns_is_unavailable(self) -> None:
+        old, new = self.stores()
+        conn = sqlite3.connect(old / "data" / "bundestag-pulse.sqlite")
+        try:
+            conn.execute("ALTER TABLE votes DROP COLUMN application_result")
+            conn.execute("ALTER TABLE votes DROP COLUMN abweichler_count")
+            conn.execute("ALTER TABLE vote_members DROP COLUMN abweichung")
+            conn.commit()
+        finally:
+            conn.close()
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote outcome and Abweichler"
+        self.assertEqual(line_of(out, "abweichler_count sum", section), "abweichler_count sum unavailable -> 0")
+        self.assertEqual(line_of(out, "vote_members.abweichung = 1", section), "vote_members.abweichung = 1 unavailable -> 0")
+        self.assertNotIn("changed their outcome", out)
+
+    # Value: protects=a member present on one side only reads "no row", a NULL outcome reads NULL, and long member and vote lists are cut with a count of the rest; fails_when=the no-row marker, the NULL text or the MEMBER_LIMIT/LIST_LIMIT truncation line is dropped; why_new=the first figure test stays within the limits and has every member on both sides; seam=none
+    def test_vote_figure_changes_mark_missing_members_and_truncate_long_lists(self) -> None:
+        old, new = self.stores()
+        rows = {
+            old: {"v1": (None, 0, {"mp-R1": 0}), "v2": ("rejected", 0, {})},
+            new: {"v1": ("accepted", 0, {"mp-R1": 1, "mp-R2": 1}), "v2": ("accepted", 0, {})},
+        }
+        for root, votes in rows.items():
+            conn = sqlite3.connect(root / "data" / "bundestag-pulse.sqlite")
+            try:
+                for vote_id, (result, count, members) in votes.items():
+                    conn.execute("UPDATE votes SET application_result = ?, abweichler_count = ? WHERE id = ?", (result, count, vote_id))
+                    for key, flag in members.items():
+                        mp_id = conn.execute("SELECT id FROM mps WHERE identity_key = ?", (key,)).fetchone()[0]
+                        conn.execute(
+                            "INSERT INTO vote_members(vote_id, mp_id, vote, abweichung) VALUES (?, ?, 'yes', ?)", (vote_id, mp_id, flag)
+                        )
+                conn.commit()
+            finally:
+                conn.close()
+        with mock.patch.object(compare, "MEMBER_LIMIT", 1), mock.patch.object(compare, "LIST_LIMIT", 1):
+            code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote outcome and Abweichler"
+        self.assertIn("2 votes in both stores changed their outcome, Abweichler count or Abweichungen", out)
+        self.assertEqual(
+            line_of(out, "v1:", section),
+            "v1: application_result NULL -> accepted; abweichler_count 0 -> 0; abweichung moved for 2 members",
+        )
+        self.assertEqual(line_of(out, "MdB R1", section), "MdB R1 (mp-R1) 0 -> 1")
+        self.assertEqual(line_of(out, "... 1 more members", section), "... 1 more members")
+        self.assertEqual(line_of(out, "... 1 more votes", section), "... 1 more votes")
+
+    # Value: protects=a missing or unusable datenstand.json, or one naming an absent copy, leaves the recipe rows unavailable instead of raising or guessing a file; fails_when=a manifest error escapes or the old glob fallback returns; why_new=the tagged-export test covers only the manifest that resolves; seam=none
+    def test_distribution_copy_is_none_unless_the_manifest_names_an_existing_file(self) -> None:
+        import json
+
+        exports = self.tmp / "dist" / "data" / "exports"
+        (exports / "g").mkdir(parents=True)
+        directory = self.tmp / "dist"
+        self.assertIsNone(compare._distribution_copy(directory))  # no manifest
+        manifest = exports / "datenstand.json"
+        for text in ("not json", json.dumps({"generation": "g"}), json.dumps({"generation": "g", "files": []}),
+                     json.dumps({"generation": "g", "files": [{"name": "absent.sqlite.gz"}]})):
+            manifest.write_text(text, encoding="utf-8")
+            self.assertIsNone(compare._distribution_copy(directory), text)
+        (exports / "g" / "copy.sqlite.gz").write_bytes(b"x")
+        manifest.write_text(json.dumps({"generation": "g", "files": [{"name": "copy.sqlite.gz"}]}), encoding="utf-8")
+        self.assertEqual(compare._distribution_copy(directory), exports / "g" / "copy.sqlite.gz")
+
     def test_reconciliation_diagnostic_keeps_same_vote_namesakes_split(self) -> None:
         root = make_output(
             self.tmp / "diagnostic",
