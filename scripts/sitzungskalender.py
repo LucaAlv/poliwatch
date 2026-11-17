@@ -5,13 +5,13 @@ says "Sitzungswoche". It reads the official ``.ics`` files linked from the
 calendar page, keeps a small cache (``data/sitzungskalender.json``) and renders
 the "Nächste Sitzungswoche" line of the puls.html header.
 
-Source format: UNVERIFIED. The parser follows the planning notes in
-docs/plans/todo-batch-7-puls-outward.md, which saw the real files only through
-a summary (one all-day VEVENT per week, ``DTSTART;VALUE=DATE`` and an exclusive
-``DTEND``, no VTIMEZONE). The tests run against a synthetic fixture
-(tests/fixtures/sitzungskalender/). The first online build against the real
-calendar is the first check of those assumptions; a changed layout fails soft
-(a warning, the cache stays) and never breaks the build.
+Source format: verified against the real calendar by the fresh online build of
+2026-11-12: 43 Sitzungswochen from 2 .ics files (22 for 2026, 21 for 2027), one
+all-day VEVENT per week with ``DTSTART;VALUE=DATE`` and an exclusive ``DTEND``.
+The tests still run against a synthetic fixture (tests/fixtures/sitzungskalender/).
+A changed layout fails soft (a warning, the cache stays) and never breaks the
+build. A week listed twice, or split into two events, is merged per ISO week
+before it is counted.
 
 Only an online build refreshes the cache (``refresh_if_due``),
 and only when it is due. ``--offline`` reads the cache and nothing else.
@@ -215,11 +215,23 @@ def load_cache(output_dir: Path) -> dict[str, Any] | None:
     return payload
 
 
+def merge_iso_weeks(weeks: list[tuple[date, date]]) -> list[tuple[date, date]]:
+    """One entry per ISO week, sorted: a week listed twice, or split into two events, is
+    one week from its earliest first day to its latest last day."""
+    merged: dict[tuple[int, int], tuple[date, date]] = {}
+    for start, last in weeks:
+        key = start.isocalendar()[:2]
+        if key in merged:
+            start, last = min(start, merged[key][0]), max(last, merged[key][1])
+        merged[key] = (start, last)
+    return sorted(merged.values())
+
+
 def _cached_weeks(cache: dict[str, Any] | None) -> list[tuple[date, date]]:
     weeks: list[tuple[date, date]] = []
     for pairs in ((cache or {}).get("years") or {}).values():
         weeks.extend((date.fromisoformat(a), date.fromisoformat(b)) for a, b in pairs)
-    return sorted(weeks)
+    return merge_iso_weeks(weeks)
 
 
 def _is_due(cache: dict[str, Any] | None, now: datetime, max_age_days: int = MAX_AGE_DAYS) -> bool:
@@ -232,6 +244,8 @@ def _is_due(cache: dict[str, Any] | None, now: datetime, max_age_days: int = MAX
     if fetched.tzinfo is None:
         fetched = fetched.replace(tzinfo=timezone.utc)
     age = now - fetched
+    if age < timedelta(0):
+        return True  # stamped in the future (a clock jump): never trust it as fresh
     if age > timedelta(days=max_age_days):
         return True
     # From October on the next year's calendar is expected. Until it is listed,
@@ -287,7 +301,7 @@ def _refresh(
             _warn(f"{url}: {exc}")
             continue
         by_year: dict[int, list[tuple[date, date]]] = {}
-        for start, last in parsed:
+        for start, last in merge_iso_weeks(parsed):
             by_year.setdefault(start.year, []).append((start, last))
         for year, weeks in sorted(by_year.items()):
             inside = all(last.year == year for _start, last in weeks)

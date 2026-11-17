@@ -254,6 +254,28 @@ class RssTests(unittest.TestCase):
         _text, root = self.rss(build(entries, today=date(2026, 3, 1)))
         self.assertEqual(list(root.iter("item")), [])
 
+    # Value: protects=control characters XML 1.0 forbids never reach the feed text, and a long title cut still works; fails_when=a \\x01 in a heading or title makes the RSS ill-formed; why_new=TODOS Puls outward batch 7 item 3; seam=render_rss, _cut; no_claim=other markup
+    def test_xml_illegal_control_characters_are_stripped(self) -> None:
+        entries = long_archive(3)
+        payload = build(entries, today=date(2026, 3, 30))
+        week = payload["weeks"][0]
+        week["rows"][0]["lead_title"] = "Titel\x01mit\x0bSteuer\x1fzeichen\x00"
+        week["rows"][0]["equal_weight"] = False
+        week["sittings"][0]["dokumentnummer"] = "21/\x0c5"
+        text, root = self.rss(payload)
+        self.assertIsNone(re.search("[\x00-\x08\x0b\x0c\x0e-\x1f]", text))
+        self.assertEqual(feed._cut("a\x01b", 90), "ab")
+        self.assertTrue(root.find("channel/item/title").text.startswith(week["label"] + ": Titelmit"))
+
+    # Value: protects=the description's date range tolerates a datum carrying a time; fails_when=date.fromisoformat on the whole string drops the Sondersitzung weekend extension; why_new=TODOS Puls outward batch 7 item 6 (RSS date); seam=_item_description; no_claim=none
+    def test_description_range_parses_the_date_part_of_datum(self) -> None:
+        payload = build(long_archive(3), today=date(2026, 3, 30))
+        week = payload["weeks"][0]
+        sunday = date.fromisoformat(week["sunday"])
+        week["sittings"][0]["datum"] = f"{sunday.isoformat()}T10:00:00"
+        description = feed._item_description(week, SITE)
+        self.assertIn(f"{sunday.day}. ", description.split("</p>")[0])
+
     # Value: protects=an item title leads with the top topic, names an equal-weight group by its type label (never one Antrag's title) and is cut at 90 characters; fails_when=one Fraktion's Antrag title is promoted, or the cut is missing; why_new=Final Gate D16 and the topic-led title (D9); seam=render_rss; no_claim=wording
     def test_item_title_is_topic_led_and_neutral(self) -> None:
         group = make_item(
@@ -376,6 +398,12 @@ class WriteTests(unittest.TestCase):
                     self.assertIn("warning: [week-radar]", log)
         self.assertTrue(feed.valid_site_url(SITE))
         self.assertTrue(feed.valid_site_url("https://example.org/pulse/"))
+
+    # Value: protects=a feed base with credentials or whitespace in the netloc is refused like publication_state.validate_external_url refuses it; fails_when=https://user:pw@host/ or a netloc with a space is published into feed links; why_new=TODOS Puls outward batch 7 item 3; seam=valid_site_url; no_claim=none
+    def test_site_url_refuses_credentials_and_whitespace(self) -> None:
+        for bad in ("https://user:pw@pulse.example.org/", "https://user@pulse.example.org/", "https://pulse .example.org/", "https://pulse.example.org\t/", "https://pulse.example.org\n/"):
+            with self.subTest(url=bad):
+                self.assertFalse(feed.valid_site_url(bad))
 
     # Value: protects=a malformed BUNDESTAG_PULSE_SITE_URL (an unclosed IPv6 bracket, an impossible port) takes the documented invalid-URL path: the JSON is written, no RSS exists, a stale RSS is removed, one warning, and the build does not raise; fails_when=urlparse's ValueError (or the port check) escapes write() and aborts the build; why_new=Codex review found valid_site_url crashing on "https://[example.org/"; seam=valid_site_url, write; no_claim=that every possible malformed string is listed
     def test_malformed_site_url_does_not_abort_the_build(self) -> None:
