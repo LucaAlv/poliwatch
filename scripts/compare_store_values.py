@@ -12,9 +12,10 @@ them (CLAUDE.md, "When a fix moves a number, report the old and new values").
 Two modes, chosen with ``--cohort``:
 
 * ``shared`` (default), the fixed cohort: quantities that come from parsed
-  protocols (speech characters, Redeanteil, votes, Mehrheitsvotum) are
-  compared on the protocols present in both stores, so a newly acquired
-  sitting cannot blur the delta of a value fix.
+  protocols (speech characters, Redeanteil, votes, Mehrheitsvotum, each vote's
+  outcome and Abweichler figures) are compared on the protocols present in
+  both stores, so a newly acquired sitting cannot blur the delta of a value
+  fix.
 * ``all``, whole-store coverage: the same quantities over every protocol of
   each store, which is what shows what a rebuild added or lost.
 
@@ -39,6 +40,7 @@ if __name__ == "__main__":
 
 import argparse
 import gzip
+import json
 import re
 import shutil
 import sqlite3
@@ -57,6 +59,8 @@ STORE_RELATIVE = Path("data") / "bundestag-pulse.sqlite"
 PER_PROTOCOL_LIMIT = 15
 #: A list of changed periods prints at most this many lines.
 LIST_LIMIT = 25
+#: A changed vote lists at most this many members whose Abweichung moved.
+MEMBER_LIMIT = 10
 NO_GROUP = "(ohne Zuordnung)"
 PARTY_MDBS_NOTE = "MdB per row of parties"
 
@@ -132,6 +136,10 @@ class Measured:
     #: vote id -> (protocols, (yes, no, abstain, absent)); a count is None where
     #: the store holds NULL (schema 10: the source gave no total).
     vote_totals: dict[str, tuple[list[str | None], tuple[Any, Any, Any, Any]]] | None = None
+    #: vote id -> (protocols, application_result, abweichler_count) as persisted.
+    vote_figures: dict[str, tuple[list[str | None], str | None, int | None]] | None = None
+    #: vote id -> {member identity_key: (display name, abweichung 1 / 0 / None)}.
+    vote_abweichungen: dict[str, dict[str, tuple[str, int | None]]] | None = None
     #: name -> {"mps": rows of mps, "mdb": of them MdB, "reden": Reden naming it}
     parties: dict[str, dict[str, int]] | None = None
     has_roster: bool = False
@@ -282,6 +290,18 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
                     "SELECT id, yes_count, no_count, abstain_count, absent_count FROM votes"
                 )
             }
+        if store.has("votes", "application_result", "abweichler_count"):
+            measured.vote_figures = {
+                str(vote_id): (by_vote.get(str(vote_id)) or [None], result, count)
+                for vote_id, result, count in conn.execute("SELECT id, application_result, abweichler_count FROM votes")
+            }
+        if store.has("vote_members", "vote_id", "mp_id", "abweichung") and store.has("mps", "id", "identity_key", "display_name"):
+            measured.vote_abweichungen = {}
+            for vote_id, key, name, flag in conn.execute(
+                "SELECT vm.vote_id, m.identity_key, m.display_name, vm.abweichung FROM vote_members vm "
+                "JOIN mps m ON m.id = vm.mp_id"
+            ):
+                measured.vote_abweichungen.setdefault(str(vote_id), {})[str(key)] = (str(name), flag)
         if store.has("vote_fractions", "vote_id", "leading_vote"):
             measured.leading = []
             for vote_id, leading in conn.execute("SELECT vote_id, leading_vote FROM vote_fractions"):
@@ -367,16 +387,26 @@ def _zusammenfuehrung(store: Store) -> dict[str, int] | None:
         conn.row_factory = None
 
 
+def _distribution_copy(directory: Path) -> Path | None:
+    """The store's Verteilkopie as its export's ``datenstand.json`` names it:
+    the first file of the manifest's generation (the export reads it the same
+    way). Its name ends in the export's tag, ``local`` or a ``--data-tag``
+    version, so it is never guessed. None without a readable manifest or file."""
+    exports = directory / "data" / "exports"
+    try:
+        manifest = json.loads((exports / "datenstand.json").read_text(encoding="utf-8"))
+        path = exports / str(manifest["generation"]) / str(manifest["files"][0]["name"])
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+    return path if path.is_file() else None
+
+
 def _recipe_rows(store: Store, recipe_id: str) -> int | None:
     """Row count of a Daten recipe (without its LIMIT) run on the store's own
     Verteilkopie, the copy that carries the derived ``mp_canonical`` table. The
     SQL is the recipe as this tree defines it."""
-    exports = store.directory / "data" / "exports"
-    copies = sorted(
-        exports.glob("*/bundestag-pulse-local.sqlite.gz") if exports.is_dir() else [],
-        key=lambda path: path.stat().st_mtime,
-    )
-    if not copies:
+    copy = _distribution_copy(store.directory)
+    if copy is None:
         return None
     import build_dip_pulse_site as build
 
@@ -386,7 +416,7 @@ def _recipe_rows(store: Store, recipe_id: str) -> int | None:
     sql = re.sub(r"\s+LIMIT\s+\d+\s*;?\s*$", "", str(recipe["sql"]).strip(), flags=re.IGNORECASE)
     with tempfile.TemporaryDirectory() as scratch:
         unpacked = Path(scratch) / "copy.sqlite"
-        with gzip.open(copies[-1], "rb") as source, unpacked.open("wb") as target:
+        with gzip.open(copy, "rb") as source, unpacked.open("wb") as target:
             shutil.copyfileobj(source, target)
         conn = sqlite3.connect(f"file:{unpacked}?mode=ro", uri=True)
         try:
@@ -566,6 +596,12 @@ def compare(
 
     report.heading(f"vote totals (Ja, Nein, Enthaltung, nicht abgegeben) [{cohort}]")
     _vote_total_rows(report, old, new, scope)
+
+    report.heading(
+        f"vote outcome and Abweichler (votes.application_result, votes.abweichler_count, "
+        f"vote_members.abweichung) [{cohort}]"
+    )
+    _vote_figure_rows(report, old, new, scope)
 
     report.heading(f"speeches.char_count sum [{cohort}]")
     old_chars = _filter_by_protocol(old.chars_by_protocol, scope)
@@ -750,6 +786,94 @@ def _vote_total_rows(report: Report, old: Measured, new: Measured, scope: set[st
     report.line(f"{len(moved)} votes in both stores changed their total")
     for vote_id in moved[:LIST_LIMIT]:
         report.row(vote_id, _totals_text(was[vote_id]), _totals_text(now[vote_id]))
+
+
+def _figures_in_scope(
+    measured: Measured, scope: set[str] | None
+) -> tuple[dict[str, tuple[Any, Any]] | None, dict[str, dict[str, tuple[str, int | None]]] | None]:
+    """(vote id -> (application_result, abweichler_count), vote id -> members)
+    for the votes in scope; a member table without the figure columns is None."""
+    if measured.vote_figures is None:
+        return None, None
+    figures = {
+        vote_id: (result, count)
+        for vote_id, (numbers, result, count) in measured.vote_figures.items()
+        if any(_in(scope, number) for number in numbers)
+    }
+    if measured.vote_abweichungen is None:
+        return figures, None
+    return figures, {vote_id: measured.vote_abweichungen.get(vote_id, {}) for vote_id in figures}
+
+
+def _flag_text(flag: int | None | str) -> str:
+    return "NULL" if flag is None else str(flag)
+
+
+def _vote_figure_rows(report: Report, old: Measured, new: Measured, scope: set[str] | None) -> None:
+    """The persisted outcome and Abweichler figures: their distribution, then
+    every vote both stores hold whose outcome, Abweichler count or member
+    Abweichungen moved, with old and new values (a member on one side only
+    reads as "no row")."""
+    old_figures, old_members = _figures_in_scope(old, scope)
+    new_figures, new_members = _figures_in_scope(new, scope)
+
+    def outcomes(figures: dict[str, tuple[Any, Any]] | None) -> dict[str, int] | None:
+        return None if figures is None else dict(Counter(f"application_result {result or 'NULL'}" for result, _ in figures.values()))
+
+    _compare_maps(report, outcomes(old_figures), outcomes(new_figures))
+    report.row(
+        "abweichler_count sum",
+        None if old_figures is None else sum(count or 0 for _, count in old_figures.values()),
+        None if new_figures is None else sum(count or 0 for _, count in new_figures.values()),
+    )
+    report.row(
+        "votes with a NULL abweichler_count",
+        None if old_figures is None else sum(count is None for _, count in old_figures.values()),
+        None if new_figures is None else sum(count is None for _, count in new_figures.values()),
+    )
+
+    def flags(members: dict[str, dict[str, tuple[str, int | None]]] | None, value: int | None) -> int | None:
+        if members is None:
+            return None
+        return sum(flag == value for rows in members.values() for _name, flag in rows.values())
+
+    for value, label in ((1, "vote_members.abweichung = 1"), (0, "vote_members.abweichung = 0"), (None, "vote_members.abweichung NULL")):
+        report.row(label, flags(old_members, value), flags(new_members, value))
+    if old_figures is None or new_figures is None:
+        return
+
+    def member_changes(vote_id: str) -> list[str]:
+        if old_members is None or new_members is None:
+            return []
+        was, now = old_members.get(vote_id, {}), new_members.get(vote_id, {})
+        changes = []
+        for key in sorted(set(was) | set(now)):
+            before = _flag_text(was[key][1]) if key in was else "no row"
+            after = _flag_text(now[key][1]) if key in now else "no row"
+            if before != after:
+                name = (now.get(key) or was.get(key))[0]
+                changes.append(f"{name} ({key}) {before} -> {after}")
+        return changes
+
+    moved = []
+    for vote_id in sorted(set(old_figures) & set(new_figures)):
+        changes = member_changes(vote_id)
+        if old_figures[vote_id] != new_figures[vote_id] or changes:
+            moved.append((vote_id, changes))
+    report.line(f"{len(moved)} votes in both stores changed their outcome, Abweichler count or Abweichungen")
+    for vote_id, changes in moved[:LIST_LIMIT]:
+        (old_result, old_count), (new_result, new_count) = old_figures[vote_id], new_figures[vote_id]
+        report.line(
+            f"{vote_id}: application_result {old_result or 'NULL'} -> {new_result or 'NULL'}; "
+            f"abweichler_count {_flag_text(old_count)} -> {_flag_text(new_count)}"
+            + (f"; abweichung moved for {len(changes)} members" if changes else "")
+        )
+        for change in changes[:MEMBER_LIMIT]:
+            report.line(f"  {change}")
+        if len(changes) > MEMBER_LIMIT:
+            report.line(f"  ... {len(changes) - MEMBER_LIMIT} more members")
+    if len(moved) > LIST_LIMIT:
+        report.line(f"... {len(moved) - LIST_LIMIT} more votes")
 
 
 def _number(value: Any) -> str:
