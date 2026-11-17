@@ -31,7 +31,7 @@ Done means every class below is either answered for this diff, with the file and
 
 8. **Hostile text.** Every new scanner, regex or truncation of source text gets adversarial strings: unbalanced quotes, partial entities, the cut boundary, very long runs. Time them. This applies to the fix too. _Example: the charref fix e3028b2 crashed `int()` on more than 4,300 zeros._
 
-9. **Input shape.** Every new CLI flag, JSON file, URL or id that reaches a path, a DIP request or a label gets null, wrong type, blank, `..`, backslash, userinfo and over-long values. Each must end in a clear refusal, never a traceback or silent acceptance. _Example, still open: a `--previous-manifest` of JSON `null` labels the release "Erste Veröffentlichung" (TODOS.md "Release pipeline: deferred /ship review findings", item 10a)._
+9. **Input shape.** Every new CLI flag, JSON file, URL or id that reaches a path, a DIP request or a label gets null, wrong type, blank, `..`, backslash, userinfo and over-long values. Each must end in a clear refusal, never a traceback or silent acceptance. _Example: a `--previous-manifest` of JSON `null` once labelled the release "Erste Veröffentlichung"; `previous_manifest_problem` in `scripts/publish_dip_pulse_data.py` now refuses anything that is not an object holding the fields the changelog reads._
 
 10. **Interrupted run.** For each write, rename, swap or cleanup, state what is left on disk if the process stops right after it. Check that no cleanup runs in a mode that keeps no new output (`--offline`, missing store). _Example: `write_facts_pages` deleted the previous build's pages after a `--no-persist` run (6578a1a)._
 
