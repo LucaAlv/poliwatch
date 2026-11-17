@@ -215,6 +215,21 @@ def _load_corrections(path: Path) -> dict[str, Any]:
                     raise ValueError(f"partition own_ids owner {owner!r} is not one of its label owners")
                 if not OWN_ID_RE.fullmatch(text(own_id, f"own id of partition owner {owner!r}")):
                     raise ValueError(f"own id {own_id!r} of partition owner {owner!r} must read xml:<Redner-ID> or dip:<DIP id>")
+            # The holder: the owner whose own id is this Redner-ID, an MdB's own id the
+            # source also printed for someone else. Its record keeps the id and the
+            # profile; every other owner leaves under an id of their own, so no
+            # partition record stands beside the holder's live one.
+            holders = sorted(owner for owner, own_id in own_ids.items() if own_id == f"xml:{xml_id}")
+            if len(holders) > 1:
+                raise ValueError(f"Redner-ID {xml_id} names two holders ({', '.join(holders)}); one person holds an id")
+            partition["holder"] = holders[0] if holders else None
+            if partition["holder"]:
+                for owner in sorted(set(owner_of_name.values()) - set(own_ids)):
+                    raise ValueError(f"owner {owner!r} of Redner-ID {xml_id} needs an own id beside its holder {partition['holder']!r}")
+                if partition.get("profile_owner") is None:
+                    partition["profile_owner"] = partition["holder"]
+                if partition["profile_owner"] != partition["holder"]:
+                    raise ValueError(f"Redner-ID {xml_id}: the profile owner {partition['profile_owner']!r} is not its holder {partition['holder']!r}")
             for key, reviewed in occurrences.items():
                 if not isinstance(reviewed, dict):
                     raise ValueError(f"partition occurrence {key!r} must be an object")
@@ -226,9 +241,10 @@ def _load_corrections(path: Path) -> dict[str, Any]:
         _validate_dip_successors(data["dip_successors"], text)
         # corrected_speaker replaces a shared id once: an own id that is itself
         # shared would land on a partition its printed name was never reviewed for.
+        # A holder's own id is its partition's own Redner-ID, reviewed right there.
         for partition in data["partitions"]:
             for owner, own_id in partition["own_ids"].items():
-                if own_id.startswith("xml:") and own_id[4:] in partitioned_ids:
+                if own_id.startswith("xml:") and own_id[4:] in partitioned_ids and owner != partition["holder"]:
                     raise ValueError(f"own id {own_id} of partition owner {owner!r} is itself partitioned")
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -307,7 +323,10 @@ def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -
                 speaker["abgeordnetenwatch"] = {}
             # The reviewed owner holds an id of their own: the occurrence binds as
             # the source should have printed it, and partitions no further. A
-            # person with no Redner-ID but this one is named by their DIP id.
+            # person with no Redner-ID but this one is named by their DIP id. The
+            # holder's own id is the one printed: the occurrence stays as it is.
+            if owner is not None and owner == partition["holder"]:
+                break
             if owner in partition["own_ids"]:
                 kind, _, own_id = partition["own_ids"][owner].partition(":")
                 speaker["xml_redner_id"] = own_id if kind == "xml" else None
@@ -318,9 +337,11 @@ def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -
 
 def _on_shared_id(record: sqlite3.Row) -> bool:
     """A record keyed by a Redner-ID that is under review: what it folded together
-    was more than one person, so no occurrence may stay on it."""
+    was more than one person, so no occurrence may stay on it. A held id's record
+    is its holder's: only the other owners' occurrences leave it, under their own ids."""
     identity = record["identity_key"]
-    return identity.startswith("xml:") and any(identity[4:] == partition["xml_redner_id"] for partition in corrections()["partitions"])
+    return identity.startswith("xml:") and any(identity[4:] == partition["xml_redner_id"] and not partition["holder"]
+                                               for partition in corrections()["partitions"])
 
 
 def profile_follows_redner_id(redner_id: Any) -> bool:
@@ -339,6 +360,8 @@ def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
         if len(choices) != 1:
             raise RegistryError(f"Shared Redner-ID {partition['xml_redner_id']}: review printed label {name!r} in {CORRECTIONS_PATH}")
         owner = next(iter(choices))
+        if owner == partition["holder"]:
+            return identity  # the holder's own record: no partition, its profile a join key as before
         # The contaminated ext_id profile cannot bridge these two partitions.
         evidence["aw_match"] = PARTITIONED
         evidence["partition"] = owner
