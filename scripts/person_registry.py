@@ -344,12 +344,24 @@ def _on_shared_id(record: sqlite3.Row) -> bool:
                                                for partition in corrections()["partitions"])
 
 
-def profile_follows_redner_id(redner_id: Any) -> bool:
-    """Whether a profile found for one speaker of this Redner-ID holds for another:
-    not under a shared id with no reviewed profile owner, whose speakers are
-    different people."""
-    return not any(partition["xml_redner_id"] == redner_id and partition.get("profile_owner") is None
-                   for partition in corrections()["partitions"])
+def redner_id_profile_reaches(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -> bool:
+    """Whether a profile found for some speaker of this speaker's Redner-ID holds
+    for this occurrence too: any speaker of an id nobody shares; under a shared
+    id, only an occurrence whose printed (or reviewed) name is its reviewed profile
+    owner's, and none where no profile owner is reviewed, since its speakers are
+    different people. Read both for the occurrence a profile is taken from and
+    the one it is copied to."""
+    redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
+    for partition in corrections()["partitions"]:
+        if partition["xml_redner_id"] != redner_id:
+            continue
+        if partition.get("profile_owner") is None:
+            return False
+        reviewed = partition["occurrences"].get(f"{protocol_id}/{rede_id}") or {}
+        name = _normalized_mp_name(reviewed.get("display_name") or speaker.get("display_name"))
+        return any(owner == partition["profile_owner"] and _normalized_mp_name(label) == name
+                   for label, owner in partition["labels"].items())
+    return True
 
 def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
     for partition in corrections()["partitions"]:

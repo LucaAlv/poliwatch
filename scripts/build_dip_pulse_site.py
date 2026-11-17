@@ -1121,20 +1121,49 @@ def attach_speaker_profiles(
     item: dict[str, Any],
     profiles: dict[tuple[str, str, str], Any],
     by_redner_id: dict[str, Any] | None = None,
+    protocol_id: Any = None,
 ) -> None:
     """Give the speakers of an agenda item the profile a cached one of the same
     identity carried, where they have none yet; else the profile any cached report
-    resolved for the same Redner-ID (``by_redner_id``)."""
+    resolved for the same Redner-ID (``by_redner_id``), where that profile is this
+    occurrence's (``registry.redner_id_profile_reaches``: under a shared id, only
+    the reviewed profile owner's occurrences)."""
     for key in SPEAKER_LISTS:
         for speech in item.get(key) or []:
             speaker = speech.get("speaker")
             if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
                 continue
             identity = speaker_identity(speaker)
+            redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
             if identity in profiles:
                 speaker["abgeordnetenwatch"] = copy.deepcopy(profiles[identity])
-            elif by_redner_id and derive.first_redner_id(speaker.get("xml_redner_id")) in by_redner_id:
-                speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[derive.first_redner_id(speaker.get("xml_redner_id"))])
+            elif (by_redner_id and redner_id in by_redner_id
+                  and registry.redner_id_profile_reaches(speaker, protocol_id, speech.get("rede_id"))):
+                speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[redner_id])
+
+
+def redner_id_profiles(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Redner-ID -> the abgeordnetenwatch profile the cached reports resolved for
+    it, taken only from an occurrence whose profile may follow its Redner-ID
+    (``registry.redner_id_profile_reaches``). Within an item the last occurrence
+    of a speaker identity counts, across items and reports the first."""
+    by_redner_id: dict[str, Any] = {}
+    for entry in entries:
+        report = entry["report"]
+        protocol_id = (report.get("protocol") or {}).get("id")
+        for item in [report, *(report.get("agenda_items") or [])]:
+            found: dict[tuple[str, str, str], Any] = {}
+            for key in SPEAKER_LISTS:
+                for speech in item.get(key) or []:
+                    speaker = speech.get("speaker")
+                    if (isinstance(speaker, dict) and "abgeordnetenwatch" in speaker
+                            and registry.redner_id_profile_reaches(speaker, protocol_id, speech.get("rede_id"))):
+                        found[speaker_identity(speaker)] = speaker["abgeordnetenwatch"]
+            for identity, profile in found.items():
+                redner_id = derive.first_redner_id(identity[0])
+                if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
+                    by_redner_id.setdefault(redner_id, profile)
+    return by_redner_id
 
 
 def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
@@ -2098,13 +2127,7 @@ def reparse_cached_xml(
     Returns how many reports it re-parsed."""
     # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
-    by_redner_id: dict[str, Any] = {}
-    for entry in entries if profiles_from is None else profiles_from:
-        for item in [entry["report"], *(entry["report"].get("agenda_items") or [])]:
-            for identity, profile in speaker_profiles(item).items():
-                redner_id = derive.first_redner_id(identity[0])
-                if redner_id and isinstance(profile, dict) and profile.get("id") is not None and registry.profile_follows_redner_id(redner_id):
-                    by_redner_id.setdefault(redner_id, profile)
+    by_redner_id = redner_id_profiles(entries if profiles_from is None else profiles_from)
     reparsed = 0
     for entry in entries:
         report = entry["report"]
@@ -2133,7 +2156,7 @@ def reparse_cached_xml(
                 [document_number],
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
-            attach_speaker_profiles(item, profiles.get(id(item), {}), by_redner_id)
+            attach_speaker_profiles(item, profiles.get(id(item), {}), by_redner_id, (report.get("protocol") or {}).get("id"))
         vote_links.attribute_votes(report)
         dip.interpret_report_votes(report, parsed["vote_recommendations"])
         reparsed += 1
