@@ -22,7 +22,8 @@ The sample:
 A row's key is ``(vote_id, protocol, top_id, top_occurrence)``: ``top_occurrence``
 counts the TOPs of the sitting with the same ``top_id`` up to this one, in item
 order (21/24 has "Tagesordnungspunkt I" twice). ``item_index`` is informative
-only, since a re-parse that adds a TOP renumbers the items.
+only, since a re-parse that adds a TOP renumbers the items; the evidence is read
+from the cached report's TOP with the same key.
 
 Exit codes: 0 written, 2 an input is missing or malformed.
 """
@@ -119,18 +120,19 @@ def stored_links(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         "JOIN protocols p ON p.id = ai.protocol_id"
     ).fetchall()
     seen: Counter[tuple[str, str]] = Counter()
-    occurrence: dict[str, int] = {}
+    occurrence: dict[str, tuple[int, tuple[str, str]]] = {}
     for item_id, protocol_id, top_id in conn.execute(
         "SELECT id, protocol_id, top_id FROM agenda_items ORDER BY protocol_id, item_index"
     ):
         seen[(protocol_id, top_id)] += 1
-        occurrence[item_id] = seen[(protocol_id, top_id)]
+        occurrence[item_id] = (seen[(protocol_id, top_id)], (protocol_id, top_id))
     numbers: dict[str, list[str]] = {}
     for vote_id, number in conn.execute(
         "SELECT vd.vote_id, d.document_number FROM vote_documents vd JOIN documents d ON d.id = vd.document_id ORDER BY vd.rank"
     ):
         numbers.setdefault(vote_id, []).append(number)
-    return [{**dict(row), "top_occurrence": occurrence[row["agenda_item_id"]],
+    return [{**dict(row), "top_occurrence": occurrence[row["agenda_item_id"]][0],
+             "top_count": seen[occurrence[row["agenda_item_id"]][1]],
              "vote_numbers": numbers.get(row["vote_id"], [])} for row in rows]
 
 
@@ -170,8 +172,10 @@ def strata(links: list[dict[str, Any]], seed: int, sample_vorgang: int, sample_x
 
 
 def shared_documents(link: Mapping[str, Any], item: Mapping[str, Any] | None) -> str:
-    """The vote's Drucksachen the TOP holds, as ``number:type:Vorgang id``
-    (``xml`` and ``-`` for a number only the protocol prints)."""
+    """The vote's Drucksachen the TOP holds, as ``number:type:Vorgang id``,
+    with ``:xml`` appended when the protocol also prints the number under the
+    TOP, and ``number:xml:-`` for a number only the protocol prints. ``?`` when
+    the cached report's TOP cannot be paired with the stored one."""
     if item is None:
         return "?"
     linked = {}
@@ -182,10 +186,35 @@ def shared_documents(link: Mapping[str, Any], item: Mapping[str, Any] | None) ->
     for number in link["vote_numbers"]:
         if number in linked:
             doc = linked[number]
-            parts.append(f"{number}:{doc.get('drucksachetyp') or '-'}:{doc.get('vorgang_id') or '-'}")
+            parts.append(f"{number}:{doc.get('drucksachetyp') or '-'}:{doc.get('vorgang_id') or '-'}"
+                         + (":xml" if number in printed else ""))
         elif number in printed:
             parts.append(f"{number}:xml:-")
     return ", ".join(parts) or "-"
+
+
+class CachedTops:
+    """A cached report's TOPs keyed ``(top_id, top_occurrence)`` as the store
+    counts them: ``top_id`` cleaned as persist writes it, occurrences in source
+    index order. The key survives a replay that renumbers the store's items,
+    which the cached JSON's ``index`` does not."""
+
+    def __init__(self, items: Iterable[Mapping[str, Any]]) -> None:
+        self.count: Counter[str | None] = Counter()
+        self.keyed: dict[tuple[str | None, int], Mapping[str, Any]] = {}
+        for item in sorted(items, key=lambda item: source_index(item.get("index"))):
+            top_id = pulse_store.clean(item.get("top_id"))
+            self.count[top_id] += 1
+            self.keyed[(top_id, self.count[top_id])] = item
+
+    def item_of(self, link: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        """The cached TOP of a stored link, or None when the store and the
+        cached report hold that ``top_id`` a different number of times: a
+        replay that adopted a TOP shifts the occurrences, and pairing them
+        anyway would show another TOP's Drucksachen."""
+        if self.count[link["top_id"]] != link["top_count"]:
+            return None
+        return self.keyed.get((link["top_id"], link["top_occurrence"]))
 
 
 def _cell(value: Any) -> str:
@@ -207,7 +236,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
     tops_of_vote: dict[str, list[str]] = {}
     for link in links:
         tops_of_vote.setdefault(link["vote_id"], []).append(f"{link['top_id']}#{link['top_occurrence']}")
-    reports: dict[str, dict[int, Mapping[str, Any]]] = {}
+    reports: dict[str, CachedTops] = {}
     texts: dict[str, str] = {}
     rows = []
     for position, link in enumerate(links):
@@ -218,9 +247,9 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
             path = output_dir / "data" / f"plenarprotokoll-{slug(number)}.json"
             try:
                 report = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
+                reports[number] = CachedTops(report.get("agenda_items") or [])
+            except (OSError, ValueError, AttributeError) as exc:
                 raise ReviewInputError(f"the cached report {path} cannot be read: {exc}") from exc
-            reports[number] = {source_index(item.get("index")): item for item in report.get("agenda_items") or []}
             texts[number] = protocol_text(output_dir / "data" / "xml" / f"plenarprotokoll-{slug(number)}.xml")
         tally, announced = find_tally(texts[number], link["yes_count"], link["no_count"])
         own = f"{link['top_id']}#{link['top_occurrence']}"
@@ -235,7 +264,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
             "top_occurrence": str(link["top_occurrence"]),
             "top_heading": _cell(link["heading"])[:HEADING_CHARS],
             "basis": link["basis"],
-            "shared": shared_documents(link, reports[number].get(link["item_index"])),
+            "shared": shared_documents(link, reports[number].item_of(link)),
             "announced": ", ".join(announced) or "-",
             "tally": tally,
             "other_tops": "; ".join(top for top in tops_of_vote[link["vote_id"]] if top != own) or "-",

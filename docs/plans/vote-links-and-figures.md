@@ -88,9 +88,9 @@ In all: 329 links in about 155 units. If S4 finds no error, the plain-link error
 | --- | --- |
 | `stratum` | S1 to S4, or several |
 | `protocol`, `date`, `vote_id`, `vote_title` | the vote |
-| `item_index`, `top_id`, `top_heading` | the TOP; first 120 characters of the heading |
+| `item_index`, `top_id`, `top_occurrence`, `top_heading` | the TOP; first 120 characters of the heading |
 | `basis` | `drucksache_xml`, `drucksache_vorgang`, `title` |
-| `shared` | the shared Drucksachen as `number:type:Vorgang id` |
+| `shared` | the shared Drucksachen as `number:type:Vorgang id`, with `:xml` appended when the protocol also prints the number under the TOP; `number:xml:-` for a number only the protocol prints; `?` when the cached report's TOP cannot be paired with the stored one |
 | `announced` | Drucksachen named in the tally announcement, or `-` |
 | `tally` | `unique`, `several`, `none` |
 | `other_tops` | the vote's other linked TOPs |
@@ -100,7 +100,7 @@ In all: 329 links in about 155 units. If S4 finds no error, the plain-link error
 | `evidence` | source and place (XML page or quoted words under 15, Vorgang id), one line |
 | `reviewer` | agent run or owner |
 
-The key of a row is `(vote_id, protocol, top_id, occurrence of that top_id in the sitting)`; 961 has "Tagesordnungspunkt I" twice. `item_index` is informative only, because a re-parse that adds a TOP renumbers the items.
+The key of a row is `(vote_id, protocol, top_id, occurrence of that top_id in the sitting)`; 961 has "Tagesordnungspunkt I" twice. `item_index` is informative only, because a re-parse that adds a TOP renumbers the items. The sheet reads the cached report's evidence (`shared`) by the same key, not by `item_index`, and shows `?` when the store and the cached report hold that `top_id` a different number of times.
 
 **Who reviews.** An agent fills the verdicts from the pre-filled evidence and the protocol section. A second agent, without seeing the first one's verdicts, re-reviews every `wrong` and `unsure` row and 20 random `right` rows. Disagreements go to the owner in chat, one line each. The owner sees the summary before PR C ships.
 
