@@ -370,6 +370,11 @@ class DipDecisionEvidenceTests(unittest.TestCase):
             ("no Drucksache", {}, [decision(self.REJECTING, None)], None),
             ("several numbers in one field (vote 892)", {}, [decision(self.REJECTING, "20/10, 20/20")], True),
             ("no tally on the vote", {"total": {}}, [decision("0:0:0 (Annahme der Beschlussempfehlung auf Ablehnung)")], None),
+            # A count the vote does not give is unknown, not 0 (TODOS.md "Vote direction", item 10).
+            ("no Enthaltungen figure on the vote", {"total": {"yes": 574, "no": 71}},
+             [decision("574:71:0 (Annahme der Beschlussempfehlung auf Ablehnung)")], None),
+            ("a null Enthaltungen figure on the vote", {"total": {"yes": 574, "no": 71, "abstain": None}},
+             [decision("574:71:0 (Annahme der Beschlussempfehlung auf Ablehnung)")], None),
             ("a second decision on it says nothing", {}, [decision(self.REJECTING), decision("574:71:1")], None),
             ("no document numbers, tally unique", {"document_numbers": []}, [decision(self.REJECTING, "19/5532")], True),
             ("no document numbers, tally twice", {"document_numbers": []},
@@ -410,10 +415,25 @@ class DipDecisionEvidenceTests(unittest.TestCase):
             decision("9" * 5000 + ":71:1 (Annahme der Beschlussempfehlung auf Ablehnung)"),
             decision(None), decision(574), decision(["574:71:1"]), decision(self.REJECTING, 20),
             decision(":::" * 1000), "not a decision", None,
+            # Digits outside ASCII are no tally, though int() reads them (item 15).
+            decision("٥٧٤:٧١:١ (Annahme der Beschlussempfehlung auf Ablehnung)"),
+            decision("５７４:７１:１ (Annahme der Beschlussempfehlung auf Ablehnung)"),
         ):
             with self.subTest(str(bad)[:30]):
                 (item,) = interpret_with_decisions([self.ballot()], [bad])
                 self.assertIsNone(item["inverted"])
+
+    # Value: protects=a malformed Vorgang position or beschlussfassung in a cached DIP record adds nothing and the well-formed decisions beside it still count; fails_when=dip_vote_decisions iterates a non-list beschlussfassung or calls .get on a non-dict position; why_new=both raised a TypeError or AttributeError (TODOS.md "Vote direction", item 15); seam=none
+    def test_a_malformed_position_or_beschlussfassung_is_skipped(self) -> None:
+        positions = ["not a position", None, 7, {"beschlussfassung": 5}, {"beschlussfassung": "574:71:1"},
+                     {"beschlussfassung": decision(self.REJECTING)}, {"beschlussfassung": [decision(self.REJECTING)]}]
+        decisions = dip.dip_vote_decisions([{"api": {"raw": {"positions": positions}}}])
+        self.assertEqual(decisions, [dip.DipDecision((574, 71, 1), frozenset({"20/10"}), self.REJECTING)])
+
+    # Value: protects=the decision's parts are read by name; fails_when=dip_vote_decisions returns anonymous tuples again; why_new=readers indexed decision[0], [1], [2] (item 17); seam=none
+    def test_a_decision_names_its_tally_drucksachen_and_note(self) -> None:
+        (found,) = dip.dip_vote_decisions([{"api": {"raw": {"positions": [{"beschlussfassung": [decision(self.REJECTING, "20/10, 20/20")]}]}}}])
+        self.assertEqual((found.tally, found.numbers, found.note), ((574, 71, 1), frozenset({"20/10", "20/20"}), self.REJECTING))
 
     def test_without_cached_xml_the_decision_still_counts(self) -> None:
         item = {"votes": [self.ballot()], "api": {"raw": {"positions": [{"beschlussfassung": [decision(self.REJECTING)]}]}}}
@@ -490,6 +510,28 @@ class ContradictoryOfficialResultTests(unittest.TestCase):
         interpret([item], [record("accept", ["20/10"], ["20/20"])])
         self.assertIsNone(item["inverted"])
         self.assertEqual((item["result_scope"], derive.vote_outcome(item)), ("application", "accepted"))
+
+    # Value: protects=a DIP decision alone establishes the ballot's subject well enough to read an official "Antrag angenommen" on a Ja majority as the ballot's word; fails_when=the gate leaves DIP_DECISION_SOURCE out; why_new=the ship review of 2026-11-09 asked for this case; seam=none
+    def test_a_dip_decision_alone_reads_the_box_as_the_ballots_word(self) -> None:
+        ballot = DipDecisionEvidenceTests().ballot(official_result="accepted", result_scope="application")
+        (item,) = interpret_with_decisions([ballot], [decision(DipDecisionEvidenceTests.REJECTING)])
+        self.assertEqual((item["inverted"], item["inversion_source"]), (True, dip.DIP_DECISION_SOURCE))
+        self.assertEqual((item["result_raw"], item["result_source"], item["result_scope"]), ("accepted", "official", "proposition"))
+        self.assertEqual(derive.vote_outcome(item), "rejected")
+
+    # Value: protects=bundestag.de's "Antrag angenommen" stays about the Antrag unless the chair or DIP says the ballot was on a recommendation to reject; fails_when=_read_contradicted_official_result tests inverted alone again, so a roll-call title or a Drucksache title re-scopes the official word; why_new=item 11 of "Vote direction: what the 2026-11-07 fix left open"; seam=none
+    def test_an_inversion_read_only_from_a_title_leaves_the_official_scope_alone(self) -> None:
+        for label, fields, documents, source in (
+            ("roll-call title", {"title": "Ablehnung des Antrags"}, [], "bundestag-roll-call"),
+            ("Drucksache title", {}, [{"dokumentnummer": "20/20", "titel": "Beschlussempfehlung: Ablehnung des Antrags"}], "bundestag-dip"),
+        ):
+            with self.subTest(label):
+                vote_ = {"id": "1", "document_numbers": ["20/10", "20/20"], "total": {"yes": 60, "no": 40, "abstain": 0},
+                         "official_result": "accepted", "result_scope": "application", **fields}
+                item = {"votes": [vote_], "api": {"linked_drucksachen": documents}}
+                dip.interpret_sitting_votes([item], [], [])
+                self.assertEqual((vote_["inverted"], vote_["inversion_source"]), (True, source))
+                self.assertEqual((vote_["result_source"], vote_["result_scope"]), ("official", "application"))
 
     def test_every_copy_of_the_vote_reads_the_same(self) -> None:
         first = self.inverted("accepted", 507, 47)
