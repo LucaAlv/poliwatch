@@ -226,7 +226,9 @@ def _load_corrections(path: Path) -> dict[str, Any]:
             if partition["holder"]:
                 for owner in sorted(set(owner_of_name.values()) - set(own_ids)):
                     raise ValueError(f"owner {owner!r} of Redner-ID {xml_id} needs an own id beside its holder {partition['holder']!r}")
-                if partition.setdefault("profile_owner", partition["holder"]) != partition["holder"]:
+                if partition.get("profile_owner") is None:
+                    partition["profile_owner"] = partition["holder"]
+                if partition["profile_owner"] != partition["holder"]:
                     raise ValueError(f"Redner-ID {xml_id}: the profile owner {partition['profile_owner']!r} is not its holder {partition['holder']!r}")
             for key, reviewed in occurrences.items():
                 if not isinstance(reviewed, dict):

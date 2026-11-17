@@ -370,8 +370,9 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             with self.subTest(message), self.correction_file({"partitions": partitions}):
                 with self.assertRaisesRegex(registry.RegistryError, message):
                     registry.corrections()
-        with self.correction_file({"partitions": [{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9", "bea": "dip:1"}}]}):
-            self.assertEqual(registry.corrections()["partitions"][0]["profile_owner"], "ada")
+        for extra in ({}, {"profile_owner": None}):  # left out or null: the holder owns the profile
+            with self.subTest(extra), self.correction_file({"partitions": [{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9", "bea": "dip:1"}, **extra}]}):
+                self.assertEqual(registry.corrections()["partitions"][0]["profile_owner"], "ada")
 
 
 if __name__ == "__main__":
