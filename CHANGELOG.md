@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.3.0] - 2026-11-17
+
+The replay comparison (`scripts/compare_store_values.py`, the README recipe "Validate a data correction") now shows each vote's stored outcome and Abweichler figures moving, and finds the distribution copy of an export made with a release tag. Nothing in the build, the store, the export or the site changes. On the 718-sitting store before and after the vote-figure change, it reports 330 accepted, 269 rejected and 20 NULL outcomes, 3,720 Abweichungen and 0 moved votes, and r3 at 1,390 rows on both sides.
+
+### Added
+
+- **Vote outcome and Abweichler figures in the comparison.** A new section compares `votes.application_result`, `votes.abweichler_count` and `vote_members.abweichung`: the outcome mix, the Abweichler sum and the votes whose count is NULL, and the member flags. Then it lists each vote both stores hold whose outcome, count or member Abweichungen moved, old and new, with the members whose flag changed. It follows `--cohort`, and a store from before these columns reads `unavailable`, never 0.
+
+### Fixed
+
+- **A tagged export's copy is found.** The `r3-abweichler` row runs on the distribution copy that the export's `datenstand.json` names. Before, the comparison looked only for `bundestag-pulse-local.sqlite.gz`, so an export made with `--data-tag <version>` reported r3 as unavailable.
+
 ## [0.46.2.0] - 2026-11-16
 
 Two sittings still to be acquired, 18/158 and 19/13, will now be read as what they are, not as 94 Reden. Each protocol's XML misprints one thing, and a parser rule reads around each. Today's store holds neither sitting, so no figure in it moves, and the other 800 of the 802 XML files parse exactly as before. Once the two are acquired, they store 94 fewer Reden, withhold 3 fewer, and count 64 Fragen and Antworten of the Befragung der Bundesregierung that would otherwise have been Reden.
