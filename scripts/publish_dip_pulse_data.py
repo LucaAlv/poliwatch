@@ -15,7 +15,9 @@ are exactly the ones it builds (``--publish`` after a dry run the same day, or
 after a failed ``gh`` call); otherwise it refuses and never overwrites. ``--publish`` creates the release through ``gh`` and refuses unless
 the export carries a licence string (ADR 0003) and every exclusion on its record
 is final, ``source_defect`` or ``not_narrowable`` (ADR 0005, "Coverage and the
-bar"). This script never pushes, tags or uploads by itself; the only remote
+bar"), and while a v1 sitting DIP lists with XML is neither in the export nor on
+its exclusion record (read from the catalog the build left next to the exports
+directory, or ``--catalog``). This script never pushes, tags or uploads by itself; the only remote
 command is the one printed.
 
 The release is refused unless its export was built with a release tag, from a
@@ -25,8 +27,8 @@ file matches the manifest, and the manifest's withheld_reden list matches the
 exported withheld_units rows. The export's LICENSE-DATA.md is one of those files:
 non-empty and equal to the one that commit holds. The staged copy is checked
 against the verified manifest again before it becomes the release directory.
-A follow-up release's ``--previous-manifest`` must be the latest known release,
-and ``--publish`` refuses a tag that already exists on origin.
+A follow-up release's ``--previous-manifest`` must be the latest release tag on
+origin, and ``--publish`` refuses a tag that already exists on origin.
 """
 
 from __future__ import annotations
@@ -119,6 +121,14 @@ def _csv_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _shown(numbers: list[str]) -> str:
+    return ", ".join(numbers[:12]) + (", …" if len(numbers) > 12 else "")
+
+
+def _sittings(count: int) -> str:
+    return f"{count} sitting" if count == 1 else f"{count} sittings"
+
+
 def withheld_export_problem(manifest: dict[str, Any], generation_dir: Path) -> str | None:
     """P2 (ADR 0005): why the manifest's withheld_reden list does not match the
     exported withheld_units rows, or None. The cap and the changelog read the
@@ -173,8 +183,70 @@ def awaiting_exclusions(manifest: dict[str, Any]) -> list[str]:
 
 
 def awaiting_text(waiting: list[str]) -> str:
-    shown = ", ".join(waiting[:12]) + (", …" if len(waiting) > 12 else "")
-    return f"{len(waiting)} exclusions still await acquisition or a rule (ADR 0005, \"Coverage and the bar\": {shown})"
+    return f"{len(waiting)} exclusions still await acquisition or a rule (ADR 0005, \"Coverage and the bar\": {_shown(waiting)})"
+
+
+def _sitting_order(number: str) -> tuple[int, int, str]:
+    head, _, tail = number.partition("/")
+    return (int(head), int(tail), "") if head.isdigit() and tail.isdigit() else (1 << 30, 0, number)
+
+
+def catalog_v1_sittings(path: Path) -> dict[str, bool]:
+    """Every sitting of V1_FIRST_WAHLPERIODE on that the build's DIP catalog
+    lists, and whether DIP gives its XML. Only a catalog fetched in full
+    (``"authoritative": true``, as the build writes it) can show what is missing."""
+    site = _site()
+    try:
+        payload = _read_json(path, "catalog")
+    except ReleaseError as exc:
+        raise ReleaseError(f"{exc}; an online build writes it next to the exports directory, or name another with --catalog") from exc
+    if not isinstance(payload, dict) or payload.get("authoritative") is not True or not isinstance(payload.get("protocols"), list):
+        raise ReleaseError(
+            f"the catalog {path} is not a complete DIP catalog (an object with \"authoritative\": true and a protocols list); "
+            "an online build writes it next to the exports directory, or name another with --catalog"
+        )
+    sittings: dict[str, bool] = {}
+    for protocol in payload["protocols"]:
+        if not isinstance(protocol, dict):
+            continue
+        number = site.normalized_document_number(protocol.get("dokumentnummer"))
+        wahlperiode = site.wahlperiode_of(protocol)
+        if wahlperiode is None or wahlperiode < site.V1_FIRST_WAHLPERIODE:
+            continue
+        has_xml = isinstance(protocol.get("fundstelle") or {}, dict) and bool(site.protocol_xml_url(protocol))
+        sittings[number] = sittings.get(number, False) or has_xml
+    return sittings
+
+
+def unreleased_sittings_problem(manifest: dict[str, Any], generation_dir: Path, catalog_path: Path) -> str | None:
+    """Owner decision 6 (docs/plans/t4-acquire.md): why the export leaves out a
+    v1 sitting DIP lists with XML that is not on its exclusion record, or None.
+    A sitting DIP lists without XML yet (incomplete_sitting_protocols' waiting)
+    is not missing. A catalog that lacks a sitting the export holds is older
+    than the export and cannot vouch for it. Call after awaiting_exclusions and
+    withheld_export_problem, which check the record and the protocols table."""
+    catalog = catalog_v1_sittings(catalog_path)
+    site = _site()
+    (table,) = [entry["name"] for entry in manifest["files"] if entry.get("kind") == "table_csv" and str(entry["name"]).partition("-")[0] == "protocols"]
+    try:
+        stored = {site.normalized_document_number(row["document_number"]) for row in _csv_rows(generation_dir / table)}
+    except (OSError, EOFError, KeyError, ValueError, csv.Error) as exc:
+        raise ReleaseError(f"cannot read the exported protocols table ({exc}); export it again") from exc
+    excluded = {entry["document_number"].strip() for entry in manifest["coverage"]["excluded"]}
+    stale = sorted(
+        (number for number in stored - catalog.keys()
+         if (wahlperiode := site.wahlperiode_of({"dokumentnummer": number})) is not None and wahlperiode >= site.V1_FIRST_WAHLPERIODE),
+        key=_sitting_order,
+    )
+    if stale:
+        return (f"the catalog {catalog_path} lacks {_sittings(len(stale))} the export holds ({_shown(stale)}), so it is older "
+                "than the export and cannot show which sittings are missing; refresh it with an online build")
+    missing = sorted((number for number, has_xml in catalog.items() if has_xml and number not in stored | excluded), key=_sitting_order)
+    if missing:
+        verb = "is" if len(missing) == 1 else "are"
+        return (f"{len(missing)} v1 {'sitting' if len(missing) == 1 else 'sittings'} DIP lists with XML {verb} neither in the export "
+                f"nor on its exclusion record ({_shown(missing)}); acquire them, or record why they stay out, and export again")
+    return None
 
 
 def withheld_cap_problem(changes: dict[str, Any], confirmed: list[str]) -> str | None:
@@ -211,6 +283,23 @@ def remote_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
     except (ValueError, KeyError, TypeError) as exc:
         raise ReleaseError(f"gh release list returned something unreadable: {exc}") from exc
     return {version for tag in names if (version := release_version.version_of(tag))}
+
+
+def origin_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
+    """Versions of the data-* tags origin holds (owner decision 2026-11-17: the
+    latest release a --previous-manifest must be is origin's, not this clone's)."""
+    prefix = "refs/tags/"
+    result = run(
+        ["git", "ls-remote", "--tags", "origin", f"{prefix}{release_version.TAG_PREFIX}*"],
+        cwd=repo_root, env=build_revision.clean_env(), capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise ReleaseError(
+            f"cannot ask origin for its release tags (git ls-remote failed: {result.stderr.strip() or 'no message'}); "
+            "a --previous-manifest must be the latest of them"
+        )
+    refs = (line.rpartition("\t")[2].removesuffix("^{}") for line in result.stdout.splitlines())
+    return {version for ref in refs if ref.startswith(prefix) and (version := release_version.version_of(ref[len(prefix):]))}
 
 
 def remote_tag_exists(repo_root: Path, run: Callable[..., Any], tag: str) -> bool:
@@ -370,6 +459,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=f"Confirm one newly withheld Rede (repeatable, e.g. 18/1:ID1800100100) after reading it: a release that adds "
              f"more than {release_changes.WITHHELD_CAP} is refused unless every one of them is confirmed (ADR 0005).",
     )
+    parser.add_argument(
+        "--catalog", type=Path,
+        help="The DIP catalog the build wrote (default: plenarprotokoll-catalog.json next to --exports-dir); --publish refuses "
+             "while a v1 sitting it lists with XML is neither in the export nor on its exclusion record.",
+    )
     parser.add_argument("--publish", action="store_true", help="Create the release through gh. Refuses an export without a licence string (ADR 0003).")
     return parser.parse_args(argv)
 
@@ -399,6 +493,13 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     waiting = awaiting_exclusions(manifest)
     if args.publish and waiting:
         raise ReleaseError(f"--publish refused: {awaiting_text(waiting)}. Acquire or reclassify them first.")
+    # Owner decision 6 (docs/plans/t4-acquire.md): the bar also counts a v1
+    # sitting that is neither stored nor excluded, which a run DIP stopped
+    # partway leaves behind; a dry run still rehearses.
+    catalog_path = (args.catalog or args.exports_dir.parent / _site().facts.CATALOG_FILENAME).resolve()
+    unreleased = unreleased_sittings_problem(manifest, args.exports_dir / manifest["generation"], catalog_path)
+    if args.publish and unreleased:
+        raise ReleaseError(f"--publish refused: {unreleased}")
     if args.publish and not str(manifest.get("license") or "").strip():
         raise ReleaseError(
             "--publish refused: the export carries no licence string (manifest field license). Rebuild it with --data-license "
@@ -408,6 +509,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     known = local_versions(repo_root, run)
     if args.publish:
         known |= remote_versions(repo_root, run)
+    on_origin = origin_versions(repo_root, run) if args.previous_manifest else set()
+    known |= on_origin
     if version in known:
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
     newest = max(known, key=release_version.version_key) if known else None
@@ -430,15 +533,16 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         if problem:
             raise ReleaseError(f"the previous manifest {args.previous_manifest} {problem}")
         # An older release's manifest gives false deltas and can hide a schema
-        # change from the authored schema_changes guard (release item 4).
-        searched = "local tags and gh's releases" if args.publish else "local tags only; git fetch --tags, or --publish also asks gh"
-        if not known:
-            raise ReleaseError(f"--previous-manifest, but no data release is known ({searched}); give --initial for the first release")
-        latest = max(known, key=release_version.version_key)
+        # change from the authored schema_changes guard (release item 4). The
+        # latest is origin's: a clone that has not fetched, or holds a tag it
+        # never pushed, must not decide it (owner decision 2026-11-17).
+        if not on_origin:
+            raise ReleaseError("--previous-manifest, but origin holds no data release tag (git ls-remote --tags origin); give --initial for the first release")
+        latest = max(on_origin, key=release_version.version_key)
         if previous.get("tag") != latest:
             raise ReleaseError(
-                f"the previous manifest {args.previous_manifest} is release {previous.get('tag')}, but the latest known release is {latest} "
-                f"({searched}); give the datenstand.json of {latest}"
+                f"the previous manifest {args.previous_manifest} is release {previous.get('tag')}, but the latest release on origin is {latest}; "
+                f"give the datenstand.json of {latest}"
             )
     authored = release_changes.load_authored(args.changes) if args.changes else None
     changes = release_changes.assemble(version=version, released=today, manifest=manifest, previous_manifest=previous, authored=authored)
@@ -462,7 +566,7 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     if not args.publish:
         out("dry run: nothing was published. The command --publish would run:")
         out(shlex.join(command))
-        out("immutability and latest-release checks: local tags only (best effort); --publish also asks gh for existing releases and origin for the tag.")
+        out("immutability checks: local tags (best effort), and origin's release tags for a --previous-manifest; --publish also asks gh for existing releases and origin for the tag.")
         out(
             "hosting: GitHub release assets are flat, but the site links <base><generation>/<file>; "
             "a GitHub release URL as --base-url does not resolve until the site's link scheme or the host changes "
@@ -472,6 +576,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             out("licence string: empty in the export; --publish refuses until the export is rebuilt with --data-license.")
         if waiting:
             out(f"--publish would refuse: {awaiting_text(waiting)}.")
+        if unreleased:
+            out(f"--publish would refuse: {unreleased}.")
         return
     result = run(command, cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:
