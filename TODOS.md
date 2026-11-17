@@ -2323,6 +2323,8 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 ## Completed
 
+- **Stammdaten refresh keeps an older-Stand cache: re-downloads every run** (review of the stammdaten store gate, 2026-11-17): `stammdaten.refresh` keeps the cached file when the fetched Stand is older, but also keeps the old ETag sidecar, so each later refresh downloads the full zip again and warns again. Cosmetic cost (bandwidth, one warning); fix by a "seen older" marker beside the ETag.
+
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
 - Stammdaten reader and store gate hardening: 2026-11-17, branch `todo/stammdaten-store-gate`. C1 deferred items 11 (hash the parsed buffer; the sweep half stays open), 15, 17 and 37; E4 /gstack-review item 3 (offline render refuses a Stammdaten file the store was not built with; the rebuild's double read stays open) and item 5's `_data_clone` part; Registry fix review (c), (g) and (i)'s second half. No figure moved: the reference store's file and `mdb_stammdaten_stand` share sha256 `29ae4ba1…` and an offline render of its clone passes the check (801 dossiers, 157 Stimmen in 87 Abstimmungen re-filed in the panels)
