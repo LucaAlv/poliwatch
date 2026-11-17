@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.5.0] - 2026-11-17
+
+The release script closes five gaps it had to close before the first real `--publish`. A dry run and the `--publish` after it can now share one output directory, and a failed `gh release create` says how to recover. The script refuses a tag that already exists on origin, a commit id that a branch or tag of the same name could stand in for, a previous manifest that is not the latest release, and an export file that changed after it was checked. Only the release script and its checks change; no figure, export, page or schema does.
+
+### Fixed
+
+- **A dry run no longer blocks the `--publish` after it.** A later run reuses an existing `data-<version>/` when its files are exactly the ones it builds, so `--publish` into the same `--output-dir` the same day publishes the rehearsed directory. A directory whose files differ (an extra or missing file, a symlink, a dry run from another day whose `changes.json` carries another date) is refused, naming the files and saying to remove it or use a fresh `--output-dir`. It is never overwritten.
+- **A failed `gh release create` names the way out.** The directory is kept and the same command publishes it once the cause is fixed. The message names how to check for a tag or release gh left behind (`git ls-remote`, `gh release view`) and how to delete it, the local tag included.
+- **A tag already on origin is refused.** `gh release create` attaches to an existing tag and ignores `--target`, so `--publish` now asks origin first and refuses when the tag exists or origin cannot be asked.
+- **A branch or tag named like the export's commit can no longer stand in for it.** The 12-digit revision is looked up among commit ids only, and exactly one commit must match.
+- **`--previous-manifest` must be the latest release.** Its version must be the newest one known (local `data-*` tags; with `--publish` also gh's releases), and it is refused when no release is known. A changelog against an older release reported false changes and could hide a schema change.
+- **An export file swapped after the check is refused.** Before the staged copy becomes the release directory, its `datenstand.json` is checked against the bytes that were verified and every file against the manifest's size and SHA-256.
+
 ## [0.46.4.0] - 2026-11-17
 
 The vote-link review sheet now shows each reviewer the evidence of the right Tagesordnungspunkt, and says when a Drucksache is printed under it. `scripts/vote_link_review.py` writes the sheet the owner fills in before the first release, to judge whether each namentliche Abstimmung is linked to the right Tagesordnungspunkt. Nothing in the build, the store, the release or the site changes, and no figure moves.
