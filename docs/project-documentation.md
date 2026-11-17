@@ -18,7 +18,6 @@ The codebase is intentionally small. There is no package manager or web framewor
 |-- CITATION.cff
 |-- .env.example
 |-- docs/
-|   |-- design/bundestag-pulse-design.md
 |   `-- project-documentation.md
 |-- tests/
 |   |-- fixtures/
@@ -326,13 +325,13 @@ python3 scripts/abgeordnetenwatch.py \
   --cache .context/dip-pulse-site/data/abgeordnetenwatch-cache.json
 ```
 
-### `docs/design/bundestag-pulse-design.md`
+### `PRODUCT.md` and `DESIGN.md`
 
-Product/design rationale. It explains the original thesis: a primary-source, receipt-backed civic radar for Bundestag activity. Use it for product intent and constraints, not command reference.
+Product intent and the design system. `PRODUCT.md` holds the thesis: a primary-source, receipt-backed civic radar for Bundestag activity. `DESIGN.md` holds the fonts, colors, spacing and aesthetic direction. Use them for product intent and constraints, not command reference.
 
 ### `docs/designs/`
 
-Per-feature design docs written by review sessions (`docs/design/` is the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe. `fakt-der-woche.md` records the Fakt der Woche pages the same way: the approaches considered, the A0 replay result against the real store, and the feedback that became the A1 spec. `gesetzesvorhaben.md` records the redesign of the `bills/` overview and bill pages: the approved design decisions, the engineering review, and the executed browser and test evidence.
+Per-feature design docs written by review sessions (`PRODUCT.md` and `DESIGN.md` are the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe. `fakt-der-woche.md` records the Fakt der Woche pages the same way: the approaches considered, the A0 replay result against the real store, and the feedback that became the A1 spec. `gesetzesvorhaben.md` records the redesign of the `bills/` overview and bill pages: the approved design decisions, the engineering review, and the executed browser and test evidence.
 
 ### `.env.example` and `.env.local`
 
@@ -473,7 +472,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-tag TAG` | `local` | Tag of the export; it ends every file name of the generation and shows as "Release <tag>". Either `local` or a release version `YYYY.MM.DD[.N]` (`scripts/publish_dip_pulse_data.sh --next-version` prints it); the parser refuses anything else. A release tag also requires a bare 12-digit build revision and committed authored inputs |
 | `--data-license TEXT` | the short string of `LICENSE-DATA.md`, or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page |
 | `--operator-file PATH` | none or `$BUNDESTAG_PULSE_OPERATOR_FILE` | Local JSON file (outside git) with the operator's values for `impressum.html` and `datenschutz.html`; see "Operator file" below |
-| `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Datenfehler melden (GitHub)" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/`. Use `https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml&seite=database.html` (the repository has been public since 2026-11-06): it opens the Datenfehler form with the page filled in |
+| `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Datenfehler melden" footer link on the Daten page, labelled "(GitHub)" only for an `https://github.com` URL; must start with `https://`, `http://`, `mailto:` or `/`. Use `https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml&seite=database.html` (the repository has been public since 2026-11-06): it opens the Datenfehler form with the page filled in |
 
 The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus one CSV.gz per table (except `schema_migrations`, which remains in SQLite) and executes the `RECIPES` SQL statements against it; `export_format` (currently `20`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`, v6 corrected the abgeordnetenwatch MP column source tags, v7 added `vote_proceedings`, `votes.context_state` and `proceedings.abstract`, v8 added the nullable scraped `votes.debate_url` source link, v9 added `documents.forderung`, `forderung_state`, `forderung_version`, `vote_passages` and `votes.passage_state`; v10 added the codebook, recipe CSVs and typed artifact inventory, v11 makes recipes r1–r6 Wahlperiode-aware: each carries a `wahlperiode` column and r1, r2, r3, r5 and r6 group by it, v12 adds `LICENSE-DATA.md` (kind `license`) to every generation, v13 adds the MdB-Stammdaten tables `mdb_zugehoerigkeiten`, `party_seats` and `mdb_stammdaten_stand`, the manifest key `stammdaten` and r2's `sitzanteil_prozent`, v14 adds `vote_documents.rank`, `vote_fractions.rank`, `agenda_item_documents.url` and `agenda_item_documents.rank`, stores a missing vote total as NULL and leaves such votes out of r4, v15 renames r2 to `r2-textanteil-fraktion`, a Textanteil ordered by characters, and takes a vote's first sitting and r5's `erste_drucksache` by sitting number, so 21/99 comes before 21/100, v16 counts a Stimme for the group the MdB-Stammdaten prove on the vote's day where the roll-call page lists another and adds `vote_members.listed_party_id`, v17 adds the withheld Reden of ADR 0005 (`withheld_units`, `withheld_turns`) and makes `speeches.sequence` the source position, v18 adds the code `ansprache` to `contributions.kind` (ADR 0004), v19 adds `votes.application_result`, `votes.abweichler_count` and `vote_members.abweichung`, and r3 counts `vote_members.abweichung = 1`, v20 adds `agenda_item_votes.basis`, why a vote is linked to a TOP) is bumped whenever that CSV layout, transformation or provenance changes, including authored metadata and recipe output contracts.
 

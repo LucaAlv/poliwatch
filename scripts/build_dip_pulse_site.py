@@ -5923,7 +5923,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
         {relationships_block}
       </section>
       <footer>
-        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''} {pulse_html.render_legal_links(depth=0)}
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">{issues_link_label(safe_issues_url(manifest.get("issues_url")) or "")}</a>' if safe_issues_url(manifest.get("issues_url")) else ''} {pulse_html.render_legal_links(depth=0)}
       </footer>
     </main>
   </div>
@@ -13712,6 +13712,17 @@ def safe_issues_url(value: Any) -> str | None:
     return value if _ISSUES_URL_RE.match(value) else None
 
 
+def issues_link_label(url: str) -> str:
+    """The footer link text: "(GitHub)" only for an https://github.com URL, as
+    --data-issues-url also takes a mailto: address or a site-relative path."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        github = parts.scheme == "https" and parts.hostname == "github.com"
+    except ValueError:
+        github = False
+    return "Datenfehler melden (GitHub)" if github else "Datenfehler melden"
+
+
 # What the page and render_site read from a manifest. A --data-manifest
 # override is operator input, so a wrong-shaped file fails here with one
 # named error instead of a KeyError somewhere inside render_site().
@@ -14304,7 +14315,9 @@ OPERATOR_MAX_LENGTH = 300
 # A real operator file is under 1 KiB; the cap keeps a wrong path (a log, a
 # database, /dev/zero) from filling memory.
 OPERATOR_FILE_MAX_BYTES = 64 * 1024
-_OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
+# "?", "&", "%" and "=" stay out of the local part: the address becomes a mailto:
+# link, where they would add header parameters (?cc=, &bcc=) or escapes.
+_OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]?&%=]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
 
 
 class OperatorFileError(ValueError):
@@ -14317,7 +14330,10 @@ def _operator_url(value: str) -> bool:
         host = parsed.hostname
     except ValueError:  # "https://[::1" and other malformed hosts
         return False
-    return parsed.scheme == "https" and bool(host) and not parsed.username and not parsed.password
+    return (
+        parsed.scheme == "https" and bool(host) and not parsed.username and not parsed.password
+        and not re.search(r"\s", value)
+    )
 
 
 def load_operator(path: Path) -> dict[str, str]:

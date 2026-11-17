@@ -508,7 +508,7 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [B4 vote lead and Bundestag report link](docs/plans/b4-vote-lead-and-article.md) — implementation scope; [source validation](docs/research/b4-vote-lead-validation.md) records the acquisition, replay, export, and browser checks.
 - [Quoted Antrag context fallback](docs/plans/b4-extractive-antrag.md) — implementation and open acceptance gate; its [research note](docs/research/b4-antrag-extraction.md) records coverage, quotation-fidelity findings, and reproduction details.
 - [Runtime architecture diagram](docs/bundestag-puls-architecture.html) — generated overview of the build, data, and served-site flow.
-- [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
+- [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md) — product intent and the design system.
 - [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar or [fakt-der-woche.md](docs/designs/fakt-der-woche.md) for the `fakt/` pages.
 - [LICENSE-DATA.md](LICENSE-DATA.md) — the data licence, layered per source, including which SQLite columns are DIP-sourced vs. derived; every export carries it. The code is under [LICENSE](LICENSE) (MIT).
 - [docs/data-changelog.md](docs/data-changelog.md) — format of the public per-release data changelog (`CHANGES.md`, `changes.json`) that `scripts/publish_dip_pulse_data.sh` writes. [CITATION.cff](CITATION.cff) — citation metadata (working title; no DOI or version yet).
