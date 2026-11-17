@@ -401,7 +401,7 @@ class WriteTests(unittest.TestCase):
 
     # Value: protects=a feed base with credentials or whitespace in the netloc is refused like publication_state.validate_external_url refuses it; fails_when=https://user:pw@host/ or a netloc with a space is published into feed links; why_new=TODOS Puls outward batch 7 item 3; seam=valid_site_url; no_claim=none
     def test_site_url_refuses_credentials_and_whitespace(self) -> None:
-        for bad in ("https://user:pw@pulse.example.org/", "https://user@pulse.example.org/", "https://pulse .example.org/", "https://pulse.example.org\t/", "https://pulse.example.org\n/"):
+        for bad in ("https://user:pw@pulse.example.org/", "https://user@pulse.example.org/", "https://pulse .example.org/", "https://pulse.example.org\t/", "https://pulse.example.org\n/", "https://pulse.example.org\x01/", "https://pulse.example.org/\x00"):
             with self.subTest(url=bad):
                 self.assertFalse(feed.valid_site_url(bad))
 

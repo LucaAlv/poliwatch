@@ -233,8 +233,8 @@ def valid_site_url(value: str | None) -> bool:
         parsed.port  # raises ValueError for a non-numeric or out-of-range port
     except ValueError:
         return False
-    # urlparse drops tabs and newlines itself, so whitespace is checked on the raw value.
-    if re.search(r"\s", value) or parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
+    # urlparse drops tabs and newlines itself, so whitespace and control characters (XML-illegal in the channel link) are checked on the raw value.
+    if re.search(r"[\s\x00-\x1f\x7f]", value) or parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
         return False
     return parsed.scheme == "https" and bool(parsed.netloc) and value.endswith("/") and not parsed.query and not parsed.fragment
 
