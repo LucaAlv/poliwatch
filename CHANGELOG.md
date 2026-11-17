@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.7.0] - 2026-11-17
+
+The release script now refuses to publish while a sitting DIP lists with its XML is neither in the export nor on the exclusion record. Before, it only refused exclusions still waiting for acquisition or a rule, so a sitting a stopped acquisition run dropped from the record without storing it would have gone out unnoticed. On the reference export of 2026-11-16 the check names one such sitting, 21/107. A follow-up release's previous manifest is now checked against the releases actually published, not against this clone's tags. Only the release script and its checks change; no figure, export, page or schema does.
+
+### Added
+
+- **`--publish` refuses while a sitting DIP lists with XML is missing.** The script reads the DIP catalog the build leaves next to the exports directory (`plenarprotokoll-catalog.json`, or another file named with `--catalog`) and refuses, naming them, while a sitting from Wahlperiode 18 on that the catalog lists with an XML URL is neither in the export's `protocols` table nor on `coverage.excluded`. A sitting DIP lists without XML yet does not count. A dry run still builds the release directory and says what `--publish` would refuse. Every run refuses a catalog it cannot read or that was not fetched in full, and `--publish` refuses one that lacks a sitting the export holds, because such a catalog is older than the export.
+
+### Changed
+
+- **The previous manifest must be the latest published release, not the latest tag this clone knows.** Its version must be the newest `data-*` tag on origin (asked with `git ls-remote`, in a dry run too) and, with `--publish`, also the newest release gh lists. A clone that has not fetched, or holds a tag it never pushed, no longer decides which release came last. A tag left on origin without a release still gets the message that says how to delete it.
+
 ## [0.46.6.0] - 2026-11-17
 
 The sittings T4 still has to acquire can now be stored without the build refusing on a speaker id the Bundestag printed for two people. The WP 18 run had stopped on two such ids, and the same name check run offline over the 719 stored sittings and the XML of the 83 T4 sittings finds exactly three; each now says who spoke, so the WP 19 run does not stop on the third. On the 719 stored sittings, one Rede moves: Thomas Heilmann's 2016 speech as Berlin Senator joins his own page. Persons 2,040 → 2,039, person pages 1,658 → 1,657, and the `erste-reden` fact of week 2018-W47 3 → 2, because his first Rede in our coverage is the 2016 one, not his first as an MdB in 2018 (the percentiles of 2018-W47, 2021-W25, 2021-W45 and 2021-W46 shift with it). The stub record goes (`mps` 6,387 → 6,386) and so does the fact's citation of the 2018 Rede (`fact_sources` 2,964 → 2,963); nothing else in the store moves.

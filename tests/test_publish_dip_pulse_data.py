@@ -4,6 +4,7 @@ and a recorded command runner. No test calls gh, pushes, tags or uploads."""
 from __future__ import annotations
 
 import contextlib
+import fnmatch
 import hashlib
 import io
 import json
@@ -73,7 +74,7 @@ class Runner:
             if self.ls_remote_stdout is not None:
                 return SimpleNamespace(returncode=0, stdout=self.ls_remote_stdout, stderr="")
             asked = command[-1]
-            lines = [f"{'0' * 40}\t{ref}" for ref in (f"refs/tags/{tag}" for tag in self.remote_tags) if ref == asked]
+            lines = [f"{'0' * 40}\t{ref}" for ref in (f"refs/tags/{tag}" for tag in self.remote_tags) if fnmatch.fnmatchcase(ref, asked)]
             return SimpleNamespace(returncode=0, stdout="".join(line + "\n" for line in lines), stderr="")
         if self.git_tag_fails and command[:2] == ["git", "tag"]:
             return SimpleNamespace(returncode=128, stdout="", stderr="fatal: not a git repository")
@@ -120,6 +121,8 @@ class ReleaseTestCase(unittest.TestCase):
             cls.manifest = b.export_distribution_data(
                 db_path, cls.exports, mp_lookup=lookup, readiness=READINESS, catalog_count=2, dossier_count=2, tag=VERSION, commit=cls.head[:12], license_text="Quelldaten: DIP; eigene Auswertungen: CC BY 4.0"
             )
+        (protocols,) = [entry["name"] for entry in cls.manifest["files"] if entry["name"].startswith("protocols-")]
+        cls.stored = sorted((row["document_number"], row["date"]) for row in publish._csv_rows(cls.exports / cls.manifest["generation"] / protocols))
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -132,6 +135,26 @@ class ReleaseTestCase(unittest.TestCase):
         self.exports_copy = self.work / "exports"
         shutil.copytree(self.exports, self.exports_copy)
         self.runner = Runner()
+        self.write_catalog()
+
+    def write_catalog(self, extra=(), *, payload=None, path=None) -> Path:
+        """The DIP catalog an online build leaves next to the exports directory:
+        every stored sitting with its XML, a WP 17 sitting (before v1) and a
+        Sonderdruck nobody stores, plus ``extra`` (number, date, has_xml)."""
+        def protocol(number, day, xml=True):
+            fundstelle = {"pdf_url": "https://dserver.bundestag.de/btp/x.pdf"}
+            if xml:
+                fundstelle["xml_url"] = f"https://dserver.bundestag.de/btp/{number.replace('/', '')}.xml"
+            return {"dokumentnummer": number, "datum": day, "fundstelle": fundstelle}
+
+        if payload is None:
+            protocols = [protocol(number, day) for number, day in self.stored]
+            protocols += [protocol("17/250", "2013-09-03"), {"dokumentnummer": "SDr 1981", "datum": "1981-01-01"}]
+            protocols += [protocol(*row) for row in extra]
+            payload = {"authoritative": True, "fetched_at": "2026-11-01T08:00:00Z", "protocols": protocols}
+        path = path or self.work / "plenarprotokoll-catalog.json"
+        path.write_text(json.dumps(payload) if not isinstance(payload, str) else payload, encoding="utf-8")
+        return path
 
     def run_script(self, *args, runner=None, repo_root=None, exports=None):
         argv = ["--exports-dir", str(exports or self.exports_copy), "--output-dir", str(self.out), "--base-url", BASE_URL, *args]
@@ -204,7 +227,7 @@ class DryRunTests(ReleaseTestCase):
         uploaded = words[4 : words.index("--title")]
         self.assertIn(str(release / self.manifest["generation"] / self.manifest["files"][0]["name"]), uploaded)
         self.assertIn(str(release / "SHA256SUMS"), uploaded)
-        self.assertIn("best effort", stdout)
+        self.assertIn("immutability checks: local tags only (best effort)", stdout)
         self.assertIn("flat", stdout)
         self.assertIn("LICENSE-DATA.md", stdout)
 
@@ -718,36 +741,148 @@ class PublishTests(ReleaseTestCase):
                 self.assert_refused(code, stderr, "coverage.excluded")
 
 
+class MissingSittingTests(ReleaseTestCase):
+    """Owner decision 6 of docs/plans/t4-acquire.md: --publish refuses while a v1
+    catalog sitting with XML is neither in the export nor on its exclusion record."""
+
+    def set_exclusions(self, excluded) -> None:
+        manifest = json.loads((self.exports_copy / "datenstand.json").read_text(encoding="utf-8"))
+        self.edit_manifest(coverage={**manifest["coverage"], "excluded": excluded})
+
+    # Value: protects=a v1 sitting DIP lists with XML that is neither stored nor excluded blocks --publish, named, while a dry run still builds and says so, and an exclusion record entry for it lifts the refusal; fails_when=a T4 run DIP stopped partway (update_coverage_exclusions dropped the sitting from the record without storing it) or a sitting DIP added after the build goes out unnoticed; why_new=run_release read coverage.excluded only; seam=main with the build's catalog file; no_claim=whether the catalog is current at release time (the release reads the one the build left)
+    def test_publish_refuses_a_v1_sitting_neither_stored_nor_excluded(self) -> None:
+        self.write_catalog([("21/107", "2026-11-11", True)])
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, "--publish refused: 1 v1 sitting DIP lists with XML is neither in the export nor on its exclusion record (21/107)")
+        self.assertEqual(self.runner.gh("release", "create"), [])
+        code, stdout, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("--publish would refuse: 1 v1 sitting DIP lists with XML is neither in the export nor on its exclusion record (21/107)", stdout)
+        shutil.rmtree(self.out)
+        self.set_exclusions([{"document_number": "21/107", "reason": "source_defect", "reason_detail": "XML leer."}])
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(self.runner.gh("release", "create")), 1)
+
+    # Value: protects=the refusal names many missing sittings in sitting order and cuts the list after twelve; fails_when=a long list floods the message or sorts 21/9 after 21/10; why_new=new refusal; seam=main
+    def test_many_missing_sittings_are_counted_and_shown_in_order(self) -> None:
+        self.write_catalog([(f"21/{n}", "2026-10-01", True) for n in range(20, 4, -1)])
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, "16 v1 sittings DIP lists with XML are neither", "(21/5, 21/6, 21/7, 21/8, 21/9, 21/10,", "21/16, …)")
+
+    # Value: protects=a sitting DIP lists without XML yet (incomplete_sitting_protocols' "waiting") and a sitting before WP 18 never block --publish; fails_when=the release waits for an XML DIP has not published or for sittings outside v1; why_new=new refusal; seam=main
+    def test_a_sitting_without_xml_or_before_wp_18_is_not_refused(self) -> None:
+        self.write_catalog([("21/108", "2026-11-12", False), ("17/251", "2013-09-04", True)])
+        code, stdout, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(self.runner.gh("release", "create")), 1)
+
+    # Value: protects=a catalog entry that is not an object, or whose fundstelle is not an object, is skipped or read as "no XML" instead of crashing or blocking; fails_when=the isinstance guards in catalog_v1_sittings are dropped (AttributeError traceback on --publish); why_new=the other catalog tests carry only well-formed entries; seam=main
+    def test_a_malformed_catalog_entry_is_skipped_not_a_crash(self) -> None:
+        path = self.write_catalog([("21/108", "2026-11-12", False)])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["protocols"] += ["21/109", None, {"dokumentnummer": "21/110", "datum": "2026-11-13", "fundstelle": "kein Objekt"}]
+        self.write_catalog(payload=payload)
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(self.runner.gh("release", "create")), 1)
+
+    # Value: protects=a sitting DIP lists twice, once without XML and once with, counts as having XML and is named once; fails_when=the later duplicate overwrites the XML flag so the sitting is read as waiting, or it is listed twice; why_new=the other catalog tests list each sitting once; seam=main
+    def test_a_sitting_listed_twice_counts_as_having_xml_once(self) -> None:
+        self.write_catalog([("21/107", "2026-11-11", True), ("21/107", "2026-11-11", False)])
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, "1 v1 sitting DIP lists with XML is neither in the export nor on its exclusion record (21/107)")
+
+    # Value: protects=a catalog the check cannot read, one not fetched in full, or one older than the export is never read as "nothing missing" (class 9); fails_when=a missing or narrowed catalog file lets --publish through; why_new=new input; seam=main
+    def test_an_unreadable_partial_or_stale_catalog_is_refused(self) -> None:
+        stale = {"authoritative": True, "protocols": [{"dokumentnummer": n, "datum": d, "fundstelle": {"xml_url": "x"}} for n, d in self.stored[1:]]}
+        cases = (
+            ("absent", None, "cannot read catalog"),
+            ("not JSON", "{nope", "cannot read catalog"),
+            ("null", "null", "not a complete DIP catalog"),
+            ("not authoritative", {"authoritative": False, "protocols": []}, "not a complete DIP catalog"),
+            ("protocols not a list", {"authoritative": True, "protocols": {}}, "not a complete DIP catalog"),
+        )
+        for label, payload, fragment in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.out, ignore_errors=True)
+                catalog = self.work / "plenarprotokoll-catalog.json"
+                if payload is None:
+                    catalog.unlink()
+                else:
+                    self.write_catalog(payload=payload)
+                # Every run reads it, the dry run included: it is the release's input.
+                code, _, stderr = self.run_script("--initial")
+                self.assert_refused(code, stderr, fragment, "--catalog")
+        self.write_catalog(payload=stale)
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, f"lacks 1 sitting the export holds ({self.stored[0][0]})", "older than the export")
+        self.assertEqual(self.runner.gh("release", "create"), [])
+        code, stdout, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("--publish would refuse: the catalog", stdout)
+
+    # Value: protects=--catalog names the catalog file when it is not next to the exports directory, and the default location is then not read; fails_when=the flag is ignored; why_new=new flag; seam=main
+    def test_the_catalog_flag_names_another_file(self) -> None:
+        elsewhere = self.write_catalog([("21/107", "2026-11-11", True)], path=self.work / "elsewhere.json")
+        (self.work / "plenarprotokoll-catalog.json").unlink()
+        code, _, stderr = self.run_script("--initial", "--publish", "--catalog", str(elsewhere))
+        self.assert_refused(code, stderr, "(21/107)")
+
+
 class FollowUpReleaseTests(ReleaseTestCase):
     def setUp(self) -> None:
         super().setUp()
-        # The previous manifests below are release 2026.10.01's, so this clone knows that release.
+        # The previous manifests below are release 2026.10.01's, so this clone and origin know that release.
         git(self.repo, "tag", "data-2026.10.01")
         self.addCleanup(git, self.repo, "tag", "-d", "data-2026.10.01")
+        self.runner = Runner(remote_tags=["data-2026.10.01"])
 
-    # Value: protects=--previous-manifest must be the latest known release (local tags; with --publish also gh's releases), and is refused when no release is known at all; fails_when=an older previous manifest gives false deltas and can hide a schema change from the authored schema_changes guard (release item 4), or a follow-up release is assembled against a release nobody published; why_new=release item 4; seam=main with local tags and a recorded gh; no_claim=whether the previous manifest's bytes are the published asset's
-    def test_the_previous_manifest_must_be_the_latest_known_release(self) -> None:
+    # Value: protects=--previous-manifest must be the latest published release (origin's tags via git ls-remote, and under --publish also gh's releases; owner decision 2026-11-17), in a dry run too, and is refused when origin holds no release tag or cannot be asked; fails_when=an older previous manifest gives false deltas and can hide a schema change from the authored schema_changes guard (release item 4), a clone that has not fetched (or holds an unpushed tag) decides which release is latest, or a follow-up release is assembled against a release nobody published; why_new=release item 4 took the latest from local tags; seam=main with local tags and a recorded origin; no_claim=whether the previous manifest's bytes are the published asset's (item 12b)
+    def test_the_previous_manifest_must_be_the_latest_release_on_origin(self) -> None:
         previous = self.work / "previous.json"
         previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
         args = ("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}))
+        for label, runner, searched in (
+            ("dry run", Runner(remote_tags=["data-2026.10.01", "data-2026.10.20"]), "origin's tags"),
+            ("--publish", Runner(remote_tags=["data-2026.10.01", "data-2026.10.20"], gh_tags=["data-2026.10.01"]), "origin's tags and gh's releases"),
+            # gh may publish to another repository than origin: its newer release counts too (Codex review).
+            ("--publish, newer release only in gh", Runner(remote_tags=["data-2026.10.01"], gh_tags=["data-2026.10.01", "data-2026.10.20"]), "origin's tags and gh's releases"),
+        ):
+            with self.subTest(label):
+                extra = ("--publish",) if label.startswith("--publish") else ()
+                code, _, stderr = self.run_script(*args, *extra, runner=runner)
+                self.assert_refused(code, stderr, f"is release 2026.10.01, but the latest release ({searched}) is 2026.10.20", "datenstand.json of 2026.10.20")
+                self.assertEqual(runner.gh("release", "create"), [])
+                self.assertIn(["git", "ls-remote", "--tags", "origin", "refs/tags/data-*"], runner.calls)
+        # A local tag origin does not hold (not pushed, or a fetch from elsewhere) does not decide the latest release.
         git(self.repo, "tag", "data-2026.10.15")
         try:
-            code, _, stderr = self.run_script(*args)
+            code, _, stderr = self.run_script(*args, runner=Runner(remote_tags=["data-2026.10.01"]))
         finally:
             git(self.repo, "tag", "-d", "data-2026.10.15")
-        self.assert_refused(code, stderr, "is release 2026.10.01, but the latest known release is 2026.10.15", "datenstand.json of 2026.10.15")
-        runner = Runner(gh_tags=["data-2026.10.01", "data-2026.10.20"])
-        code, _, stderr = self.run_script(*args, "--publish", runner=runner)
-        self.assert_refused(code, stderr, "the latest known release is 2026.10.20")
-        self.assertEqual(runner.gh("release", "create"), [])
-        git(self.repo, "tag", "-d", "data-2026.10.01")
-        try:
-            code, _, stderr = self.run_script(*args)
-        finally:
-            git(self.repo, "tag", "data-2026.10.01")
-        self.assert_refused(code, stderr, "no data release is known", "--initial")
-        code, _, stderr = self.run_script(*args)
         self.assertEqual(code, 0, stderr)
+        shutil.rmtree(self.out)
+        # A peeled annotated tag and a non-release tag on origin are read as one release and none.
+        stdout = f"{'1' * 40}\trefs/tags/data-2026.10.01\n{'2' * 40}\trefs/tags/data-2026.10.01^{{}}\n{'3' * 40}\trefs/tags/data-latest\n"
+        code, _, stderr = self.run_script(*args, runner=Runner(ls_remote_stdout=stdout))
+        self.assertEqual(code, 0, stderr)
+        shutil.rmtree(self.out)
+        # The clone knows the release, origin does not: no release has been published.
+        code, _, stderr = self.run_script(*args, runner=Runner())
+        self.assert_refused(code, stderr, "no data release is published (origin's tags", "--initial")
+        code, _, stderr = self.run_script(*args, runner=Runner(ls_remote_fails=True))
+        self.assert_refused(code, stderr, "cannot ask origin for its release tags", "git ls-remote failed")
+
+    # Value: protects=a follow-up --publish whose tag a failed gh run left on origin (no release behind it) is refused with remote_tag_exists' message naming how to delete the tag; fails_when=origin's tags count as existing releases, so the message falsely says the release exists and drops the recovery step; why_new=code review of the origin-tag change (owner decision 4b); seam=main with a recorded origin; no_claim=gh behaviour (mocked)
+    def test_a_follow_up_tag_left_on_origin_names_its_recovery(self) -> None:
+        previous = self.work / "previous.json"
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
+        runner = Runner(gh_tags=["data-2026.10.01"], remote_tags=["data-2026.10.01", f"data-{VERSION}"])
+        code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}), "--publish", runner=runner)
+        self.assert_refused(code, stderr, f"tag data-{VERSION} already exists on origin but has no release", f"git push origin :refs/tags/data-{VERSION}")
+        self.assertNotIn("releases are immutable", stderr)
+        self.assertEqual(runner.gh("release", "create"), [])
 
     # Value: protects=an export whose version is older than the latest known release is refused, local tag or gh release; fails_when=a stale export goes out after a newer release and its changelog is computed backwards from that release's manifest; why_new=code-review of release item 4 (the latest-release check assumed the export is newer); seam=main; no_claim=clock skew between machines
     def test_an_export_older_than_the_latest_release_is_refused(self) -> None:
@@ -760,7 +895,7 @@ class FollowUpReleaseTests(ReleaseTestCase):
         finally:
             git(self.repo, "tag", "-d", "data-2026.11.05")
         self.assert_refused(code, stderr, f"release {VERSION} is older than the latest known release 2026.11.05")
-        runner = Runner(gh_tags=["data-2026.10.01", "data-2026.11.05"])
+        runner = Runner(gh_tags=["data-2026.10.01", "data-2026.11.05"], remote_tags=["data-2026.10.01", "data-2026.11.05"])
         code, _, stderr = self.run_script(*args, "--publish", runner=runner)
         self.assert_refused(code, stderr, "older than the latest known release 2026.11.05")
         self.assertEqual(runner.gh("release", "create"), [])
@@ -866,7 +1001,7 @@ class FollowUpReleaseTests(ReleaseTestCase):
     def test_a_follow_up_release_is_published_although_gh_lists_the_previous_tag(self) -> None:
         previous = self.work / "previous.json"
         previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
-        runner = Runner(gh_tags=[publish.release_version.tag_for("2026.10.01")])
+        runner = Runner(gh_tags=[publish.release_version.tag_for("2026.10.01")], remote_tags=[publish.release_version.tag_for("2026.10.01")])
         code, stdout, stderr = self.run_script("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "Zwei Sitzungen ergänzt."}), "--publish", runner=runner)
         self.assertEqual(code, 0, stderr)
         self.assertEqual(len(runner.gh("release", "list")), 1)
