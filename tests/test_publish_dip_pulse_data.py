@@ -39,7 +39,7 @@ def git(repo: Path, *args: str) -> str:
 class Runner:
     """Runs git for real in the temporary repository, answers gh from a script, and records everything."""
 
-    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False):
+    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False, ls_remote_stdout=None):
         self.calls: list[list[str]] = []
         self.missing = tuple(missing)
         self.gh_tags = list(gh_tags)
@@ -49,6 +49,7 @@ class Runner:
         self.git_tag_fails = git_tag_fails
         self.remote_tags = list(remote_tags)
         self.ls_remote_fails = ls_remote_fails
+        self.ls_remote_stdout = ls_remote_stdout
 
     def __call__(self, command, **kwargs):
         self.calls.append(list(command))
@@ -69,6 +70,8 @@ class Runner:
             # The temporary repository has no remote; answer as origin would.
             if self.ls_remote_fails:
                 return SimpleNamespace(returncode=128, stdout="", stderr="fatal: 'origin' does not appear to be a git repository")
+            if self.ls_remote_stdout is not None:
+                return SimpleNamespace(returncode=0, stdout=self.ls_remote_stdout, stderr="")
             asked = command[-1]
             lines = [f"{'0' * 40}\t{ref}" for ref in (f"refs/tags/{tag}" for tag in self.remote_tags) if ref == asked]
             return SimpleNamespace(returncode=0, stdout="".join(line + "\n" for line in lines), stderr="")
@@ -546,6 +549,7 @@ class PublishTests(ReleaseTestCase):
         self.assertIn("HTTP 422", stderr)
         self.assertIn(f"git ls-remote --tags origin refs/tags/data-{VERSION}", stderr)
         self.assertIn(f"gh release view data-{VERSION}", stderr)
+        self.assertIn(f"git tag -d data-{VERSION}", stderr)
         self.assertNotIn("published:", stdout)
         release = self.out / f"data-{VERSION}"
         self.assertIn(str(release), stderr)
@@ -607,6 +611,47 @@ class PublishTests(ReleaseTestCase):
         self.assertEqual(runner.calls[ls_remote[0]][-1], f"refs/tags/data-{VERSION}")
         self.assertLess(ls_remote[0], create[0])
         self.assertEqual([call for call in self.runner.calls if call[:2] == ["git", "ls-remote"]], [], "a dry run asks no remote")
+
+    # Value: protects=only a tag whose ref is exactly refs/tags/<tag> (or its peeled ^{} line) counts as already on origin; fails_when=ls-remote lines for other refs are read as the tag (substring match refuses a good release) or the peeled line of an annotated tag is missed; why_new=the origin test's mock only ever answers with the asked ref; seam=main with a scripted git ls-remote; no_claim=the real remote (scripted output)
+    def test_origin_tag_match_is_exact_and_sees_peeled_annotated_tags(self) -> None:
+        tag = f"refs/tags/data-{VERSION}"
+        decoys = f"{'1' * 40}\trefs/tags/data-{VERSION}-rc\n{'2' * 40}\trefs/tags/old/data-{VERSION}\n"
+        runner = Runner(ls_remote_stdout=decoys)
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assertEqual(code, 0, stderr)
+        shutil.rmtree(self.out)
+        runner = Runner(ls_remote_stdout=decoys + f"{'3' * 40}\t{tag}^{{}}\n")
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assert_refused(code, stderr, "already exists on origin")
+        self.assertEqual(runner.gh("release", "create"), [])
+
+    # Value: protects=an existing release directory is reused only when every built file is present as a regular file with equal bytes; fails_when=a missing file, a symlink standing in for a file, or a plain file in place of the directory is accepted as the rehearsed release; why_new=the existing refusal tests cover an extra file and different changes.json only; seam=main; no_claim=more than 6 differences (message truncation)
+    def test_an_existing_directory_with_a_missing_file_a_symlink_or_no_directory_is_refused(self) -> None:
+        code, _, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        release = self.out / f"data-{VERSION}"
+        original = (release / "CHANGES.md").read_bytes()
+        (release / "CHANGES.md").unlink()
+        mutations = {"missing CHANGES.md": "missing CHANGES.md"}
+        for label, fragment in mutations.items():
+            with self.subTest(label):
+                code, _, stderr = self.run_script("--initial", "--publish")
+                self.assertEqual(code, 1, stderr)
+                self.assertIn("already exists and differs from this release", stderr)
+                self.assertIn(fragment, stderr)
+        (release / "CHANGES.md").write_bytes(original)
+        (release / "SHA256SUMS").unlink()
+        (release / "SHA256SUMS").symlink_to(release / "changes.json")
+        with self.subTest("symlinked SHA256SUMS"):
+            code, _, stderr = self.run_script("--initial", "--publish")
+            self.assertEqual(code, 1, stderr)
+            self.assertIn("different SHA256SUMS", stderr)
+        shutil.rmtree(release)
+        release.write_text("not a directory", encoding="utf-8")
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("not a directory", stderr)
+        self.assertEqual(release.read_text(encoding="utf-8"), "not a directory")
 
     # Value: protects=--publish refuses an export built without a licence string even though it carries LICENSE-DATA.md; fails_when=an empty manifest licence passes; why_new=the project documentation promises the publish step refuses on an empty string; seam=main; no_claim=string content
     def test_publish_refuses_an_export_without_a_licence_string(self) -> None:

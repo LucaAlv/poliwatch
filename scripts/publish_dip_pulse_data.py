@@ -474,7 +474,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             f"gh release create failed: {result.stderr.strip() or 'no message'}. The release directory {release_dir} is kept; "
             f"the same command publishes it once the cause is fixed. gh may have left a tag or a release behind: check with "
             f"git ls-remote --tags origin refs/tags/{tag} and gh release view {tag}, and delete what this run left "
-            f"(gh release delete {tag} --cleanup-tag, or git push origin :refs/tags/{tag}) before running it again"
+            f"(gh release delete {tag} --cleanup-tag, or git push origin :refs/tags/{tag}; and git tag -d {tag} if a fetch "
+            f"brought that tag into this clone) before running it again"
         )
     out(f"published: {result.stdout.strip()}")
 
