@@ -174,6 +174,23 @@ class CommitLookupTests(unittest.TestCase):
         self.assertEqual(rev.blob_sha256(repo, head, "a.txt"), hashlib.sha256(b"one\n").hexdigest())
         self.assertIsNone(rev.blob_sha256(repo, head, "missing.txt"))
 
+    # Value: protects=a 12-hex release revision resolves to the one commit whose id starts with those digits, never to a branch or tag that happens to carry that name; fails_when=rev-parse resolves the refname first (release item 3, reproduced) so the release targets and hashes another commit, or a ref named like digits no object has passes as a commit; why_new=release item 3; seam=full_commit; no_claim=prefixes shared by two commits (needs a hash collision at 12 digits)
+    def test_full_commit_ignores_refs_named_like_the_digits(self) -> None:
+        repo = make_repo({"a.txt": "one\n"})
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        first = git(repo, "rev-parse", "HEAD")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        git(repo, "commit", "-qam", "second")
+        second = git(repo, "rev-parse", "HEAD")
+        git(repo, "branch", second[:12], first)  # a branch named like the second commit, pointing at the first
+        git(repo, "tag", first[:12], second)  # a tag named like the first commit, pointing at the second
+        git(repo, "branch", "0123456789ab", first)  # digits no object has
+        self.assertEqual(rev.full_commit(repo, second[:12]), second)
+        self.assertEqual(rev.full_commit(repo, first[:12]), first)
+        self.assertIsNone(rev.full_commit(repo, "0123456789ab"))
+        blob = git(repo, "rev-parse", "HEAD:a.txt")
+        self.assertIsNone(rev.full_commit(repo, blob[:12]), "a blob is not a commit")
+
 
 class AuthoredInputsTests(unittest.TestCase):
     def setUp(self) -> None:
