@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.6.0] - 2026-11-17
+
+The sittings T4 still has to acquire can now be stored without the build refusing on a speaker id the Bundestag printed for two people. The WP 18 run had stopped on two such ids, and the same name check run offline over the 719 stored sittings and the XML of the 83 T4 sittings finds exactly three; each now says who spoke, so the WP 19 run does not stop on the third. On the 719 stored sittings, one Rede moves: Thomas Heilmann's 2016 speech as Berlin Senator joins his own page. Persons 2,040 → 2,039, person pages 1,658 → 1,657, and the `erste-reden` fact of week 2018-W47 3 → 2, because his first Rede in our coverage is the 2016 one, not his first as an MdB in 2018 (the percentiles of 2018-W47, 2021-W25, 2021-W45 and 2021-W46 shift with it). The stub record goes (`mps` 6,387 → 6,386) and so does the fact's citation of the 2018 Rede (`fact_sources` 2,964 → 2,963); nothing else in the store moves.
+
+### Fixed
+
+- **Three speaker ids printed for two people now file each Rede under its own speaker.** `11004105` is Dr. Thomas de Maizière's id (also printed "Dr. Thomas Maizière" in part of WP 18), and 18/223 prints it for Bundespräsident Frank-Walter Steinmeier's address. `11002190` is Dr. Hermann Otto Solms's id, and 19/1 prints it for Präsident Wolfgang Schäuble's inaugural address. `999990055` is printed for Monika Heinold, Ministerin (Schleswig-Holstein), in 18/180 and for Thomas Heilmann, Senator (Berlin), in 18/183. Steinmeier's, Schäuble's and Heilmann's units land on their own Redner-IDs (`11004167`, `11001938`, `11004741`) and Heinold's on her DIP person (6983). A trusted abgeordnetenwatch profile found through the shared id does not travel with them.
+- **An MdB whose own id the source also printed for a guest keeps that id.** A reviewed entry can name the id's holder: de Maizière and Solms keep their records, persons and profiles unchanged on the 719 stored sittings, and only the guest's address leaves. Without a holder, every de Maizière and Solms record would have been put under review.
+
 ## [0.46.5.0] - 2026-11-17
 
 The release script closes five gaps it had to close before the first real `--publish`. A dry run and the `--publish` after it can now share one output directory, and a failed `gh release create` says how to recover. The script refuses a tag that already exists on origin, a commit id that a branch or tag of the same name could stand in for, a previous manifest that is not the latest release, an export older than the latest release, and an export file that changed after it was checked. Only the release script and its checks change; no figure, export, page or schema does.
