@@ -838,19 +838,21 @@ class FollowUpReleaseTests(ReleaseTestCase):
         self.addCleanup(git, self.repo, "tag", "-d", "data-2026.10.01")
         self.runner = Runner(remote_tags=["data-2026.10.01"])
 
-    # Value: protects=--previous-manifest must be the latest release on origin (git ls-remote --tags, owner decision 2026-11-17), in a dry run too, and is refused when origin holds no release tag or cannot be asked; fails_when=an older previous manifest gives false deltas and can hide a schema change from the authored schema_changes guard (release item 4), a clone that has not fetched (or holds an unpushed tag) decides which release is latest, or a follow-up release is assembled against a release nobody published; why_new=release item 4 took the latest from local tags; seam=main with local tags and a recorded origin; no_claim=whether the previous manifest's bytes are the published asset's (item 12b)
+    # Value: protects=--previous-manifest must be the latest published release (origin's tags via git ls-remote, and under --publish also gh's releases; owner decision 2026-11-17), in a dry run too, and is refused when origin holds no release tag or cannot be asked; fails_when=an older previous manifest gives false deltas and can hide a schema change from the authored schema_changes guard (release item 4), a clone that has not fetched (or holds an unpushed tag) decides which release is latest, or a follow-up release is assembled against a release nobody published; why_new=release item 4 took the latest from local tags; seam=main with local tags and a recorded origin; no_claim=whether the previous manifest's bytes are the published asset's (item 12b)
     def test_the_previous_manifest_must_be_the_latest_release_on_origin(self) -> None:
         previous = self.work / "previous.json"
         previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
         args = ("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}))
-        for label, runner in (
-            ("dry run", Runner(remote_tags=["data-2026.10.01", "data-2026.10.20"])),
-            ("--publish", Runner(remote_tags=["data-2026.10.01", "data-2026.10.20"], gh_tags=["data-2026.10.01"])),
+        for label, runner, searched in (
+            ("dry run", Runner(remote_tags=["data-2026.10.01", "data-2026.10.20"]), "origin's tags"),
+            ("--publish", Runner(remote_tags=["data-2026.10.01", "data-2026.10.20"], gh_tags=["data-2026.10.01"]), "origin's tags and gh's releases"),
+            # gh may publish to another repository than origin: its newer release counts too (Codex review).
+            ("--publish, newer release only in gh", Runner(remote_tags=["data-2026.10.01"], gh_tags=["data-2026.10.01", "data-2026.10.20"]), "origin's tags and gh's releases"),
         ):
             with self.subTest(label):
-                extra = ("--publish",) if label == "--publish" else ()
+                extra = ("--publish",) if label.startswith("--publish") else ()
                 code, _, stderr = self.run_script(*args, *extra, runner=runner)
-                self.assert_refused(code, stderr, "is release 2026.10.01, but the latest release on origin is 2026.10.20", "datenstand.json of 2026.10.20")
+                self.assert_refused(code, stderr, f"is release 2026.10.01, but the latest release ({searched}) is 2026.10.20", "datenstand.json of 2026.10.20")
                 self.assertEqual(runner.gh("release", "create"), [])
                 self.assertIn(["git", "ls-remote", "--tags", "origin", "refs/tags/data-*"], runner.calls)
         # A local tag origin does not hold (not pushed, or a fetch from elsewhere) does not decide the latest release.
@@ -868,7 +870,7 @@ class FollowUpReleaseTests(ReleaseTestCase):
         shutil.rmtree(self.out)
         # The clone knows the release, origin does not: no release has been published.
         code, _, stderr = self.run_script(*args, runner=Runner())
-        self.assert_refused(code, stderr, "origin holds no data release tag", "--initial")
+        self.assert_refused(code, stderr, "no data release is published (origin's tags", "--initial")
         code, _, stderr = self.run_script(*args, runner=Runner(ls_remote_fails=True))
         self.assert_refused(code, stderr, "cannot ask origin for its release tags", "git ls-remote failed")
 

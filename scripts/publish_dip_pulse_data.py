@@ -506,9 +506,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             f"(the short string of LICENSE-DATA.md, {ADR}) or $BUNDESTAG_PULSE_DATA_LICENSE."
         )
     tag = release_version.tag_for(version)
-    known = local_versions(repo_root, run)
-    if args.publish:
-        known |= remote_versions(repo_root, run)
+    released = remote_versions(repo_root, run) if args.publish else set()
+    known = local_versions(repo_root, run) | released
     if version in known:
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
     # Origin's tags count for "older than the latest" and the previous manifest,
@@ -516,6 +515,11 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     # message, which names how to delete it.
     on_origin = origin_versions(repo_root, run) if args.previous_manifest else set()
     newest = max(known | on_origin, key=release_version.version_key) if known | on_origin else None
+    # The latest release a --previous-manifest must be: origin's tags, and under
+    # --publish also gh's releases (gh may publish to another repository than
+    # origin); never a local tag (owner decision 2026-11-17).
+    published = on_origin | released
+    searched = "origin's tags and gh's releases" if args.publish else "origin's tags"
     if newest and release_version.version_key(version) < release_version.version_key(newest):
         # A stale export would go out after a newer release, its changelog
         # computed backwards from that newer release's manifest.
@@ -535,15 +539,14 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         if problem:
             raise ReleaseError(f"the previous manifest {args.previous_manifest} {problem}")
         # An older release's manifest gives false deltas and can hide a schema
-        # change from the authored schema_changes guard (release item 4). The
-        # latest is origin's: a clone that has not fetched, or holds a tag it
-        # never pushed, must not decide it (owner decision 2026-11-17).
-        if not on_origin:
-            raise ReleaseError("--previous-manifest, but origin holds no data release tag (git ls-remote --tags origin); give --initial for the first release")
-        latest = max(on_origin, key=release_version.version_key)
+        # change from the authored schema_changes guard (release item 4). A clone
+        # that has not fetched, or holds a tag it never pushed, must not decide it.
+        if not published:
+            raise ReleaseError(f"--previous-manifest, but no data release is published ({searched}, git ls-remote --tags origin); give --initial for the first release")
+        latest = max(published, key=release_version.version_key)
         if previous.get("tag") != latest:
             raise ReleaseError(
-                f"the previous manifest {args.previous_manifest} is release {previous.get('tag')}, but the latest release on origin is {latest}; "
+                f"the previous manifest {args.previous_manifest} is release {previous.get('tag')}, but the latest release ({searched}) is {latest}; "
                 f"give the datenstand.json of {latest}"
             )
     authored = release_changes.load_authored(args.changes) if args.changes else None
