@@ -101,6 +101,43 @@
       }
     },
     {
+      "xml_redner_id": "11004105",
+      "note": "docs/source-errors.md E7. Dr. Thomas de Maizière's own Redner-ID (MdB, Bundesminister), printed as 'Thomas Maizière' in part of WP 18. 18/223 prints it for Bundespräsident Dr. Frank-Walter Steinmeier's address (ID1822300400); his own Redner-ID is 11004167.",
+      "labels": {
+        "Thomas de Maizière": "de-maiziere",
+        "Thomas Maizière": "de-maiziere",
+        "Frank-Walter Steinmeier": "steinmeier"
+      },
+      "own_ids": {
+        "de-maiziere": "xml:11004105",
+        "steinmeier": "xml:11004167"
+      }
+    },
+    {
+      "xml_redner_id": "11002190",
+      "note": "docs/source-errors.md E7. Dr. Hermann Otto Solms's own Redner-ID (MdB, FDP). 19/1 prints it for Präsident Dr. Wolfgang Schäuble's inaugural address (ID19101300); his own Redner-ID is 11001938.",
+      "labels": {
+        "Hermann Otto Solms": "solms",
+        "Wolfgang Schäuble": "schaeuble"
+      },
+      "own_ids": {
+        "solms": "xml:11002190",
+        "schaeuble": "xml:11001938"
+      }
+    },
+    {
+      "xml_redner_id": "999990055",
+      "note": "docs/source-errors.md E7. WP 18: Ministerin (Schleswig-Holstein) in 18/180; Senator (Berlin) in 18/183, MdB from WP 19 under his own Redner-ID.",
+      "labels": {
+        "Monika Heinold": "heinold",
+        "Thomas Heilmann": "heilmann"
+      },
+      "own_ids": {
+        "heinold": "dip:6983",
+        "heilmann": "xml:11004741"
+      }
+    },
+    {
       "xml_redner_id": "999990134",
       "note": "docs/source-errors.md C8. One person, not a shared id: 20/82 runs Mende's and Kreck's name fields together. The chair and the printed label name Dr. Lena Kreck, Senatorin (Berlin).",
       "labels": {

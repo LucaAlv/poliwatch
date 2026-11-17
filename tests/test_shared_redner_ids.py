@@ -6,10 +6,14 @@ from __future__ import annotations
 import itertools
 import json
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
-import _support  # noqa: F401
+import _support
+import derive
 import persist_dip_pulse_store as store
 import person_registry as registry
+import reviewed_units
+import validate_dip_protocol as dip
 from _registry_fixture import RegistryFixture
 
 PROTOCOL = {"id": "p1", "dokumentnummer": "19/1", "datum": "2018-01-01"}
@@ -43,6 +47,39 @@ ROSTER = [
 
 def speaker(xml_id, name, fraktion=None, role=None, **extra):
     return {"xml_redner_id": xml_id, "display_name": name, "fraktion": fraktion, "role": role, **extra}
+
+
+#: One <rede> of each sitting the T4 run acquires (and two stored ones), trimmed from
+#: the Bundestag XML to the speaker line and two paragraphs (docs/source-errors.md E7).
+T4_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "shared-redner-ids"
+
+#: Where each of those Reden belongs: (sitting, rede_id) -> record identity.
+T4_HOMES = {
+    ("18/223", "ID1822300400"): "xml:11004167",  # Steinmeier, Bundespräsident, printed under 11004105
+    ("18/119", "ID1811903700"): "xml:11004105",  # Dr. Thomas de Maizière, the id's holder
+    ("18/100", "ID1810007200"): "xml:11004105",  # the same, printed "Dr. Thomas Maizière"
+    ("19/1", "ID19101300"): "xml:11001938",  # Schäuble, Präsident, printed under 11002190
+    ("19/37", "ID193701000"): "xml:11002190",  # Dr. Hermann Otto Solms, the id's holder
+    ("18/180", "ID1818001000"): "dip:6983",  # Monika Heinold, Ministerin (Schleswig-Holstein)
+    ("18/183", "ID1818302300"): "xml:11004741",  # Thomas Heilmann, Senator (Berlin)
+}
+
+
+def t4_units():
+    """(sitting, rede_id, speaker, sideless) of every unit the parser reads from the
+    fixtures, with the reviewed entries of those Reden, as the build reads them."""
+    units = []
+    for path in sorted(T4_FIXTURES.glob("*.xml")):
+        xml = path.read_text(encoding="utf-8")
+        root = ET.fromstring(xml)
+        sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+        rede_ids = {rede.get("id") for rede in root.iter("rede")}
+        with _support.shipped_reviewed_units():
+            reviewed = [entry for entry in reviewed_units.for_sitting(sitting) if entry["rede_id"] in rede_ids]
+        for item in dip.parse_protocol_xml(xml, reviewed)["agenda_items"]:
+            units.extend((sitting, unit["rede_id"], unit["speaker"], unit.get("kind") in derive.SIDELESS_KINDS)
+                         for key in ("speeches", "contributions") for unit in item[key])
+    return units
 
 
 class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
@@ -163,6 +200,70 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         row = conn.execute("SELECT m.display_name, p.name FROM mps m JOIN parties p ON p.id=m.party_id WHERE m.identity_key='xml:11004157'").fetchone()
         self.assertEqual(tuple(row), ("Dr. Carsten Sieling", "SPD"))
 
+    def build_t4(self, conn=None, units=None, profile=None):
+        conn = conn or self.open_store(f"t4-{getattr(self, 'stores', 0)}.sqlite")
+        self.stores = getattr(self, "stores", 0) + 1
+        registry.begin_build(conn)
+        self.up(conn, "roster:6983", "dip:6983", "Monika Heinold, MdBR (Finanzministerin), Schleswig-Holstein", dip="6983", mdb=True)
+        for sitting, rede_id, printed, sideless in units or t4_units():
+            printed = {**printed, "abgeordnetenwatch": profile} if profile else printed
+            store.resolve_speaker(conn, printed, store.utc_now(), sitting, rede_id, f"{sitting}/{rede_id}", PROTOCOL, sideless=sideless)
+        registry.reconcile(conn)
+        return conn
+
+    def home_of(self, conn, occurrence):
+        return conn.execute("SELECT r.identity_key FROM person_bindings b JOIN person_records r ON r.id=b.record_id WHERE b.id=?",
+                            (occurrence,)).fetchone()[0]
+
+    # Value: protects=the T4 run's name check meets the three ids the Bundestag printed for two people in the 83 sittings, read from the real XML; fails_when=the parser stops reading the printed Redner-ID or name, so the refusal the WP 18 run hit is no longer reproduced; why_new=the WP 18 run refused on 11004105 and 999990055, and 19/1 would refuse the WP 19 run on 11002190; seam=validate_dip_protocol.parse_protocol_xml
+    def test_the_t4_sittings_refuse_without_their_entries(self):
+        self.assertEqual({(sitting, rede_id) for sitting, rede_id, *_ in t4_units()}, set(T4_HOMES))
+        with self.correction_file({}):
+            with self.assertRaisesRegex(registry.RegistryError, "Redner-IDs printed for more than one person: "
+                                        r"11002190 \(Dr. Hermann Otto Solms, Dr. Wolfgang Schäuble\); "
+                                        r"11004105 \(Dr. Frank-Walter Steinmeier, Dr. Thomas Maizière, Dr. Thomas de Maizière\); "
+                                        r"999990055 \(Monika Heinold, Thomas Heilmann\)\."):
+                self.build_t4()
+
+    # Value: protects=each speaker of the three ids lands under their own id: Steinmeier and Schäuble on their MdB ids, Heilmann on his WP 19 id, Heinold on her DIP person, while de Maizière and Solms keep the id that is theirs; fails_when=an entry is dropped, a label misses a printed spelling ("Maizière"), or the holder's occurrences are partitioned off their own record; why_new=the three entries and the holder are new; seam=none
+    def test_the_t4_shared_ids_file_each_speaker_under_their_own_id(self):
+        conn = self.build_t4()
+        self.assertEqual({key: self.home_of(conn, "/".join(key)) for key in T4_HOMES}, T4_HOMES)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_records WHERE partition IS NOT NULL").fetchone()[0], 0)
+        self.assertEqual(self.person_of(conn, "18/119/ID1811903700"), self.person_of(conn, "18/100/ID1810007200"))
+        self.assertEqual(self.person_of(conn, "18/180/ID1818001000"), self.person_of_identity(conn, "dip:6983"))
+
+    # Value: protects=the holder keeps the abgeordnetenwatch profile its Redner-ID found and stays a join key, and the speaker printed under it does not get it; fails_when=the holder's record is marked partitioned or loses its ext_id profile, or Steinmeier's occurrence keeps de Maizière's profile; why_new=a holder is new; seam=build_dip_pulse_site.py reparse_cached_reports (profile_follows_redner_id)
+    def test_a_holder_keeps_the_profile_of_its_id(self):
+        profile = {"id": 79042, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/thomas-de-maiziere"}
+        units = [unit for unit in t4_units() if unit[2]["xml_redner_id"] == "11004105"]
+        conn = self.build_t4(units=units, profile=profile)
+        # A trusted profile keys the record by its abgeordnetenwatch id, as for any MdB.
+        self.assertEqual({self.home_of(conn, occurrence) for occurrence in ("18/119/ID1811903700", "18/100/ID1810007200")}, {"aw:79042"})
+        rows = {row["identity_key"]: row for row in conn.execute("SELECT identity_key, aw_politician_id, aw_match FROM mps")}
+        self.assertEqual((rows["aw:79042"]["aw_politician_id"], rows["aw:79042"]["aw_match"]), (79042, "ext_id"))
+        self.assertIsNone(rows["xml:11004167"]["aw_politician_id"])
+        self.assertTrue(registry.profile_follows_redner_id("11004105"))
+        steinmeier = registry.corrected_speaker(speaker("11004105", "Dr. Frank-Walter Steinmeier", abgeordnetenwatch=profile), "p1", "ID1")
+        self.assertEqual((steinmeier["xml_redner_id"], steinmeier["abgeordnetenwatch"]), ("11004167", {}))
+        holder = registry.corrected_speaker(speaker("11004105 999990001", "Dr. Thomas de Maizière", abgeordnetenwatch=profile), "p1", "ID1")
+        self.assertEqual((holder["xml_redner_id"], holder["abgeordnetenwatch"]), ("11004105 999990001", profile))
+
+    # Value: protects=a store that bound Steinmeier's address to de Maizière's record replays with it moved off and with de Maizière's record, occurrences and person unchanged; fails_when=the holder's record counts as a shared record, so all of his occurrences move to a new record (the 719 replay would move his page), or Steinmeier's binding stays; why_new=the stored 719 hold de Maizière's and Solms's Reden under the ids now listed; seam=none
+    def test_a_holder_record_survives_a_replay(self):
+        with self.correction_file({}):
+            old = self.open_store("t4-old.sqlite")
+            registry.begin_build(old)
+            for sitting, rede_id, printed, sideless in t4_units():
+                store.resolve_speaker(old, printed, store.utc_now(), sitting, rede_id, f"{sitting}/{rede_id}", PROTOCOL, sideless=sideless)
+        before = {row["identity_key"]: (row["id"], row["home_person_id"]) for row in old.execute("SELECT id, identity_key, home_person_id FROM person_records")}
+        replayed = self.build_t4(self.next_build(old))
+        self.assertEqual({key: self.home_of(replayed, "/".join(key)) for key in T4_HOMES}, T4_HOMES)
+        for identity in ("xml:11004105", "xml:11002190"):
+            row = replayed.execute("SELECT id, home_person_id FROM person_records WHERE identity_key=?", (identity,)).fetchone()
+            self.assertEqual(tuple(row), before[identity], identity)
+        self.assertEqual(self.occurrence_groups(replayed), self.occurrence_groups(self.build_t4()))
+
     # Value: protects=Friemann-Jennert keeps her Rede on the page of her roster record while Kramme's answers leave it; fails_when=her own id stops resolving to dip:7189; why_new=she holds no Redner-ID of her own and the shared one held 14 answers that are not hers; seam=none
     def test_friemann_jennert_keeps_her_rede_and_loses_the_answers(self):
         speakers = [("999990108", "Maika Friemann-Jennert", "CDU/CSU", None), ("999990108", "Anette Kramme", None, STAATSSEKRETAERIN)]
@@ -173,7 +274,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
 
     # Value: protects=a name nobody reviewed under a listed id stops the build; fails_when=an unlabelled name joins one of the listed people; why_new=the five entries are new; seam=none
     def test_an_unreviewed_name_under_a_listed_id_is_refused(self):
-        for xml_id in ("999990108", "999990124", "999990127", "999990141", "10000"):
+        for xml_id in ("999990108", "999990124", "999990127", "999990141", "10000", "11004105", "11002190", "999990055"):
             with self.subTest(xml_id):
                 with self.assertRaisesRegex(registry.RegistryError, f"Shared Redner-ID {xml_id}"):
                     self.build(speakers=[(xml_id, "Erika Mustermann", "SPD", None)])
@@ -250,11 +351,28 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             ({"ada": 1}, "own id of partition owner 'ada' must be a nonempty string"),
             ({"ada": "1"}, "must read xml:<Redner-ID> or dip:<DIP id>"),
             ({"ada": "aw:1"}, "must read xml:<Redner-ID> or dip:<DIP id>"),
-            ({"ada": "xml:9"}, "own id xml:9 of partition owner 'ada' is itself partitioned"),
         ):
             with self.subTest(message), self.correction_file({"partitions": [{**base, "own_ids": own_ids}]}):
                 with self.assertRaisesRegex(registry.RegistryError, message):
                     registry.corrections()
+
+    # Value: protects=a holder is unambiguous: one per id, every other owner leaves under an own id, the holder owns the profile, and an own id never lands on another listed id; fails_when=the loader accepts a shape that leaves a partition record beside the holder's live record, or two owners for one record; why_new=holders are new; seam=none
+    def test_malformed_holders_are_refused(self):
+        two = {"Ada Example": "ada", "Bea Example": "bea"}
+        for partitions, message in (
+            ([{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9", "bea": "xml:9"}}], "Redner-ID 9 names two holders"),
+            ([{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9"}}], "owner 'bea' of Redner-ID 9 needs an own id beside its holder 'ada'"),
+            ([{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9", "bea": "xml:1"}, "profile_owner": "bea"}],
+             "Redner-ID 9: the profile owner 'bea' is not its holder 'ada'"),
+            ([{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:8"}}, {"xml_redner_id": "8", "labels": {"Cid Example": "cid"}}],
+             "own id xml:8 of partition owner 'ada' is itself partitioned"),
+        ):
+            with self.subTest(message), self.correction_file({"partitions": partitions}):
+                with self.assertRaisesRegex(registry.RegistryError, message):
+                    registry.corrections()
+        for extra in ({}, {"profile_owner": None}):  # left out or null: the holder owns the profile
+            with self.subTest(extra), self.correction_file({"partitions": [{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9", "bea": "dip:1"}, **extra}]}):
+                self.assertEqual(registry.corrections()["partitions"][0]["profile_owner"], "ada")
 
 
 if __name__ == "__main__":
