@@ -568,7 +568,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     if not args.publish:
         out("dry run: nothing was published. The command --publish would run:")
         out(shlex.join(command))
-        out("immutability checks: local tags (best effort), and origin's release tags for a --previous-manifest; --publish also asks gh for existing releases and origin for the tag.")
+        out("immutability checks: local tags only (best effort); --publish also asks gh for existing releases and origin for the tag. "
+            "A --previous-manifest is checked against origin's release tags.")
         out(
             "hosting: GitHub release assets are flat, but the site links <base><generation>/<file>; "
             "a GitHub release URL as --base-url does not resolve until the site's link scheme or the host changes "

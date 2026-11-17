@@ -227,7 +227,7 @@ class DryRunTests(ReleaseTestCase):
         uploaded = words[4 : words.index("--title")]
         self.assertIn(str(release / self.manifest["generation"] / self.manifest["files"][0]["name"]), uploaded)
         self.assertIn(str(release / "SHA256SUMS"), uploaded)
-        self.assertIn("best effort", stdout)
+        self.assertIn("immutability checks: local tags only (best effort)", stdout)
         self.assertIn("flat", stdout)
         self.assertIn("LICENSE-DATA.md", stdout)
 
