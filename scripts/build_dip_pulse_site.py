@@ -1687,6 +1687,52 @@ def refile_entry_votes(entries: list[dict[str, Any]], database_path: Path) -> No
     that cannot be read."""
     try:
         cached = read_cached_stammdaten(database_path)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    refile_entries_from(entries, cached)
+
+
+def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten | None) -> str | None:
+    """Why the offline render must not file the vote panels from ``cached`` (the
+    file on disk) for the store at ``database_path``, or None when the store was
+    built from that very file (same sha256 in ``mdb_stammdaten_stand``), or
+    without one and none is cached, or there is no store yet. A refresh swaps
+    the cache before the rebuild, so a rebuild that then failed leaves a new file
+    beside a store whose ``vote_members`` and ``vote_fractions`` carry the old
+    file's moves."""
+    if not database_path.exists():
+        return None
+    try:
+        conn = facts.open_readonly(database_path)
+        try:
+            row = conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        return f"the store {database_path} cannot be read ({exc}); it is left as it is"
+    rebuild = "Fix: run --offline --repersist to rebuild the store from the cached reports"
+    if row is None and cached is None:
+        return None
+    if row is not None and cached is not None and row[1] == cached.sha256:
+        return None
+    if row is None:
+        return (f"a MdB-Stammdaten file is cached (Stand {cached.stand}, sha256 {cached.sha256[:12]}…), but the store was "
+                "built without one, so the vote panels would re-file Stimmen the store keeps under the page's groups. "
+                f"{rebuild} and that file.")
+    if cached is None:
+        return (f"no MdB-Stammdaten file is cached, but the store was built with one (Stand {row[0]}, sha256 {row[1][:12]}…), "
+                "so the vote panels would put back the Stimmen the store re-filed. "
+                f"{rebuild} without it, or restore that file to {stammdaten.cache_path(database_path)} and re-run.")
+    return (f"the cached MdB-Stammdaten file (Stand {cached.stand}, sha256 {cached.sha256[:12]}…) is not the file the store "
+            f"was built with (Stand {row[0]}, sha256 {row[1][:12]}…), so the vote panels would file Stimmen differently "
+            f"from the store. {rebuild} and the cached file.")
+
+
+def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammdaten | None) -> None:
+    """``refile_entry_votes`` with the Stammdaten already read (None: no file
+    is cached, so the marks a cached report holds are cleared). Raises
+    DatabaseRebuildError for records the derivation refuses."""
+    try:
         source = (derive.refiling_source(derive.mdb_zugehoerigkeiten(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE), cached.stand)
                   if cached else None)
     except derive.StammdatenError as exc:
@@ -14828,11 +14874,24 @@ def main() -> int:
                 return 1
             warn_unparsed_reports(cached_entries)
             # The store may have been rebuilt without writing these reports back
-            # (validate_store_gate --persist-only): the panels must match it.
+            # (validate_store_gate --persist-only): the panels must match it, so
+            # they are filed from the file the store was built with, read once.
             try:
-                refile_entry_votes(cached_entries, database_path)
+                cached_stammdaten = read_cached_stammdaten(database_path)
+            except derive.StammdatenError as exc:
+                print(f"ERROR [cached input]: The cached MdB-Stammdaten cannot be read: {exc}. "
+                      "Fix: refresh the file with --enrich mdb-stammdaten, or remove it and rebuild the store "
+                      "with --offline --repersist; then re-run.", file=sys.stderr)
+                return 1
+            mismatch = stammdaten_store_mismatch(database_path, cached_stammdaten)
+            if mismatch:
+                print(f"ERROR [cached input]: {mismatch}", file=sys.stderr)
+                return 1
+            try:
+                refile_entries_from(cached_entries, cached_stammdaten)
             except DatabaseRebuildError as exc:
-                print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten or remove it, then re-run.", file=sys.stderr)
+                print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten, or remove it "
+                      "and rebuild the store with --offline --repersist; then re-run.", file=sys.stderr)
                 return 1
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before
