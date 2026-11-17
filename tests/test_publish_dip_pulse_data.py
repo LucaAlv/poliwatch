@@ -749,6 +749,22 @@ class FollowUpReleaseTests(ReleaseTestCase):
         code, _, stderr = self.run_script(*args)
         self.assertEqual(code, 0, stderr)
 
+    # Value: protects=an export whose version is older than the latest known release is refused, local tag or gh release; fails_when=a stale export goes out after a newer release and its changelog is computed backwards from that release's manifest; why_new=code-review of release item 4 (the latest-release check assumed the export is newer); seam=main; no_claim=clock skew between machines
+    def test_an_export_older_than_the_latest_release_is_refused(self) -> None:
+        previous = self.work / "previous.json"
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.11.05"}), encoding="utf-8")
+        args = ("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}))
+        git(self.repo, "tag", "data-2026.11.05")
+        try:
+            code, _, stderr = self.run_script(*args)
+        finally:
+            git(self.repo, "tag", "-d", "data-2026.11.05")
+        self.assert_refused(code, stderr, f"release {VERSION} is older than the latest known release 2026.11.05")
+        runner = Runner(gh_tags=["data-2026.10.01", "data-2026.11.05"])
+        code, _, stderr = self.run_script(*args, "--publish", runner=runner)
+        self.assert_refused(code, stderr, "older than the latest known release 2026.11.05")
+        self.assertEqual(runner.gh("release", "create"), [])
+
     # Value: protects=a later release assembles its changelog from the previous manifest and the authored file and is refused without them; fails_when=a missing --changes passes, the previous version is not recorded, or the corrections do not reach changes.json and CHANGES.md; why_new=a researcher must be able to check a cited figure against the release before; seam=main; no_claim=changelog rules (tested in test_release_changes)
     def test_a_later_release_needs_and_uses_the_changes_file(self) -> None:
         previous = self.work / "previous.json"

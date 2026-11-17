@@ -410,6 +410,11 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         known |= remote_versions(repo_root, run)
     if version in known:
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
+    newest = max(known, key=release_version.version_key) if known else None
+    if newest and release_version.version_key(version) < release_version.version_key(newest):
+        # A stale export would go out after a newer release, its changelog
+        # computed backwards from that newer release's manifest.
+        raise ReleaseError(f"release {version} is older than the latest known release {newest}; export again with a newer --data-tag (--next-version)")
     if args.initial and known:
         raise ReleaseError(f"--initial, but data releases already exist ({', '.join(sorted(known, key=release_version.version_key))}); give --previous-manifest instead")
     if args.publish and remote_tag_exists(repo_root, run, tag):

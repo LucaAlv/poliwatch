@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.46.5.0] - 2026-11-17
 
-The release script closes five gaps it had to close before the first real `--publish`. A dry run and the `--publish` after it can now share one output directory, and a failed `gh release create` says how to recover. The script refuses a tag that already exists on origin, a commit id that a branch or tag of the same name could stand in for, a previous manifest that is not the latest release, and an export file that changed after it was checked. Only the release script and its checks change; no figure, export, page or schema does.
+The release script closes five gaps it had to close before the first real `--publish`. A dry run and the `--publish` after it can now share one output directory, and a failed `gh release create` says how to recover. The script refuses a tag that already exists on origin, a commit id that a branch or tag of the same name could stand in for, a previous manifest that is not the latest release, an export older than the latest release, and an export file that changed after it was checked. Only the release script and its checks change; no figure, export, page or schema does.
 
 ### Fixed
 
@@ -13,6 +13,7 @@ The release script closes five gaps it had to close before the first real `--pub
 - **A tag already on origin is refused.** `gh release create` attaches to an existing tag and ignores `--target`, so `--publish` now asks origin first and refuses when the tag exists or origin cannot be asked.
 - **A branch or tag named like the export's commit can no longer stand in for it.** The 12-digit revision is looked up among commit ids only, and exactly one commit must match.
 - **`--previous-manifest` must be the latest release.** Its version must be the newest one known (local `data-*` tags; with `--publish` also gh's releases), and it is refused when no release is known. A changelog against an older release reported false changes and could hide a schema change.
+- **An export older than the latest release is refused.** An export whose version is older than the newest known release would otherwise go out after it, with its changelog computed backwards from the newer release.
 - **An export file swapped after the check is refused.** Before the staged copy becomes the release directory, its `datenstand.json` is checked against the bytes that were verified and every file against the manifest's size and SHA-256.
 
 ## [0.46.4.0] - 2026-11-17
