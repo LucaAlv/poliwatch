@@ -119,9 +119,9 @@ A list of places where an official source file says something wrong or files con
 - **Effect on poliwatch:** vote 990 read "Antrag: Angenommen" and "der Antrag wurde angenommen (laut Beschluss auf bundestag.de)".
 - **Corrected in poliwatch, 2026-11-07:** on a vote established as a Beschlussempfehlung to reject, a Ja majority outranks the box's word "Antrag … angenommen": the word is read as the ballot's (`validate_dip_protocol._read_contradicted_official_result`). Vote 990 now reads "Antrag: Abgelehnt". `votes.result_scope` moved from `application` to `proposition`, and `result_raw` and `result_source` stay `accepted` and `official`. The Bundestag's page still shows the error, so the entry stands for a correction request.
 
-### E7. Seven speaker ids are given to more than one person
+### E7. Ten speaker ids are given to more than one person
 
-- **Status:** verified 2026-11-07, on the 716 cached XML files of the A3 store, scanning every `<redner>`. The first scan on 2026-11-06 found two of these ids. The 85 excluded sittings were not scanned.
+- **Status:** verified 2026-11-07, on the 716 cached XML files of the A3 store, scanning every `<redner>`. The first scan on 2026-11-06 found two of these ids. The last three were found on 2026-11-17, when the T4 run's WP 18 rebuild refused on two of them: the build's name check, run offline over the parsed units of the 719 stored sittings and the XML of the 83 sittings T4 acquires, found those two and `11002190` in 19/1. 21/106's XML has not been fetched, so it was not scanned.
 - **Source:** `https://dserver.bundestag.de/btp/<WP>/`, the files of the sittings named below.
 - **What is wrong:** `<redner id>` is meant to identify one person.
   - `id="10000"`: "Marja-Liisa Völlers (SPD)" in 19/49 and 19/57; "Olaf in der Beek (FDP)" in 19/16; "Dr. Carsten Sieling, Bürgermeister (Bremen)" in 19/60. The Sieling entry also prints "Carsten Sieling," as `<vorname>` and "Bürgermeister" as `<nachname>`.
@@ -131,8 +131,11 @@ A list of places where an official source file says something wrong or files con
   - `id="999990127"`: Enak Ferlemann in 18/44, 18/54, 18/59, 18/76, 18/81, 18/87 and 18/91; Peter Beuth in 20/46, 20/75 and 20/95.
   - `id="999990109"`: Gabriele Lösekrug-Möller in seven sittings of WP 18; Tim Ostermann in an annex of 19/234.
   - `id="11003609"`: Sibylle Pfeiffer; Michael Roth, once, in the speaker list of 18/230.
+  - `id="11004105"`: Dr. Thomas de Maizière's own id, printed for him in 69 sittings of WP 18 and 19 (in part of WP 18 as "Dr. Thomas Maizière"); Bundespräsident Dr. Frank-Walter Steinmeier's address in 18/223 (`ID1822300400`), whose own id is `11004167`.
+  - `id="11002190"`: Dr. Hermann Otto Solms's own id; Präsident Dr. Wolfgang Schäuble's inaugural address in 19/1 (`ID19101300`), whose own id is `11001938`.
+  - `id="999990055"`: Monika Heinold, Ministerin (Schleswig-Holstein), in 18/180 (`ID1818001000`); Thomas Heilmann, Senator (Berlin), in 18/183 (`ID1818302300`), who has his own id `11004741` as an MdB from WP 19.
 - **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
-- **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored.
+- **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored. `11004105`, `11002190` and `999990055` have an entry since 2026-11-17, before the T4 run stores their sittings. De Maizière and Solms hold their ids: their records keep them, and only the other speaker's Rede moves to that speaker's own id.
 
 ### E8. 19/36: a Zu-Protokoll continuation filed under the title of the absentee list
 
