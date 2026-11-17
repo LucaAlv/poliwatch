@@ -46,6 +46,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import zlib
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +64,8 @@ LIST_LIMIT = 25
 MEMBER_LIMIT = 10
 NO_GROUP = "(ohne Zuordnung)"
 PARTY_MDBS_NOTE = "MdB per row of parties"
+#: Display name of a vote_members row whose mp_id has no mps row.
+ORPHAN_NAME = "(no mps row)"
 
 
 class CompareError(Exception):
@@ -140,6 +143,10 @@ class Measured:
     vote_figures: dict[str, tuple[list[str | None], str | None, int | None]] | None = None
     #: vote id -> {member identity_key: (display name, abweichung 1 / 0 / None)}.
     vote_abweichungen: dict[str, dict[str, tuple[str, int | None]]] | None = None
+    #: vote id -> {group name: (yes, no, abstain, absent, total)} from vote_fractions.
+    vote_group_counts: dict[str, dict[str, tuple[Any, ...]]] | None = None
+    #: vote id -> {member key: (display name, party_id name, listed_party_id name)}.
+    vote_member_groups: dict[str, dict[str, tuple[str, str | None, str | None]]] | None = None
     #: name -> {"mps": rows of mps, "mdb": of them MdB, "reden": Reden naming it}
     parties: dict[str, dict[str, int]] | None = None
     has_roster: bool = False
@@ -298,10 +305,27 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
         if store.has("vote_members", "vote_id", "mp_id", "abweichung") and store.has("mps", "id", "identity_key", "display_name"):
             measured.vote_abweichungen = {}
             for vote_id, key, name, flag in conn.execute(
-                "SELECT vm.vote_id, m.identity_key, m.display_name, vm.abweichung FROM vote_members vm "
-                "JOIN mps m ON m.id = vm.mp_id"
+                "SELECT vm.vote_id, COALESCE(m.identity_key, vm.mp_id), COALESCE(m.display_name, ?), vm.abweichung "
+                "FROM vote_members vm LEFT JOIN mps m ON m.id = vm.mp_id",
+                (ORPHAN_NAME,),
             ):
                 measured.vote_abweichungen.setdefault(str(vote_id), {})[str(key)] = (str(name), flag)
+        if store.has("vote_fractions", "vote_id", "party_id", "yes_count", "no_count", "abstain_count", "absent_count", "total_count") and store.has("parties", "id", "name"):
+            measured.vote_group_counts = {}
+            for vote_id, group, *counts in conn.execute(
+                "SELECT vf.vote_id, pa.name, vf.yes_count, vf.no_count, vf.abstain_count, vf.absent_count, vf.total_count "
+                "FROM vote_fractions vf LEFT JOIN parties pa ON pa.id = vf.party_id"
+            ):
+                measured.vote_group_counts.setdefault(str(vote_id), {})[str(group)] = tuple(counts)
+        if store.has("vote_members", "vote_id", "mp_id", "party_id", "listed_party_id") and store.has("mps", "id", "identity_key", "display_name") and store.has("parties", "id", "name"):
+            measured.vote_member_groups = {}
+            for vote_id, key, name, group, listed in conn.execute(
+                "SELECT vm.vote_id, COALESCE(m.identity_key, vm.mp_id), COALESCE(m.display_name, ?), pa.name, lp.name "
+                "FROM vote_members vm LEFT JOIN mps m ON m.id = vm.mp_id "
+                "LEFT JOIN parties pa ON pa.id = vm.party_id LEFT JOIN parties lp ON lp.id = vm.listed_party_id",
+                (ORPHAN_NAME,),
+            ):
+                measured.vote_member_groups.setdefault(str(vote_id), {})[str(key)] = (str(name), group, listed)
         if store.has("vote_fractions", "vote_id", "leading_vote"):
             measured.leading = []
             for vote_id, leading in conn.execute("SELECT vote_id, leading_vote FROM vote_fractions"):
@@ -395,9 +419,14 @@ def _distribution_copy(directory: Path) -> Path | None:
     exports = directory / "data" / "exports"
     try:
         manifest = json.loads((exports / "datenstand.json").read_text(encoding="utf-8"))
-        path = exports / str(manifest["generation"]) / str(manifest["files"][0]["name"])
+        generation, name = str(manifest["generation"]), str(manifest["files"][0]["name"])
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         return None
+    # The manifest is the build's own output, but a name that is not a plain file
+    # name ("../x", "a/b", "") must not lead the read out of the export directory.
+    if any(not part or Path(part).name != part or part in (".", "..") for part in (generation, name)):
+        return None
+    path = exports / generation / name
     return path if path.is_file() else None
 
 
@@ -416,8 +445,11 @@ def _recipe_rows(store: Store, recipe_id: str) -> int | None:
     sql = re.sub(r"\s+LIMIT\s+\d+\s*;?\s*$", "", str(recipe["sql"]).strip(), flags=re.IGNORECASE)
     with tempfile.TemporaryDirectory() as scratch:
         unpacked = Path(scratch) / "copy.sqlite"
-        with gzip.open(copy, "rb") as source, unpacked.open("wb") as target:
-            shutil.copyfileobj(source, target)
+        try:
+            with gzip.open(copy, "rb") as source, unpacked.open("wb") as target:
+                shutil.copyfileobj(source, target)
+        except (OSError, EOFError, zlib.error):
+            return None  # a truncated or corrupt copy is no evidence, as a missing one
         conn = sqlite3.connect(f"file:{unpacked}?mode=ro", uri=True)
         try:
             return len(conn.execute(sql).fetchall())
@@ -552,7 +584,12 @@ def compare(
     old_dir: Path, new_dir: Path, *, cohort: str = "shared", out: TextIO | None = None, recipes: bool = True
 ) -> None:
     out = out or sys.stdout
-    old_store, new_store = open_store(old_dir), open_store(new_dir)
+    old_store = open_store(old_dir)
+    try:
+        new_store = open_store(new_dir)
+    except BaseException:
+        old_store.close()
+        raise
     try:
         old = measure(old_store, recipes=recipes)
         new = measure(new_store, recipes=recipes)
@@ -602,6 +639,11 @@ def compare(
         f"vote_members.abweichung) [{cohort}]"
     )
     _vote_figure_rows(report, old, new, scope)
+
+    report.heading(
+        f"vote groups (vote_fractions counts, vote_members.party_id, listed_party_id) per vote and group [{cohort}]"
+    )
+    _vote_group_rows(report, old, new, scope)
 
     report.heading(f"speeches.char_count sum [{cohort}]")
     old_chars = _filter_by_protocol(old.chars_by_protocol, scope)
@@ -842,24 +884,31 @@ def _vote_figure_rows(report: Report, old: Measured, new: Measured, scope: set[s
     if old_figures is None or new_figures is None:
         return
 
-    def member_changes(vote_id: str) -> list[str]:
+    def member_changes(vote_id: str) -> tuple[list[str], list[str]]:
+        """(Abweichung moves where both sides hold the member's row, rows found on
+        one side only). A member-list change is no flag move."""
         if old_members is None or new_members is None:
-            return []
+            return [], []
         was, now = old_members.get(vote_id, {}), new_members.get(vote_id, {})
-        changes = []
+        moves, one_sided = [], []
         for key in sorted(set(was) | set(now)):
-            before = _flag_text(was[key][1]) if key in was else "no row"
-            after = _flag_text(now[key][1]) if key in now else "no row"
-            if before != after:
-                name = (now.get(key) or was.get(key))[0]
-                changes.append(f"{name} ({key}) {before} -> {after}")
-        return changes
+            name = (now.get(key) or was.get(key))[0]
+            if key in was and key in now:
+                if was[key][1] != now[key][1]:
+                    moves.append(f"{name} ({key}) {_flag_text(was[key][1])} -> {_flag_text(now[key][1])}")
+            elif key in was:
+                one_sided.append(f"{name} ({key}) only in old, abweichung {_flag_text(was[key][1])}")
+            else:
+                one_sided.append(f"{name} ({key}) only in new, abweichung {_flag_text(now[key][1])}")
+        return moves, one_sided
 
-    moved = []
+    moved, listed_only = [], []
     for vote_id in sorted(set(old_figures) & set(new_figures)):
-        changes = member_changes(vote_id)
+        changes, one_sided = member_changes(vote_id)
         if old_figures[vote_id] != new_figures[vote_id] or changes:
             moved.append((vote_id, changes))
+        if one_sided:
+            listed_only.append((vote_id, one_sided))
     report.line(f"{len(moved)} votes in both stores changed their outcome, Abweichler count or Abweichungen")
     for vote_id, changes in moved[:LIST_LIMIT]:
         (old_result, old_count), (new_result, new_count) = old_figures[vote_id], new_figures[vote_id]
@@ -874,6 +923,97 @@ def _vote_figure_rows(report: Report, old: Measured, new: Measured, scope: set[s
             report.line(f"  ... {len(changes) - MEMBER_LIMIT} more members")
     if len(moved) > LIST_LIMIT:
         report.line(f"... {len(moved) - LIST_LIMIT} more votes")
+    if listed_only:
+        rows = sum(len(rows) for _vote, rows in listed_only)
+        report.line(
+            f"member rows on one side only (the member list changed, no Abweichung moved): "
+            f"{rows} rows in {len(listed_only)} votes"
+        )
+        for vote_id, rows_of_vote in listed_only[:LIST_LIMIT]:
+            report.line(f"{vote_id}: {len(rows_of_vote)} member rows on one side only")
+            for text in rows_of_vote[:MEMBER_LIMIT]:
+                report.line(f"  {text}")
+            if len(rows_of_vote) > MEMBER_LIMIT:
+                report.line(f"  ... {len(rows_of_vote) - MEMBER_LIMIT} more members")
+        if len(listed_only) > LIST_LIMIT:
+            report.line(f"... {len(listed_only) - LIST_LIMIT} more votes")
+    # A vote one store holds and the other lacks moves the distribution rows above
+    # with no line of its own, so name it.
+    only_old, only_new = sorted(set(old_figures) - set(new_figures)), sorted(set(new_figures) - set(old_figures))
+    report.line(f"votes only in old: {len(only_old)}; only in new: {len(only_new)}")
+    for label, ids in (("only in old", only_old), ("only in new", only_new)):
+        if ids:
+            more = f" ... {len(ids) - LIST_LIMIT} more" if len(ids) > LIST_LIMIT else ""
+            report.line(f"  {label}: {', '.join(ids[:LIST_LIMIT])}{more}")
+
+
+def _vote_group_rows(report: Report, old: Measured, new: Measured, scope: set[str] | None) -> None:
+    """Per (vote, group): the vote_fractions counts, and per member the group a
+    Stimme counts for (party_id) and the group the page listed (listed_party_id),
+    for every vote both stores hold. A re-filing that flips no Mehrheitsvotum and
+    no Abweichler shows here."""
+    if old.vote_group_counts is None or new.vote_group_counts is None or old.vote_figures is None or new.vote_figures is None:
+        report.row(
+            "(all)",
+            None if old.vote_group_counts is None else "present",
+            None if new.vote_group_counts is None else "present",
+        )
+        return
+
+    def votes_in_scope(measured: Measured) -> set[str]:
+        assert measured.vote_figures is not None
+        return {v for v, (numbers, _r, _c) in measured.vote_figures.items() if any(_in(scope, n) for n in numbers)}
+
+    shared = sorted(votes_in_scope(old) & votes_in_scope(new))
+    count_moves = []
+    for vote_id in shared:
+        was, now = old.vote_group_counts.get(vote_id, {}), new.vote_group_counts.get(vote_id, {})
+        parts = []
+        for group in sorted(set(was) | set(now)):
+            before, after = was.get(group), now.get(group)
+            if before != after:
+                parts.append(
+                    f"{group} {_totals_text(before) if before else 'no row'} -> {_totals_text(after) if after else 'no row'}"
+                )
+        if parts:
+            count_moves.append((vote_id, parts))
+    report.line(
+        f"{len(count_moves)} of {len(shared)} shared votes changed a group's vote_fractions counts "
+        f"(Ja/Nein/Enthaltung/nicht abgegeben/total)"
+    )
+    for vote_id, parts in count_moves[:LIST_LIMIT]:
+        more = f"; ... {len(parts) - MEMBER_LIMIT} more groups" if len(parts) > MEMBER_LIMIT else ""
+        report.line(f"{vote_id}: {'; '.join(parts[:MEMBER_LIMIT])}{more}")
+    if len(count_moves) > LIST_LIMIT:
+        report.line(f"... {len(count_moves) - LIST_LIMIT} more votes")
+
+    if old.vote_member_groups is None or new.vote_member_groups is None:
+        report.row(
+            "vote_members party_id / listed_party_id",
+            None if old.vote_member_groups is None else "present",
+            None if new.vote_member_groups is None else "present",
+        )
+        return
+    member_moves = []
+    for vote_id in shared:
+        was, now = old.vote_member_groups.get(vote_id, {}), new.vote_member_groups.get(vote_id, {})
+        parts = [
+            f"{now[key][0]} ({key}) group {was[key][1] or 'NULL'} -> {now[key][1] or 'NULL'}, "
+            f"listed {was[key][2] or 'NULL'} -> {now[key][2] or 'NULL'}"
+            for key in sorted(set(was) & set(now))
+            if was[key][1:] != now[key][1:]
+        ]
+        if parts:
+            member_moves.append((vote_id, parts))
+    report.line(f"{len(member_moves)} of {len(shared)} shared votes changed a member's party_id or listed_party_id")
+    for vote_id, parts in member_moves[:LIST_LIMIT]:
+        report.line(f"{vote_id}: {len(parts)} members")
+        for text in parts[:MEMBER_LIMIT]:
+            report.line(f"  {text}")
+        if len(parts) > MEMBER_LIMIT:
+            report.line(f"  ... {len(parts) - MEMBER_LIMIT} more members")
+    if len(member_moves) > LIST_LIMIT:
+        report.line(f"... {len(member_moves) - LIST_LIMIT} more votes")
 
 
 def _number(value: Any) -> str:

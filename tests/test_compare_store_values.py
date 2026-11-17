@@ -278,11 +278,11 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertEqual(line_of(out, "vote_members.abweichung = 1", section), "vote_members.abweichung = 1 unavailable -> 0")
         self.assertNotIn("changed their outcome", out)
 
-    # Value: protects=a member present on one side only reads "no row", a NULL outcome reads NULL, and long member and vote lists are cut with a count of the rest; fails_when=the no-row marker, the NULL text or the MEMBER_LIMIT/LIST_LIMIT truncation line is dropped; why_new=the first figure test stays within the limits and has every member on both sides; seam=none
+    # Value: protects=a NULL outcome reads NULL, and long member and vote lists are cut with a count of the rest; fails_when=the no-row marker, the NULL text or the MEMBER_LIMIT/LIST_LIMIT truncation line is dropped; why_new=the first figure test stays within the limits and has every member on both sides; seam=none
     def test_vote_figure_changes_mark_missing_members_and_truncate_long_lists(self) -> None:
         old, new = self.stores()
         rows = {
-            old: {"v1": (None, 0, {"mp-R1": 0}), "v2": ("rejected", 0, {})},
+            old: {"v1": (None, 0, {"mp-R1": 0, "mp-R2": 0}), "v2": ("rejected", 0, {})},
             new: {"v1": ("accepted", 0, {"mp-R1": 1, "mp-R2": 1}), "v2": ("accepted", 0, {})},
         }
         for root, votes in rows.items():
@@ -640,6 +640,156 @@ class CompareStoreValuesTests(unittest.TestCase):
         # R1 has no party either? make_output gives every speaker an SPD row, so each
         # of the two is counted for that current party; the role speaker no longer is.
         self.assertEqual(line_of(out, "current party", section), "current party 2 -> 1 -1")
+
+    def _add_members(self, root: Path, rows: list[tuple]) -> None:
+        """rows: (vote id, mp identity key or None for an orphan mp_id, abweichung, party, listed party)."""
+        conn = sqlite3.connect(root / "data" / "bundestag-pulse.sqlite")
+        try:
+            for vote_id, key, flag, party, listed in rows:
+                mp_id = "orphan-" + vote_id if key is None else conn.execute("SELECT id FROM mps WHERE identity_key = ?", (key,)).fetchone()[0]
+                ids = [None if name is None else conn.execute("SELECT id FROM parties WHERE name = ?", (name,)).fetchone()[0] for name in (party, listed)]
+                conn.execute(
+                    "INSERT INTO vote_members(vote_id, mp_id, party_id, listed_party_id, vote, abweichung) VALUES (?, ?, ?, ?, 'yes', ?)",
+                    (vote_id, mp_id, ids[0], ids[1], flag),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _figures(self, root: Path) -> None:
+        conn = sqlite3.connect(root / "data" / "bundestag-pulse.sqlite")
+        try:
+            conn.execute("UPDATE votes SET application_result = 'accepted', abweichler_count = 0")
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Value: protects=a vote only one store holds is named (or counted) in the vote outcome section, so distribution rows that moved by a rebuild's added or lost vote have a line; fails_when=the one-sided count line or the ids are dropped; why_new=the per-vote list covers votes both stores hold only; seam=none
+    def test_votes_only_one_store_holds_are_named(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        code, out, _ = run(old, new, "--cohort", "all")
+        self.assertEqual(code, 0)
+        section = "vote outcome and Abweichler"
+        self.assertEqual(line_of(out, "votes only in old", section), "votes only in old: 0; only in new: 1")
+        self.assertEqual(line_of(out, "only in new:", section), "only in new: v3")
+
+    # Value: protects=a manifest whose generation or file name is not a plain name finds no copy, so the read cannot leave the export directory; fails_when=the Path(x).name check is dropped; why_new=the names were joined unchecked; seam=none
+    def test_distribution_copy_refuses_names_that_are_not_plain_file_names(self) -> None:
+        import json
+
+        directory = self.tmp / "dist"
+        exports = directory / "data" / "exports"
+        (exports / "g").mkdir(parents=True)
+        (exports / "outside.gz").write_bytes(b"x")
+        (exports / "g" / "copy.gz").write_bytes(b"x")
+        for generation, name in (("g", "../outside.gz"), ("..", "outside.gz"), ("g/", "copy.gz"), ("g", "/etc/hosts"), ("", "copy.gz"), (".", "g")):
+            (exports / "datenstand.json").write_text(json.dumps({"generation": generation, "files": [{"name": name}]}), encoding="utf-8")
+            self.assertIsNone(compare._distribution_copy(directory), (generation, name))
+
+    # Value: protects=a truncated or corrupt .gz Verteilkopie reads unavailable instead of a traceback; fails_when=OSError, EOFError or zlib.error escape _recipe_rows; why_new=only sqlite3.Error was caught; seam=build.RECIPES_BY_ID
+    def test_a_corrupt_distribution_copy_reads_unavailable(self) -> None:
+        import gzip
+        import json
+
+        import build_dip_pulse_site as build
+
+        old, _ = self.stores()
+        generation = old / "data" / "exports" / "g-0123456789ab"
+        generation.mkdir(parents=True)
+        good = gzip.compress(b"x" * 100000)
+        for name, payload in (("truncated.sqlite.gz", good[: len(good) // 2]), ("garbage.sqlite.gz", b"\x1f\x8b\x08\x00" + b"\xff" * 64), ("plain.sqlite.gz", b"not gzip at all")):
+            (generation / name).write_bytes(payload)
+            (old / "data" / "exports" / "datenstand.json").write_text(json.dumps({"generation": generation.name, "files": [{"name": name}]}), encoding="utf-8")
+            store = compare.open_store(old)
+            try:
+                with mock.patch.dict(build.RECIPES_BY_ID, {"r3-abweichler": {"sql": "SELECT id FROM votes"}}):
+                    self.assertIsNone(compare._recipe_rows(store, "r3-abweichler"), name)
+            finally:
+                store.close()
+
+    # Value: protects=the first store's connection is closed when the second fails to open (exit 2 prints no ResourceWarning); fails_when=compare opens both in one expression again; why_new=the first connection leaked; seam=compare.open_store wrapped
+    def test_the_first_store_is_closed_when_the_second_fails_to_open(self) -> None:
+        old, _ = self.stores()
+        opened = []
+        real = compare.open_store
+
+        def spy(directory):
+            store = real(directory)
+            opened.append(store)
+            return store
+
+        with mock.patch.object(compare, "open_store", spy), self.assertRaises(compare.CompareError):
+            compare.compare(old, self.tmp / "missing", out=io.StringIO())
+        self.assertEqual(len(opened), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            opened[0].conn.execute("SELECT 1")
+
+    # Value: protects=a member row on one side only is listed under its own label and is no Abweichung move, while a both-sided flag move still is; fails_when=one-sided rows count in the "abweichung moved" header or the vote line again; why_new=a registry fold that adds a row with abweichung 0 read as an Abweichung change; seam=none
+    def test_member_list_changes_are_not_counted_as_abweichung_moves(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        self._add_members(old, [("v1", "mp-R1", 0, "SPD", None), ("v1", "mp-R2", 0, "SPD", None), ("v2", "mp-R1", 0, "SPD", None)])
+        self._add_members(new, [("v1", "mp-R1", 1, "SPD", None), ("v2", "mp-R1", 0, "SPD", None), ("v2", "mp-R2", 0, "SPD", None)])
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote outcome and Abweichler"
+        self.assertIn("1 votes in both stores changed their outcome, Abweichler count or Abweichungen", out)
+        self.assertEqual(line_of(out, "v1: application_result", section), "v1: application_result accepted -> accepted; abweichler_count 0 -> 0; abweichung moved for 1 members")
+        body = out.split(f"== {section}", 1)[1].split("\n== ", 1)[0]
+        self.assertNotIn("v2: application_result", body)
+        self.assertEqual(line_of(out, "member rows on one side only (", section), "member rows on one side only (the member list changed, no Abweichung moved): 2 rows in 2 votes")
+        self.assertEqual(line_of(out, "MdB R2 (mp-R2) only in old", section), "MdB R2 (mp-R2) only in old, abweichung 0")
+        self.assertEqual(line_of(out, "MdB R2 (mp-R2) only in new", section), "MdB R2 (mp-R2) only in new, abweichung 0")
+
+    # Value: protects=a vote_members row whose mp_id has no mps row is counted in the flag counts and keyed by its mp_id; fails_when=the join to mps is an inner join again; why_new=orphan rows dropped out silently; seam=none
+    def test_orphan_member_rows_are_counted_and_keyed_by_mp_id(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        self._add_members(old, [("v1", "mp-R1", 0, "SPD", None)])
+        self._add_members(new, [("v1", "mp-R1", 0, "SPD", None), ("v1", None, 1, "SPD", None)])
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote outcome and Abweichler"
+        self.assertEqual(line_of(out, "vote_members.abweichung = 1", section), "vote_members.abweichung = 1 0 -> 1 +1")
+        self.assertEqual(line_of(out, "(no mps row) (orphan-v1)", section), "(no mps row) (orphan-v1) only in new, abweichung 1")
+
+    # Value: protects=a re-filing that flips no Mehrheitsvotum and no Abweichler still shows, per (vote, group) counts and per member party_id and listed_party_id, and identical stores show no change; fails_when=the vote groups section is dropped or compares less; why_new=E4 deferred item 8: the comparison read neither vote_fractions counts nor party_id columns; seam=none
+    def test_a_refiling_that_flips_no_outcome_shows_in_the_group_comparison(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        members = [("v1", "mp-R1", None, "SPD", None), ("v1", "mp-R2", None, "SPD", None)]
+        self._add_members(old, members)
+        self._add_members(new, members)
+        section = "vote groups"
+        _, same, _ = run(old, new)
+        self.assertIn("0 of 2 shared votes changed a group's vote_fractions counts", same)
+        self.assertIn("0 of 2 shared votes changed a member's party_id or listed_party_id", same)
+
+        conn = sqlite3.connect(new / "data" / "bundestag-pulse.sqlite")
+        try:
+            conn.execute(
+                "INSERT INTO parties(id, name, created_at, updated_at) VALUES ('party-AfD', 'AfD', ?, ?)", (NOW, NOW)
+            )
+            conn.execute("UPDATE vote_fractions SET yes_count = 3, total_count = 3 WHERE vote_id = 'v1'")
+            conn.execute(
+                "UPDATE vote_members SET party_id = 'party-AfD', listed_party_id = (SELECT id FROM parties WHERE name = 'SPD') "
+                "WHERE vote_id = 'v1' AND mp_id = (SELECT id FROM mps WHERE identity_key = 'mp-R2')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _, out, _ = run(old, new)
+        self.assertIn("1 of 2 shared votes changed a group's vote_fractions counts", out)
+        self.assertEqual(line_of(out, "v1: SPD", section), "v1: SPD 0/0/0/0/0 -> 3/0/0/0/3")
+        self.assertIn("1 of 2 shared votes changed a member's party_id or listed_party_id", out)
+        self.assertEqual(line_of(out, "MdB R2 (mp-R2)", section), "MdB R2 (mp-R2) group SPD -> AfD, listed NULL -> SPD")
+        # The outcome and Abweichler lines stay unmoved: only the new section shows it.
+        self.assertIn("0 votes in both stores changed their outcome", out)
 
     def test_it_only_reads(self) -> None:
         old, new = self.stores()
