@@ -151,5 +151,121 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(item["xml_speakers"][0]["speaker"].get("abgeordnetenwatch"), {"url": "https://example.invalid/p"})
 
 
+def toc_block(root, title):
+    return next(b for b in root.findall("./vorspann/inhaltsverzeichnis/ivz-block")
+                if dip.elem_text(b.find("ivz-block-titel")) == title)
+
+
+def parse_tree(root):
+    return dip.parse_protocol_xml(dip.ET.tostring(root, encoding="unicode"))
+
+
+class RepeatedInhaltsverzeichnisTitleTests(unittest.TestCase):
+    """18/44 prints "Tagesordnungspunkt II: (Fortsetzung)" twice: the first block lists
+    the 13 Reden, the second none. Keyed by title, the second hid the first."""
+
+    def test_parse_toc_keeps_both_blocks_of_a_repeated_title(self):
+        toc = dip.parse_toc(dip.ET.fromstring(source("18-44")))
+        repeated = [b for b in toc if b["title"] == "Tagesordnungspunkt II: (Fortsetzung)"]
+        self.assertEqual([len(b["rid_pages"]) for b in repeated], [13, 0])
+
+    def test_reden_under_a_repeated_title_keep_their_page_and_the_top_its_range(self):
+        item = dip.parse_protocol_xml(source("18-44"))["agenda_items"][2]
+        self.assertEqual(item["top_id"], "Tagesordnungspunkt II (Fortsetzung)")
+        self.assertEqual(len(item["speeches"]), 13)
+        self.assertTrue(all(s["source_page"] for s in item["speeches"]))
+        self.assertEqual(item["speeches"][0]["source_page"], {"page": 3952, "quadrant": "B"})
+        self.assertEqual(item["page_range"]["start"], {"page": 3952, "quadrant": "B"})
+
+
+class AdoptionGuardTests(unittest.TestCase):
+    def test_a_rede_two_inhaltsverzeichnis_titles_list_refuses_the_sitting(self):
+        root = dip.ET.fromstring(source("18-49"))
+        listed = next(x for x in root.iter("xref") if x.get("rid") == "ID1804900200")
+        toc_block(root, "Einzelplan 06").append(copy.deepcopy(listed))
+        with self.assertRaisesRegex(ValueError, "18/49: Rede ID1804900200 .*two Inhaltsverzeichnis titles"):
+            parse_tree(root)
+
+    def test_a_rede_a_repeated_title_lists_twice_is_adopted_once(self):
+        root = dip.ET.fromstring(source("18-49"))
+        toc = root.find("./vorspann/inhaltsverzeichnis")
+        toc.append(copy.deepcopy(toc_block(root, "Tagesordnungspunkt 1:")))
+        items = parse_tree(root)["agenda_items"]
+        self.assertEqual((items[0]["top_id"], speech_ids(items[0])), ("Tagesordnungspunkt 1", ["ID1804900100"]))
+
+    def test_a_non_rede_element_between_reden_is_named_in_the_refusal(self):
+        root = dip.ET.fromstring(source("18-49"))
+        verlauf = root.find("sitzungsverlauf")
+        verlauf.insert(list(verlauf).index(verlauf.find("rede[@id='ID1804900300']")),
+                       dip.ET.Element("p", {"klasse": "J"}))
+        with self.assertRaisesRegex(ValueError, "18/49: Rede ID1804900300 stands outside any TOP, after a <p> element$"):
+            parse_tree(root)
+
+    def test_a_source_top_carrying_top_source_is_not_taken_for_an_adopted_one(self):
+        root = dip.ET.fromstring(source("18-49"))
+        verlauf = root.find("sitzungsverlauf")
+        rede = verlauf.find("rede[@id='ID1804902600']")
+        verlauf.remove(rede)
+        source_top = verlauf.find("tagesordnungspunkt")
+        source_top.set("top_source", "inhaltsverzeichnis")
+        verlauf.insert(list(verlauf).index(source_top) + 1, rede)
+        with self.assertRaisesRegex(ValueError, "18/49: Rede ID1804902600 .*after a TOP$"):
+            parse_tree(root)
+
+    def test_a_source_top_source_attribute_never_reaches_the_report(self):
+        root = dip.ET.fromstring(source("18-44"))
+        verlauf = root.find("sitzungsverlauf")
+        for rede in verlauf.findall("rede"):
+            verlauf.remove(rede)
+        verlauf.find("tagesordnungspunkt").set("top_source", "inhaltsverzeichnis")
+        items = parse_tree(root)["agenda_items"]
+        self.assertEqual(items[0]["top_id"], "Tagesordnungspunkt V")
+        self.assertEqual([i["top_source"] for i in items], [None] * len(items))
+
+
+class SitzungsbeginnParagraphTests(unittest.TestCase):
+    """A TOP the chair called in <sitzungsbeginn> moves into the first adopted run:
+    only its T_ paragraphs, and only when that run is a Tagesordnungspunkt or Zusatzpunkt."""
+
+    def adopt(self, first_title=None):
+        root = dip.ET.fromstring(source("18-49"))
+        if first_title is not None:
+            toc_block(root, "Tagesordnungspunkt 1:").find("ivz-block-titel").text = first_title
+        dip.adopt_reden_outside_tops(root)
+        verlauf = root.find("sitzungsverlauf")
+        beginn = [p.get("klasse") for p in verlauf.find("sitzungsbeginn").findall("p")]
+        first_top = [p.get("klasse") for p in verlauf.find("tagesordnungspunkt").findall("p")]
+        return beginn, first_top
+
+    T_PARAGRAPHS = ["T_NaS", "T_Drs", "T_Ueberweisung", "T_NaS", "T_fett", "T_Drs", "T_Ueberweisung"]
+    OTHER_PARAGRAPHS = ["N", "J_1", "J", "J", "J"]
+
+    def test_only_the_t_paragraphs_move(self):
+        self.assertEqual(self.adopt(), (self.OTHER_PARAGRAPHS, self.T_PARAGRAPHS))
+
+    def test_a_zusatzpunkt_run_takes_them_too(self):
+        self.assertEqual(self.adopt("Zusatzpunkt 1:"), (self.OTHER_PARAGRAPHS, self.T_PARAGRAPHS))
+
+    def test_any_other_run_leaves_them_in_sitzungsbeginn(self):
+        beginn, first_top = self.adopt("Einzelplan 99:")
+        self.assertEqual(first_top, [])
+        self.assertEqual(sorted(beginn), sorted(self.OTHER_PARAGRAPHS + self.T_PARAGRAPHS))
+
+
+class ZuProtokollAnnexTitleTests(unittest.TestCase):
+    def annex(self, title):
+        return dip.zu_protokoll_annex_type(dip.ET.Element("anlagen-text", {"anlagen-typ": title}))
+
+    def test_the_written_submission_titles_match(self):
+        for title in ("Zu Protokoll gegebene Rede", "Zu Protokoll gegebene Reden",
+                      "Zu Protokoll gegebene Reden zur Beratung", "Zu Protokoll gegebene Reden zur Beratung:"):
+            self.assertEqual(self.annex(title), title)
+
+    def test_a_title_that_only_starts_like_one_does_not(self):
+        for title in ("Zu Protokoll gegebene Reden zur Beratung des Antrags",
+                      "Zu Protokoll gegebene Rede des Abgeordneten", "Zu Protokoll gegebene Reden und Erklärungen"):
+            self.assertIsNone(self.annex(title))
+
+
 if __name__ == "__main__":
     unittest.main()
