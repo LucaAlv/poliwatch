@@ -13,10 +13,10 @@ The default is a dry run: it checks the export, writes the release directory
 would run. A later run reuses an existing release directory only when its files
 are exactly the ones it builds (``--publish`` after a dry run the same day, or
 after a failed ``gh`` call); otherwise it refuses and never overwrites. ``--publish`` creates the release through ``gh`` and refuses unless
-the export carries a licence string (ADR 0003) and every exclusion on its record
+the export carries a licence string (ADR 0003), every exclusion on its record
 is final, ``source_defect`` or ``not_narrowable`` (ADR 0005, "Coverage and the
-bar"), and while a v1 sitting DIP lists with XML is neither in the export nor on
-its exclusion record (read from the catalog the build left next to the exports
+bar"), and every v1 sitting DIP lists with XML is in the export or on its
+exclusion record (read from the catalog the build left next to the exports
 directory, or ``--catalog``). This script never pushes, tags or uploads by itself; the only remote
 command is the one printed.
 
@@ -233,11 +233,11 @@ def unreleased_sittings_problem(manifest: dict[str, Any], generation_dir: Path, 
     except (OSError, EOFError, KeyError, ValueError, csv.Error) as exc:
         raise ReleaseError(f"cannot read the exported protocols table ({exc}); export it again") from exc
     excluded = {entry["document_number"].strip() for entry in manifest["coverage"]["excluded"]}
-    stale = sorted(
-        (number for number in stored - catalog.keys()
-         if (wahlperiode := site.wahlperiode_of({"dokumentnummer": number})) is not None and wahlperiode >= site.V1_FIRST_WAHLPERIODE),
-        key=_sitting_order,
-    )
+    v1_stored = {
+        number for number in stored
+        if (wahlperiode := site.wahlperiode_of({"dokumentnummer": number})) is not None and wahlperiode >= site.V1_FIRST_WAHLPERIODE
+    }
+    stale = sorted(v1_stored - catalog.keys(), key=_sitting_order)
     if stale:
         return (f"the catalog {catalog_path} lacks {_sittings(len(stale))} the export holds ({_shown(stale)}), so it is older "
                 "than the export and cannot show which sittings are missing; refresh it with an online build")
@@ -509,11 +509,13 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     known = local_versions(repo_root, run)
     if args.publish:
         known |= remote_versions(repo_root, run)
-    on_origin = origin_versions(repo_root, run) if args.previous_manifest else set()
-    known |= on_origin
     if version in known:
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
-    newest = max(known, key=release_version.version_key) if known else None
+    # Origin's tags count for "older than the latest" and the previous manifest,
+    # not for "already exists": a tag without a release gets remote_tag_exists'
+    # message, which names how to delete it.
+    on_origin = origin_versions(repo_root, run) if args.previous_manifest else set()
+    newest = max(known | on_origin, key=release_version.version_key) if known | on_origin else None
     if newest and release_version.version_key(version) < release_version.version_key(newest):
         # A stale export would go out after a newer release, its changelog
         # computed backwards from that newer release's manifest.

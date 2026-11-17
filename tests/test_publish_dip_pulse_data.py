@@ -777,6 +777,22 @@ class MissingSittingTests(ReleaseTestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(len(self.runner.gh("release", "create")), 1)
 
+    # Value: protects=a catalog entry that is not an object, or whose fundstelle is not an object, is skipped or read as "no XML" instead of crashing or blocking; fails_when=the isinstance guards in catalog_v1_sittings are dropped (AttributeError traceback on --publish); why_new=the other catalog tests carry only well-formed entries; seam=main
+    def test_a_malformed_catalog_entry_is_skipped_not_a_crash(self) -> None:
+        path = self.write_catalog([("21/108", "2026-11-12", False)])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["protocols"] += ["21/109", None, {"dokumentnummer": "21/110", "datum": "2026-11-13", "fundstelle": "kein Objekt"}]
+        self.write_catalog(payload=payload)
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(self.runner.gh("release", "create")), 1)
+
+    # Value: protects=a sitting DIP lists twice, once without XML and once with, counts as having XML and is named once; fails_when=the later duplicate overwrites the XML flag so the sitting is read as waiting, or it is listed twice; why_new=the other catalog tests list each sitting once; seam=main
+    def test_a_sitting_listed_twice_counts_as_having_xml_once(self) -> None:
+        self.write_catalog([("21/107", "2026-11-11", True), ("21/107", "2026-11-11", False)])
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, "1 v1 sitting DIP lists with XML is neither in the export nor on its exclusion record (21/107)")
+
     # Value: protects=a catalog the check cannot read, one not fetched in full, or one older than the export is never read as "nothing missing" (class 9); fails_when=a missing or narrowed catalog file lets --publish through; why_new=new input; seam=main
     def test_an_unreadable_partial_or_stale_catalog_is_refused(self) -> None:
         stale = {"authoritative": True, "protocols": [{"dokumentnummer": n, "datum": d, "fundstelle": {"xml_url": "x"}} for n, d in self.stored[1:]]}
@@ -855,6 +871,16 @@ class FollowUpReleaseTests(ReleaseTestCase):
         self.assert_refused(code, stderr, "origin holds no data release tag", "--initial")
         code, _, stderr = self.run_script(*args, runner=Runner(ls_remote_fails=True))
         self.assert_refused(code, stderr, "cannot ask origin for its release tags", "git ls-remote failed")
+
+    # Value: protects=a follow-up --publish whose tag a failed gh run left on origin (no release behind it) is refused with remote_tag_exists' message naming how to delete the tag; fails_when=origin's tags count as existing releases, so the message falsely says the release exists and drops the recovery step; why_new=code review of the origin-tag change (owner decision 4b); seam=main with a recorded origin; no_claim=gh behaviour (mocked)
+    def test_a_follow_up_tag_left_on_origin_names_its_recovery(self) -> None:
+        previous = self.work / "previous.json"
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
+        runner = Runner(gh_tags=["data-2026.10.01"], remote_tags=["data-2026.10.01", f"data-{VERSION}"])
+        code, _, stderr = self.run_script("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}), "--publish", runner=runner)
+        self.assert_refused(code, stderr, f"tag data-{VERSION} already exists on origin but has no release", f"git push origin :refs/tags/data-{VERSION}")
+        self.assertNotIn("releases are immutable", stderr)
+        self.assertEqual(runner.gh("release", "create"), [])
 
     # Value: protects=an export whose version is older than the latest known release is refused, local tag or gh release; fails_when=a stale export goes out after a newer release and its changelog is computed backwards from that release's manifest; why_new=code-review of release item 4 (the latest-release check assumed the export is newer); seam=main; no_claim=clock skew between machines
     def test_an_export_older_than_the_latest_release_is_refused(self) -> None:
