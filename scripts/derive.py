@@ -132,6 +132,37 @@ def zusammenschluss(value: Any) -> str | None:
     return text
 
 
+class UnknownFraktionError(ValueError):
+    """A ``<fraktion>`` value that names no Zusammenschluss we know."""
+
+
+def printed_fraktion(value: Any, role: Any = None) -> str | None:
+    """The ``<fraktion>`` of one Rede or Beitrag as the protocol prints it, once
+    checked against the Zusammenschlüsse we know, so no stray string becomes a
+    group of its own in a per-Fraktion count.
+
+    A known name in any spelling, or a merged record of known names (which
+    ``zusammenschluss`` reads as nothing), is kept as printed. Two source errors
+    are read as what they mean: spoken text after the name and a colon (18/222,
+    "CDU/CSU: Ich glaube, ...", docs/source-errors.md C6) is the name, and a
+    Land's name beside a Bundesrat member who speaks for it (19/60, "Bremen" for
+    "Bürgermeister (Bremen)", E7) is no Fraktion, as the other Bundesrat Reden
+    print none. Any other value raises UnknownFraktionError."""
+    text = _clean(value)
+    if not text:
+        return None
+    name = zusammenschluss(text)
+    if name is None or name in _KNOWN:
+        return text
+    head, colon, _ = text.partition(":")
+    if colon and _known(_clean(head)):
+        return _clean(head)
+    role_text_ = _clean(role)
+    if re.fullmatch(_LAENDER, text) and side_of_role(role_text_) == "bundesrat" and role_text_.endswith(f"({text})"):
+        return None
+    raise UnknownFraktionError(f"unknown Fraktion {text!r}")
+
+
 #: The day the Fraktion Die Linke ended (2023-12-06). The Gruppe Die Linke was
 #: recognised only on 2024-02-02; in between the protocols label its 38 MdBs
 #: fraktionslos, and the MdB-Stammdaten agree (C1 plan, F4). The XML of a Rede

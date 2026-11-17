@@ -735,6 +735,10 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
         if label:
             display_name, first, last = clean_text(label.group("name")), None, None
             fraction = clean_text(label.group("fraktion"))
+    try:
+        fraction = derive.printed_fraktion(fraction, role_long or role_short)
+    except derive.UnknownFraktionError as exc:
+        raise derive.UnknownFraktionError(f"{exc} at redner {redner.attrib.get('id')}") from None
     return {
         "xml_redner_id": redner.attrib.get("id"),
         "display_name": display_name,

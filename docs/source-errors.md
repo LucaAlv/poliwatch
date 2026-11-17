@@ -124,7 +124,7 @@ A list of places where an official source file says something wrong or files con
 - **Status:** verified 2026-11-07, on the 716 cached XML files of the A3 store, scanning every `<redner>`. The first scan on 2026-11-06 found two of these ids. The last three were found on 2026-11-17, when the T4 run's WP 18 rebuild refused on two of them: the build's name check, run offline over the parsed units of the 719 stored sittings and the XML of the 83 sittings T4 acquires, found those two and `11002190` in 19/1. 21/106's XML has not been fetched, so it was not scanned.
 - **Source:** `https://dserver.bundestag.de/btp/<WP>/`, the files of the sittings named below.
 - **What is wrong:** `<redner id>` is meant to identify one person.
-  - `id="10000"`: "Marja-Liisa Völlers (SPD)" in 19/49 and 19/57; "Olaf in der Beek (FDP)" in 19/16; "Dr. Carsten Sieling, Bürgermeister (Bremen)" in 19/60. The Sieling entry also prints "Carsten Sieling," as `<vorname>` and "Bürgermeister" as `<nachname>`.
+  - `id="10000"`: "Marja-Liisa Völlers (SPD)" in 19/49 and 19/57; "Olaf in der Beek (FDP)" in 19/16; "Dr. Carsten Sieling, Bürgermeister (Bremen)" in 19/60. The Sieling entry also prints "Carsten Sieling," as `<vorname>`, "Bürgermeister" as `<nachname>` and "Bremen" as `<fraktion>`.
   - `id="999990141"`: Dr. Mehmet Daimagüler in 20/144; Judith Gerlach, Staatsministerin (Bayern), in 20/121 and 20/194.
   - `id="999990124"`: Annette Widmann-Mauz in 18/39, 18/53, 18/72, 18/84 and 18/91; Dr. Andreas Bovenschulte in 20/21.
   - `id="999990108"`: Anette Kramme in 18/53, 18/72 and 18/78; Maika Friemann-Jennert in 19/228.
@@ -135,7 +135,7 @@ A list of places where an official source file says something wrong or files con
   - `id="11002190"`: Dr. Hermann Otto Solms's own id; Präsident Dr. Wolfgang Schäuble's inaugural address in 19/1 (`ID19101300`), whose own id is `11001938`. The table of contents of 19/1 also prints it for Dr. Marco Buschmann (FDP), whose own id is `11004023`; a table of contents is not stored.
   - `id="999990055"`: Monika Heinold, Ministerin (Schleswig-Holstein), in 18/180 (`ID1818001000`); Thomas Heilmann, Senator (Berlin), in 18/183 (`ID1818302300`), who has his own id `11004741` as an MdB from WP 19.
 - **Outside confirmation:** the CPP-BT codebook (version 2026-09-19, section 5.3) documents id 10000 as assigned several times.
-- **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored. `11004105`, `11002190` and `999990055` have an entry since 2026-11-17, before the T4 run stores their sittings. De Maizière and Solms hold their ids: their records keep them, and only the other speaker's Rede moves to that speaker's own id.
+- **Our side:** fixed 2026-11-07. `scripts/person_corrections.json` says who each printed name is for the five ids with stored units, and the build refuses a Redner-ID printed with unrelated names until it has an entry (`docs/stable-ids.md`). `999990109` and `11003609` have no entry: their second person is in an annex and a speaker list that are not stored. `11004105`, `11002190` and `999990055` have an entry since 2026-11-17, before the T4 run stores their sittings. De Maizière and Solms hold their ids: their records keep them, and only the other speaker's Rede moves to that speaker's own id. Since 2026-11-17 the parser reads a Land's name in `<fraktion>` beside a Bundesrat member who speaks for that Land as no Fraktion (`derive.printed_fraktion`), so Sieling's Rede `ID196001500` counts for the Bundesrat with no Fraktion, as the store's other Bundesrat Reden do.
 
 ### E8. 19/36: a Zu-Protokoll continuation filed under the title of the absentee list
 
@@ -202,6 +202,7 @@ A list of places where an official source file says something wrong or files con
 - **Status:** candidate. Found 2026-11-07. Not checked against the PDF.
 - **Source:** 18/222, `ID1822204600`: `<fraktion>CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –</fraktion>` for Dr. Astrid Freudenstein.
 - **What looks wrong:** the start of her reply sits inside the Fraktion element.
+- **Our side:** since 2026-11-17 the parser reads a known Fraktion followed by a colon as that Fraktion (`derive.printed_fraktion`), so her Erwiderung counts for CDU/CSU, as CPP-BT has it, and no "CDU/CSU: Ich glaube, …" group or parties row is stored. The same shape, "SPD: Ja." in 19/30 (`<redner id="11004622">`), reaches no stored unit. Any other `<fraktion>` value that names no Fraktion we know refuses the sitting; on the 801 cached sittings none does.
 
 ### C7. Reden outside any `<tagesordnungspunkt>` in 18/44 and 18/49
 

@@ -248,16 +248,6 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 **Priority:** P1
 **Depends on:** None for the 556 votes held today; the fetch in "Coverage gate before the first data release" for the 85 sittings
 
-### Stored Fraktion values that are not Fraktionen
-
-**What:** Two units carry a value that is not a Fraktion. `speeches.fraktion` is "Bremen" on 19/60 `ID196001500`, and an `erwiderung` in 18/222 holds "CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –", copied from the XML (`docs/source-errors.md` C6). Check that a Fraktion value is one we know, and refuse or normalise the rest.
-
-**Why:** Each could appear as its own group in a per-Fraktion count. CPP-BT has the second as plain CDU/CSU.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Comparison and joinable ids in DATA.md
 
 **What:** Add a short "Vergleich" table to the release's `DATA.md`: this dataset, CPP-BT, GermaParl, ParlLawSpeech and BTVote, by coverage, unit, links and licence, with the date it was checked. Document that `rede_id` and `xml_redner_id` are the Bundestag's own ids and join to CPP-BT, and how: the " (neu)" protocol numbers, sub-ids with `:N`, our `nested*` ids, and shared speaker ids. State what we leave out and CPP-BT keeps, chiefly the §31 declarations. Say these are independent projects with no affiliation. Decision N4.
@@ -2327,6 +2317,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Stored Fraktion values that are not Fraktionen: 2026-11-17, branch `todo/fraktion-vote-direction`. `derive.printed_fraktion` checks every `<fraktion>` the parser reads: 18/222's "CDU/CSU: Ich glaube, …" (C6) reads as CDU/CSU, 19/60's "Bremen" beside a Bundesrat member (E7) as no Fraktion, anything else unknown refuses the sitting (none of the 801 cached sittings does). Contributions naming CDU/CSU 5,713 → 5,714, Bundesrat Reden with no Fraktion 108 → 109, parties 11 → 9. `speech_kinds._fraktion` (classification only, also reads the Rednerliste and Inhaltsverzeichnis, whose values include "zur Geschäftsordnung" and "CDU/ CSU") is unchanged, and `speech_kinds.VERSION` is not bumped: a store persisted before this keeps the two values until its next `--repersist`
 - Fresh-store record and E8: four sentences that said something false: 2026-11-14, `docs/plans/release-readiness.md`, item 4. `docs/plans/a3-phase4.md` (by-member join, 996's box) and `docs/source-errors.md` E8 "Scale" (802 sittings of WP 18–21: 718 held, 84 excluded; the 799 annex blocks hold). No figure moved; item 4 was closed by #151
 - The carried-forward registry diverges from a fresh build, with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs": v0.41.0.0, 2026-11-14, `docs/plans/registry-split-koestering-krampe.md`. The fresh store has no Bundesrat `ever_mdb` record; an offline replay keeps preserved roster rows live, and `dip_successors` joins Köstering/Krampe and Jan Wenzel Schmidt. Persons 1,952 (replay 1,956) → 1,946, Stimmen on pages 417,934 (replay 417,707) → 418,104; the gate checks the replay against its input store and against a fresh build that ingests the cached roster
 - One Fraktion rule on both sides of the withheld share (PR 2 ship review P3, and Codex's Gruppe Die Linke reproduction): v0.39.0.0, #152, 2026-11-13. `_withheld_coverage` labels a withheld Rede with `derive.speech_zusammenschluss` by the Sitzung, as persist labels stored Reden; the reproduction moves from Die Linke 0 stored words, share 1.0 to Gruppe Die Linke 3 and 0.5.

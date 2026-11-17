@@ -126,6 +126,73 @@ class MergedRecordParseTests(unittest.TestCase):
         self.assertEqual(dip.parse_redner(redner)["fraktion"], "SPDCDU/CSU")
 
 
+#: The two speaker lines whose <fraktion> names no Fraktion, verbatim from the cached XML.
+FREUDENSTEIN_XML = (  # 18/222 ID1822204600, docs/source-errors.md C6
+    '<p klasse="redner"><redner id="11004277"><name><titel>Dr.</titel><vorname>Astrid</vorname>'
+    "<nachname>Freudenstein</nachname><fraktion>CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –</fraktion>"
+    "</name></redner>Dr. Astrid Freudenstein (CDU/CSU): Ich glaube, ich habe auch nicht gesagt – –</p>"
+)
+SIELING_XML = (  # 19/60 ID196001500, docs/source-errors.md E7
+    '<p klasse="redner"><redner id="10000"><name><titel>Dr.</titel><vorname>Carsten Sieling,</vorname>'
+    "<nachname>Bürgermeister</nachname><fraktion>Bremen</fraktion></name></redner>"
+    "Dr. Carsten Sieling, Bürgermeister (Bremen):</p>"
+)
+
+
+class PrintedFraktionTests(unittest.TestCase):
+    """A <fraktion> value is one we know, or the sitting is refused (TODOS.md,
+    "Stored Fraktion values that are not Fraktionen")."""
+
+    def parsed(self, xml: str) -> dict:
+        return dip.parse_redner(ET.fromstring(xml).find("redner"))
+
+    # Value: protects=18/222's Erwiderung counts for CDU/CSU and no "CDU/CSU: Ich glaube, ..." group or parties row appears; fails_when=the parser copies <fraktion> as printed again; why_new=the store held the spoken text as a Fraktion on 1 Beitrag and 1 parties row; seam=none
+    def test_spoken_text_after_the_name_is_the_name(self) -> None:
+        speaker = self.parsed(FREUDENSTEIN_XML)
+        self.assertEqual((speaker["display_name"], speaker["fraktion"]), ("Dr. Astrid Freudenstein", "CDU/CSU"))
+
+    # Value: protects=19/60's Bundesrat Rede counts for the Bundesrat with no Fraktion, as the other 108 Bundesrat Reden do; fails_when=the Land name passes through as a Fraktion; why_new=the store held "Bremen" as a Fraktion on 1 Rede and 1 parties row; seam=none
+    def test_a_land_beside_a_bundesrat_member_is_no_fraktion(self) -> None:
+        speaker = self.parsed(SIELING_XML)
+        self.assertEqual((speaker["fraktion"], speaker["role"]), (None, "Bürgermeister (Bremen)"))
+        self.assertEqual(derive.sprechrolle(speaker), "bundesrat")
+
+    # Value: protects=no stray string reaches a per-Fraktion count unseen: the sitting is refused instead; fails_when=the known-set check is dropped or widened to anything; why_new=nothing checked the value before; seam=none
+    def test_any_other_unknown_value_is_refused(self) -> None:
+        for fraktion, label in (
+            ("Bremen", "Dr. Max Muster (Bremen):"),                       # a Land on an MdB, with no Bundesrat role
+            ("Hessen", "Dr. Max Muster, Bürgermeister (Bremen):"),         # a Land the role does not name
+            ("Piraten", "Dr. Max Muster (Piraten):"),
+            ("SPD Ich glaube", "Dr. Max Muster (SPD):"),                   # spoken text without the colon
+            ("Piraten: Ja", "Dr. Max Muster (Piraten):"),
+        ):
+            with self.subTest(fraktion):
+                xml = (f'<p klasse="redner"><redner id="1"><name><vorname>Max</vorname><nachname>Muster</nachname>'
+                       f"<fraktion>{fraktion}</fraktion></name></redner>{label}</p>")
+                with self.assertRaisesRegex(derive.UnknownFraktionError, "unknown Fraktion"):
+                    self.parsed(xml)
+        # A garbled merged record's label is checked too.
+        with self.assertRaises(derive.UnknownFraktionError):
+            self.parsed('<p klasse="redner"><redner id="1"><name><vorname>AB</vorname><nachname>CD</nachname>'
+                        "<fraktion>SPDCDU/CSU</fraktion></name></redner>Alexander Föhr (Piraten):</p>")
+
+    # Value: protects=every known spelling, a merged record and a missing value still parse; fails_when=the check refuses a spelling the stored sittings print; why_new=the check is new; seam=none
+    def test_known_values_pass_as_printed(self) -> None:
+        for printed in ("SPD", "DIE LINKE", "BÜNDNIS 90/DIE GRÜNE N", "fraktionslos", "BSW (Gruppe)", "SPDSPD", "SPDCDU/CSU", "", "  CDU/CSU "):
+            with self.subTest(printed):
+                self.assertEqual(derive.printed_fraktion(printed, None), printed.strip() or None)
+        self.assertEqual(derive.printed_fraktion("BÜNDNIS 90/DIE GRÜNEN", "Ministerin (Hessen)"), "BÜNDNIS 90/DIE GRÜNEN")
+
+    # Value: protects=a whole sitting with an unknown value is refused with the Redner named; fails_when=the error is swallowed or names no place; why_new=the refusal is new; seam=validate_dip_protocol.parse_protocol_xml
+    def test_the_sitting_is_refused_naming_the_redner(self) -> None:
+        xml = ('<dbtplenarprotokoll wahlperiode="20" sitzung-nr="1"><sitzungsverlauf><tagesordnungspunkt top-id="TOP 1">'
+               '<rede id="ID1"><p klasse="redner"><redner id="42"><name><vorname>Max</vorname><nachname>Muster</nachname>'
+               "<fraktion>Piraten</fraktion></name></redner>Max Muster (Piraten):</p><p>Text.</p></rede>"
+               "</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>")
+        with self.assertRaisesRegex(ValueError, r"unknown Fraktion 'Piraten' at redner 42"):
+            dip.parse_protocol_xml(xml)
+
+
 def report(number: str, date: str, *speakers: dict) -> dict:
     return {
         "protocol": {"id": f"p-{number}", "dokumentnummer": number, "datum": date},
