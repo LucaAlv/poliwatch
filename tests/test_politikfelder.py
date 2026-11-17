@@ -772,6 +772,29 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(saved["vorgaenge"]["c"]["deskriptor_sachbegriffe"], ["Wolf"])
         self.assertEqual(saved["vorgaenge"]["c"]["abstract"], "A")
 
+    # Value: protects=a refetched Vorgang (one cached without Sachgebiet) whose DIP answer lacks titel or abstract keeps the cached ones, while every field DIP does send replaces the cached value; fails_when=fetch_ids replaces the cached record whole (cache["vorgaenge"].update(records)), so a vote's "Worum es geht" loses its title and description; why_new=the refetch dropped them; seam=FakeClient answers /vorgang
+    def test_a_refetched_vorgang_keeps_cached_fields_the_answer_lacks(self) -> None:
+        cached = {"titel": "Alter Titel", "abstract": "Alte Beschreibung", "vorgangstyp": "Antrag",
+                  "aktualisiert": "2025-01-01", "sachgebiet": [], "deskriptor_sachbegriffe": ["Alt"]}
+        cache = cache_of(
+            {"a": dict(cached), "b": dict(cached)} | {n: dip.vorgang_cache_record(raw("Recht")) for n in "cd"},
+            {"21/7": ["c"], "21/8": ["d"]},
+        )
+        answer_a = {"sachgebiet": ["Gesundheit"], "aktualisiert": "2026-02-02",
+                    "deskriptor": [{"name": "Neu", "typ": "Sachbegriffe"}]}  # no titel, abstract or vorgangstyp
+        answer_b = {"sachgebiet": ["Recht"], "titel": "Neuer Titel", "abstract": "Neue Beschreibung", "vorgangstyp": "Gesetzgebung"}
+        client = FakeClient({"a": answer_a, "b": answer_b})
+        stats, saved, _ = self.run_refresh(client, cache)
+        self.assertEqual([p["f.id"] for _, p in client.calls], [["a", "b"]])
+        self.assertEqual(stats["vorgaenge"], 2)
+        expected_a = {"titel": "Alter Titel", "abstract": "Alte Beschreibung", "vorgangstyp": "Antrag",
+                      "aktualisiert": "2026-02-02", "sachgebiet": ["Gesundheit"], "deskriptor_sachbegriffe": ["Neu"]}
+        expected_b = {"titel": "Neuer Titel", "abstract": "Neue Beschreibung", "vorgangstyp": "Gesetzgebung",
+                      "aktualisiert": "2025-01-01", "sachgebiet": ["Recht"], "deskriptor_sachbegriffe": []}
+        for record in (cache["vorgaenge"], saved["vorgaenge"]):
+            self.assertEqual(record["a"], expected_a)
+            self.assertEqual(record["b"], expected_b)
+
     def test_a_cached_vorgang_without_sachgebiet_is_refetched_and_a_second_run_fetches_nothing(self) -> None:
         records = {"a": raw("Gesundheit"), "b": raw("Recht")}
         cache = cache_of(
