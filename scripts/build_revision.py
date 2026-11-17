@@ -132,14 +132,21 @@ def authored_inputs_problem(repo_root: Path, relative_paths: Sequence[str]) -> s
 
 
 def full_commit(repo_root: Path, commit: str) -> str | None:
-    """The 40-digit id of ``commit`` when it names a commit of this repository."""
+    """The 40-digit id of the one commit whose id starts with ``commit``, or None.
+    Only object ids are searched (``--disambiguate``): a branch or tag named like
+    the digits would win a plain ``rev-parse <hex>``."""
     if not is_release_revision(commit):
         return None
     try:
-        full = _git(repo_root, "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}", timeout=5).decode("ascii").strip()
+        candidates = _git(repo_root, "rev-parse", f"--disambiguate={commit}", timeout=5).decode("ascii").split()
+        commits = [
+            candidate for candidate in candidates
+            if re.fullmatch(r"[0-9a-f]{40}", candidate)
+            and _git(repo_root, "cat-file", "-t", candidate, timeout=5).decode("ascii").strip() == "commit"
+        ]
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return None
-    return full if re.fullmatch(r"[0-9a-f]{40}", full) else None
+    return commits[0] if len(commits) == 1 else None
 
 
 def text_sha256(content: bytes) -> str:

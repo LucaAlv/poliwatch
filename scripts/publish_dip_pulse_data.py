@@ -10,7 +10,9 @@ Typical use (see scripts/publish_dip_pulse_data.sh for the wrapper):
 
 The default is a dry run: it checks the export, writes the release directory
 (``<output-dir>/data-<version>/``) and prints the ``gh release create`` command it
-would run. ``--publish`` creates the release through ``gh`` and refuses unless
+would run. A later run reuses an existing release directory only when its files
+are exactly the ones it builds (``--publish`` after a dry run the same day, or
+after a failed ``gh`` call); otherwise it refuses and never overwrites. ``--publish`` creates the release through ``gh`` and refuses unless
 the export carries a licence string (ADR 0003) and every exclusion on its record
 is final, ``source_defect`` or ``not_narrowable`` (ADR 0005, "Coverage and the
 bar"). This script never pushes, tags or uploads by itself; the only remote
@@ -21,7 +23,10 @@ clean commit that exists in this repository (the manifest's, not HEAD), from the
 authored inputs that commit holds, with the MdB-Stammdaten loaded, every
 file matches the manifest, and the manifest's withheld_reden list matches the
 exported withheld_units rows. The export's LICENSE-DATA.md is one of those files:
-non-empty and equal to the one that commit holds.
+non-empty and equal to the one that commit holds. The staged copy is checked
+against the verified manifest again before it becomes the release directory.
+A follow-up release's ``--previous-manifest`` must be the latest known release,
+and ``--publish`` refuses a tag that already exists on origin.
 """
 
 from __future__ import annotations
@@ -74,8 +79,14 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path, what: str) -> Any:
+    return _read_json_bytes(path, what)[0]
+
+
+def _read_json_bytes(path: Path, what: str) -> tuple[Any, bytes]:
+    """The parsed file and the bytes it was parsed from (read once)."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
+        return json.loads(raw.decode("utf-8")), raw
     # ValueError covers JSONDecodeError, UnicodeDecodeError and an integer past
     # the 4300-digit limit; RecursionError a nesting deeper than the parser's stack.
     except (OSError, ValueError, RecursionError) as exc:
@@ -202,11 +213,23 @@ def remote_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
     return {version for tag in names if (version := release_version.version_of(tag))}
 
 
-def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], str, str]:
-    """The manifest, the release version and the full commit of an export that may be released."""
+def remote_tag_exists(repo_root: Path, run: Callable[..., Any], tag: str) -> bool:
+    """Whether origin holds refs/tags/<tag>. gh release create attaches to an
+    existing tag and ignores --target, so a tag a failed run left must not be reused."""
+    ref = f"refs/tags/{tag}"
+    result = run(["git", "ls-remote", "--tags", "origin", ref], cwd=repo_root, env=build_revision.clean_env(), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ReleaseError(f"cannot ask origin for tag {tag} (git ls-remote failed: {result.stderr.strip() or 'no message'}); not publishing blind")
+    return any(line.rpartition("\t")[2] in (ref, ref + "^{}") for line in result.stdout.splitlines())
+
+
+def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], str, str, str]:
+    """The manifest, the release version, the full commit of an export that may
+    be released, and the sha256 of the datenstand.json bytes that were checked."""
     site = _site()
     manifest_path = exports_dir / "datenstand.json"
-    manifest = site.validate_manifest(_read_json(manifest_path, "manifest"), str(manifest_path), subject=str(manifest_path))
+    parsed, raw = _read_json_bytes(manifest_path, "manifest")
+    manifest = site.validate_manifest(parsed, str(manifest_path), subject=str(manifest_path))
     version = manifest.get("tag")
     if not release_version.is_version(version):
         raise ReleaseError(
@@ -244,7 +267,7 @@ def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], s
             raise ReleaseError(f"{path} is not a regular file")
         if path.stat().st_size != entry["bytes"] or _sha256(path) != entry.get("sha256"):
             raise ReleaseError(f"{path} does not match the manifest (size or sha256)")
-    return manifest, version, full
+    return manifest, version, full, hashlib.sha256(raw).hexdigest()
 
 
 def _link_or_copy(source: Path, target: Path) -> None:
@@ -264,26 +287,73 @@ def _write_checksums(directory: Path) -> None:
     (directory / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def staging_problem(staging: Path, manifest: dict[str, Any], manifest_sha256: str) -> str | None:
+    """Why the staged copy is not the export verify_export checked, or None.
+    The export may be replaced between the check and the copy (release item 5)."""
+    changed = []
+    if _sha256(staging / "datenstand.json") != manifest_sha256:
+        changed.append("datenstand.json")
+    for entry in manifest["files"]:
+        path = staging / manifest["generation"] / entry["name"]
+        if not path.is_file() or path.stat().st_size != entry["bytes"] or _sha256(path) != entry["sha256"]:
+            changed.append(entry["name"])
+    if not changed:
+        return None
+    return f"the export's {', '.join(changed)} changed after it was verified; let a running export finish, then export it again"
+
+
+def _file_digests(directory: Path) -> dict[str, str]:
+    return {
+        path.relative_to(directory).as_posix(): (_sha256(path) if path.is_file() and not path.is_symlink() else "not a regular file")
+        for path in directory.rglob("*")
+        if not path.is_dir() or path.is_symlink()
+    }
+
+
+def directory_difference(existing: Path, built: Path) -> str | None:
+    """How an existing release directory differs from the one just built, or None."""
+    have, want = _file_digests(existing), _file_digests(built)
+    problems = [f"extra {name}" for name in sorted(have.keys() - want.keys())]
+    problems += [f"missing {name}" for name in sorted(want.keys() - have.keys())]
+    problems += [f"different {name}" for name in sorted(have.keys() & want.keys()) if have[name] != want[name]]
+    if not problems:
+        return None
+    return ", ".join(problems[:6]) + (f", and {len(problems) - 6} more" if len(problems) > 6 else "")
+
+
 def build_release_directory(
-    *, exports_dir: Path, manifest: dict[str, Any], version: str, changes: dict[str, Any], output_dir: Path
-) -> Path:
+    *, exports_dir: Path, manifest: dict[str, Any], manifest_sha256: str, version: str, changes: dict[str, Any], output_dir: Path
+) -> tuple[Path, bool]:
+    """The release directory and whether it already existed. An existing one is
+    reused only when its files are exactly the ones this run builds (a dry run
+    of the same release on the same day, or a publish whose gh call failed)."""
     release_dir = output_dir / release_version.tag_for(version)
-    if release_dir.exists():
-        raise ReleaseError(f"{release_dir} already exists; a release directory is never overwritten")
     output_dir.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(dir=output_dir, prefix=".building-"))
     try:
         shutil.copyfile(exports_dir / "datenstand.json", staging / "datenstand.json")
         for entry in manifest["files"]:
             _link_or_copy(exports_dir / manifest["generation"] / entry["name"], staging / manifest["generation"] / entry["name"])
+        problem = staging_problem(staging, manifest, manifest_sha256)
+        if problem:
+            raise ReleaseError(problem)
         (staging / "changes.json").write_text(json.dumps(changes, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (staging / "CHANGES.md").write_text(release_changes.render_markdown(changes), encoding="utf-8")
         _write_checksums(staging)
+        if release_dir.exists() or release_dir.is_symlink():
+            difference = directory_difference(release_dir, staging) if release_dir.is_dir() and not release_dir.is_symlink() else "not a directory"
+            if difference:
+                raise ReleaseError(
+                    f"{release_dir} already exists and differs from this release ({difference}); a release directory "
+                    "is never overwritten: remove it or use a fresh --output-dir"
+                )
+            shutil.rmtree(staging)
+            return release_dir, True
         staging.rename(release_dir)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    return release_dir
+    return release_dir, False
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -320,7 +390,7 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             data_base_url = _site().resolve_data_base_url(args.base_url)
         except ValueError as exc:
             raise ReleaseError(str(exc)) from exc
-    manifest, version, full_commit = verify_export(args.exports_dir, repo_root)
+    manifest, version, full_commit, manifest_sha256 = verify_export(args.exports_dir, repo_root)
     problem = withheld_export_problem(manifest, args.exports_dir / manifest["generation"])
     if problem:
         raise ReleaseError(problem)
@@ -342,6 +412,11 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
     if args.initial and known:
         raise ReleaseError(f"--initial, but data releases already exist ({', '.join(sorted(known, key=release_version.version_key))}); give --previous-manifest instead")
+    if args.publish and remote_tag_exists(repo_root, run, tag):
+        raise ReleaseError(
+            f"tag {tag} already exists on origin but has no release: gh release create attaches to it and ignores --target {full_commit}. "
+            f"If a failed run left it, delete it (git push origin :refs/tags/{tag}) and run again; otherwise build a new version (--next-version)"
+        )
     previous = None
     if args.previous_manifest:
         # JSON null too: read as None it would label this release the first one.
@@ -349,13 +424,24 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         problem = previous_manifest_problem(previous)
         if problem:
             raise ReleaseError(f"the previous manifest {args.previous_manifest} {problem}")
+        # An older release's manifest gives false deltas and can hide a schema
+        # change from the authored schema_changes guard (release item 4).
+        searched = "local tags and gh's releases" if args.publish else "local tags only; git fetch --tags, or --publish also asks gh"
+        if not known:
+            raise ReleaseError(f"--previous-manifest, but no data release is known ({searched}); give --initial for the first release")
+        latest = max(known, key=release_version.version_key)
+        if previous.get("tag") != latest:
+            raise ReleaseError(
+                f"the previous manifest {args.previous_manifest} is release {previous.get('tag')}, but the latest known release is {latest} "
+                f"({searched}); give the datenstand.json of {latest}"
+            )
     authored = release_changes.load_authored(args.changes) if args.changes else None
     changes = release_changes.assemble(version=version, released=today, manifest=manifest, previous_manifest=previous, authored=authored)
     problem = withheld_cap_problem(changes, args.confirm_withheld)
     if problem:
         raise ReleaseError(problem)
-    release_dir = build_release_directory(
-        exports_dir=args.exports_dir, manifest=manifest, version=version, changes=changes, output_dir=args.output_dir,
+    release_dir, reused = build_release_directory(
+        exports_dir=args.exports_dir, manifest=manifest, manifest_sha256=manifest_sha256, version=version, changes=changes, output_dir=args.output_dir,
     )
     files = sorted((path for path in release_dir.rglob("*") if path.is_file()), key=lambda p: p.relative_to(release_dir).as_posix())
     command = [
@@ -366,12 +452,12 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     out(f"tag: {tag}")
     out(f"export format: {manifest['export_format']}" + (" (schema change, see CHANGES.md)" if changes["schema_changed"] else ""))
     out(f"commit: {full_commit}")
-    out(f"release directory: {release_dir}")
+    out(f"release directory: {release_dir}" + (" (reusing the existing one: its files match this release)" if reused else ""))
     out("site build: --offline --data-manifest " + f"{release_dir / 'datenstand.json'} --data-base-url {data_base_url or '<where the release directory is served>'}")
     if not args.publish:
         out("dry run: nothing was published. The command --publish would run:")
         out(shlex.join(command))
-        out("immutability check: local tags only (best effort); --publish also asks gh for existing releases.")
+        out("immutability and latest-release checks: local tags only (best effort); --publish also asks gh for existing releases and origin for the tag.")
         out(
             "hosting: GitHub release assets are flat, but the site links <base><generation>/<file>; "
             "a GitHub release URL as --base-url does not resolve until the site's link scheme or the host changes "
@@ -384,7 +470,12 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         return
     result = run(command, cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:
-        raise ReleaseError(f"gh release create failed: {result.stderr.strip() or 'no message'} (the release directory {release_dir} is kept)")
+        raise ReleaseError(
+            f"gh release create failed: {result.stderr.strip() or 'no message'}. The release directory {release_dir} is kept; "
+            f"the same command publishes it once the cause is fixed. gh may have left a tag or a release behind: check with "
+            f"git ls-remote --tags origin refs/tags/{tag} and gh release view {tag}, and delete what this run left "
+            f"(gh release delete {tag} --cleanup-tag, or git push origin :refs/tags/{tag}) before running it again"
+        )
     out(f"published: {result.stdout.strip()}")
 
 

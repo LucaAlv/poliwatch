@@ -39,7 +39,7 @@ def git(repo: Path, *args: str) -> str:
 class Runner:
     """Runs git for real in the temporary repository, answers gh from a script, and records everything."""
 
-    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=()):
+    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False):
         self.calls: list[list[str]] = []
         self.missing = tuple(missing)
         self.gh_tags = list(gh_tags)
@@ -47,6 +47,8 @@ class Runner:
         self.gh_list_stdout = gh_list_stdout
         self.gh_create_fails = gh_create_fails
         self.git_tag_fails = git_tag_fails
+        self.remote_tags = list(remote_tags)
+        self.ls_remote_fails = ls_remote_fails
 
     def __call__(self, command, **kwargs):
         self.calls.append(list(command))
@@ -63,6 +65,13 @@ class Runner:
                     return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 422: Validation Failed")
                 return SimpleNamespace(returncode=0, stdout="https://example.invalid/release", stderr="")
             raise AssertionError(f"unexpected gh call {command}")
+        if command[:2] == ["git", "ls-remote"]:
+            # The temporary repository has no remote; answer as origin would.
+            if self.ls_remote_fails:
+                return SimpleNamespace(returncode=128, stdout="", stderr="fatal: 'origin' does not appear to be a git repository")
+            asked = command[-1]
+            lines = [f"{'0' * 40}\t{ref}" for ref in (f"refs/tags/{tag}" for tag in self.remote_tags) if ref == asked]
+            return SimpleNamespace(returncode=0, stdout="".join(line + "\n" for line in lines), stderr="")
         if self.git_tag_fails and command[:2] == ["git", "tag"]:
             return SimpleNamespace(returncode=128, stdout="", stderr="fatal: not a git repository")
         return subprocess.run(command, **{**kwargs, "capture_output": True, "text": True})
@@ -279,8 +288,10 @@ class RefusalTests(ReleaseTestCase):
         (release / "x").write_text("x")
         code, _, stderr = self.run_script("--initial")
         self.assertEqual(code, 1)
-        self.assertIn("already exists", stderr)
+        self.assertIn("already exists and differs from this release", stderr)
+        self.assertIn("remove it or use a fresh --output-dir", stderr)
         self.assertEqual([path.name for path in release.iterdir()], ["x"], "an existing release directory is left untouched")
+        self.assertEqual([path.name for path in self.out.iterdir()], [f"data-{VERSION}"], "no staging directory is left behind")
 
     # Value: protects=--initial is refused while data releases exist locally; fails_when=a clone with release tags can label a release initial; why_new=the initial flag is explicit but must still be true; seam=main; no_claim=remote releases (publish tests)
     def test_initial_is_refused_when_release_tags_exist(self) -> None:
@@ -369,6 +380,39 @@ class RefusalTests(ReleaseTestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual([path.name for path in self.out.iterdir()], [f"data-{VERSION}"])
 
+
+    # Value: protects=an export file or datenstand.json replaced after verify_export checked it never reaches the release directory: the staging copy is checked against the verified manifest bytes and every file's size and sha256 before the rename; fails_when=build_release_directory re-reads and links whatever the export holds by then (release item 5, TOCTOU); why_new=release item 5; seam=main with verify_export wrapped to swap a file after it returns; no_claim=a swap during the final rename
+    def test_a_file_swapped_after_verification_is_refused_before_the_rename(self) -> None:
+        real_verify = publish.verify_export
+
+        def swap_manifest(exports_dir: Path) -> None:
+            path = exports_dir / "datenstand.json"
+            path.write_text(path.read_text(encoding="utf-8").replace('"total_rows":', '"total_rows" :', 1), encoding="utf-8")
+
+        def swap_data_md(exports_dir: Path) -> None:
+            target = exports_dir / self.manifest["generation"] / "DATA.md"
+            content = target.read_bytes() + b"\nnachtraeglich\n"
+            target.unlink()  # a new file, as an export that is replaced writes it
+            target.write_bytes(content)
+
+        for label, swap, fragment in (
+            ("datenstand.json", swap_manifest, "datenstand.json changed after it was verified"),
+            ("a generation file", swap_data_md, "DATA.md changed after it was verified"),
+        ):
+            with self.subTest(label):
+                shutil.rmtree(self.exports_copy)
+                shutil.copytree(self.exports, self.exports_copy)
+                shutil.rmtree(self.out, ignore_errors=True)
+
+                def verify_then_swap(exports_dir, repo_root, swap=swap):
+                    result = real_verify(exports_dir, repo_root)
+                    swap(exports_dir)
+                    return result
+
+                with mock.patch.object(publish, "verify_export", side_effect=verify_then_swap):
+                    code, _, stderr = self.run_script("--initial")
+                self.assert_refused(code, stderr, fragment, "export it again")
+                self.assertEqual(list(self.out.iterdir()), [], "no staging directory is left behind")
 
     # Value: protects=relative --output-dir/--exports-dir run from outside the repository reach gh as absolute paths, and an output path with "#" is refused before anything is written; fails_when=gh (run with cwd=repo_root) is handed a relative asset path that resolves elsewhere, or "#" splits a path into an asset label; why_new=release item 10b (P1), reachable once --publish opens; seam=main from another cwd; no_claim=gh's own path handling (mocked)
     def test_relative_directories_reach_gh_as_absolute_paths_and_a_hash_is_refused(self) -> None:
@@ -493,23 +537,76 @@ class PublishTests(ReleaseTestCase):
         for call in self.runner.calls:
             self.assertNotEqual(call[:2], ["git", "push"])
 
-    # Value: protects=a failing gh release create exits 1 with gh's message, keeps the finished release directory, and a retry is refused rather than overwriting it; fails_when=the failure is reported as success, the directory is deleted or half-written, or the retry overwrites it; why_new=only the successful create was exercised; seam=main with a recorded gh; no_claim=gh's real failure modes (mocked)
-    def test_a_failed_gh_create_keeps_the_release_directory_and_the_retry_is_refused(self) -> None:
+    # Value: protects=a failing gh release create exits 1 with gh's message and names the recovery step (check origin for a left-behind tag or release), keeps the finished directory, and the retry publishes that same directory; fails_when=the failure is reported as success, the directory is deleted or half-written, the message leaves the reader at a dead end, or the retry is refused as "already exists" (release item 1); why_new=the retry used to be refused with no way forward; seam=main with a recorded gh; no_claim=gh's real failure modes (mocked)
+    def test_a_failed_gh_create_names_the_recovery_and_the_retry_reuses_the_directory(self) -> None:
         runner = Runner(gh_create_fails=True)
         code, stdout, stderr = self.run_script("--initial", "--publish", runner=runner)
         self.assertEqual(code, 1)
         self.assertIn("gh release create failed", stderr)
         self.assertIn("HTTP 422", stderr)
+        self.assertIn(f"git ls-remote --tags origin refs/tags/data-{VERSION}", stderr)
+        self.assertIn(f"gh release view data-{VERSION}", stderr)
         self.assertNotIn("published:", stdout)
         release = self.out / f"data-{VERSION}"
         self.assertIn(str(release), stderr)
         self.assertTrue((release / "SHA256SUMS").is_file() and (release / self.manifest["generation"] / "LICENSE-DATA.md").is_file())
         self.assertEqual(len(runner.gh("release", "create")), 1)
+        before = {path.relative_to(release).as_posix(): path.read_bytes() for path in release.rglob("*") if path.is_file()}
+        retry = Runner()
+        code, stdout, stderr = self.run_script("--initial", "--publish", runner=retry)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("published:", stdout)
+        self.assertEqual({path.relative_to(release).as_posix(): path.read_bytes() for path in release.rglob("*") if path.is_file()}, before)
+        (create,) = retry.gh("release", "create")
+        self.assertEqual(sorted(create[4 : create.index("--title")]), sorted(str(release / name) for name in before))
+        self.assertEqual([path.name for path in self.out.iterdir()], [f"data-{VERSION}"], "no staging directory is left behind")
+
+    # Value: protects=the documented flow, a dry run followed by --publish into the same --output-dir, publishes the rehearsed directory, while a dry run from another day (a different changes.json) is refused naming the differing file and the recovery; fails_when=--publish refuses the rehearsed directory as "already exists" (release item 1), or silently publishes a directory whose files differ from this run's release; why_new=release item 1; seam=main with a recorded gh; no_claim=gh behaviour (mocked)
+    def test_publish_after_a_dry_run_reuses_a_matching_directory_only(self) -> None:
+        code, _, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        code, stdout, stderr = self.run_script("--initial", "--publish")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(self.runner.gh("release", "create")), 1)
+        self.assertIn("reusing", stdout)
+        shutil.rmtree(self.out)
+        code, _, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        release = self.out / f"data-{VERSION}"
         before = sorted(path.relative_to(release).as_posix() for path in release.rglob("*") if path.is_file())
-        code, _, stderr = self.run_script("--initial", "--publish", runner=Runner())
+        runner = Runner()
+        stderr = io.StringIO()
+        argv = ["--exports-dir", str(self.exports_copy), "--output-dir", str(self.out), "--base-url", BASE_URL, "--initial", "--publish"]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            code = publish.main(argv, repo_root=self.repo, run=runner, today=date(2026, 11, 2))
         self.assertEqual(code, 1)
-        self.assertIn("already exists", stderr)
+        self.assertIn("already exists and differs from this release", stderr.getvalue())
+        self.assertIn("changes.json", stderr.getvalue())
+        self.assertIn("remove it or use a fresh --output-dir", stderr.getvalue())
+        self.assertEqual(runner.gh("release", "create"), [])
         self.assertEqual(sorted(path.relative_to(release).as_posix() for path in release.rglob("*") if path.is_file()), before)
+        self.assertEqual([path.name for path in self.out.iterdir()], [f"data-{VERSION}"])
+
+    # Value: protects=--publish asks origin for the release tag before gh and refuses when it already exists or origin cannot be asked; fails_when=gh release create attaches to a left-behind remote tag and ignores --target (release item 2), or a failed ls-remote reads as "no tag"; why_new=release item 2; seam=main with a recorded git ls-remote and gh; no_claim=the real remote (mocked)
+    def test_publish_refuses_a_tag_that_already_exists_on_origin(self) -> None:
+        for label, runner, fragments in (
+            ("tag on origin", Runner(remote_tags=[f"data-{VERSION}"]), ("already exists on origin", "ignores --target", f"git push origin :refs/tags/data-{VERSION}")),
+            ("origin cannot be asked", Runner(ls_remote_fails=True), ("git ls-remote", "not publishing blind")),
+        ):
+            with self.subTest(label):
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+                self.assert_refused(code, stderr, *fragments)
+                self.assertEqual(runner.gh("release", "create"), [])
+                shutil.rmtree(self.out, ignore_errors=True)
+        runner = Runner(remote_tags=["data-2026.10.01"])
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assertEqual(code, 0, stderr)
+        ls_remote = [i for i, call in enumerate(runner.calls) if call[:2] == ["git", "ls-remote"]]
+        create = [i for i, call in enumerate(runner.calls) if call[:3] == ["gh", "release", "create"]]
+        self.assertEqual(len(ls_remote), 1)
+        self.assertEqual(runner.calls[ls_remote[0]][-1], f"refs/tags/data-{VERSION}")
+        self.assertLess(ls_remote[0], create[0])
+        self.assertEqual([call for call in self.runner.calls if call[:2] == ["git", "ls-remote"]], [], "a dry run asks no remote")
 
     # Value: protects=--publish refuses an export built without a licence string even though it carries LICENSE-DATA.md; fails_when=an empty manifest licence passes; why_new=the project documentation promises the publish step refuses on an empty string; seam=main; no_claim=string content
     def test_publish_refuses_an_export_without_a_licence_string(self) -> None:
@@ -577,6 +674,36 @@ class PublishTests(ReleaseTestCase):
 
 
 class FollowUpReleaseTests(ReleaseTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # The previous manifests below are release 2026.10.01's, so this clone knows that release.
+        git(self.repo, "tag", "data-2026.10.01")
+        self.addCleanup(git, self.repo, "tag", "-d", "data-2026.10.01")
+
+    # Value: protects=--previous-manifest must be the latest known release (local tags; with --publish also gh's releases), and is refused when no release is known at all; fails_when=an older previous manifest gives false deltas and can hide a schema change from the authored schema_changes guard (release item 4), or a follow-up release is assembled against a release nobody published; why_new=release item 4; seam=main with local tags and a recorded gh; no_claim=whether the previous manifest's bytes are the published asset's
+    def test_the_previous_manifest_must_be_the_latest_known_release(self) -> None:
+        previous = self.work / "previous.json"
+        previous.write_text(json.dumps({**self.manifest, "tag": "2026.10.01"}), encoding="utf-8")
+        args = ("--previous-manifest", str(previous), "--changes", self.write_changes({"summary": "x"}))
+        git(self.repo, "tag", "data-2026.10.15")
+        try:
+            code, _, stderr = self.run_script(*args)
+        finally:
+            git(self.repo, "tag", "-d", "data-2026.10.15")
+        self.assert_refused(code, stderr, "is release 2026.10.01, but the latest known release is 2026.10.15", "datenstand.json of 2026.10.15")
+        runner = Runner(gh_tags=["data-2026.10.01", "data-2026.10.20"])
+        code, _, stderr = self.run_script(*args, "--publish", runner=runner)
+        self.assert_refused(code, stderr, "the latest known release is 2026.10.20")
+        self.assertEqual(runner.gh("release", "create"), [])
+        git(self.repo, "tag", "-d", "data-2026.10.01")
+        try:
+            code, _, stderr = self.run_script(*args)
+        finally:
+            git(self.repo, "tag", "data-2026.10.01")
+        self.assert_refused(code, stderr, "no data release is known", "--initial")
+        code, _, stderr = self.run_script(*args)
+        self.assertEqual(code, 0, stderr)
+
     # Value: protects=a later release assembles its changelog from the previous manifest and the authored file and is refused without them; fails_when=a missing --changes passes, the previous version is not recorded, or the corrections do not reach changes.json and CHANGES.md; why_new=a researcher must be able to check a cited figure against the release before; seam=main; no_claim=changelog rules (tested in test_release_changes)
     def test_a_later_release_needs_and_uses_the_changes_file(self) -> None:
         previous = self.work / "previous.json"
@@ -622,6 +749,8 @@ class FollowUpReleaseTests(ReleaseTestCase):
 
     # Value: protects=the manifest's withheld list matches the withheld_units rows a reader downloads (P2); fails_when=a hand-edited list (rows removed, added or re-reasoned) passes the cap and the changelog; why_new=Codex's repro at PR 2's ship; seam=main
     def test_the_withheld_list_must_match_the_exported_rows(self) -> None:
+        git(self.repo, "tag", "-d", "data-2026.10.01")  # these runs are --initial
+        self.addCleanup(git, self.repo, "tag", "data-2026.10.01")
         listed = self.manifest["withheld_reden"]
         cases = (
             ("every row removed", [], "only in the export: 18/7 R1, 18/7 R2, 18/7 R3"),
