@@ -1609,8 +1609,10 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
             )
             # Retain biographies after a known non-MdB role clears its old flag,
             # and a re-issued DIP record, which the roster lists beside its
-            # successor (upsert_mp stores it with is_mdb 0).
-            if row["is_mdb"] or row["id"] in roster_records or registry.superseded_dip_person(dict(row))
+            # successor (upsert_mp stores it with is_mdb 0): only a roster row,
+            # whose DIP funktion is "MdB", not one a report merely sampled.
+            if row["is_mdb"] or row["id"] in roster_records
+            or (registry.superseded_dip_person(dict(row)) and derive.is_mdb_funktion(_parse_listish(row["function"])))
         ]
     finally:
         previous.close()
@@ -9156,13 +9158,22 @@ def land_office_wahlperioden(person: Mapping[str, Any]) -> set[int]:
     Wahlperiode of any office while ``funktion`` names only the latest one, so
     Olaf Scholz (Erster Bürgermeister in Hamburg in WP 18/19) is listed for WP 18
     with ``funktion`` MdB. A Land office excludes a Bundestag seat; a federal
-    minister's role has no ``bundesland`` and is left alone."""
+    minister's role has no ``bundesland`` and is left alone.
+
+    ``wahlperiode_nummer`` counts only as a list of ints (DIP's shape). A role
+    holding anything else (a bare number, a string, a bool) is unreadable, so
+    nothing is cut: a misread Fraktion role could drop a real MdB period."""
     land: set[int] = set()
     fraktion: set[int] = set()
     for role in person.get("person_roles") or []:
         if not isinstance(role, Mapping):
             continue
-        numbers = {int(n) for n in role.get("wahlperiode_nummer") or [] if str(n).isdigit()}
+        raw = role.get("wahlperiode_nummer")
+        if raw is None:
+            raw = []
+        if not isinstance(raw, list) or any(type(n) is not int for n in raw):
+            return set()
+        numbers = set(raw)
         if role.get("fraktion"):
             fraktion |= numbers
         elif role.get("bundesland"):
@@ -9321,6 +9332,17 @@ def has_abgeordnete_page(mp: dict[str, Any]) -> bool:
         or (mp.get("speech_count") or 0) > 0
         or (mp.get("contribution_count") or 0) > 0
     )
+
+
+def alias_superseded_dip_keys(lookup: dict[str, str]) -> None:
+    """Let a speaker link that still carries a re-issued DIP id reach the
+    successor's page: every key ``mp_keys`` gives the successor (``dip:<id>``,
+    and ``dip:<id>:<partition>`` for a record in a reviewed partition) gets the
+    same key under the old id (mp_keys reads the old id as the successor's)."""
+    for superseded, successor in registry.dip_successors().items():
+        plain, partitioned = f"dip:{successor}", f"dip:{successor}:"
+        for key in [key for key in lookup if key == plain or key.startswith(partitioned)]:
+            lookup[f"dip:{superseded}{key[len(plain):]}"] = lookup[key]
 
 
 def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, str]]:
@@ -9559,11 +9581,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         for key in registry.mp_keys(row):
             key_owners.setdefault(key, set()).add(assignments[row["id"]])
     lookup = {key: owner for key, owner in lookup.items() if len(key_owners[key]) == 1}
-    # A speaker link that still carries a re-issued DIP id reaches the successor's
-    # page (mp_keys reads the old id as the successor's).
-    for superseded, successor in registry.dip_successors().items():
-        if f"dip:{successor}" in lookup:
-            lookup[f"dip:{superseded}"] = lookup[f"dip:{successor}"]
+    alias_superseded_dip_keys(lookup)
     page_ids = {mp["id"] for mp in mps if has_abgeordnete_page(mp)}
     for binding in conn.execute("SELECT id, person_id FROM person_bindings"):
         if binding["person_id"] in page_ids:

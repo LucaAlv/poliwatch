@@ -316,6 +316,55 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         jans = [page for page in pages if page["name"] == "Jan Example"]
         self.assertEqual([(page["speech_count"], page["party"], page["is_mdb"]) for page in jans], [(1, "fraktionslos", True)])
 
+    # Value: protects=a replay preserves a superseded DIP id's row only when the roster wrote it, so
+    #   a row a report merely sampled under the old id is not re-upserted with roster fields it never
+    #   had; fails_when=_read_roster_rows keeps every mps row with a superseded DIP id; why_new=the
+    #   /ship adversarial review of 2026-11-13 (item f); seam=none; no_claim=a sampled row whose DIP
+    #   funktion is itself "MdB", which reads as a roster row
+    def test_a_replay_preserves_a_superseded_row_only_when_the_roster_wrote_it(self):
+        sampled = report(names=("Ada Current",))
+        sampled["sampled_people"] = [{"id": "7", "titel": "Ada Earlier, Parl. Staatssekretärin", "fraktion": ["SPD"],
+                                      "funktion": ["Parl. Staatssekretärin"], "wahlperiode": 21}]
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            self.rebuild([sampled], preserve_roster=False)
+            self.assertEqual([m["dip_person_id"] for m in self.rows("mps") if m["dip_person_id"]], ["7"])
+            self.assertEqual(build._read_roster_rows(self.db), [])
+            roster = self.roster_of(dip_person("7", "Ada Earlier"), dip_person("9", "Ada Current"))
+            self.rebuild([report(names=("Ada Current",))], preserve_roster=False, roster_ingest=roster)
+            self.assertEqual(sorted(row["dip_person_id"] for row in build._read_roster_rows(self.db)), ["7", "9"])
+
+    # Value: protects=a speaker link that carries a superseded DIP id reaches the successor's page
+    #   under every key mp_keys gives the successor, a partitioned dip:<id>:<partition> key included;
+    #   fails_when=collect_abgeordnete aliases only the plain dip:<successor> key; why_new=the /ship
+    #   adversarial review of 2026-11-14 (item h); seam=none; no_claim=whether a superseded id ever
+    #   sits in a partition (neither 8054 nor 7406 does)
+    def test_a_superseded_dip_id_is_aliased_under_every_successor_key(self):
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            lookup = {"dip:9:ada": "page-ada", "dip:9": "page-nine", "dip:90": "page-ninety", "dip:90:bea": "page-bea"}
+            build.alias_superseded_dip_keys(lookup)
+        self.assertEqual(lookup, {"dip:9:ada": "page-ada", "dip:9": "page-nine", "dip:90": "page-ninety", "dip:90:bea": "page-bea",
+                                  "dip:7:ada": "page-ada", "dip:7": "page-nine"})
+
+    # Value: protects=land_office_wahlperioden reads wahlperiode_nummer only as a list of real ints and
+    #   cuts nothing on a role it cannot read, so a malformed DIP record neither aborts the roster
+    #   ingest nor drops a real MdB period; fails_when=a bare int raises TypeError, "19" reads as
+    #   {1, 9}, "²" passes isdigit, or True reads as WP 1; why_new=the adversarial pass on 8f13bf1
+    #   (A3 ship review, rule edge a); seam=none; no_claim=no cached DIP record has these shapes
+    def test_land_office_wahlperioden_reads_only_lists_of_ints(self):
+        def land(numbers, fraktion_numbers=(20,)):
+            return {"person_roles": [{"bundesland": "Hamburg", "wahlperiode_nummer": numbers},
+                                     {"fraktion": "SPD", "wahlperiode_nummer": list(fraktion_numbers)}]}
+        self.assertEqual(build.land_office_wahlperioden(land([18, 19])), {18, 19})
+        self.assertEqual(build.land_office_wahlperioden(land(None)), set())
+        self.assertEqual(build.land_office_wahlperioden({"person_roles": [{"bundesland": "Hamburg"}]}), set())
+        for shape in (19, "19", ["19"], ["²"], [True], [19.0], [18, "19"], {19: 1}):
+            with self.subTest(land=shape):
+                self.assertEqual(build.land_office_wahlperioden(land(shape)), set())
+            with self.subTest(fraktion=shape):
+                malformed = {"person_roles": [{"bundesland": "Hamburg", "wahlperiode_nummer": [19]},
+                                              {"fraktion": "SPD", "wahlperiode_nummer": shape}]}
+                self.assertEqual(build.land_office_wahlperioden(malformed), set())
+
     # Value: protects=a superseded DIP id is read as its successor for matching only: the old
     #   record keeps its own identity key and source id, so mps.dip_person_id stays unique and
     #   nothing is renamed; fails_when=current_dip_person_id leaks into identity keys or the stored
