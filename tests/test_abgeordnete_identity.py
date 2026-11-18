@@ -345,6 +345,26 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         self.assertEqual(lookup["dip:dip-1"], matches[0]["id"])
         self.assertEqual(lookup["xml:xml-1"], matches[0]["id"])
 
+    # Value ("abgeordnetenwatch profiles for WP 18/19", item 4): protects=a merged <redner id> ("11005217 999990074", source error C2) is looked up by its first id, the key the reparse carry-over and the store use;
+    #   fails_when=enrich_report_with_profiles passes the raw attribute, which no abgeordnetenwatch ext id equals, so the speaker falls through to the name search; seam=a recording resolver; no_claim=what the live API answers
+    def test_a_merged_redner_id_is_looked_up_by_its_first_id(self) -> None:
+        def speaker(redner_id: Any, last: str) -> dict[str, Any]:
+            return {"speaker": {"xml_redner_id": redner_id, "first_name": "Svenja", "last_name": last, "fraktion": "SPD"}}
+
+        report = {"agenda_items": [{"index": 1,
+                                    "xml_speakers": [speaker("11005217 999990074", "Schulze"), speaker("11000001", "Eins"),
+                                                     speaker(None, "Ohne")],
+                                    "xml_contributions": [speaker(" 11005217  999990074 ", "Schulze B")]}]}
+        calls: list[dict[str, Any]] = []
+
+        class Recorder:
+            def resolve(self, **call: Any) -> None:
+                calls.append(call)
+
+        site.enrich_report_with_profiles(report, Recorder())
+        self.assertEqual([(call["last_name"], call["ext_id"]) for call in calls],
+                         [("Schulze", "11005217"), ("Eins", "11000001"), ("Ohne", None), ("Schulze B", "11005217")])
+
     # Value: protects=a Person's Beiträge resolve to the same profile as their Reden and count beside them on one Abgeordnete row; a Beitrag-only Person keeps a page;
     #   fails_when=xml_contributions are skipped by profile enrichment, an id-less asker is resolved, or collect_abgeordnete folds Beiträge into speech_count;
     #   why_new=no test runs enrich_report_with_profiles or collect_abgeordnete over xml_contributions; the render tests feed hand-made contribution_counts; seam=none

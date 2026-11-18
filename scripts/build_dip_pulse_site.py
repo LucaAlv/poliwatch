@@ -1188,8 +1188,11 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
                     continue
                 if key == "xml_contributions" and not speaker.get("xml_redner_id"):
                     continue  # a question whose asker never speaks: a name only
+                # A merged record's <redner id> holds two ids ("11005217
+                # 999990074", docs/source-errors.md C2); the first is the person,
+                # as in the reparse carry-over and the store.
                 speaker["abgeordnetenwatch"] = resolver.resolve(
-                    ext_id=speaker.get("xml_redner_id"),
+                    ext_id=derive.first_redner_id(speaker.get("xml_redner_id")),
                     first_name=speaker.get("first_name"),
                     last_name=speaker.get("last_name"),
                     fraktion=speaker.get("fraktion"),

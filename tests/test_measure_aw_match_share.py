@@ -217,17 +217,22 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual((code, receipt["mdb_source"]), (0, "none"))
         self.assertIsNone(receipt["figures"]["18"]["M1"])
 
+    # Value ("abgeordnetenwatch profiles for WP 18/19", item 4): protects=a merged
+    # <redner id> counts once under its first id, is listed in M5, and is asked
+    # only by that first id, as the build now asks it; fails_when=the raw value is
+    # looked up again, or the merged value drops out of M5; seam=stub API;
+    # no_claim=what abgeordnetenwatch answers for a raw merged value.
     def test_merged_raw_counts_once_under_its_first_id(self) -> None:
         fixture = Fixture(self.root)
         code, receipt, calls = fixture.run()
         self.assertEqual(code, 0)
         self.assertEqual(receipt["m5"]["merged_raw_values"],
-                         [{"raw": "11000005 999990074", "redner_id": "11000005", "first_id_state": "hit", "raw_state": "miss"}])
-        self.assertEqual(receipt["m5"]["merged_hit_by_first_not_by_raw"], 1)
+                         [{"raw": "11000005 999990074", "redner_id": "11000005", "first_id_state": "hit"}])
         self.assertNotIn("999990074", [row["redner_id"] for row in receipt["m3"]["name_rule"]])
         asked = [call["ext_id_bundestagsverwaltung"] for call in calls if "ext_id_bundestagsverwaltung" in call]
         self.assertEqual(sorted(asked), sorted(["11000001", "11000002", "11000005", "11000006", "11000007",
-                                                "11000008", "999990001", "11000005 999990074"]))
+                                                "11000008", "999990001"]))
+        self.assertEqual(receipt["requests"]["ext_id_keys"], 7)
 
     def test_precision_flags(self) -> None:
         fixture = Fixture(self.root)
@@ -297,7 +302,7 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(m2["bounds"][0], 0.0)
         self.assertGreater(m2["reden_unresolved"], 0)
         self.assertEqual(m2["bounds"][1], round((m2["reden_hit"] + m2["reden_unresolved"]) / m2["reden"], 4))
-        self.assertEqual(receipt["requests"]["ext_id_keys"], 8)
+        self.assertEqual(receipt["requests"]["ext_id_keys"], 7)
         self.assertFalse(fixture.cache.exists())
 
     def test_a_failure_is_not_a_miss_and_a_rerun_asks_only_the_rest(self) -> None:
@@ -347,13 +352,69 @@ class MeasureTests(unittest.TestCase):
         urlopen.assert_not_called()
         self.assertEqual((found["11000002"]["state"], found["11000002"]["error"]), ("failed", "not asked: stopped"))
 
+    # Value (A3 item 1.5 review, item 6): protects=a name fallback cut short keeps
+    # the name searches it already answered, so a rerun does not ask them again;
+    # fails_when=name_fallback saves only after its last search; seam=a stub _get
+    # that raises on the second search; no_claim=none.
+    def test_a_name_fallback_cut_short_keeps_its_answers(self) -> None:
+        cache = self.root / "aw-cache.json"
+        resolver = aw.AbgeordnetenwatchResolver(cache, sleep_seconds=0)
+        ids = {"11000002": {"names": share.Counter({("Bob", "Builder"): 1}), "fraktionen": share.Counter()},
+               "11000003": {"names": share.Counter({("Cy", "Cut"): 1}), "fraktionen": share.Counter()}}
+
+        def get(self: aw.AbgeordnetenwatchResolver, params: dict) -> list:
+            if params["last_name"] == "Cut":
+                raise KeyboardInterrupt
+            self._call_failed = False
+            return [politician(2, "Bob Builder")]
+
+        with mock.patch.object(aw.AbgeordnetenwatchResolver, "_get", get), self.assertRaises(KeyboardInterrupt):
+            share.name_fallback(resolver, ids, ["11000002", "11000003"])
+        saved = json.loads(cache.read_text(encoding="utf-8"))["by_name"]
+        self.assertEqual([(key, value["id"]) for key, value in saved.items()], [("bob|builder|", 2)])
+
+    # Value (A3 item 1.5 review, item 8): protects=a malformed entry inside the
+    # answers file ends in exit 2 naming the file and the id, never a traceback;
+    # fails_when=lookup_all indexes an entry it never checked; seam=none;
+    # no_claim=none.
+    def test_a_malformed_answers_entry_exits_2_naming_the_file(self) -> None:
+        for n, entry in enumerate(("hit", None, [], {}, {"state": "bogus"}, {"state": "not_cached"}, {"state": 5})):
+            with self.subTest(entry=entry):
+                fixture = Fixture(self.root / f"e{n}")
+                self.assertEqual(fixture.run()[0], 0)
+                answers = fixture.cache.with_name(fixture.cache.name + ".answers.json")
+                body = json.dumps({"started_at": "2026-11-13T00:00:00Z", "answers": {"11000001": entry}})
+                answers.write_text(body, encoding="utf-8")
+                with self.assertRaises(AssertionError) as raised:
+                    fixture.run()
+                self.assertIn(answers.name, str(raised.exception))
+                self.assertIn("11000001", str(raised.exception))
+                self.assertNotIn("Traceback", str(raised.exception))
+                self.assertEqual(answers.read_text(encoding="utf-8"), body)
+
+    # Value (A3 item 1.5 review, item 11): protects=the answers file is written
+    # through a unique temporary file, like the cache; fails_when=_save writes a
+    # fixed <answers>.tmp; seam=a directory squatting on the old fixed name;
+    # no_claim=locking between writers.
+    def test_the_answers_file_is_written_through_a_unique_temporary_file(self) -> None:
+        fixture = Fixture(self.root)
+        fixture.cache.parent.mkdir(parents=True)
+        squatter = fixture.cache.with_name(fixture.cache.name + ".answers.json.tmp")
+        squatter.mkdir()
+        code, receipt, _ = fixture.run()
+        self.assertEqual(code, 0)
+        answers = json.loads(fixture.cache.with_name(fixture.cache.name + ".answers.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(answers["answers"]), receipt["requests"]["ext_id_keys"])
+        self.assertEqual(sorted(p.name for p in fixture.cache.parent.iterdir()),
+                         sorted([fixture.cache.name, fixture.cache.name + ".answers.json", squatter.name]))
+
     def test_repeated_failures_stop_asking(self) -> None:
         fixture = Fixture(self.root)
-        everything = set(API) | {"11000002", "11000005 999990074"}
+        everything = set(API) | {"11000002"}
         code, receipt, calls = fixture.run(fail=everything)
         self.assertEqual(code, 1)
         self.assertEqual(len(calls), share.MAX_FAILED_IN_A_ROW)
-        self.assertEqual(len(receipt["failures"]), 8)
+        self.assertEqual(len(receipt["failures"]), 7)
 
     def test_name_fallback_and_verdicts(self) -> None:
         fixture = Fixture(self.root)
