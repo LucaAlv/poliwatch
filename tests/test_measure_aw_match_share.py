@@ -23,6 +23,7 @@ import abgeordnetenwatch as aw
 import build_dip_pulse_site as site
 import measure_aw_match_share as share
 import person_registry as registry
+import reviewed_units
 import validate_dip_protocol as dip
 
 MDB = """<MDB><ID>{id}</ID><NAMEN>{names}</NAMEN><WAHLPERIODEN>{periods}</WAHLPERIODEN></MDB>"""
@@ -497,6 +498,14 @@ class MeasureTests(unittest.TestCase):
                                  "--cache", str(self.root / "c.json")], cwd=_support.ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("ERROR [aw-share]", result.stderr)
+
+    def test_a_missing_reviewed_list_exits_2(self) -> None:
+        fixture = Fixture(self.root)
+        error = reviewed_units.ReviewedUnitsError("list is missing")
+        with mock.patch.object(reviewed_units, "load", side_effect=error), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(share.main([str(fixture.output), "--cache", str(self.root / "c.json")]), 2)
+        self.assertIn("ERROR [reviewed-units]: list is missing", stderr.getvalue())
 
     def test_bad_input_exits_2(self) -> None:
         with contextlib.redirect_stderr(io.StringIO()):
