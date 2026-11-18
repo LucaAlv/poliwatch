@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.15.0] - 2026-11-18
+
+A site rendered offline can no longer show vote panels filed from a different MdB-Stammdaten file than the one its store was built from, and a refresh can no longer move the seat tables back to an older file. Nothing moves on the offline replay of the 801-sitting reference store against main: no vote, group count, Rede or Fakt changes, the store records the same Stammdaten file, and a plain offline render of it runs as before.
+
+### Fixed
+
+- **A plain offline render stops when the cached MdB-Stammdaten file is not the one the store was built with.** This also covers a file missing for a store built with one, or a file present for a store built without one. It names both files' Stand and says to rebuild with `--offline --repersist`, before any page is written. Before, the vote panels could file Stimmen by one file while the store's counts came from another.
+- **A downloaded MdB-Stammdaten file older than the cached one is not used.** The cached file stays and the build warns. Before, a server handing out an older file replaced the newer one, and the seat tables and the Stand on the Daten page moved backwards.
+- **The stored fingerprint of the MdB-Stammdaten file names the exact bytes the seat tables came from.** The file is read once, so a file replaced mid-build can no longer pair the seat rows of one file with the fingerprint of another.
+
+### Changed
+
+- **An MdB-Stammdaten file that declares entities, or carries an implausible date, is refused.** A file whose header declares its own DTD entities is refused before it is parsed; the Bundestag's own header, which only names an external DTD, still reads. A Stand before 2017 or more than a day in the future is refused too.
+- **The store gate's rebuilds use the input store's MdB-Stammdaten file**, so they file Stimmen the way the input store does. Under `--persist-only`, only a person cache it cannot read is reported as a gate error; any other failure keeps its traceback. An input store the current code cannot read now fails the gate with its cause instead of ending it without a receipt.
+
 ## [0.46.14.0] - 2026-11-18
 
 The store comparison that checks a data correction (`scripts/compare_store_values.py`, the README's "Validate a data correction" recipe) now shows a Stimme filed under another group even when no vote outcome and no Abweichler changes. No stored figure, export or page changes in this release. On a copy of the 801-sitting reference store with one member of vote 1000 moved from SPD to fraktionslos, the report names exactly that vote, both groups' counts and that member; on two copies with no change it reports 0 of 657 shared votes moved.

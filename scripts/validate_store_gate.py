@@ -16,7 +16,8 @@ checks, in order:
 2. Order independence: a fresh store from all cached reports, and a store built
    from every other report and then replayed with all of them, must group the
    person bindings into persons identically (``grouping_fingerprint``). All three
-   run database-only on clones of ``data/`` under SCRATCH, each as an online build
+   run database-only on clones of ``data/`` under SCRATCH (with the cached
+   MdB-Stammdaten copied to each clone's private directory), each as an online build
    with ``--enrich mp-roster`` would, the DIP roster answered from
    ``data/dip-person-cache.json`` (``CachedRoster``). The fresh store must list the
    input store's roster records, and the replayed store must group the fresh
@@ -395,20 +396,27 @@ class CachedRoster:
 def _wahlperioden(record: dict[str, Any]) -> set[int]:
     value = record.get("wahlperiode")
     values = value if isinstance(value, list) else [value]
-    return {int(number) for number in values if isinstance(number, int) or (isinstance(number, str) and number.isdigit())}
+    # bool is an int subclass: true is no Wahlperiode 1.
+    return {int(number) for number in values
+            if (isinstance(number, int) and not isinstance(number, bool)) or (isinstance(number, str) and number.isdigit())}
+
+
+class CachedRosterError(ValueError):
+    """The person cache the gate's fresh build reads its roster from is missing
+    or is not a person cache: bad input, reported without a traceback."""
 
 
 def cached_roster(output_dir: Path) -> CachedRoster:
     """Every /person record ``data/dip-person-cache.json`` holds, whatever its age
-    (the gate rebuilds a store from them, it fetches nothing). Raises ValueError
-    when the file is missing or not a person cache."""
+    (the gate rebuilds a store from them, it fetches nothing). Raises
+    CachedRosterError when the file is missing or not a person cache."""
     path = output_dir / "data" / PERSON_FILENAME
     try:
         persons = json.loads(path.read_text(encoding="utf-8")).get("persons")
     except (OSError, ValueError, AttributeError) as exc:
-        raise ValueError(f"no readable DIP person cache at {path}: {exc}") from None
+        raise CachedRosterError(f"no readable DIP person cache at {path}: {exc}") from None
     if not isinstance(persons, dict):
-        raise ValueError(f"{path} holds no persons object")
+        raise CachedRosterError(f"{path} holds no persons object")
     return CachedRoster([entry["record"] for _key, entry in sorted(persons.items())
                          if isinstance(entry, dict) and isinstance(entry.get("record"), dict)])
 
@@ -450,7 +458,14 @@ def _require_disjoint_paths(source: Path, target: Path) -> None:
 
 def _data_clone(source: Path, target: Path) -> Path:
     """A copy of ``source/data`` under ``target`` without its store: an APFS clone
-    where the file system offers one."""
+    where the file system offers one. The source's cached MdB-Stammdaten
+    (``mdb-stammdaten.*`` in its private directory) go to the clone's private
+    directory, so the clone's rebuild re-files the Stimmen as the input store
+    does; a stale copy there from an earlier run is removed first. Raises
+    ValueError when the source caches the file and the clone ends up without it."""
+    import person_registry as registry
+    import stammdaten
+
     _require_disjoint_paths(source, target)
     if target.exists():
         shutil.rmtree(target)
@@ -460,6 +475,21 @@ def _data_clone(source: Path, target: Path) -> Path:
     for path in (target / "data").glob("bundestag-pulse.sqlite*"):
         path.unlink()
     shutil.rmtree(target / "data" / "exports", ignore_errors=True)
+    source_private = registry.private_dir(source / STORE)
+    target_private = registry.private_dir(target / STORE)
+    _require_disjoint_paths(source_private, target_private)
+    cached = sorted(source_private.glob("mdb-stammdaten.*")) if source_private.is_dir() else []
+    if target_private.is_dir():
+        for stale in target_private.glob("mdb-stammdaten.*"):
+            stale.unlink()
+    if cached:
+        registry.ensure_private_dir(target_private)
+        for path in cached:
+            shutil.copy2(path, target_private / path.name)
+    if (source_private / stammdaten.CACHE_NAME).is_file() and not (target_private / stammdaten.CACHE_NAME).is_file():
+        raise ValueError(f"the source caches the MdB-Stammdaten ({source_private / stammdaten.CACHE_NAME}), but the clone's "
+                         f"private directory {target_private} holds no copy, so the clone's rebuild would leave every "
+                         "Stimme under the group its roll-call page lists")
     return target
 
 
@@ -488,6 +518,20 @@ def order_independence(output_dir: Path, scratch: Path, today: str) -> dict[str,
     return result
 
 
+def input_snapshot(database_path: Path) -> dict[str, Any]:
+    """The input store as the replay finds it: its bindings, their grouping, its
+    Personenseiten and its DIP person occurrences, which an unchanged replay must
+    reproduce. The snapshot runs the current code on a store the replay has not
+    upgraded yet, so a store whose schema lacks what that code reads (or that is
+    no SQLite file) gives ``{"unavailable": cause}``, which fails
+    ``replay_vs_input`` with that cause instead of ending the gate unreceipted."""
+    try:
+        return {"bindings": binding_ids(database_path), "grouping": grouping_fingerprint(database_path),
+                "pages": person_pages(database_path), "roster": dip_person_occurrences(database_path)}
+    except sqlite3.DatabaseError as exc:  # OperationalError: a missing table or column
+        return {"unavailable": f"{type(exc).__name__}: {exc}"}
+
+
 def replay_vs_input(input_store: dict[str, Any] | None, database_path: Path) -> dict[str, Any]:
     """The replayed store against the input store it replayed: the same grouping of
     the input's bindings into persons, and the same Personenseiten with the same
@@ -496,6 +540,8 @@ def replay_vs_input(input_store: dict[str, Any] | None, database_path: Path) -> 
     that moves persons on purpose shows its moves here."""
     if input_store is None:
         return {"equal": False, "reason": "no input store to compare the replay with"}
+    if "unavailable" in input_store:
+        return {"equal": False, "reason": f"the input store's snapshot is unavailable: {input_store['unavailable']}"}
     grouping = grouping_fingerprint(database_path, only=input_store["bindings"])
     pages = compare_pages(input_store["pages"], person_pages(database_path, only=input_store["bindings"]))
     return {"equal": grouping == input_store["grouping"] and pages["equal"],
@@ -543,13 +589,17 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
     database_path = output_dir / STORE
     input_store: dict[str, Any] | None = None
     if database_path.exists():
-        receipt["counts_before"] = store_counts(database_path)
+        try:
+            receipt["counts_before"] = store_counts(database_path)
+        except sqlite3.DatabaseError as exc:
+            receipt["counts_before"] = {"unavailable": f"{type(exc).__name__}: {exc}"}
         # The input store as the replay finds it: an unchanged replay must
         # reproduce its grouping and every page's counts.
         started_snapshot = time.monotonic()
-        input_store = {"bindings": binding_ids(database_path), "grouping": grouping_fingerprint(database_path),
-                       "pages": person_pages(database_path), "roster": dip_person_occurrences(database_path)}
+        input_store = input_snapshot(database_path)
         receipt["input_snapshot_seconds"] = round(time.monotonic() - started_snapshot, 1)
+        if "unavailable" in input_store:
+            receipt["input_snapshot_unavailable"] = input_store["unavailable"]
     checks: dict[str, bool] = {}
 
     receipt["replay"] = replay(output_dir, today, scratch / "replay.log")
@@ -582,7 +632,7 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         # this compares with a fresh build of the same reports and roster.
         if "grouping" in receipt["order_independence"]["fresh"]:
             receipt["replay_vs_fresh"] = replay_vs_fresh(
-                scratch / "fresh" / STORE, database_path, input_store["roster"] if input_store else None)
+                scratch / "fresh" / STORE, database_path, input_store.get("roster") if input_store else None)
         else:
             receipt["replay_vs_fresh"] = {"equal": False, "roster": {"equal": False},
                                           "reason": "the fresh build failed (order_independence.fresh)"}
@@ -639,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.persist_only:
         try:
             persist_only(output_dir, args.today)
-        except ValueError as exc:
+        except CachedRosterError as exc:
             print(f"ERROR [gate]: {exc}", file=sys.stderr)
             return 2
         return 0
