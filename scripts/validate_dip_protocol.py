@@ -1510,11 +1510,14 @@ def exclude_annex_reden_in_verlauf(root: ET.Element, statuses: dict[str, str]) -
     if not rules or verlauf is None:
         return
     for top in [verlauf, *verlauf.findall("tagesordnungspunkt")]:
+        moved = False
         for rede in top.findall("rede"):
             if rede.get("id") in rules:
                 record_status(statuses, rede.get("id"), f"excluded_annex:{rules[rede.get('id')]}")
                 top.remove(rede)
-        if top is not verlauf and len(top) == 0:
+                moved = True
+        # Only a TOP this rule emptied: one the source prints childless stays.
+        if moved and top is not verlauf and len(top) == 0:
             verlauf.remove(top)
 
 

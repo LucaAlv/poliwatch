@@ -200,6 +200,19 @@ class AnnexRedenInVerlaufTests(unittest.TestCase):
                 statuses, parsed = parse(listing, annexes)
                 self.assertEqual((statuses["G1"], statuses["G2"]), ("speech", "speech"))
 
+    # Value: protects=the rule removes only the TOPs it emptied; a TOP the source prints childless (21/18, 21/28, ...)
+    #   stays on the agenda; fails_when=every childless TOP is removed once the rule moves anything (TODOS "T4 parser
+    #   rules" item 7); why_new=ship red team 2026-11-16; seam=none
+    def test_a_top_empty_in_the_source_stays_when_the_rule_empties_another(self):
+        go_top = f'<tagesordnungspunkt top-id="Geschaeftsordnung">{rede("G1", "Erst")}</tagesordnungspunkt>'
+        xml = (f'<dbtplenarprotokoll wahlperiode="18" sitzung-nr="7">{listed_in_annex(["G1"])}<sitzungsverlauf>'
+               f'<tagesordnungspunkt top-id="T1"><p klasse="T_NaS">Beratung</p>{rede("R1")}</tagesordnungspunkt>'
+               f'<tagesordnungspunkt top-id="Leer"/>{go_top}</sitzungsverlauf>'
+               f'<anlagen>{numbered_annex("Anlage 7", "Erklärungen nach § 31 GO")}</anlagen></dbtplenarprotokoll>')
+        root = dip.ET.fromstring(xml)
+        dip.exclude_annex_reden_in_verlauf(root, {})
+        self.assertEqual([t.get("top-id") for t in root.iter("tagesordnungspunkt")], ["T1", "Leer"])
+
 
 class ReconcileTests(unittest.TestCase):
     # Value: protects=a part split_nested_reden made needs its own status, and no unit gets a status the source lacks;

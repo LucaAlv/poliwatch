@@ -167,6 +167,9 @@ def _unspaced(value: str) -> str:
     return re.sub(r"\s+", "", value)
 
 
+_UNSPACED_BEFRAGUNG_PREFIXES = tuple(_unspaced(prefix) for prefix in BEFRAGUNG_PREFIXES)
+
+
 def heading_formats(heading: str | None) -> frozenset[str]:
     """The question formats a heading names. 20/136 merges both into one
     heading ("Befragung der Bundesregierung Fragestunde"): its ``<rede>``s are
@@ -176,7 +179,7 @@ def heading_formats(heading: str | None) -> frozenset[str]:
     heading changes format by it."""
     heading = _unspaced(_clean(heading))
     formats = set()
-    if heading.startswith(tuple(_unspaced(prefix) for prefix in BEFRAGUNG_PREFIXES)):
+    if heading.startswith(_UNSPACED_BEFRAGUNG_PREFIXES):
         formats.add(BEFRAGUNG)
         if FRAGESTUNDE_PREFIX in heading:
             formats.add(FRAGESTUNDE)
