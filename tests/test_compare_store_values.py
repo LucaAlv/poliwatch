@@ -664,7 +664,7 @@ class CompareStoreValuesTests(unittest.TestCase):
         finally:
             conn.close()
 
-    # Value: protects=a vote only one store holds is named (or counted) in the vote outcome section, so distribution rows that moved by a rebuild's added or lost vote have a line; fails_when=the one-sided count line or the ids are dropped; why_new=the per-vote list covers votes both stores hold only; seam=none
+    # Value: protects=a vote only one store holds is named (or counted) in the vote outcome section, old-only and new-only, with a LIST_LIMIT tail; fails_when=the one-sided count line, the ids or the tail are dropped, or only the new side is named; why_new=the per-vote list covers votes both stores hold only; seam=none; no_claim=none beyond protects
     def test_votes_only_one_store_holds_are_named(self) -> None:
         old, new = self.stores()
         for root in (old, new):
@@ -674,6 +674,25 @@ class CompareStoreValuesTests(unittest.TestCase):
         section = "vote outcome and Abweichler"
         self.assertEqual(line_of(out, "votes only in old", section), "votes only in old: 0; only in new: 1")
         self.assertEqual(line_of(out, "only in new:", section), "only in new: v3")
+        # Votes only the old store holds are named too, and a long list is cut with a count.
+        conn = sqlite3.connect(old / "data" / "bundestag-pulse.sqlite")
+        try:
+            item = conn.execute("SELECT agenda_item_id FROM agenda_item_votes WHERE vote_id = 'v1'").fetchone()[0]
+            for vote_id in ("v8", "v9"):
+                conn.execute(
+                    "INSERT INTO votes(id, date, application_result, abweichler_count, created_at, updated_at) VALUES (?, '2026-03-04', 'accepted', 0, ?, ?)",
+                    (vote_id, NOW, NOW),
+                )
+                conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, 'drucksache_xml')", (item, vote_id))
+            conn.commit()
+        finally:
+            conn.close()
+        _, out, _ = run(old, new, "--cohort", "all")
+        self.assertEqual(line_of(out, "votes only in old", section), "votes only in old: 2; only in new: 1")
+        self.assertEqual(line_of(out, "only in old:", section), "only in old: v8, v9")
+        with mock.patch.object(compare, "LIST_LIMIT", 1):
+            _, out, _ = run(old, new, "--cohort", "all")
+        self.assertEqual(line_of(out, "only in old:", section), "only in old: v8 ... 1 more")
 
     # Value: protects=a manifest whose generation or file name is not a plain name finds no copy, so the read cannot leave the export directory; fails_when=the Path(x).name check is dropped; why_new=the names were joined unchecked; seam=none
     def test_distribution_copy_refuses_names_that_are_not_plain_file_names(self) -> None:
@@ -790,6 +809,91 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertEqual(line_of(out, "MdB R2 (mp-R2)", section), "MdB R2 (mp-R2) group SPD -> AfD, listed NULL -> SPD")
         # The outcome and Abweichler lines stay unmoved: only the new section shows it.
         self.assertIn("0 votes in both stores changed their outcome", out)
+
+    def _sql(self, root: Path, *statements: str) -> None:
+        conn = sqlite3.connect(root / "data" / "bundestag-pulse.sqlite")
+        try:
+            for statement in statements:
+                conn.execute(statement)
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Value: protects=a group present in one store only prints "no row" and counts as a move, and a vote outside the cohort is skipped by default but compared under --cohort all; fails_when=a one-sided group is dropped, or the cohort scope is not applied to the group rows; why_new=the group test moves counts of a group both stores hold on in-cohort votes only; seam=none; no_claim=none beyond protects
+    def test_a_group_in_one_store_only_is_a_move_and_votes_outside_the_cohort_are_skipped(self) -> None:
+        old = make_output(
+            self.tmp / "old",
+            protocols={"21/1": [("R1", "SPD", 10, None)], "21/3": [("R3", "SPD", 10, None)]},
+            votes=[("v1", "2026-03-04", "21/1", None, "SPD"), ("v1", "2026-03-04", "21/1", None, "AfD"), ("v3", "2026-03-04", "21/3", None, "SPD")],
+        )
+        new = make_output(
+            self.tmp / "new",
+            protocols={"21/1": [("R1", "SPD", 10, None)], "21/2": [("R4", "SPD", 10, None)]},
+            votes=[("v1", "2026-03-04", "21/1", None, "SPD"), ("v1", "2026-03-04", "21/1", None, "Grüne"), ("v3", "2026-03-04", "21/2", None, "SPD")],
+        )
+        for root in (old, new):
+            self._figures(root)
+        self._sql(new, "UPDATE vote_fractions SET yes_count = 4, total_count = 4 WHERE vote_id = 'v3'")
+        section = "vote groups"
+        _, out, _ = run(old, new)
+        self.assertIn("1 of 1 shared votes changed a group's vote_fractions counts", out)
+        self.assertEqual(line_of(out, "v1:", section), "v1: AfD 0/0/0/0/0 -> no row; Grüne no row -> 0/0/0/0/0")
+        self.assertNotIn("v3: SPD", out)
+        _, out, _ = run(old, new, "--cohort", "all")
+        self.assertIn("2 of 2 shared votes changed a group's vote_fractions counts", out)
+        self.assertEqual(line_of(out, "v3:", section), "v3: SPD 0/0/0/0/0 -> 4/0/0/0/4")
+
+    # Value: protects=a store without the vote_fractions count columns reads unavailable in the group section and the run goes on; fails_when=the count columns are read without the has() guard or a missing side counts as zero; why_new=the group test fills both stores completely; seam=none; no_claim=none beyond protects
+    def test_a_store_without_vote_fractions_count_columns_reads_unavailable_in_the_group_section(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        self._sql(old, *(f"ALTER TABLE vote_fractions DROP COLUMN {column}" for column in ("yes_count", "no_count", "abstain_count", "absent_count", "total_count")))
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        self.assertEqual(line_of(out, "(all)", "vote groups"), "(all) unavailable -> present")
+        self.assertNotIn("changed a group's vote_fractions counts", out)
+
+    # Value: protects=a store without vote_members.party_id or listed_party_id reads unavailable in its own row while the count comparison still runs; fails_when=the member columns are read without the has() guard or the early return skips the count lines; why_new=the group test has both member columns on both sides; seam=none; no_claim=none beyond protects
+    def test_a_store_without_the_member_party_columns_reads_unavailable_after_the_count_lines(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        self._sql(new, "DROP INDEX idx_vote_members_party", "ALTER TABLE vote_members DROP COLUMN party_id", "ALTER TABLE vote_members DROP COLUMN listed_party_id")
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote groups"
+        self.assertIn("0 of 2 shared votes changed a group's vote_fractions counts", out)
+        self.assertEqual(line_of(out, "vote_members party_id / listed_party_id", section), "vote_members party_id / listed_party_id present -> unavailable")
+        self.assertNotIn("changed a member's party_id", out)
+
+    # Value: protects=long group, member and vote lists in the vote groups section are cut with a count of the rest; fails_when=a MEMBER_LIMIT or LIST_LIMIT tail line is dropped or cuts at the wrong item; why_new=the group tests stay within the limits; seam=none; no_claim=none beyond protects
+    def test_vote_group_lists_are_cut_with_a_count_of_the_rest(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        members = [(vote, key, None, "SPD", None) for vote in ("v1", "v2") for key in ("mp-R1", "mp-R2")]
+        self._add_members(old, members)
+        self._add_members(new, members)
+        self._sql(
+            new,
+            "INSERT INTO parties(id, name, created_at, updated_at) VALUES ('party-AfD', 'AfD', '%s', '%s')" % (NOW, NOW),
+            "INSERT INTO vote_fractions(vote_id, party_id, leading_vote, rank) VALUES ('v1', 'party-AfD', NULL, 2)",
+            "UPDATE vote_fractions SET yes_count = 2, total_count = 2 WHERE party_id = 'party-SPD'",
+            "UPDATE vote_members SET party_id = 'party-AfD'",
+        )
+        with mock.patch.object(compare, "MEMBER_LIMIT", 1), mock.patch.object(compare, "LIST_LIMIT", 1):
+            code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote groups"
+        body = out.split(f"== {section}", 1)[1].split("\n== ", 1)[0]
+        self.assertIn("2 of 2 shared votes changed a group's vote_fractions counts", body)
+        self.assertEqual(line_of(out, "v1: AfD", section), "v1: AfD no row -> 0/0/0/0/0; ... 1 more groups")
+        self.assertNotIn("v2: ", body.split("changed a member's")[0])
+        self.assertEqual(line_of(out, "v1: 2 members", section), "v1: 2 members")
+        self.assertEqual(line_of(out, "MdB R1", section), "MdB R1 (mp-R1) group SPD -> AfD, listed NULL -> NULL")
+        self.assertEqual(line_of(out, "... 1 more members", section), "... 1 more members")
+        self.assertEqual(body.count("... 1 more votes"), 2)
 
     def test_it_only_reads(self) -> None:
         old, new = self.stores()
