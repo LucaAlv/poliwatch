@@ -528,18 +528,19 @@ class ReparseProfileTests(unittest.TestCase):
     for its Redner-ID only where that profile is the speaker's own (item 17 of
     TODOS.md "Shared Redner-IDs: what the fix leaves open")."""
 
-    def reparsed_profile(self, xml_id, source_name, target_name, profile):
-        source = {"protocol": {"id": "src", "dokumentnummer": "18/1"}, "agenda_items": [{"index": 1, "xml_speakers": [
-            {"rede_id": "ID180100100", "speaker": {"xml_redner_id": xml_id, "display_name": source_name,
+    def reparsed_profile(self, xml_id, source_name, target_name, profile,
+                         source_at=("src", "ID180100100"), target_at=("5099", "ID1822300400")):
+        source = {"protocol": {"id": source_at[0], "dokumentnummer": "18/1"}, "agenda_items": [{"index": 1, "xml_speakers": [
+            {"rede_id": source_at[1], "speaker": {"xml_redner_id": xml_id, "display_name": source_name,
                                                     "first_name": source_name.split()[-2], "last_name": source_name.split()[-1],
                                                     "abgeordnetenwatch": profile}}]}]}
         *given, last = target_name.split()
         title = "Dr." if given[0] == "Dr." else ""
-        xml = sitting_xml("ID1822300400", xml_id, " ".join(given[1:] if title else given), last, title)
+        xml = sitting_xml(target_at[1], xml_id, " ".join(given[1:] if title else given), last, title)
         parsed = dip.parse_protocol_xml(xml)
         items = [{"index": i + 1, **dip.xml_top_fields(top), "api": {"positions": [{"id": top["top_id"]}]}}
                  for i, top in enumerate(parsed["agenda_items"])]
-        target = {"protocol": {"id": "5099", "dokumentnummer": "18/223"}, "agenda_items": items,
+        target = {"protocol": {"id": target_at[0], "dokumentnummer": "18/223"}, "agenda_items": items,
                   "validation_summary": {"xml_top_count": len(items)}}
         with tempfile.TemporaryDirectory() as tmp:
             path = build.xml_cache_path(Path(tmp), "18/223")
@@ -568,6 +569,23 @@ class ReparseProfileTests(unittest.TestCase):
         ):
             with self.subTest(xml_id=xml_id, source=source, target=target):
                 self.assertEqual(self.reparsed_profile(xml_id, source, target, profile), expected)
+
+    # Value: protects=a garbled printed name under 11005304 ("Dirk-UlrichAlexander Mende Föhr") counts as
+    #   its reviewed occurrence's name on both sides of a re-parse: the profile is taken from, and copied
+    #   to, an occurrence reviewed as Alexander Föhr, the profile owner; fails_when=reparse_cached_xml or
+    #   redner_id_profiles stops passing the report's protocol id or the speech's rede_id to
+    #   redner_id_profile_reaches (attach_speaker_profiles defaults protocol_id to None), so only the
+    #   printed name is read; why_new=every other re-parse row reads a printed name, and the reviewed
+    #   occurrence is only tested through a direct call; seam=none
+    def test_a_reparse_reads_a_garbled_name_under_its_reviewed_occurrence(self):
+        foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
+        garbled = "Dirk-UlrichAlexander Mende Föhr"
+        for source, target, sides in (
+            ("Alexander Föhr", garbled, {"target_at": ("5570", "ID2010305900")}),
+            (garbled, "Alexander Föhr", {"source_at": ("5583", "ID2011411000")}),
+        ):
+            with self.subTest(source=source, target=target):
+                self.assertEqual(self.reparsed_profile("11005304", source, target, foehr, **sides), foehr)
 
 
 if __name__ == "__main__":

@@ -348,11 +348,15 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
 
     # Value: protects=a speaker link that carries a superseded DIP id reaches the successor's page
     #   under every key mp_keys gives the successor, a partitioned dip:<id>:<partition> key included;
-    #   fails_when=collect_abgeordnete aliases only the plain dip:<successor> key; why_new=the /ship
+    #   fails_when=collect_abgeordnete aliases only the plain dip:<successor> key, or aliases a successor
+    #   with no page (a dip:<old> key that links nowhere); why_new=the /ship
     #   adversarial review of 2026-11-14 (item h); seam=none; no_claim=whether a superseded id ever
     #   sits in a partition (neither 8054 nor 7406 does)
     def test_a_superseded_dip_id_is_aliased_under_every_successor_key(self):
         with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            pageless = {"dip:90": "page-ninety"}
+            build.alias_superseded_dip_keys(pageless)
+            self.assertEqual(pageless, {"dip:90": "page-ninety"})
             lookup = {"dip:9:ada": "page-ada", "dip:9": "page-nine", "dip:90": "page-ninety", "dip:90:bea": "page-bea"}
             build.alias_superseded_dip_keys(lookup)
         self.assertEqual(lookup, {"dip:9:ada": "page-ada", "dip:9": "page-nine", "dip:90": "page-ninety", "dip:90:bea": "page-bea",
