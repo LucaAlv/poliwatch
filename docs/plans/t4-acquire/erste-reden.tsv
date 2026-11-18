@@ -1,0 +1,62 @@
+week	week_holds_restored_sitting	value_old	value_new	publishable_old	publishable_new	withheld_old	withheld_new
+2013-W43	1		5.0		0		not_comparable
+2013-W47	1				0		no_observation
+2013-W48	1				0		no_observation
+2014-W07	0	91.0	53.0	0	0	not_comparable	not_comparable
+2014-W08	0	93.0	59.0	0	0	not_comparable	not_comparable
+2014-W12	0	55.0	28.0	0	0	not_comparable	not_comparable
+2014-W19	0	33.0	20.0	0	0	not_comparable	not_comparable
+2014-W23	0	26.0	9.0	0	0	not_comparable	not_comparable
+2014-W27	0	21.0	10.0	0	0	not_comparable	not_comparable
+2014-W36	0	1.0	0.0	0	0	not_comparable	not_comparable
+2014-W39	0	12.0	5.0	0	0	not_comparable	below_floor
+2014-W41	0	9.0	3.0	0	0	below_floor	below_floor
+2014-W48	0	8.0	0.0	0	0	below_floor	below_floor
+2014-W49	0	4.0	0.0	0	0	below_floor	below_floor
+2014-W51	0	5.0	2.0	0	0	below_floor	below_floor
+2015-W03	0	5.0	2.0	0	0	below_floor	below_floor
+2015-W06	0	3.0	2.0	0	0	below_floor	below_floor
+2015-W12	0	2.0	1.0	0	0	below_floor	below_floor
+2015-W17	0	4.0	2.0	0	0	below_floor	below_floor
+2015-W21	0	5.0	2.0	0	0	below_floor	below_floor
+2015-W27	0	4.0	2.0	0	0	below_floor	below_floor
+2015-W37	0	4.0	3.0	0	1	below_floor	
+2015-W46	0	3.0	2.0	0	0	below_floor	below_floor
+2015-W48	0	2.0	1.0	0	0	below_floor	below_floor
+2016-W02	0	1.0	0.0	0	0	below_floor	below_floor
+2016-W04	0	2.0	0.0	0	0	below_floor	below_floor
+2016-W15	0	5.0	3.0	1	1		
+2016-W17	0	1.0	0.0	0	0	below_floor	below_floor
+2016-W38	0	1.0	0.0	0	0	below_floor	below_floor
+2017-W12	1		1.0	0	0	no_observation	below_floor
+2017-W13	0	2.0	1.0	0	0	below_floor	below_floor
+2017-W17	0	1.0	0.0	0	0	below_floor	below_floor
+2017-W20	0	1.0	0.0	0	0	below_floor	below_floor
+2017-W22	0	4.0	2.0	1	1		
+2017-W36	1		0.0	0	0	no_observation	below_floor
+2017-W43	1		2.0	0	1	no_observation	
+2017-W47	0	39.0	37.0	1	1		
+2018-W04	1		1.0	0	0	no_observation	below_floor
+2018-W17	0	16.0	8.0	1	1		
+2018-W39	0	8.0	1.0	1	0		below_floor
+2018-W41	0	5.0	1.0	1	0		below_floor
+2018-W47	0	3.0	1.0	0	0	below_floor	below_floor
+2018-W50	0	4.0	2.0	1	0		below_floor
+2019-W03	1		1.0	0	0	no_observation	below_floor
+2019-W05	0	2.0	1.0	0	0	below_floor	below_floor
+2019-W07	0	1.0	0.0	0	0	below_floor	below_floor
+2019-W08	0	1.0	0.0	0	0	below_floor	below_floor
+2019-W15	0	2.0	1.0	0	0	below_floor	below_floor
+2019-W19	0	2.0	2.0	0	1	below_floor	
+2021-W20	0	4.0	3.0	1	1		
+2021-W25	0	3.0	2.0	1	1		
+2022-W04	0	43.0	40.0	1	1		
+2022-W07	0	61.0	51.0	1	1		
+2022-W11	0	50.0	44.0	1	1		
+2022-W12	0	29.0	23.0	1	1		
+2022-W14	0	10.0	7.0	1	1		
+2022-W17	0	8.0	8.0	0	1	below_floor	
+2022-W19	0	11.0	8.0	1	1		
+2022-W20	0	6.0	2.0	0	0	below_floor	below_floor
+2022-W22	0	5.0	3.0	0	0	below_floor	below_floor
+2024-W42	0	2.0	1.0	1	0		below_floor

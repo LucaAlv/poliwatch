@@ -1,8 +1,8 @@
 # T4: acquire the excluded sittings
 
-**Status:** plan, 2026-11-15. The owner accepted all nine recommended decisions on 2026-11-15 (see "Decisions" at the end). Nothing is fetched yet. N8 ran offline on 2026-11-15 ([n8-review.md](t4-acquire/n8-review.md)) Its findings have landed: the 10 withhold entries in #165 (v0.46.1.0), and the owner-approved rules for 18/158's § 31 declarations and 19/13's Befragung heading in #166 (v0.46.2.0). On 2026-11-16 the reference store was re-persisted to schema 14 on fb64c55 (no figure moved) and cloned as `.context/dip-pulse-site.pre-t4`; the WP 20 pilot is next.
+**Status:** acquired and measured. The online run (step 1) restored 83 sittings on 2026-11-16 and 17, and V1 to V5 passed at adfe50c. Step 2 measured the result on 2026-11-18; see "Outcome" at the end. Planned 2026-11-15, when the owner accepted all nine recommended decisions (see "Decisions"). N8 ran offline on 2026-11-15 ([n8-review.md](t4-acquire/n8-review.md)), and its findings landed in #165 and #166 before the fetch.
 **Parent:** `TODOS.md` "Coverage gate before the first data release", steps 6 (acquire), 7 (measure) and 8 (gate), with N8 (review of restored sittings) and N10 (vote links).
-**Base:** main fd4760d (v0.46.0.0): store schema 14, export format 20, speech rule 9. The reference store `.context/dip-pulse-site` (main checkout) is still at schema 12: it was last replayed on v0.41.0.0 (2026-11-14) and holds 718 sittings, 619 votes and 590 vote links.
+**Base:** main fd4760d (v0.46.0.0): store schema 14, export format 20, speech rule 9. When planned, the reference store `.context/dip-pulse-site` (main checkout) was at schema 12: last replayed on v0.41.0.0 (2026-11-14), with 718 sittings, 619 votes and 590 vote links. After T4 it holds 801 sittings, 727 votes and 701 vote links at schema 14 ("Outcome").
 **Read for this plan:** `CLAUDE.md`, `docs/agents/review-checklist.md`, ADR 0005, `docs/plans/withholding-preflight/report.md`, `docs/plans/withheld-before-t4.md`, `docs/plans/vote-links-and-figures.md`, `docs/release-review.md`, `docs/release-reviews/cpp-bt-first-run-2026-11-14.md`, `~/agent-runs/fresh/run.sh` and its `requests.log`.
 
 ## What T4 does
@@ -273,3 +273,199 @@ T4 is a data run, not a diff. The classes that apply are answered for the run an
 7. **Raw vote pages.** Decided: do not hold T4 for "Keep the raw vote pages and DIP sitting records". That item is unspecced. The 83's vote pages can be re-fetched once it lands (2 requests per vote).
 8. **Where T4 writes.** Decided: into `.context/dip-pulse-site` itself, after the schema-14 repersist and an APFS clone `.context/dip-pulse-site.pre-t4` (with its private directory) as baseline and rollback.
 9. **The N9 minimum coverage.** Decided: not now. T4's M7 tables are its input. The owner sets the number per analysis afterwards.
+
+## Outcome (step 2, measured 2026-11-18)
+
+The online run went from 2026-11-16 12:15 to 2026-11-17 17:18 UTC (`~/agent-runs/t4/runner.log`). The final store and the gate are at adfe50c (v0.46.6.0). Every figure below is old → new against `.context/dip-pulse-site.pre-t4` (718 sittings, schema 14, fb64c55), read from the stores opened read-only. The scratch scripts are under `~/agent-runs/t4/measure/`, `rollcall/`, `aw-match/` and `cpp-bt/` and are not committed. The receipts, in [t4-acquire/](t4-acquire/):
+
+| Receipt | Holds |
+|---|---|
+| [roll-call-list.tsv](t4-acquire/roll-call-list.tsv) | every roll-call list entry from WP 18 on and every vote id from 247 to 1046, against `votes` (M1.2) |
+| [restored-sittings.tsv](t4-acquire/restored-sittings.tsv) | per restored sitting: TOPs stored and in the XML, Reden, Beiträge, withheld Reden and words, roll-call candidates, votes, links, fetch errors, scan end (V3, M1.1, M2) |
+| [compare-store-values-all.txt](t4-acquire/compare-store-values-all.txt), [-shared.txt](t4-acquire/compare-store-values-shared.txt) | `compare_store_values.py` in both cohorts (M6) |
+| [e4-refiled-new.tsv](t4-acquire/e4-refiled-new.tsv) | the 57 Stimmen re-filed in restored votes (M1.4) |
+| [persons-without-redner-id.tsv](t4-acquire/persons-without-redner-id.tsv), [erste-reden.tsv](t4-acquire/erste-reden.tsv) | M5.3 and M5.4 |
+| [coverage-withheld.json](t4-acquire/coverage-withheld.json) | the export's `coverage` per Wahlperiode and `coverage.withheld`, old and new (M7) |
+
+### V1 to V5 (re-checked)
+
+- **V1 passes.** The record went from 86 to 3 entries: 18/20 `source_defect`, 18/62 and 18/90 `awaiting_rule`. 83 sittings came back.
+- **V2 passes.** 718 → 801 protocols, 801 reports and 801 XML files, the same set in all three. The coordinator's scope re-run with `incomplete_sitting_protocols` finds nothing acquirable in WP 18 to 20. In WP 21 it finds 21/107 to 21/109, which DIP published after T4 began. They wait for the next online update, and #172's release refusal names them until then.
+- **V3 passes.** All 82 fetched files equal W1's: byte for byte with `~/agent-runs/w1/xml/`, and against W1's `xml_sha256` after CRLF → LF, because W1 hashed the text with normalized line ends. 53 of the 82 contain CR, so their raw byte hash differs from W1's figure. 21/106 has no W1 hash.
+  - `withheld_units`: 0 → **102 rows in 74 sittings**, 87 `refused_nested_contribution` and 15 `reviewed`. Own words 80,109, nested words 29,419, `withheld_turns` 0 → 170. Every row carries a Redner-ID (82 distinct ids for 83 printed names). By WP: 18 has 67 in 44 sittings (56,704 words), 19 has 33 in 28 (22,436), 20 has 1 (20/11, 898), 21 has 1 (21/106 `ID2110609100:4`, 71). The run summaries name 1 + 67 + 33 + 1 = 102 newly withheld.
+  - Against the plan's 105 in 75: #166 (v0.46.2.0) released 19/13's three Reden (211 own and 47 nested words, together W1's 258). So the 82 sittings hold 101 rows in 73 sittings: own words 80,249 − 211 = 80,038, nested 29,084 − 47 = 29,037. 21/106 adds one row (71 own words, 382 nested). Three sittings withhold more than two Reden: 18/158 (13), 18/26 (3) and 19/18 (3). 19/13 left that list. 19/18 joined it with N8's entry `ID191802600` beside its two located refusals.
+- **V4, requests** 2026-11-16 to 17, retries included (`~/agent-runs/t4/requests.log`, 1,559 lines, 21 not 200: 18 timeouts, 3 connection resets):
+  - DIP: **982** against the budget of 600 to 800: `/vorgang` 580, `/vorgangsposition` 174, `/aktivitaet` 155, `/plenarprotokoll` 71, `/drucksache` and `/drucksache-text` 1 each. The overrun comes from restarts. WP 18 started five times: a DIP outage, DIP silence with the 6-hour rest, a dserver reset, and the shared-Redner-ID refusal that #171 fixed. WP 19 started twice, after a dserver `SourceSlowError`.
+  - bundestag.de: **487**. That is 259 vote-list pages against about 170 (the same restarts re-read them), 117 vote pages and 108 Namenslisten (225, inside 150 to 300), 2 blobs and 1 Sitzungskalender page.
+  - dserver: **90** requests for 83 files.
+- **V5 passes.** `gate-receipt.json`: `all_passed: true` with all 15 checks, `no_withheld_rede_counted`, `every_withheld_rede_has_a_redner_id` and `abweichler_count_matches_members` among them. The gate ran from 18:25 to 18:55 UTC on 2026-11-17 at adfe50c, with `--today 2026-11-17`.
+
+### M1. Votes
+
+1. **Per restored sitting, passes.** In the 83 reports, 108 list candidates = 101 votes on a TOP + 7 `sitting_votes`, `roll_call_vote_detail_fetch_error_count` is 0, and every scan ended `date_passed` (82 at 200 pages, 21/106 at 30). The 718 read as before: 619 = 556 + 63, 0 errors, 718 × `date_passed`.
+2. **The whole list, passes.** On 2026-11-18 the owner's terminal read the list once (`~/agent-runs/t4/rollcall/run.sh`, the build's own `parse_roll_call_list_page`, 74 bundestag.de pages, no DIP). That gives 740 entries, 737 of them dated from 2013-10-22 on. Receipt: [roll-call-list.tsv](t4-acquire/roll-call-list.tsv), one row per list entry or vote id from 247 to 1046.
+   - **727 entries are in `votes`, each under the same date.** No stored vote is missing from the list, and none is stored under a shifted date.
+   - **1 is dated on an excluded sitting:** vote 256 (2014-03-13, "EU-Honigrichtlinie") on 18/20, which stays out whole as a `source_defect`.
+   - **9 are newer than the store:** 1038 to 1042 on 21/108 (2026-11-12) and 1043 to 1046 on 21/109 (2026-11-13). DIP published both after T4 began, and the next online update acquires them. 21/107 has none.
+   - **18/62 and 18/90 have no entry**, so their rule run (decision 4) adds no votes.
+   - **The 64 id gaps:** without the list, the store's gaps went 167 → 64. T4 filled 103, and the ids now start at 247 (18/3). One gap is vote 256. The other **63 ids never appear on the list**: 265, 267, 269, 272, 273, 291, 293, 361, 364, 405 to 410, 422 to 431, 444, 449, 470, 488, 496 to 499, 516, 521, 530, 538, 544, 545, 547, 550, 561, 565, 566, 570, 576 to 578, 614, 653, 654, 690, 709, 836 to 839, 862, 896, 899, 901, 942 and 972. The list skips these numbers, so by its own account they are not votes we miss. That settles the plan's 34 with the rest. Why bundestag.de skips them (withdrawn entries, or ids used for other ballots) would need their detail pages, 63 requests; that is not needed for the gate.
+   - The plan's "133 gaps T4 should fill" overcounted. Its test, an excluded date between two stored neighbours, says only that some excluded day lay between them, not that the missing id was dated on it.
+3. **Figures.** `votes` 619 → **727** (+108, all in restored WP 18/19 sittings; 20/11 and 21/106 hold none). By WP: 149 / 198 / 187 / 85 → 211 / 244 / 187 / 85. The plan estimated 75 to 150. `vote_members` 425,322 → 497,027. `agenda_item_votes` 590 → 701. Unlinked votes 63 → 70: the 7 `sitting_votes` no TOP claims. `basis`: `drucksache_xml` 174 → 174, `drucksache_vorgang` 401 → 507, `title` 15 → 20. No restored link is `drucksache_xml`, because the parser reads printed Drucksachen only from `<a>` links, which no WP 18/19 file prints (filed in TODOS.md, it predates T4). The 111 new links, the 5 new title links among them, go to the N10 review (step 4).
+4. **E4 re-filing, passes.** The replay line went from `refile: 100 Stimmen in 55 Abstimmungen` to `refile: 157 Stimmen in 87 Abstimmungen`, and `vote_members` with `listed_party_id <> party_id` from 100 to 157. All 57 new Stimmen fall in E4's windows: Kamann 30 (2018-02-22 to 2018-11-29), Bülow 24 (2018-02-22 to 2018-11-08), Pasemann 1 (vote 700, 2020-11-19), Witt and Huber 1 each (vote 755, 2021-09-07, 19/239, between 754 and 756). No other MdB appears, and no Stimme of the 100 changed. On 755 the page files Heßenkemper under the AfD again, so he is not re-filed there. `docs/source-errors.md` E4 now records this scale.
+5. **Seat cross-check and outcomes.** 606 agree / 13 disagree → **711 / 16**. The 3 new disagreements are votes 356 to 358 (2015-10-01, 18/127): SPD 193 seats against 192 listed, `change_on_vote_day`. `shift_between_groups` and `unexplained` stay 0. `result_scope = application` went 34 → 35 (vote 731, 19/227, Normenkontrolle, rejected), and `inverted` 95 → 112. `application_result`: accepted 330 → 381, rejected 269 → 321, NULL 20 → 25. The 5 new NULLs are constitutional-amendment votes whose page prints no result (257 and 258 in 18/26, 560 in 19/68, 679 and 680 in 19/170), like the 20 before. `abweichler_count` sum 3,720 → 4,283, none NULL. In the shared cohort no vote changed its outcome, Abweichler count or Abweichungen.
+
+### M2. TOPs
+
+- `agenda_items` 7,160 → **8,189** (+1,029). Every restored sitting stores exactly its XML's TOP count: 1,020 in the 82 plus 9 in 21/106. The plan's 1,021 was parsed at fd4760d. #166's § 31 rule leaves 18/158 one TOP short (20 → 19, checked by parsing W1's file at both revisions), because the dropped TOP ("Geschaeftsordnung") held only the 37 § 31 declarations.
+- `agenda_item_documents`: `api` 28,761 → 32,644, `xml` 5,280 → 5,295 (the +15 are all 21/106's). `agenda_item_politikfelder` 11,509 → 13,114.
+- **Share of TOPs with a DIP Vorgang link,** restored against kept in the same Wahlperiode:
+  - WP 18: 60.3% (556 TOPs) against 49.8% (1,825).
+  - WP 19: 62.1% (451) against 64.0% (2,178).
+  - 21/106: 6 of 9.
+  - 20/11: 1 of 13. It has the same shape as its kept neighbours 20/10, 20/12 and 20/13 (1 or 2 TOPs with DIP positions, no printed Drucksache read).
+
+  No share is clearly lower, so nothing points at a matching gap.
+- **Reden outside a TOP:** no stored Rede lacks a TOP in either store. 18/89's 15 `<rede>`s directly under `<sitzungsverlauf>` were adopted into "Zusatztagesordnungspunkt 4" (`top_source = inhaltsverzeichnis`). It stores 12 Reden, withholds `ID1808901500` and holds 3 Beiträge.
+
+### M3. abgeordnetenwatch match share
+
+**Passes, 0 failures.** Receipt [aw-match-share.json](t4-acquire/aw-match-share.json), cited beside the first, [a3-aw-match-share.json](a3-aw-match-share.json). The owner ran it online on 2026-11-18 at adfe50c, with a copy of the 2026-11-12 cache and answers (`regen2`, byte-identical to `scratch`), then once more with the one new verdict below; all answers came from the cache on that second run.
+
+| Figure | A3, 400 sittings | T4, 481 sittings |
+|---|---|---|
+| Redner-IDs read | 1,021 | 1,041 |
+| M1, WP 18/19 MdB found by ext_id | 937 / 945 (0.9915) | 941 / 949 (0.9916) |
+| M1a, other ids with an MdB record | 4 / 7 | 10 / 14 |
+| M1b, ids without an MdB record | 0 / 69 | 0 / 78 |
+| M2, Reden whose speaker is found | 26,251 / 26,714 (0.9827) | 32,361 / 32,908 (0.9834) |
+| M3 flags | 8 `name_rule` | the same 8 |
+| M4 name search | 11 of 11 linked | 12 of 12 linked |
+
+- **The new figures are right because they count the 81 restored WP 18/19 sittings** (194 → 242 and 206 → 239). M2 by WP: 18 goes 9,720 / 9,862 (0.9856) → 12,750 / 12,926 (0.9864), and 19 goes 16,531 / 16,852 (0.981) → 19,611 / 19,982 (0.9814). Each WP still has one Rede without a Redner-ID.
+- **The run asked 21 questions:** the 20 new ids and 1 name search. The other 11 name searches were answered from the cache. That is inside the plan's "a few dozen at most". Item 9 of "A3 item 1.5 review" holds: the script reads `mdb_zugehoerigkeiten`, not the zip.
+- **The 20 new ids:**
+  - M1, 4, all found by ext_id: Norbert Lammert, Heinz Wiese, Matthias Lietz and Jimmy Schulz.
+  - M1a, 7. Six are found by ext_id: Guido Westerwelle, Ernst Burgbacher, Cornelia Pieper, Ulrike Höfken, Winfried Hermann and Volker Wissing. The seventh, Karl-Josef Laumann (11001294), is linked by name.
+  - M1b, 9: Malu Dreyer, Joachim Gauck, Reinhold Gall, Andreas Geisel, Georg Maier, Helmuth Markov, Sven Morlok, Reinhard Meyer and François de Rugy. They are Land ministers, the Bundespräsident and a French guest; no MdB record, so they fall outside M1 by definition. `m1b_hits_matching_an_mdb_by_name` stays 0.
+- **The one new item read by hand is Laumann's name link, and it is the right person.** The MdB-Stammdaten give 11.07.1957, Riesenbeck; aw's profile 136809 gives 1957 and Hörstel-Riesenbeck, and lists him as NRW Minister für Arbeit, Gesundheit und Soziales. aw holds no ext_id for him (source gap b, like Seehofer, Kramp-Karrenbauer and Pinkwart). He spoke without a Fraktion. His verdict was added to the verdicts file for the second run.
+- No new M3 flag: the 8 `name_rule` flags are the same ids with the same verdicts. M5: partitioned ids that spoke go 4 → 7. The three new ones are #171's (11004105, 11002190, 999990055), whose sittings T4 restored. The first two are found under their MdB owner (de Maizière, Solms), and none is hit by the first id only.
+
+### M4. CPP-BT
+
+**Passes:** no id of ours is missing from CPP-BT, and every new difference is explained. Receipt [cpp-bt.tsv](t4-acquire/cpp-bt.tsv). The CPP-BT file is the first run's: version 2026-09-19, SHA-256 `d40cd969…`, fetched again on 2026-11-18 by `~/agent-runs/t4/cpp-bt/get.sh` in the owner's terminal, with the hash checked. Run offline with `python -I`, as the plan's command, on the T4 store. The same run on `.context/dip-pulse-site.pre-t4` reproduces every figure of the first run ([cpp-bt-first-run-2026-11-14.md](../release-reviews/cpp-bt-first-run-2026-11-14.md)), so the old column is that store.
+
+| WP | Sittings ours / theirs / both | Before T4 |
+|---|---|---|
+| 18 | 242 / 244 / 242 | 194 / 244 / 194 |
+| 19 | 239 / 239 / 239 | 206 / 239 / 206 |
+| 20 | 214 / 214 / 214 | 213 / 214 / 213 |
+| 21 | 106 / 94 / 94 | 105 / 94 / 94 |
+
+| Figure | Before T4 | T4 |
+|---|---|---|
+| Ids in both | 73,772 | 81,354 |
+| Ids only ours | 0 | 0 |
+| Ids only theirs | 1,752 | 2,311 |
+| of them § 31 declarations | 1,666 | 2,053 |
+| withheld (ADR 0005) | 0 | 95 |
+| `in_top_presidium` | 0 | 9 |
+| `in_top_other` | 82 | 150 |
+| Their ids in sittings we lack | 8,235 | 94 |
+| Surname differences | 282 of 73,767 | 320 of 81,348 |
+| Fraktion differences | 2 of 64,156 | 2 of 71,257 |
+| Ratio rows (15%, 50 tokens) | 1,487 of 53,819 | 1,862 of 60,111 |
+
+- **Every one of the 972 new difference rows sits in a restored sitting, and no old row changed.** The new figures are right because they add the 83 sittings, and only those.
+- **Sittings:**
+  - The plan's expectations hold: WP 18 reaches 242, WP 19 239 and WP 20 214.
+  - CPP-BT holds 18/62 and 18/90 (41 and 53 ids), which wait for step 5's rule.
+  - CPP-BT has no 18/20 either, the sitting our record keeps out as `source_defect`.
+- **Only theirs grows by 559:**
+  - 387 § 31 declarations.
+  - 95 withheld Reden: the 102 rows, less 21/106 (newer than the file) and 6 whose element also has a stored part (five `:N` splits, and 18/2's Beyer, whose `:4` part holds Oppermann), so CPP-BT's id is shared.
+  - 77 procedural ids, read by hand:
+    - 40 are ADR 0004 reviewed units in `scripts/reviewed_units.json`. 31 are `in_top_other`: the presidium elections of 18/1 and 19/1, the chancellor's election, oath and ministers' oaths of 19/19, and Kelber's (19/68) and Högl's (19/158) acceptances. 9 are `in_top_presidium`, Solms's and Schäuble's Sitzungsleitung in 19/1 and 19/19.
+    - 37 are 18/158's § 31 declarations printed in the Sitzungsverlauf (`docs/source-errors.md` E9). The parser holds them out as § 31 declarations; the script's classifier reads only annex titles, as TODOS.md predicted.
+  - All 77 are added to `scripts/cpp_bt_known_differences.tsv` (97 → 174 lines), the second option that TODOS item "T4 parser rules for 18/158 and 19/13" names. After the file, only the ratio rows are left to read.
+- **Surname and Fraktion:**
+  - All 38 new surname differences fall into pairs the known-differences file already lists.
+  - The 2 Fraktion rows are the old two (C5, C6).
+- **Ratio:**
+  - The 375 new rows are 6.0% of the 6,292 newly compared Reden, against 2.8% in the kept sittings (1,487 of 53,819; 3.1% overall after T4). These are the sittings refused before for nested turns.
+  - The 20 largest in restored sittings were read against the XML:
+    - **14 are C1** (`docs/source-errors.md`): the `<rede>` runs on into the chair's business, such as vote results read out or the sitting resumed. CPP-BT counts all of it; we store the speech. Examples: 18/98 `ID1809801700` 597 against 8,436 tokens; 18/1 `ID1800100100`, Kauder's nomination, where the element holds the election and Lammert's acceptance.
+    - **2 are withheld units with a stored part:** 18/2 `ID1800202300` and 18/83 `ID1808301300`. With the withheld words (2,466 and 2,620) they reach the expected count.
+    - **2 hold speeches printed under a `<name>` tag:** 18/29 `ID1802902700`, with Thorsten Frei's 652 and Julia Bartz's 629 words, and 18/42 `ID1804201700`, with Annette Schavan's 1,067. These are speeches counted nowhere; see the next point.
+    - **2 hold more words than CPP-BT's tokens:** 18/8 `ID1800805400` (Ströbele, 137 against 86) and 19/18 `ID191803000` (Hirte, 348 against 218). Our words equal the speaker's own paragraphs in the XML, so CPP-BT's count is the short one.
+- **Finding, a known defect that T4 grows:** speakers printed as a `<name>` that is not the chair, inside another speaker's `<rede>`, are read as chair text and stored in no table (TODOS.md "ADR 0004 follow-ups", census finding 8).
+  - Measured on all 801 XML files for turns of 15 words or more, with a phrase test against every text table: 98 turns, 45,561 words, in 28 kept sittings before T4, unchanged.
+  - T4 adds **33 turns, 19,861 words, in 10 restored sittings**. 18/29 alone has 13, among them Hans-Ulrich Krüger's 1,552 words.
+  - Total 131 turns, 65,422 words, 38 sittings, all but 1 in WP 18 (Woidke in 19/104). Receipt [name-tag-speakers.tsv](t4-acquire/name-tag-speakers.tsv).
+  - The name filter let two WP 20 rows through, removed on review: 20/144 `ID2014407300` "Wolfgang Kubicki:" (86 words) is the Vizepräsident's Ordnungsruf, chair text printed without his title. 20/25 `ID202506700` "(Vizepräsident Wolfgang Kubicki räuspert sich" (52 words) is a stage direction printed as `<name>`. The 52 words after it are Lamya Kaddor's own closing lines ("– Sofort, Herr Präsident. – …"), and no table holds them. That is a separate defect, a kept sitting's speaker cut short, filed in TODOS.md beside the `<name>` speakers.
+  - These words are not in M7's withheld shares, so they are missing coverage on top of those. The TODO now carries the figures. The fix is a parser rule and an owner decision, not part of this step.
+
+### M5. `erste-reden` v3
+
+1. **Withheld Reden with a partitioned Redner-ID: 0** of the 102, against the 10 partitioned ids of `scripts/person_corrections.json`, #171's three included.
+2. **Withheld Reden whose Redner-ID no `mps` row holds: 0.**
+3. **Persons with Reden but no record with a Redner-ID: 8 → 9.** The new one is Monika Heinold (1 Rede, 18/180 `ID1818001000`). #171's partition of `999990055` files her under her DIP person, not under the shared id. No withheld Rede carries her name or `999990055`, so none can make her next Rede a false debut. The other eight are unchanged in persons and counts, and no withheld speaker carries any of their names.
+4. **`erste-reden` values:** 61 weeks change ([erste-reden.tsv](t4-acquire/erste-reden.tsv)), and the debuts cited went from 1,140 to 885 (in the `fact_sources` of the exports).
+   - **265 debuts left their week.** For 264, the person has an earlier Rede in a restored sitting: 259 stored, and 5 withheld, which by v3 leaves the person with no debut row. The 265th is Heilmann's first Rede as an MdB (19/66 `ID196601500`): #171 moved his 18/183 Rede to his MdB person, so that one comes first. 2018-W47 loses his debut and Fabian Jacobi's (19/65 `ID196502400`; one of the 264, his first Rede is now in restored 19/61), so that week goes 3 → 1.
+   - **10 debuts are new,** all in weeks that hold a restored sitting. 8 are in restored sittings: 18/1 ×5, 19/1 ×2 and 19/9. The other 2 are in kept sittings whose weeks are now complete: Kretschmann in 18/225 (2017-W12) and Manderla in 19/74 (2019-W03).
+   - **64 of the 70 weeks with a restored sitting stay incomplete** for speeches, because of withheld Reden. So a debut that moved into one of them is not stated there, rather than posted late in a later week.
+   - **Largest drops:** 2014-W07 91 → 53, 2014-W08 93 → 59, 2014-W12 55 → 28.
+   - **Publication changes:** 2018-W39 (8 → 1), 2018-W41, 2018-W50 and 2024-W42 stop publishing. 2015-W37, 2017-W43, 2019-W19 and 2022-W17 start.
+
+   This is the intended correction: a first Rede "in unserer Abdeckung" now counts the restored days.
+
+### M6. Figures moved
+
+- **Shared cohort (718 sittings):** no per-protocol quantity moved. Speech characters, Sprechrollen, Beiträge, Redeanteil, votes, outcomes and Abweichungen read as before. Only whole-store values move.
+- **Whole store:**
+
+  | Figure | Old | New | Why |
+  |---|---:|---:|---|
+  | protocols | 718 | 801 | the 83 |
+  | Reden | 54,855 | 61,284 | +6,347 in the 82 (the plan's 6,451, less N8's 10 withheld, less #166's 94: 37 of 18/158 are § 31 declarations and 57 of 19/13 Befragung turns), +82 in 21/106 |
+  | Beiträge (`contributions`) | 42,724 | 45,389 | the 83's, 14 Ansprachen among them |
+  | `withheld_units` | 0 | 102 | V3 |
+  | votes / `vote_members` | 619 / 425,322 | 727 / 497,027 | M1 |
+  | Abweichungen | 3,720 | 4,283 | the new votes |
+  | r3 rows (`recipe-r3-abweichler`) | 1,390 | 1,429 | the new votes |
+  | `mps` rows | 6,387 | 6,425 | +39 speakers of the 83, −1 Heilmann (#171) |
+  | Personen after Zusammenführung | 2,040 | 2,075 | |
+  | Personenseiten | 1,658 | 1,674 | +17 from T4, −1 Heilmann |
+  | facts | 1,922 | 1,944 | +22 for 2013-W43, W47, W48 and 2013-10, 2013-11, which held only restored sittings |
+  | publishable facts | 532 | 589 | |
+  | publishable weeks / months | 181 / 58 | 209 / 63 | |
+  | incomplete weeks / months (the build's facts warning) | 102 / 73 | 99 / 70 | 74 of the 83 still withhold a Rede, so their periods stay incomplete for speeches |
+
+- **Facts:** 79 winners changed. 674 of 1,922 shared fact values moved, most of them percentiles, because each ranks a period against a history that gained periods. Periods that held only excluded sittings now carry votes facts: `knappste-abstimmung` and `meiste-abweichler` changed in 52 weeks with a restored sitting each. Their speech facts stay *unvollständig erfasst* with the note naming the withheld Reden (ADR 0005, "Facts").
+
+  In weeks without a restored sitting, 28 votes and length facts keep their value; only eligibility or the floor moves. 19/1 is restored, so WP 19's comparable history now starts at 2017-W43. Its weeks compare against their own Wahlperiode ("seit Beginn der 19. Wahlperiode") where they compared against all weeks since 2013. Example: `laengste-sitzung` 2018-W47, baseline `all` 50 weeks → `wp` 8 weeks, now publishing. Likewise 2014-W39, whose WP 18 history gained weeks.
+
+### M7. Coverage by year, for N9
+
+The export's `coverage.withheld`, as DATA.md "Abdeckung nach Jahr und zurückgehaltene Reden" prints it, old and new in [coverage-withheld.json](t4-acquire/coverage-withheld.json). Before T4 every withheld figure was 0 and 2013 held two sittings.
+
+| Year | Sittings | Reden stored | withheld | Words withheld | Share |
+|---|---:|---:|---:|---:|---:|
+| 2013 | 2 → 6 | 22 → 156 | 4 | 4,593 | **3.25%** |
+| 2014 | 56 → 69 | 2,732 → 3,666 | 17 | 16,005 | 0.47% |
+| 2015 | 55 → 69 | 2,710 → 3,673 | 19 | 19,475 | 0.60% |
+| 2016 | 52 → 63 | 2,718 → 3,416 | 22 | 11,763 | 0.40% |
+| 2017 | 33 → 40 | 1,977 → 2,338 | 5 | 4,868 | 0.26% |
+| 2018 | 49 → 67 | 3,318 → 4,820 | 20 | 12,061 | 0.35% |
+| 2019 | 62 → 66 | 5,064 → 5,456 | 3 | 1,731 | 0.05% |
+| 2020 | 57 → 64 | 4,812 → 5,689 | 7 | 5,634 | 0.16% |
+| 2021 | 43 → 46 | 3,652 → 4,009 | 3 | 3,010 | 0.12% |
+| 2022 | 67 → 68 | 6,142 → 6,271 | 1 | 898 | 0.02% |
+| 2023 to 2025 | unchanged | unchanged | 0 | 0 | 0.00% |
+| 2026 | 54 → 55 | 4,717 → 4,799 | 1 | 71 | 0.00% |
+
+The 2016 and 2018 words exceed the plan's offline figures (9,338 and 11,360) by N8's entries in 18/158 and 19/18. By year and Fraktion there are 31 rows, the highest share 2013 CDU/CSU at 7.32% (4 Reden, 4,593 of 62,760 words). There are 74 rows by sitting. As predicted, 2013 shows the highest share, from four short sittings around the constitution of WP 18. **The N9 minimum coverage is the owner's decision (D9),** set per analysis from these tables.
+
+### What is left after step 2
+
+- The speeches printed as `<name>` that M4 found (131 turns, 65,422 words, 33 of them from T4) need a parser rule and an owner decision before the first release (TODOS.md "ADR 0004 follow-ups").
+- Step 3 (N8) passed before the fetch ([n8-review.md](t4-acquire/n8-review.md)). Step 4 (N10 over the 801 sittings, then vote PR C), step 5's rule and the two-sitting run for 18/62 and 18/90, and an online update for 21/107 to 21/109 come before the first release.

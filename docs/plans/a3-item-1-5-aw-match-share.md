@@ -2,6 +2,8 @@
 
 Plan, 2026-11-10, after `/plan-eng-review` (report at the end). **Ran 2026-11-12** on the fresh store of 28799ac; result and deviations in [a3-phase4.md](a3-phase4.md), "Plan item 1.5". Deviations from this plan: requests are paced at 2 s (the API page's fair-use limit of 30 a minute, not 0.5 s); `lookup_ext_id` returns a five-field `ExtIdLookup` (the cached answer beside the fresh one); an answers file beside the scratch cache lets a rerun ask only unanswered ids; the store had no aw cache to seed from, so M3 flag 4 was vacuous; the profile-page mandate check was replaced by the birth year, because the API's `candidacies-mandates` holds no WP 18/19 Bundestag mandate for the reviewed profiles; the abgeordnetenwatch id errors went to TODOS.md, since `docs/source-errors.md` lists Bundestag sources only.
 
+Changed since (2026-11-17): the build asks abgeordnetenwatch by the first id of a merged `<redner id>` (`derive.first_redner_id`), so the script no longer looks the raw value up: M5 lists the merged raw values with the first id's answer, and the raw-miss counter (`merged_hit_by_first_not_by_raw`) is gone.
+
 Sources of the item:
 - TODOS.md, "A3 /gstack-ship review: deferred findings", last bullet (P1);
 - roadmap Stage 1 item 2.

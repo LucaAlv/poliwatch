@@ -9,7 +9,8 @@ import stat
 from contextlib import contextmanager
 from datetime import date
 from functools import lru_cache
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from types import MappingProxyType
 import re
 import sqlite3
 from pathlib import Path
@@ -188,6 +189,7 @@ def _load_corrections(path: Path) -> dict[str, Any]:
                 text(item, what)
 
         partitioned_ids = set()
+        own_id_owners: dict[str, str] = {}
         for partition in data["partitions"]:
             xml_id = text(partition["xml_redner_id"], "partition xml_redner_id")
             if xml_id in partitioned_ids:
@@ -216,6 +218,10 @@ def _load_corrections(path: Path) -> dict[str, Any]:
                     raise ValueError(f"partition own_ids owner {owner!r} is not one of its label owners")
                 if not OWN_ID_RE.fullmatch(text(own_id, f"own id of partition owner {owner!r}")):
                     raise ValueError(f"own id {own_id!r} of partition owner {owner!r} must read xml:<Redner-ID> or dip:<DIP id>")
+                # The roster and the page link read a DIP id in canonical form: "dip:007"
+                # would join "7", and "dip:0" no row at all.
+                if own_id.startswith("dip:") and canonical_dip_person_id(own_id[4:]) != own_id[4:]:
+                    raise ValueError(f"own id {own_id!r} of partition owner {owner!r} is not a canonical DIP id")
             # The holder: the owner whose own id is this Redner-ID, an MdB's own id the
             # source also printed for someone else. Its record keeps the id and the
             # profile; every other owner leaves under an id of their own, so no
@@ -231,6 +237,19 @@ def _load_corrections(path: Path) -> dict[str, Any]:
                     partition["profile_owner"] = partition["holder"]
                 if partition["profile_owner"] != partition["holder"]:
                     raise ValueError(f"Redner-ID {xml_id}: the profile owner {partition['profile_owner']!r} is not its holder {partition['holder']!r}")
+            # One own id names one reviewed person's record, whichever entry names it.
+            for owner, own_id in own_ids.items():
+                if own_id in own_id_owners:
+                    raise ValueError(f"own id {own_id} is named twice ({own_id_owners[own_id]} and owner {owner!r} of "
+                                     f"Redner-ID {xml_id}); one record holds one person")
+                own_id_owners[own_id] = f"owner {owner!r} of Redner-ID {xml_id}"
+            # The profile owner keeps the trusted profile, so mp_identity keys its record
+            # aw:N; with a DIP id that record collides with the roster's dip:N row
+            # (mps.dip_person_id is UNIQUE).
+            profile_own_id = own_ids.get(partition.get("profile_owner"))
+            if profile_own_id and profile_own_id.startswith("dip:"):
+                raise ValueError(f"own id {profile_own_id} of partition owner {partition['profile_owner']!r} is a DIP id, "
+                                 f"but {partition['profile_owner']!r} is the profile owner of Redner-ID {xml_id}")
             for key, reviewed in occurrences.items():
                 if not isinstance(reviewed, dict):
                     raise ValueError(f"partition occurrence {key!r} must be an object")
@@ -239,7 +258,8 @@ def _load_corrections(path: Path) -> dict[str, Any]:
             texts(merge_["persons"], "merge persons")
             if merge_.get("survivor") is not None:
                 text(merge_["survivor"], "merge survivor")
-        _validate_dip_successors(data["dip_successors"], text)
+        # Read on every bind (dip_successors): built once here, read-only for the callers.
+        data["successor_of"] = MappingProxyType(_validate_dip_successors(data["dip_successors"], text))
         # corrected_speaker replaces a shared id once: an own id that is itself
         # shared would land on a partition its printed name was never reviewed for.
         # A holder's own id is its partition's own Redner-ID, reviewed right there.
@@ -255,9 +275,10 @@ _SUCCESSOR_FIELDS = {"dip_person_id", "successor", "evidence", "reviewed"}
 _REVIEWED_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def _validate_dip_successors(entries: list[Any], text: Any) -> None:
+def _validate_dip_successors(entries: list[Any], text: Any) -> dict[str, str]:
     """A re-issued DIP person record names its successor: both ids in the
-    canonical form, no self-successor, no duplicate, no chain (so no cycle)."""
+    canonical form, no self-successor, no duplicate, no chain (so no cycle).
+    Returns the map old id -> successor."""
     successor_of: dict[str, str] = {}
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict) or set(entry) != _SUCCESSOR_FIELDS:
@@ -282,12 +303,13 @@ def _validate_dip_successors(entries: list[Any], text: Any) -> None:
     for old, new in successor_of.items():
         if new in successor_of:
             raise ValueError(f"dip_successors: successor {new} of DIP id {old} is itself superseded; name the last record")
+    return successor_of
 
 
-def dip_successors() -> dict[str, str]:
+def dip_successors() -> Mapping[str, str]:
     """Re-issued DIP person records (scripts/person_corrections.json): old id ->
-    the record DIP now keeps for the same person."""
-    return {entry["dip_person_id"]: entry["successor"] for entry in corrections()["dip_successors"]}
+    the record DIP now keeps for the same person. Built once per corrections file."""
+    return corrections()["successor_of"]
 
 
 def current_dip_person_id(value: Any) -> str | None:
@@ -345,12 +367,24 @@ def _on_shared_id(record: sqlite3.Row) -> bool:
                                                for partition in corrections()["partitions"])
 
 
-def profile_follows_redner_id(redner_id: Any) -> bool:
-    """Whether a profile found for one speaker of this Redner-ID holds for another:
-    not under a shared id with no reviewed profile owner, whose speakers are
-    different people."""
-    return not any(partition["xml_redner_id"] == redner_id and partition.get("profile_owner") is None
-                   for partition in corrections()["partitions"])
+def redner_id_profile_reaches(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -> bool:
+    """Whether a profile found for some speaker of this speaker's Redner-ID holds
+    for this occurrence too: any speaker of an id nobody shares; under a shared
+    id, only an occurrence whose printed (or reviewed) name is its reviewed profile
+    owner's, and none where no profile owner is reviewed, since its speakers are
+    different people. Read both for the occurrence a profile is taken from and
+    the one it is copied to."""
+    redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
+    for partition in corrections()["partitions"]:
+        if partition["xml_redner_id"] != redner_id:
+            continue
+        if partition.get("profile_owner") is None:
+            return False
+        reviewed = partition["occurrences"].get(f"{protocol_id}/{rede_id}") or {}
+        name = _normalized_mp_name(reviewed.get("display_name") or speaker.get("display_name"))
+        return any(owner == partition["profile_owner"] and _normalized_mp_name(label) == name
+                   for label, owner in partition["labels"].items())
+    return True
 
 def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
     for partition in corrections()["partitions"]:
@@ -922,9 +956,27 @@ def _names(row: dict[str, Any]) -> set[str]:
 _NAME_PARTICLES = frozenset({"von", "van", "vom", "zu", "de", "der", "den", "dos", "freiherr", "graf"})
 
 
+# Offices the XML sometimes prints in the name fields ("Dr. Carsten Sieling,
+# Bürgermeister"): two people in the same office share the word, so it proves
+# nothing either. A compound office ("Innenminister", "Ministerpräsidentin") is
+# matched by its ending; "Meister" and other surnames are not offices.
+_ROLE_WORDS = frozenset({
+    "parl", "parlamentarischer", "parlamentarische", "stellv", "stellvertretender", "stellvertretende",
+    "regierender", "regierende", "erster", "erste", "mdb", "mdbr", "staatssekr", "bundesmin", "staatsmin",
+    "beauftragter", "beauftragte", "bundeskanzler", "bundeskanzlerin",
+})
+_ROLE_ENDINGS = ("minister", "ministerin", "präsident", "präsidentin", "bürgermeister", "bürgermeisterin",
+                 "staatssekretär", "staatssekretärin", "senator", "senatorin")
+
+
+def _role_word(word: str) -> bool:
+    return word in _ROLE_WORDS or word.endswith(_ROLE_ENDINGS)
+
+
 def _name_words(name: Any) -> frozenset[str]:
-    words = {word.rstrip(".") for word in _normalized_mp_name(name).split()}
-    return frozenset(words - _MP_TITLE_WORDS - _NAME_PARTICLES - {"unbekannt"})
+    words = {word.strip(".,()") for word in _normalized_mp_name(name).split()}
+    return frozenset(word for word in words - _MP_TITLE_WORDS - _NAME_PARTICLES - {"unbekannt", ""}
+                     if not _role_word(word))
 
 
 def require_reviewed_redner_ids(rows: list[dict[str, Any]]) -> None:
@@ -1335,12 +1387,14 @@ def reconcile(conn: sqlite3.Connection) -> dict[str, int]:
     require_applied_partitions(conn)
     data = corrections()
     touched = {row[0] for row in conn.execute("SELECT id FROM temp.registry_touched")}
-    require_reviewed_redner_ids(_load_rows(conn, touched))
     # Every record restarts from its durable home.
     for record in conn.execute("SELECT id, home_person_id FROM person_records").fetchall():
         _assign(conn, record["id"], resolve(conn, record["home_person_id"]))
-    # Durable merges: records that share a Personenkennung, then reviewed merges.
+    # The name check reads evidence the reset leaves alone, so it reads this load
+    # before any merge; a refusal aborts the rebuild, which commits nothing.
     rows = _load_rows(conn, touched)
+    require_reviewed_redner_ids(rows)
+    # Durable merges: records that share a Personenkennung, then reviewed merges.
     for members in match_rows([row for row in rows if row["live"]], guesses=False)[0].values():
         merge(conn, sorted({resolve(conn, row["person_id"]) for row in members}))
     for keys, survivor in _reviewed_merge_groups(conn, data["merges"]):

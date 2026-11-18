@@ -1,0 +1,1212 @@
+{
+ "old": {
+  "commit": "fb64c55c085e",
+  "export_format": 20,
+  "catalog_count": 4686,
+  "dossier_count": 718,
+  "wahlperioden": [
+   {
+    "wp": "18",
+    "sittings": 194,
+    "date_from": "2013-12-17",
+    "date_to": "2017-06-30",
+    "agenda_items": 1825,
+    "speeches": 9843,
+    "contributions": 11480,
+    "votes": 149,
+    "vote_members": 93918
+   },
+   {
+    "wp": "19",
+    "sittings": 206,
+    "date_from": "2017-11-21",
+    "date_to": "2021-08-25",
+    "agenda_items": 2178,
+    "speeches": 16847,
+    "contributions": 12998,
+    "votes": 198,
+    "vote_members": 140358
+   },
+   {
+    "wp": "20",
+    "sittings": 213,
+    "date_from": "2021-10-26",
+    "date_to": "2025-03-18",
+    "agenda_items": 2096,
+    "speeches": 19036,
+    "contributions": 11612,
+    "votes": 187,
+    "vote_members": 137501
+   },
+   {
+    "wp": "21",
+    "sittings": 105,
+    "date_from": "2025-03-25",
+    "date_to": "2026-11-05",
+    "agenda_items": 1061,
+    "speeches": 9129,
+    "contributions": 6634,
+    "votes": 85,
+    "vote_members": 53545
+   }
+  ],
+  "withheld": {
+   "by_year": [
+    {
+     "year": "2013",
+     "sittings": 2,
+     "reden_stored": 22,
+     "reden_withheld": 0,
+     "words_stored": 24869,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2014",
+     "sittings": 56,
+     "reden_stored": 2732,
+     "reden_withheld": 0,
+     "words_stored": 2470056,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2015",
+     "sittings": 55,
+     "reden_stored": 2710,
+     "reden_withheld": 0,
+     "words_stored": 2418522,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2016",
+     "sittings": 52,
+     "reden_stored": 2718,
+     "reden_withheld": 0,
+     "words_stored": 2352454,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2017",
+     "sittings": 33,
+     "reden_stored": 1977,
+     "reden_withheld": 0,
+     "words_stored": 1542795,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2018",
+     "sittings": 49,
+     "reden_stored": 3318,
+     "reden_withheld": 0,
+     "words_stored": 2412474,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2019",
+     "sittings": 62,
+     "reden_stored": 5064,
+     "reden_withheld": 0,
+     "words_stored": 3358660,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2020",
+     "sittings": 57,
+     "reden_stored": 4812,
+     "reden_withheld": 0,
+     "words_stored": 3072278,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2021",
+     "sittings": 43,
+     "reden_stored": 3652,
+     "reden_withheld": 0,
+     "words_stored": 2223337,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2022",
+     "sittings": 67,
+     "reden_stored": 6142,
+     "reden_withheld": 0,
+     "words_stored": 3861883,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2023",
+     "sittings": 68,
+     "reden_stored": 6528,
+     "reden_withheld": 0,
+     "words_stored": 3949205,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2024",
+     "sittings": 63,
+     "reden_stored": 5690,
+     "reden_withheld": 0,
+     "words_stored": 3397541,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2025",
+     "sittings": 57,
+     "reden_stored": 4773,
+     "reden_withheld": 0,
+     "words_stored": 2874596,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2026",
+     "sittings": 54,
+     "reden_stored": 4717,
+     "reden_withheld": 0,
+     "words_stored": 2736713,
+     "words_withheld": 0,
+     "share": 0.0
+    }
+   ],
+   "by_fraktion": [],
+   "by_sitting": []
+  }
+ },
+ "new": {
+  "commit": "adfe50c5bddc",
+  "export_format": 20,
+  "catalog_count": 4686,
+  "dossier_count": 801,
+  "wahlperioden": [
+   {
+    "wp": "18",
+    "sittings": 242,
+    "date_from": "2013-10-22",
+    "date_to": "2017-09-05",
+    "agenda_items": 2381,
+    "speeches": 12926,
+    "contributions": 12800,
+    "votes": 211,
+    "vote_members": 133011
+   },
+   {
+    "wp": "19",
+    "sittings": 239,
+    "date_from": "2017-10-24",
+    "date_to": "2021-09-07",
+    "agenda_items": 2629,
+    "speeches": 19982,
+    "contributions": 14312,
+    "votes": 244,
+    "vote_members": 172970
+   },
+   {
+    "wp": "20",
+    "sittings": 214,
+    "date_from": "2021-10-26",
+    "date_to": "2025-03-18",
+    "agenda_items": 2109,
+    "speeches": 19165,
+    "contributions": 11622,
+    "votes": 187,
+    "vote_members": 137501
+   },
+   {
+    "wp": "21",
+    "sittings": 106,
+    "date_from": "2025-03-25",
+    "date_to": "2026-11-06",
+    "agenda_items": 1070,
+    "speeches": 9211,
+    "contributions": 6655,
+    "votes": 85,
+    "vote_members": 53545
+   }
+  ],
+  "withheld": {
+   "by_year": [
+    {
+     "year": "2013",
+     "sittings": 6,
+     "reden_stored": 156,
+     "reden_withheld": 4,
+     "words_stored": 136753,
+     "words_withheld": 4593,
+     "share": 0.0325
+    },
+    {
+     "year": "2014",
+     "sittings": 69,
+     "reden_stored": 3666,
+     "reden_withheld": 17,
+     "words_stored": 3365827,
+     "words_withheld": 16005,
+     "share": 0.0047
+    },
+    {
+     "year": "2015",
+     "sittings": 69,
+     "reden_stored": 3673,
+     "reden_withheld": 19,
+     "words_stored": 3230618,
+     "words_withheld": 19475,
+     "share": 0.006
+    },
+    {
+     "year": "2016",
+     "sittings": 63,
+     "reden_stored": 3416,
+     "reden_withheld": 22,
+     "words_stored": 2918954,
+     "words_withheld": 11763,
+     "share": 0.004
+    },
+    {
+     "year": "2017",
+     "sittings": 40,
+     "reden_stored": 2338,
+     "reden_withheld": 5,
+     "words_stored": 1849331,
+     "words_withheld": 4868,
+     "share": 0.0026
+    },
+    {
+     "year": "2018",
+     "sittings": 67,
+     "reden_stored": 4820,
+     "reden_withheld": 20,
+     "words_stored": 3472691,
+     "words_withheld": 12061,
+     "share": 0.0035
+    },
+    {
+     "year": "2019",
+     "sittings": 66,
+     "reden_stored": 5456,
+     "reden_withheld": 3,
+     "words_stored": 3615002,
+     "words_withheld": 1731,
+     "share": 0.0005
+    },
+    {
+     "year": "2020",
+     "sittings": 64,
+     "reden_stored": 5689,
+     "reden_withheld": 7,
+     "words_stored": 3609537,
+     "words_withheld": 5634,
+     "share": 0.0016
+    },
+    {
+     "year": "2021",
+     "sittings": 46,
+     "reden_stored": 4009,
+     "reden_withheld": 3,
+     "words_stored": 2447918,
+     "words_withheld": 3010,
+     "share": 0.0012
+    },
+    {
+     "year": "2022",
+     "sittings": 68,
+     "reden_stored": 6271,
+     "reden_withheld": 1,
+     "words_stored": 3946431,
+     "words_withheld": 898,
+     "share": 0.0002
+    },
+    {
+     "year": "2023",
+     "sittings": 68,
+     "reden_stored": 6528,
+     "reden_withheld": 0,
+     "words_stored": 3949205,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2024",
+     "sittings": 63,
+     "reden_stored": 5690,
+     "reden_withheld": 0,
+     "words_stored": 3397541,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2025",
+     "sittings": 57,
+     "reden_stored": 4773,
+     "reden_withheld": 0,
+     "words_stored": 2874596,
+     "words_withheld": 0,
+     "share": 0.0
+    },
+    {
+     "year": "2026",
+     "sittings": 55,
+     "reden_stored": 4799,
+     "reden_withheld": 1,
+     "words_stored": 2785149,
+     "words_withheld": 71,
+     "share": 0.0
+    }
+   ],
+   "by_fraktion": [
+    {
+     "year": "2013",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 4,
+     "words_withheld": 4593,
+     "words_stored": 58167,
+     "share": 0.0732
+    },
+    {
+     "year": "2014",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "reden_withheld": 3,
+     "words_withheld": 2673,
+     "words_stored": 491609,
+     "share": 0.0054
+    },
+    {
+     "year": "2014",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 8,
+     "words_withheld": 8230,
+     "words_stored": 1412636,
+     "share": 0.0058
+    },
+    {
+     "year": "2014",
+     "fraktion": "Die Linke",
+     "reden_withheld": 3,
+     "words_withheld": 1625,
+     "words_stored": 463911,
+     "share": 0.0035
+    },
+    {
+     "year": "2014",
+     "fraktion": "SPD",
+     "reden_withheld": 3,
+     "words_withheld": 3477,
+     "words_stored": 941091,
+     "share": 0.0037
+    },
+    {
+     "year": "2015",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "reden_withheld": 2,
+     "words_withheld": 1404,
+     "words_stored": 496323,
+     "share": 0.0028
+    },
+    {
+     "year": "2015",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 13,
+     "words_withheld": 15941,
+     "words_stored": 1220471,
+     "share": 0.0129
+    },
+    {
+     "year": "2015",
+     "fraktion": "Die Linke",
+     "reden_withheld": 1,
+     "words_withheld": 941,
+     "words_stored": 443929,
+     "share": 0.0021
+    },
+    {
+     "year": "2015",
+     "fraktion": "SPD",
+     "reden_withheld": 3,
+     "words_withheld": 1189,
+     "words_stored": 851204,
+     "share": 0.0014
+    },
+    {
+     "year": "2016",
+     "fraktion": "(keine)",
+     "reden_withheld": 1,
+     "words_withheld": 368,
+     "words_stored": 272212,
+     "share": 0.0014
+    },
+    {
+     "year": "2016",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "reden_withheld": 6,
+     "words_withheld": 2410,
+     "words_stored": 434112,
+     "share": 0.0055
+    },
+    {
+     "year": "2016",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 9,
+     "words_withheld": 8140,
+     "words_stored": 1072538,
+     "share": 0.0075
+    },
+    {
+     "year": "2016",
+     "fraktion": "Die Linke",
+     "reden_withheld": 6,
+     "words_withheld": 845,
+     "words_stored": 410887,
+     "share": 0.0021
+    },
+    {
+     "year": "2017",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "reden_withheld": 1,
+     "words_withheld": 1100,
+     "words_stored": 277735,
+     "share": 0.0039
+    },
+    {
+     "year": "2017",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 3,
+     "words_withheld": 2357,
+     "words_stored": 659507,
+     "share": 0.0036
+    },
+    {
+     "year": "2017",
+     "fraktion": "Die Linke",
+     "reden_withheld": 1,
+     "words_withheld": 1411,
+     "words_stored": 258986,
+     "share": 0.0054
+    },
+    {
+     "year": "2018",
+     "fraktion": "AfD",
+     "reden_withheld": 6,
+     "words_withheld": 2185,
+     "words_stored": 433129,
+     "share": 0.005
+    },
+    {
+     "year": "2018",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "reden_withheld": 3,
+     "words_withheld": 408,
+     "words_stored": 370320,
+     "share": 0.0011
+    },
+    {
+     "year": "2018",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 6,
+     "words_withheld": 5963,
+     "words_stored": 994474,
+     "share": 0.006
+    },
+    {
+     "year": "2018",
+     "fraktion": "Die Linke",
+     "reden_withheld": 2,
+     "words_withheld": 1025,
+     "words_stored": 344207,
+     "share": 0.003
+    },
+    {
+     "year": "2018",
+     "fraktion": "FDP",
+     "reden_withheld": 1,
+     "words_withheld": 846,
+     "words_stored": 382042,
+     "share": 0.0022
+    },
+    {
+     "year": "2018",
+     "fraktion": "SPD",
+     "reden_withheld": 2,
+     "words_withheld": 1634,
+     "words_stored": 636078,
+     "share": 0.0026
+    },
+    {
+     "year": "2019",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 2,
+     "words_withheld": 1670,
+     "words_stored": 1029458,
+     "share": 0.0016
+    },
+    {
+     "year": "2019",
+     "fraktion": "SPD",
+     "reden_withheld": 1,
+     "words_withheld": 61,
+     "words_stored": 693881,
+     "share": 0.0001
+    },
+    {
+     "year": "2020",
+     "fraktion": "(keine)",
+     "reden_withheld": 2,
+     "words_withheld": 1551,
+     "words_stored": 264805,
+     "share": 0.0058
+    },
+    {
+     "year": "2020",
+     "fraktion": "AfD",
+     "reden_withheld": 1,
+     "words_withheld": 196,
+     "words_stored": 442450,
+     "share": 0.0004
+    },
+    {
+     "year": "2020",
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "reden_withheld": 1,
+     "words_withheld": 582,
+     "words_stored": 371248,
+     "share": 0.0016
+    },
+    {
+     "year": "2020",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 3,
+     "words_withheld": 3305,
+     "words_stored": 1095539,
+     "share": 0.003
+    },
+    {
+     "year": "2021",
+     "fraktion": "CDU/CSU",
+     "reden_withheld": 3,
+     "words_withheld": 3010,
+     "words_stored": 704879,
+     "share": 0.0043
+    },
+    {
+     "year": "2022",
+     "fraktion": "SPD",
+     "reden_withheld": 1,
+     "words_withheld": 898,
+     "words_stored": 919893,
+     "share": 0.001
+    },
+    {
+     "year": "2026",
+     "fraktion": "Die Linke",
+     "reden_withheld": 1,
+     "words_withheld": 71,
+     "words_stored": 282206,
+     "share": 0.0003
+    }
+   ],
+   "by_sitting": [
+    {
+     "document_number": "18/2",
+     "date": "2013-11-18",
+     "reden_withheld": 1,
+     "words_withheld": 1048,
+     "words_stored": 27404,
+     "share": 0.0368
+    },
+    {
+     "document_number": "18/3",
+     "date": "2013-11-28",
+     "reden_withheld": 2,
+     "words_withheld": 2294,
+     "words_stored": 62006,
+     "share": 0.0357
+    },
+    {
+     "document_number": "18/6",
+     "date": "2013-12-19",
+     "reden_withheld": 1,
+     "words_withheld": 1251,
+     "words_stored": 20208,
+     "share": 0.0583
+    },
+    {
+     "document_number": "18/8",
+     "date": "2014-01-16",
+     "reden_withheld": 1,
+     "words_withheld": 1088,
+     "words_stored": 60124,
+     "share": 0.0178
+    },
+    {
+     "document_number": "18/10",
+     "date": "2014-01-29",
+     "reden_withheld": 1,
+     "words_withheld": 608,
+     "words_stored": 55118,
+     "share": 0.0109
+    },
+    {
+     "document_number": "18/11",
+     "date": "2014-01-30",
+     "reden_withheld": 2,
+     "words_withheld": 1957,
+     "words_stored": 87632,
+     "share": 0.0218
+    },
+    {
+     "document_number": "18/21",
+     "date": "2014-03-14",
+     "reden_withheld": 1,
+     "words_withheld": 236,
+     "words_stored": 35440,
+     "share": 0.0066
+    },
+    {
+     "document_number": "18/26",
+     "date": "2014-04-03",
+     "reden_withheld": 3,
+     "words_withheld": 2554,
+     "words_stored": 78306,
+     "share": 0.0316
+    },
+    {
+     "document_number": "18/29",
+     "date": "2014-04-09",
+     "reden_withheld": 1,
+     "words_withheld": 253,
+     "words_stored": 63529,
+     "share": 0.004
+    },
+    {
+     "document_number": "18/36",
+     "date": "2014-05-22",
+     "reden_withheld": 1,
+     "words_withheld": 1803,
+     "words_stored": 84722,
+     "share": 0.0208
+    },
+    {
+     "document_number": "18/42",
+     "date": "2014-06-25",
+     "reden_withheld": 2,
+     "words_withheld": 208,
+     "words_stored": 87815,
+     "share": 0.0024
+    },
+    {
+     "document_number": "18/43",
+     "date": "2014-06-26",
+     "reden_withheld": 1,
+     "words_withheld": 2210,
+     "words_stored": 58477,
+     "share": 0.0364
+    },
+    {
+     "document_number": "18/50",
+     "date": "2014-09-10",
+     "reden_withheld": 1,
+     "words_withheld": 1635,
+     "words_stored": 73284,
+     "share": 0.0218
+    },
+    {
+     "document_number": "18/60",
+     "date": "2014-10-16",
+     "reden_withheld": 1,
+     "words_withheld": 1317,
+     "words_stored": 88281,
+     "share": 0.0147
+    },
+    {
+     "document_number": "18/63",
+     "date": "2014-11-06",
+     "reden_withheld": 1,
+     "words_withheld": 1000,
+     "words_stored": 82800,
+     "share": 0.0119
+    },
+    {
+     "document_number": "18/67",
+     "date": "2014-11-14",
+     "reden_withheld": 1,
+     "words_withheld": 1136,
+     "words_stored": 40243,
+     "share": 0.0275
+    },
+    {
+     "document_number": "18/82",
+     "date": "2015-01-29",
+     "reden_withheld": 2,
+     "words_withheld": 2782,
+     "words_stored": 75570,
+     "share": 0.0355
+    },
+    {
+     "document_number": "18/83",
+     "date": "2015-01-30",
+     "reden_withheld": 2,
+     "words_withheld": 2201,
+     "words_stored": 40548,
+     "share": 0.0515
+    },
+    {
+     "document_number": "18/88",
+     "date": "2015-02-26",
+     "reden_withheld": 2,
+     "words_withheld": 1034,
+     "words_stored": 81116,
+     "share": 0.0126
+    },
+    {
+     "document_number": "18/89",
+     "date": "2015-02-27",
+     "reden_withheld": 2,
+     "words_withheld": 872,
+     "words_stored": 47423,
+     "share": 0.0181
+    },
+    {
+     "document_number": "18/97",
+     "date": "2015-03-26",
+     "reden_withheld": 1,
+     "words_withheld": 427,
+     "words_stored": 76192,
+     "share": 0.0056
+    },
+    {
+     "document_number": "18/98",
+     "date": "2015-03-27",
+     "reden_withheld": 1,
+     "words_withheld": 851,
+     "words_stored": 31836,
+     "share": 0.026
+    },
+    {
+     "document_number": "18/110",
+     "date": "2015-06-12",
+     "reden_withheld": 2,
+     "words_withheld": 1114,
+     "words_stored": 45373,
+     "share": 0.024
+    },
+    {
+     "document_number": "18/112",
+     "date": "2015-06-18",
+     "reden_withheld": 1,
+     "words_withheld": 2115,
+     "words_stored": 85324,
+     "share": 0.0242
+    },
+    {
+     "document_number": "18/113",
+     "date": "2015-06-19",
+     "reden_withheld": 1,
+     "words_withheld": 1310,
+     "words_stored": 32971,
+     "share": 0.0382
+    },
+    {
+     "document_number": "18/117",
+     "date": "2015-07-17",
+     "reden_withheld": 1,
+     "words_withheld": 1631,
+     "words_stored": 21779,
+     "share": 0.0697
+    },
+    {
+     "document_number": "18/118",
+     "date": "2015-08-19",
+     "reden_withheld": 1,
+     "words_withheld": 1276,
+     "words_stored": 18968,
+     "share": 0.063
+    },
+    {
+     "document_number": "18/124",
+     "date": "2015-09-24",
+     "reden_withheld": 1,
+     "words_withheld": 2780,
+     "words_stored": 90271,
+     "share": 0.0299
+    },
+    {
+     "document_number": "18/127",
+     "date": "2015-10-01",
+     "reden_withheld": 1,
+     "words_withheld": 85,
+     "words_stored": 80649,
+     "share": 0.0011
+    },
+    {
+     "document_number": "18/143",
+     "date": "2015-12-03",
+     "reden_withheld": 1,
+     "words_withheld": 997,
+     "words_stored": 84076,
+     "share": 0.0117
+    },
+    {
+     "document_number": "18/158",
+     "date": "2016-02-25",
+     "reden_withheld": 13,
+     "words_withheld": 3005,
+     "words_stored": 72270,
+     "share": 0.0399
+    },
+    {
+     "document_number": "18/159",
+     "date": "2016-02-26",
+     "reden_withheld": 1,
+     "words_withheld": 94,
+     "words_stored": 45288,
+     "share": 0.0021
+    },
+    {
+     "document_number": "18/160",
+     "date": "2016-03-16",
+     "reden_withheld": 1,
+     "words_withheld": 106,
+     "words_stored": 15257,
+     "share": 0.0069
+    },
+    {
+     "document_number": "18/161",
+     "date": "2016-03-17",
+     "reden_withheld": 1,
+     "words_withheld": 688,
+     "words_stored": 77674,
+     "share": 0.0088
+    },
+    {
+     "document_number": "18/171",
+     "date": "2016-05-13",
+     "reden_withheld": 1,
+     "words_withheld": 1450,
+     "words_stored": 37599,
+     "share": 0.0371
+    },
+    {
+     "document_number": "18/173",
+     "date": "2016-06-02",
+     "reden_withheld": 1,
+     "words_withheld": 1231,
+     "words_stored": 88408,
+     "share": 0.0137
+    },
+    {
+     "document_number": "18/180",
+     "date": "2016-06-24",
+     "reden_withheld": 1,
+     "words_withheld": 886,
+     "words_stored": 51331,
+     "share": 0.017
+    },
+    {
+     "document_number": "18/184",
+     "date": "2016-07-08",
+     "reden_withheld": 1,
+     "words_withheld": 1071,
+     "words_stored": 40280,
+     "share": 0.0259
+    },
+    {
+     "document_number": "18/193",
+     "date": "2016-09-29",
+     "reden_withheld": 1,
+     "words_withheld": 1181,
+     "words_stored": 82882,
+     "share": 0.014
+    },
+    {
+     "document_number": "18/210",
+     "date": "2016-12-16",
+     "reden_withheld": 1,
+     "words_withheld": 2051,
+     "words_stored": 47436,
+     "share": 0.0414
+    },
+    {
+     "document_number": "18/215",
+     "date": "2017-01-26",
+     "reden_withheld": 1,
+     "words_withheld": 833,
+     "words_stored": 81263,
+     "share": 0.0101
+    },
+    {
+     "document_number": "18/219",
+     "date": "2017-02-17",
+     "reden_withheld": 2,
+     "words_withheld": 1524,
+     "words_stored": 36158,
+     "share": 0.0404
+    },
+    {
+     "document_number": "18/221",
+     "date": "2017-03-09",
+     "reden_withheld": 1,
+     "words_withheld": 1100,
+     "words_stored": 110604,
+     "share": 0.0098
+    },
+    {
+     "document_number": "18/241",
+     "date": "2017-06-23",
+     "reden_withheld": 1,
+     "words_withheld": 1411,
+     "words_stored": 47177,
+     "share": 0.029
+    },
+    {
+     "document_number": "19/12",
+     "date": "2018-02-02",
+     "reden_withheld": 2,
+     "words_withheld": 1010,
+     "words_stored": 35873,
+     "share": 0.0274
+    },
+    {
+     "document_number": "19/14",
+     "date": "2018-02-22",
+     "reden_withheld": 1,
+     "words_withheld": 182,
+     "words_stored": 87506,
+     "share": 0.0021
+    },
+    {
+     "document_number": "19/18",
+     "date": "2018-03-02",
+     "reden_withheld": 3,
+     "words_withheld": 2011,
+     "words_stored": 35346,
+     "share": 0.0538
+    },
+    {
+     "document_number": "19/20",
+     "date": "2018-03-15",
+     "reden_withheld": 2,
+     "words_withheld": 395,
+     "words_stored": 71882,
+     "share": 0.0055
+    },
+    {
+     "document_number": "19/23",
+     "date": "2018-03-22",
+     "reden_withheld": 1,
+     "words_withheld": 1190,
+     "words_stored": 88743,
+     "share": 0.0132
+    },
+    {
+     "document_number": "19/25",
+     "date": "2018-04-18",
+     "reden_withheld": 1,
+     "words_withheld": 199,
+     "words_stored": 8860,
+     "share": 0.022
+    },
+    {
+     "document_number": "19/32",
+     "date": "2018-05-16",
+     "reden_withheld": 1,
+     "words_withheld": 737,
+     "words_stored": 68052,
+     "share": 0.0107
+    },
+    {
+     "document_number": "19/36",
+     "date": "2018-06-07",
+     "reden_withheld": 1,
+     "words_withheld": 954,
+     "words_stored": 109591,
+     "share": 0.0086
+    },
+    {
+     "document_number": "19/40",
+     "date": "2018-06-15",
+     "reden_withheld": 1,
+     "words_withheld": 1213,
+     "words_stored": 52890,
+     "share": 0.0224
+    },
+    {
+     "document_number": "19/42",
+     "date": "2018-06-28",
+     "reden_withheld": 1,
+     "words_withheld": 507,
+     "words_stored": 106316,
+     "share": 0.0047
+    },
+    {
+     "document_number": "19/44",
+     "date": "2018-07-03",
+     "reden_withheld": 1,
+     "words_withheld": 84,
+     "words_stored": 77265,
+     "share": 0.0011
+    },
+    {
+     "document_number": "19/47",
+     "date": "2018-09-11",
+     "reden_withheld": 1,
+     "words_withheld": 846,
+     "words_stored": 57509,
+     "share": 0.0145
+    },
+    {
+     "document_number": "19/59",
+     "date": "2018-10-19",
+     "reden_withheld": 1,
+     "words_withheld": 138,
+     "words_stored": 50682,
+     "share": 0.0027
+    },
+    {
+     "document_number": "19/61",
+     "date": "2018-11-08",
+     "reden_withheld": 1,
+     "words_withheld": 678,
+     "words_stored": 100657,
+     "share": 0.0067
+    },
+    {
+     "document_number": "19/68",
+     "date": "2018-11-29",
+     "reden_withheld": 2,
+     "words_withheld": 1917,
+     "words_stored": 89601,
+     "share": 0.0209
+    },
+    {
+     "document_number": "19/92",
+     "date": "2019-04-04",
+     "reden_withheld": 1,
+     "words_withheld": 1031,
+     "words_stored": 95586,
+     "share": 0.0107
+    },
+    {
+     "document_number": "19/101",
+     "date": "2019-05-16",
+     "reden_withheld": 1,
+     "words_withheld": 639,
+     "words_stored": 100470,
+     "share": 0.0063
+    },
+    {
+     "document_number": "19/102",
+     "date": "2019-05-17",
+     "reden_withheld": 1,
+     "words_withheld": 61,
+     "words_stored": 59667,
+     "share": 0.001
+    },
+    {
+     "document_number": "19/158",
+     "date": "2020-05-07",
+     "reden_withheld": 1,
+     "words_withheld": 1110,
+     "words_stored": 78393,
+     "share": 0.014
+    },
+    {
+     "document_number": "19/170",
+     "date": "2020-07-02",
+     "reden_withheld": 1,
+     "words_withheld": 1151,
+     "words_stored": 97410,
+     "share": 0.0117
+    },
+    {
+     "document_number": "19/173",
+     "date": "2020-09-10",
+     "reden_withheld": 1,
+     "words_withheld": 1306,
+     "words_stored": 93653,
+     "share": 0.0138
+    },
+    {
+     "document_number": "19/189",
+     "date": "2020-11-05",
+     "reden_withheld": 1,
+     "words_withheld": 196,
+     "words_stored": 93432,
+     "share": 0.0021
+    },
+    {
+     "document_number": "19/192",
+     "date": "2020-11-19",
+     "reden_withheld": 1,
+     "words_withheld": 582,
+     "words_stored": 89108,
+     "share": 0.0065
+    },
+    {
+     "document_number": "19/193",
+     "date": "2020-11-20",
+     "reden_withheld": 1,
+     "words_withheld": 441,
+     "words_stored": 51042,
+     "share": 0.0086
+    },
+    {
+     "document_number": "19/201",
+     "date": "2020-12-16",
+     "reden_withheld": 1,
+     "words_withheld": 848,
+     "words_stored": 34221,
+     "share": 0.0242
+    },
+    {
+     "document_number": "19/215",
+     "date": "2021-03-04",
+     "reden_withheld": 1,
+     "words_withheld": 697,
+     "words_stored": 92451,
+     "share": 0.0075
+    },
+    {
+     "document_number": "19/227",
+     "date": "2021-05-06",
+     "reden_withheld": 1,
+     "words_withheld": 1195,
+     "words_stored": 95200,
+     "share": 0.0124
+    },
+    {
+     "document_number": "19/239",
+     "date": "2021-09-07",
+     "reden_withheld": 1,
+     "words_withheld": 1118,
+     "words_stored": 36930,
+     "share": 0.0294
+    },
+    {
+     "document_number": "20/11",
+     "date": "2022-01-13",
+     "reden_withheld": 1,
+     "words_withheld": 898,
+     "words_stored": 84548,
+     "share": 0.0105
+    },
+    {
+     "document_number": "21/106",
+     "date": "2026-11-06",
+     "reden_withheld": 1,
+     "words_withheld": 71,
+     "words_stored": 48436,
+     "share": 0.0015
+    }
+   ]
+  }
+ }
+}

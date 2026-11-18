@@ -59,6 +59,7 @@ from typing import Any, Callable, Iterable, Mapping, MutableMapping, NamedTuple,
 from xml.sax.saxutils import escape
 
 import derive
+import sqlite_open
 from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, document_sort_key, stable_key
 from persist_dip_pulse_store import require_current_schema, require_current_speech_rules
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
@@ -2717,7 +2718,7 @@ def write_cards(rows: Iterable[Mapping[str, Any]], cards_dir: Path) -> list[Path
 
 
 def open_readonly(store: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"{store.resolve().as_uri()}?mode=ro", uri=True)
+    conn = sqlite_open.open_readonly(store)
     conn.row_factory = sqlite3.Row
     return conn
 
