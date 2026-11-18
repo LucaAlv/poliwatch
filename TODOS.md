@@ -1317,7 +1317,7 @@ The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia He
 3. **Badge source by key presence.** `features.votes.render_result_badge` reads `application_result` only where the dict has the key, else recomputes; a store reader that forgets the column silently recomputes. Pass the source explicitly once the dossier panel reads the store (A4 slice 4).
 4. **Two stored-vote readers.** `persist_dip_pulse_store.stored_vote_groups` re-reads totals, fraction rows and members in the derive shape, as `features.votes.stored_votes` does for the archive; share one reader.
 5. **Facts fixture.** `tests/_facts_fixture.py` writes `abweichler_count = sum(flag or 0)` even where a member's group has no fraction row (flag None), where `derive.vote_abweichler_count` gives NULL; compute it with the derive function.
-6. **Plan wording.** `docs/plans/vote-links-and-figures.md` part 2 calls 423 / 176 / 20 the "Outcome mix"; that is `result_raw`. The persisted `application_result` is 330 / 269 / 20 (93 of the 94 `proposition` inversions flip; one has no `result_raw`).
+6. ~~**Plan wording.** `docs/plans/vote-links-and-figures.md` part 2 calls 423 / 176 / 20 the "Outcome mix"; that is `result_raw`. The persisted `application_result` is 330 / 269 / 20 (93 of the 94 `proposition` inversions flip; one has no `result_raw`).~~ **Done 2026-11-18:** the plan labels 423 / 176 / 20 as the `result_raw` mix and gives the persisted 330 / 269 / 20.
 
 **Effort:** S
 **Priority:** P2
@@ -1326,7 +1326,7 @@ The other 2 have no exact twin: "Heinz Wiese (Ehingen)" and "Uda Carmen Freia He
 ### Design hand-over leftovers
 
 **What:**
-- The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.
+- ~~The re-scope review in `docs/plans/a4-site-from-release.md` still reads as approved ("Approval readiness: PASS"). Only the status line at the top says R10 to R16 are not applied. Add a banner under its heading.~~ **Done 2026-11-18:** a banner under the re-scope heading says its PASS and R10 to R16 are not applied. (The PASS the entry cited at `:1054` belongs to the first review, R1 to R9, which stays in force; the re-scope's own PASS is at `:1746`.)
 - `docs/designs/gesetzesvorhaben.md:300` names the removed TODO "DESIGN.md, tokens and a typeface decision".
 - `README.md:509` and `docs/project-documentation.md:21,329` link to `docs/design/bundestag-pulse-design.md`, deleted in ad389bf. Remove the links or point them at `PRODUCT.md` and `DESIGN.md`.
 
@@ -1566,7 +1566,7 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 - ask, together with the roll-call question, whether the derived Zugehörigkeit rows (id, name, dates, group) may be redistributed;
 - write the layer's terms into `LICENSE-DATA.md` (which `DATA.md` quotes; it says only that they are open), its attribution short string and ADR 0003, neither of which names the MdB-Stammdaten yet.
 
-Also: DATA.md's sources paragraph (`_codebook_sources_and_citation`) names the open redistribution question for the roll-call data only; name the MdB-Stammdaten there too until the terms are settled (ship adversarial pass 3).
+~~Also: DATA.md's sources paragraph (`_codebook_sources_and_citation`) names the open redistribution question for the roll-call data only; name the MdB-Stammdaten there too until the terms are settled (ship adversarial pass 3).~~ **Done 2026-11-18:** the sentence now reads "der namentlichen Abstimmungsdaten und der MdB-Stammdaten"; the terms and LICENSE-DATA.md work below stay open.
 
 The answer also reaches two tables outside this layer. Since E4 (2026-11-05), 100 rows of `vote_members.party_id` and 146 rows of `vote_fractions` counts rest partly on the Stammdaten, while the dictionary still tags those columns `bundestag-abstimmungen` alone. If the file can't be redistributed, dropping the seat tables does not remove these rows: decide then whether a correction may stay, and tag the columns to match.
 
@@ -2278,10 +2278,9 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### One module for the link between a namentliche Abstimmung and its Tagesordnungspunkt
 
-**What:** Move the rule that links a namentliche Abstimmung to a Tagesordnungspunkt into one module. It takes the Sitzung's date, its Tagesordnungspunkte's Drucksachen and titles (heading and linked Vorgang titles) and the roll-call candidates. It returns the links, with the reason each link was made. Fetching stays outside it. Today:
-- The shipped rule sits inline in `enrich_with_api` (`validate_dip_protocol.py` 4097–4467): the Drucksache overlap at 4190–4196, the unique-title fallback at 4270–4287, the detail fetch at 4290–4308.
-- The tested helper `match_roll_call_votes` (3355) has had no production caller since a0061a0 (v0.10.0.0); only `tests/test_review_fixes.py` 102–106 calls it. It differs from the shipped rule: it stops at the first failed detail fetch and has no title fallback.
-- `find_roll_call_xlsx_url` (3021) is test-only too. Keep it only if "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" will use it.
+**What:** The link rule itself is now one module (`scripts/vote_links.py`, PR B, see Status). What is left is the fetch side, which still sits inline in `enrich_with_api` (`validate_dip_protocol.py` 4112–4478):
+- The candidate scan (`fetch_roll_call_vote_candidates`, called at 4143) and the detail fetch (`fetch_roll_call_vote_detail`, called at 4297) stay inside it, so link tests keep their patches. Move the fetching behind one local-substitutable seam, so a link test is plain data.
+- `find_roll_call_xlsx_url` (3107) has no production caller; only `tests/test_roll_call_scraping.py` calls it. Keep it only if "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" will use it, else delete it with its tests.
 
 **Why:** The rule has no interface, so the tested helper is not the rule that ships, and the P1 "Check that vote links are right" cited the helper until 2026-11-15. Checking one link takes a DIP FakeClient, a parsed agenda, patches of `fetch_html`, `fetch_roll_call_vote_detail`, `fetch_roll_call_vote_candidates` and `overlaps`, and a reset of a module global (`tests/test_vote_acquisition.py` 155, 16 patches).
 
@@ -2447,6 +2446,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- Docs status fixes (Design hand-over leftovers item 1; Persist or prove the vote outcome item 6; Settle the MdB-Stammdaten terms, the "Also" sentence; vote-link entry text): 2026-11-18. The A4 re-scope part carries a not-applied banner, the vote-links plan labels the `result_raw` and `application_result` mixes, DATA.md's sources paragraph names the MdB-Stammdaten as an open redistribution question, and the vote-link entry lists only its remaining fetch-side work. No figure moved; DATA.md bytes (export digests) change.
 - Puls outward (batch 7) feed and calendar hardening (items 1 partly, 2 partly, 3, 6 RSS date): 2026-11-17. `week_radar_feed` strips XML-illegal control characters from feed text, `valid_site_url` refuses credentials and whitespace, the description parses `datum[:10]`; `sitzungskalender` merges weeks per ISO week before the minimum and the gap count, treats a future `fetched_at` as due, and its docstring records the verified format. No published figure moved.
 - Stammdaten reader and store gate hardening: v0.46.15.0, 2026-11-18. C1 deferred items 11 (hash the parsed buffer; the sweep half stays open), 15, 17 and 37; E4 /gstack-review item 3 (offline render refuses a Stammdaten file the store was not built with; the rebuild's double read stays open) and item 5's `_data_clone` part; Registry fix review (c), (g) and (i)'s second half. No figure moved: the reference store's file and `mdb_stammdaten_stand` share sha256 `29ae4ba1…` and an offline render of its clone passes the check (801 dossiers, 157 Stimmen in 87 Abstimmungen re-filed in the panels)
 - compare_store_values review notes 1, 4, 5, 7, 8, 9 and the E4 per-(vote, group) comparison: v0.46.14.0, 2026-11-18, `scripts/compare_store_values.py`; items 2, 3, 6 and the ship review's 10 to 15 stay open in their entry. No stored figure moves; the report gains one-sided vote lines, a member-list line and a "vote groups" section.
