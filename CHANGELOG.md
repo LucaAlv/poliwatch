@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.14.0] - 2026-11-18
+
+The store comparison that checks a data correction (`scripts/compare_store_values.py`, the README's "Validate a data correction" recipe) now shows a Stimme filed under another group even when no vote outcome and no Abweichler changes. No stored figure, export or page changes in this release. On a copy of the 801-sitting reference store with one member of vote 1000 moved from SPD to fraktionslos, the report names exactly that vote, both groups' counts and that member; on two copies with no change it reports 0 of 657 shared votes moved.
+
+### Added
+
+- **A "vote groups" section compares every vote both stores hold, group by group.** It lists each group whose Ja, Nein, Enthaltung, nicht abgegeben or total count moved, and each member whose counted group or listed group moved, old and new.
+- **Votes held by one store only are named.** The vote outcome section counts them and lists their ids; before, they moved the distribution rows with no line of their own.
+
+### Changed
+
+- **A member found in one store only is listed apart and no longer counts as an Abweichung move.** A changed member list showed up as "abweichung moved" before, even when no flag moved.
+- **A member row with no matching person row is counted under its own id.** Before, it dropped out of the Abweichung counts without a word.
+
+### Fixed
+
+- **A damaged or truncated export copy reads "unavailable" instead of stopping the report with a traceback.**
+- **An export manifest naming a path instead of a file name is refused**, so the comparison never reads outside the export directory.
+- **When the second store cannot be opened, the first is closed before the script exits with code 2.**
+
 ## [0.46.13.0] - 2026-11-18
 
 The abgeordnetenwatch client fails cleanly where it used to stop a build, and a speaker printed under a merged Redner-ID is now looked up by the right id. Nothing changes offline: the reference store holds no abgeordnetenwatch data, and profiles are only looked up on an online update. On the next one, Svenja Schulze's 10 Reden in 21/18, 21/24, 21/25, 21/28, 21/44 and 21/45, printed under the merged record "11005217 999990074", are looked up under her id 11005217. Before, the whole merged value was sent, which matches no profile.
