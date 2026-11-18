@@ -381,8 +381,29 @@ class DatenPageTests(unittest.TestCase):
             with self.subTest(url=url):
                 manifest = dict(self.manifest, issues_url=url)
                 html = b.render_database_page(manifest, mp_lookup=self.lookup, features=all_selection())
-                self.assertEqual("Datenfehler melden (GitHub)" in html, expected)
+                self.assertEqual(">Datenfehler melden" in html, expected)
                 self.assertNotIn("javascript:", html)
+
+    # Value: protects=the footer link says "(GitHub)" only where it goes to github.com, so a mailto: or site-relative --data-issues-url is not labelled as GitHub; fails_when=the label is fixed again or a look-alike host (github.com.evil.example, notgithub.com, an http:// or userinfo URL) is labelled GitHub; why_new=--data-issues-url accepts mailto: and a leading /, but the link always read "(GitHub)"; seam=none
+    def test_footer_issues_link_says_github_only_for_github(self) -> None:
+        github = "https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml"
+        for url, expected in (
+            (github, True),
+            ("https://GitHub.com/LucaAlv/poliwatch/issues", True),
+            ("mailto:daten@example.org", False),
+            ("/kontakt.html", False),
+            ("https://example.org/issues", False),
+            ("https://github.com.evil.example/issues", False),
+            ("https://notgithub.com/issues", False),
+            ("https://github.com@evil.example/issues", False),
+            ("http://github.com/LucaAlv/poliwatch/issues", False),
+            ("https://[::1/issues", False),  # urlsplit raises ValueError on the open bracket
+        ):
+            with self.subTest(url=url):
+                manifest = dict(self.manifest, issues_url=url)
+                html = b.render_database_page(manifest, mp_lookup=self.lookup, features=all_selection())
+                self.assertIn(">Datenfehler melden", html)
+                self.assertEqual(">Datenfehler melden (GitHub)</a>" in html, expected)
 
     # Value: protects=the documented GitHub form URL (template and seite query) reaches the Daten footer as one href with the & escaped, so the report link opens the Datenfehler form with the page filled in; fails_when=safe_issues_url drops the query string or the href is not escaped; why_new=the footer test only used query-free URLs; seam=none
     def test_footer_issues_link_keeps_the_prefill_query(self) -> None:

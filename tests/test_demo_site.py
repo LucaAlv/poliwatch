@@ -164,10 +164,18 @@ class LegalPagesTests(unittest.TestCase):
                 with self.assertRaisesRegex(publication.PublicationStateError, f"entry points are missing: {name}"):
                     publication.validate_publication_directory(copy_dir)
 
-    # Value: protects=the Datenschutz page names exactly the localStorage keys the page scripts use and no host is loaded that it does not name (none today); fails_when=a new stored setting or a CDN font/script/style is added without a matching text change; why_new=eng review D4 A, a false privacy statement is a correctness defect; seam=page_scripts and the demo build's HTML; no_claim=outbound links, which load nothing until clicked
+    # Value: protects=the Datenschutz page names exactly the localStorage keys the scripts of every built page use and no host is loaded that it does not name (none today); fails_when=a new stored setting (in the shared head and scripts or in a page-specific inline script such as the dossier runtime or a Fakt page) or a CDN font/script/style is added without a matching text change, or any page script reads sessionStorage, indexedDB or document.cookie; why_new=eng review D4 A, a false privacy statement is a correctness defect; the test read only page_head() and page_scripts(), so a key written by a page-specific script would slip past (TODOS "Impressum/licence build: deferred polish" item 1); seam=the demo build's HTML; no_claim=outbound links, which load nothing until clicked, and pages the demo does not build
     def test_datenschutz_names_every_stored_key_and_every_loaded_host(self) -> None:
-        scripts = pulse_html.page_head() + pulse_html.page_scripts()
+        shared = pulse_html.page_head() + pulse_html.page_scripts()
+        scripts = shared + "\n".join(
+            body
+            for markup in self.pages.values()
+            for body in re.findall(r"<script\b[^>]*>(.*?)</script>", markup, flags=re.S | re.I)
+        )
+        self.assertIn("localStorage", scripts)
         used = set(re.findall(r'const key = "([^"]+)"', scripts))
+        # A key passed as a literal to the storage API, outside the shared "const key" form.
+        used |= set(re.findall(r"(?:getItem|setItem|removeItem)\(\s*[\"']([^\"']+)[\"']", scripts))
         self.assertEqual(scripts.count("localStorage"), scripts.count("window.localStorage"))
         named = {key for key, _ in site.DATENSCHUTZ_STORAGE_KEYS}
         self.assertEqual(used, named)
