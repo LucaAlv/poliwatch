@@ -95,3 +95,80 @@ only_theirs	ID211000100			ADR 0004, reviewed procedural unit (oath answer): CPP-
 only_theirs	ID214301700			a procedural motion inside the printed <rede> of the previous speaker, held out by an existing rule (docs/research/bundestag-corpora-landscape-2026-11.md, 21/43 ID214301700)
 only_theirs	ID219100100			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
 only_theirs	ID219100200			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1800100600			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1800100700			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1800100800			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1800100900			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1800101000			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1800101100			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID18158106000			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106100			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106200			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106300			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106400			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106500			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106600			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106700			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106800			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158106900			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107000			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107100			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107200			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107300			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107400			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107500			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107600			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107700			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107800			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158107900			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108000			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108100			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108200			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108300			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108400			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108500			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108600			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108700			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108800			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158108900			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109000			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109100			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109200			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109300			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109400			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109500			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID18158109600			source defect: a § 31 declaration of 18/158's Anlage 7 printed in the Sitzungsverlauf, held out as a § 31 declaration by the parser's rule (docs/source-errors.md E9); the script's classifier reads only annex titles
+only_theirs	ID19100100			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19100200			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101000			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101100			ADR 0004, reviewed procedural unit (the candidate's consent 'Ja, Herr Präsident.'): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101200			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101400			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101500			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101600			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101700			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101800			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID19101900			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900100			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900200			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900300			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900400			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900500			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900600			ADR 0004, reviewed unit (Sitzungsleitung): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900700			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900800			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191900900			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901000			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901100			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901200			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901300			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901400			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901500			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901600			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901700			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901800			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191901900			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191902000			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID191902100			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID196806300			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
+only_theirs	ID1915806700			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import tempfile
 import unittest
@@ -183,10 +184,10 @@ class LookupExtIdTests(unittest.TestCase):
         bad_body = _Reply({})
         bad_body.body = b"<html>"
         cases = [
-            ("429 then success", [http(429), ok], "hit", None, 0, [aw.BACKOFF_BASE_SECONDS], 2),
+            ("429 then success", [http(429), ok], "hit", None, 0, [aw.HTTP_429_WAIT_SECONDS], 2),
+            # Each retry waits the same 60 s, and the last 429 is the recorded reason.
             ("429 every retry", [http(429)] * (aw.MAX_RETRIES + 1), "failed", "HTTP 429", 0,
-             [min(aw.BACKOFF_BASE_SECONDS * 2 ** n, aw.MAX_BACKOFF_SECONDS) for n in range(aw.MAX_RETRIES)],
-             aw.MAX_RETRIES + 1),
+             [60.0] * aw.MAX_RETRIES, aw.MAX_RETRIES + 1),
             ("HTTP 500", [http(500)], "failed", "HTTP 500", 0, [], 1),
             ("invalid JSON", [bad_body], "failed", None, 1, [], 1),
         ]
@@ -210,6 +211,79 @@ class LookupExtIdTests(unittest.TestCase):
                     self.assertEqual(resolver.last_error, error)
                 else:
                     self.assertTrue(resolver.last_error.startswith("JSONDecodeError"), resolver.last_error)
+
+    # Value (A3 item 1.5 review, item 6): protects=a dropped connection or read
+    # timeout is one counted failure with no answer, never a traceback that aborts
+    # a build or a measurement run; fails_when=_request lets OSError or an
+    # http.client error escape, or does not count it toward the cut-off;
+    # seam=urlopen stub; no_claim=which errors the live API produces.
+    def test_a_dropped_connection_or_timeout_is_a_counted_failure(self) -> None:
+        cases = [
+            TimeoutError("timed out"),
+            ConnectionResetError(54, "Connection reset by peer"),
+            http.client.RemoteDisconnected("Remote end closed connection without response"),
+            http.client.IncompleteRead(b"{", 100),
+        ]
+        for error in cases:
+            with self.subTest(type(error).__name__):
+                resolver = self.resolver()
+                with mock.patch("urllib.request.urlopen", side_effect=error):
+                    found = resolver.lookup_ext_id("11001")
+                    self.assertIsNone(resolver.resolve(ext_id="11002", first_name="Ada", last_name="Lovelace"))
+                self.assertEqual(found.state, "failed")
+                self.assertEqual(resolver._by_ext_id, {})
+                self.assertEqual(resolver._by_name, {})
+                self.assertEqual(resolver._consecutive_failures, 3)
+                self.assertTrue(resolver.last_error.startswith(type(error).__name__), resolver.last_error)
+        # A failure raised by read() inside the reply counts the same way.
+        resolver = self.resolver()
+        broken = _Reply({})
+        broken.read = mock.Mock(side_effect=http.client.IncompleteRead(b"", 10))
+        with mock.patch("urllib.request.urlopen", return_value=broken):
+            self.assertEqual(resolver.lookup_ext_id("11001").state, "failed")
+        self.assertEqual(resolver._consecutive_failures, 1)
+        # Repeated, they stop the resolver asking.
+        resolver = self.resolver()
+        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")) as urlopen:
+            for n in range(aw.MAX_CONSECUTIVE_FAILURES + 2):
+                resolver.lookup_ext_id(str(11000 + n))
+        self.assertEqual(urlopen.call_count, aw.MAX_CONSECUTIVE_FAILURES)
+
+    # Value (A3 item 1.5 review, item 4): protects=a disabled resolver sends no
+    # request, whichever public method is called; fails_when=lookup_ext_id asks
+    # the API although enabled is False; seam=urlopen stub; no_claim=none.
+    def test_a_disabled_resolver_never_asks(self) -> None:
+        resolver = aw.AbgeordnetenwatchResolver(sleep_seconds=0, enabled=False)
+        resolver._by_ext_id["11001"] = {"id": 7, "match": "ext_id"}
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            self.assertEqual(resolver.lookup_ext_id("11002").state, "not_cached")
+            self.assertEqual(resolver.lookup_ext_id("11002", refresh=True).state, "not_cached")
+            self.assertEqual(resolver.lookup_ext_id("11001", refresh=True).profile["id"], 7)
+        urlopen.assert_not_called()
+        self.assertEqual(resolver.stats["api_calls"], 0)
+        self.assertNotIn("11002", resolver._by_ext_id)
+
+    # Value (A3 item 1.5 review, item 11): protects=two processes saving one cache
+    # never collide on a shared temporary name, and a failed save leaves no
+    # temporary file; fails_when=save writes a fixed <cache>.tmp or leaks its
+    # temporary file; seam=a directory squatting on the old fixed name;
+    # no_claim=locking between writers (the last save wins).
+    def test_save_writes_through_a_unique_temporary_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "aw-cache.json"
+            (Path(tmp) / "aw-cache.json.tmp").mkdir()  # another writer's fixed-name temporary file
+            resolver = aw.AbgeordnetenwatchResolver(path, sleep_seconds=0)
+            resolver._by_ext_id["11001"] = {"id": 7, "match": "ext_id"}
+            resolver._dirty = True
+            resolver.save()
+            self.assertEqual(aw.AbgeordnetenwatchResolver(path)._by_ext_id, {"11001": {"id": 7, "match": "ext_id"}})
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["aw-cache.json", "aw-cache.json.tmp"])
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+            resolver._by_ext_id["11002"] = None
+            resolver._dirty = True
+            with mock.patch.object(Path, "replace", side_effect=OSError("disk full")), self.assertRaises(OSError):
+                resolver.save()
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["aw-cache.json", "aw-cache.json.tmp"])
 
     def test_a_save_cut_short_keeps_the_previous_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
