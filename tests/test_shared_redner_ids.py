@@ -37,7 +37,9 @@ SPEAKERS = [
     ("999990141", "Judith Gerlach", None, "Staatsministerin (Bayern)"),
     ("10000", "Marja-Liisa Völlers", "SPD", None),
     ("10000", "Olaf in der Beek", "FDP", None),
-    ("10000", "Dr. Carsten Sieling, Bürgermeister", "Bremen", "Bürgermeister (Bremen)"),
+    # 19/60 prints <fraktion>Bremen</fraktion> here; the parser reads a Land beside its
+    # Bundesrat member as no Fraktion (derive.printed_fraktion).
+    ("10000", "Dr. Carsten Sieling, Bürgermeister", None, "Bürgermeister (Bremen)"),
 ]
 
 #: The DIP rows of the people who hold no Redner-ID of their own, as the roster prints them.
@@ -188,15 +190,20 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         row = conn.execute("SELECT identity_key, display_name FROM mps").fetchone()
         self.assertEqual(tuple(row), ("dip:7642", "Dr. Lena Kreck"))
 
-    # Value: protects=the unit keeps the Fraktion and Sprechrolle the source printed, which is why per-Fraktion counts hold; fails_when=the correction rewrites more than the id; why_new=Fraktion counts are claimed unchanged; seam=none
+    # Value: protects=the unit keeps the Fraktion and Sprechrolle the parser read from the source, which is why per-Fraktion counts hold, and 19/60's "Bremen" is no Fraktion; fails_when=the correction rewrites more than the id, or the parser passes the Land name on; why_new=Fraktion counts are claimed unchanged, and the store held "Bremen" as a Fraktion; seam=validate_dip_protocol.parse_redner
     def test_fraktion_and_sprechrolle_stay_as_printed(self):
+        sieling = dip.parse_redner(ET.fromstring(
+            '<p klasse="redner"><redner id="10000"><name><titel>Dr.</titel><vorname>Carsten Sieling,</vorname>'
+            "<nachname>Bürgermeister</nachname><fraktion>Bremen</fraktion></name></redner>"
+            "Dr. Carsten Sieling, Bürgermeister (Bremen):</p>").find("redner"))
+        self.assertEqual((sieling["fraktion"], sieling["role"]), SPEAKERS[-1][2:])
         conn = self.build()
         fraktionen = {occurrence.split("-", 1)[1].rsplit("-", 1)[0]: result[1:] for occurrence, result in self.results.items()}
         self.assertEqual(fraktionen["Marja-Liisa Völlers"], ("SPD", None))
         self.assertEqual(fraktionen["Olaf in der Beek"], ("FDP", None))
         self.assertEqual(fraktionen["Maika Friemann-Jennert"], ("CDU/CSU", None))
         self.assertEqual(fraktionen["Anette Kramme"], (None, "bundesregierung"))
-        self.assertEqual(fraktionen["Dr. Carsten Sieling, Bürgermeister"], ("Bremen", "bundesrat"))
+        self.assertEqual(fraktionen["Dr. Carsten Sieling, Bürgermeister"], (None, "bundesrat"))
         conn.close()
 
     # Value: protects=Völlers keeps her own units: those printed under 10000 land on the person of her own Redner-ID, away from in der Beek and Sieling, and her roster record joins; fails_when=own_ids is dropped so her 10000 units sit on a stub page and the third record in her name+party bucket keeps her roster apart; why_new=the wrong-person count alone does not show this; seam=none
@@ -207,7 +214,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             ("11004942", "Marja-Liisa Völlers", "SPD", None),
             ("10000", "Olaf in der Beek", "FDP", None),
             ("11004667", "Olaf in der Beek", "FDP", None),
-            ("10000", "Dr. Carsten Sieling, Bürgermeister", "Bremen", "Bürgermeister (Bremen)"),
+            ("10000", "Dr. Carsten Sieling, Bürgermeister", None, "Bürgermeister (Bremen)"),
             ("11004157", "Dr. Carsten Sieling", "SPD", None),
         ]
         roster = [("6968", "Marja-Liisa Völlers, MdB, SPD", "SPD"), ("2064", "Olaf in der Beek, MdB, FDP", "FDP")]

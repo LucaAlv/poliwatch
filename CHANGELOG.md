@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.9.0] - 2026-11-18
+
+Every Fraktion the parser reads from a Plenarprotokoll is now checked against the Fraktionen and Gruppen we know, so a stray string can no longer become a group of its own in a per-Fraktion count. Two such strings were stored. 18/222 printed the start of Dr. Astrid Freudenstein's reply inside her Fraktion ("CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –"), and 19/60 printed the Land "Bremen" as the Fraktion of Bürgermeister Dr. Carsten Sieling. On an offline replay of the 801-sitting reference store, contributions naming CDU/CSU go from 5,713 to 5,714, Bundesrat Reden with no Fraktion from 108 to 109, and the parties table from 11 rows to 9. Each Redeanteil holds, because Sieling's Rede already counted for the Bundesrat by its Sprechrolle. Nothing else moves, and all 727 votes read as before. A store built before this keeps the two values until its next `--offline --repersist`.
+
+### Fixed
+
+- **A Fraktion followed by spoken text reads as that Fraktion.** Freudenstein's Erwiderung in 18/222 counts for CDU/CSU, as CPP-BT has it.
+- **A Land's name beside a Bundesrat member who speaks for that Land is no Fraktion.** Sieling's Rede in 19/60 counts for the Bundesrat with no Fraktion, like every other Bundesrat Rede.
+- **Any other `<fraktion>` value that names no Fraktion we know refuses the sitting,** naming the speaker. None of the 801 cached sittings does. Two spellings the Bundestag prints where no Rede is read yet ("CDU/ CSU", "BÜNDNIS90/DIE GRÜNEN") count as known.
+- **An official "Antrag angenommen" is read as the ballot's word only on the chair's or DIP's evidence.** An inversion read only from a roll-call or Drucksache title no longer re-scopes the official result. A DIP decision bound to the ballot still does, also where a title agrees with it.
+- **A malformed DIP record adds nothing instead of stopping the sitting,** and a tally written in other than ASCII digits is no tally. A vote that does not give a count no longer matches a DIP decision on that count as if it were 0. A rival vote with a missing count still blocks a match made on the tally alone.
+
+## [0.46.8.0] - 2026-11-17
+
+1,227 Reden in 39 sittings now carry their page. Their Inhaltsverzeichnis listed them under a title the sitting printed twice, such as "Tagesordnungspunkt II (Fortsetzung)" in 18/44, and the parser kept only the last block of each title, so the page of every Rede listed in an earlier one was lost. On an offline replay of the 801-sitting reference store, Reden without a page go from 1,643 in 46 sittings to 416 in 7. Agenda items without a page range go from 1,810 to 1,740, and those that hold Reden from 106 to 36. Beiträge without a page go from 19,792 to 19,664. No page or range that was already set changes, and no other figure moves. The 416 left are a separate gap: four sittings print every Inhaltsverzeichnis entry with an empty page, and three print Reden their Inhaltsverzeichnis does not list.
+
+### Fixed
+
+- **A Rede listed under a repeated Inhaltsverzeichnis title keeps its page.** Every block is read in source order, so a later block of the same title no longer hides an earlier one. Example: 18/44's `ID1804401300` now cites page 3952 B, and the agenda item "Tagesordnungspunkt II (Fortsetzung)" its range 3952 B to 3981 D.
+- **A Rede outside any agenda item that two different Inhaltsverzeichnis titles list is refused.** It used to be filed silently under the first title. A Rede listed twice under one title is still placed once. No stored sitting has either shape.
+- **A Rede outside any agenda item after another element is refused with the element's name.** The message used to say "after a TOP" whatever stood there.
+- **The parser's mark for an agenda item it built from the Inhaltsverzeichnis can no longer come from the source XML.** A source element carrying it loses it before the parse, so it cannot be counted as such an item.
+
 ## [0.46.7.0] - 2026-11-17
 
 The release script now refuses to publish while a sitting DIP lists with its XML is neither in the export nor on the exclusion record. Before, it only refused exclusions still waiting for acquisition or a rule, so a sitting a stopped acquisition run dropped from the record without storing it would have gone out unnoticed. On the reference export of 2026-11-16 the check names one such sitting, 21/107. A follow-up release's previous manifest is now checked against the releases actually published, not against this clone's tags. Only the release script and its checks change; no figure, export, page or schema does.
