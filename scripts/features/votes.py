@@ -512,7 +512,7 @@ def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, co
 def _refiled_note_html(vote: dict[str, Any]) -> str:
     """Says where the groups differ from the linked Bundestag page, and why."""
     moved = [
-        f'{member.get("name")} bei {member["refiled_to"]} (dort {member.get("faction")})'
+        f'{member.get("name")} bei {member["refiled_to"]} (dort {member.get("faction") or "Unbekannt"})'
         for member in sorted(vote.get("members") or [], key=lambda value: str(value.get("name") or ""))
         if member.get("refiled_to")
     ]

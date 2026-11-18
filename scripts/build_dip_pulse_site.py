@@ -10398,22 +10398,20 @@ def _fact_speech_citation(
     conn: sqlite3.Connection,
     document_number: Any,
     rede_id: Any,
-    page: Any,
-    page_quadrant: Any,
+    speech_id: Any,
 ) -> dict[str, Any] | None:
-    """Resolve a speech receipt to its row (D14: (document_number, rede_id), or
-    the page anchor (document_number, page, page_quadrant) for a synthetic id;
-    0 duplicates on either key, measured 2026-09-22)."""
+    """Resolve a speech receipt to its row: (document_number, rede_id) when the
+    receipt carries a Rede-ID (D14), else the receipt's source_entity_id
+    (speeches.id, checked against the document number) for a synthetic id,
+    which a page anchor cannot key: the page is NULL for a speech without a
+    printed one, and "= ?" never matches NULL. None when the receipt carries
+    neither."""
     if rede_id:
         where, params = "p.document_number = ? AND s.rede_id = ?", (str(document_number), str(rede_id))
+    elif speech_id is not None:
+        where, params = "p.document_number = ? AND s.id = ?", (str(document_number), speech_id)
     else:
-        # IS, not =: page_quadrant is NULL whenever the XML page reference
-        # carries neither a div nor a seitenbereich attribute (a legitimate,
-        # common case - validate_dip_protocol.py's quadrant extraction), and
-        # SQL "NULL = NULL" is never true, so "=" silently failed to resolve
-        # every citation with no quadrant.
-        where = "p.document_number = ? AND s.page = ? AND s.page_quadrant IS ?"
-        params = (str(document_number), page, page_quadrant)
+        return None
     row = conn.execute(
         f"""
         SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
@@ -10434,39 +10432,44 @@ def _fact_speech_citation(
 
 
 def _fact_agenda_item_citation(
-    conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
+    conn: sqlite3.Connection, document_number: Any, agenda_item_id: Any
 ) -> dict[str, Any] | None:
-    """(document_number, page, page_quadrant) against page_start/page_start_quadrant
-    (0 duplicates, measured 2026-09-22)."""
+    """The receipt's source_entity_id (agenda_items.id), checked against its
+    document number. Not the page: an item without a printed page has a NULL
+    page_start, which "= ?" never matches and "IS ?" would tie across the
+    page-less items of one protocol."""
+    if agenda_item_id is None:
+        return None
     row = conn.execute(
         """
         SELECT ai.id, ai.heading, lp.title AS proceeding_title, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
         LEFT JOIN _lead_position_topic lp ON lp.agenda_item_id = ai.id
-        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
+        WHERE p.document_number = ? AND ai.id = ?
         """,
-        (str(document_number), page, page_quadrant),
+        (str(document_number), agenda_item_id),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _fact_proceeding_citation(
-    conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
+    conn: sqlite3.Connection, document_number: Any, agenda_item_id: Any
 ) -> dict[str, Any] | None:
-    """(document_number, page, page_quadrant) against the agenda item's
-    page_start, resolved to the one Vorgang (proceedings.id) the item deals
-    with -- meistdiskutierter-vorgang's receipt, by the metric's own rule
-    (facts.SINGLE_VORGANG_CTE)."""
+    """The receipt's source_entity_id (agenda_items.id), resolved to the one
+    Vorgang (proceedings.id) the item deals with -- meistdiskutierter-vorgang's
+    receipt, by the metric's own rule (facts.SINGLE_VORGANG_CTE)."""
+    if agenda_item_id is None:
+        return None
     row = conn.execute(
         """
         SELECT ai.id, lp.proceeding_id, lp.title, lp.proceeding_type, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
         JOIN _single_vorgang lp ON lp.agenda_item_id = ai.id
-        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
+        WHERE p.document_number = ? AND ai.id = ?
         """,
-        (str(document_number), page, page_quadrant),
+        (str(document_number), agenda_item_id),
     ).fetchone()
     return dict(row) if row else None
 
@@ -10511,7 +10514,7 @@ def resolve_fact_citation(
     kind = metric["receipt"]
     if kind == "speech":
         resolved = _fact_speech_citation(
-            conn, subject["document_number"], subject.get("rede_id"), subject.get("page"), subject.get("page_quadrant")
+            conn, subject["document_number"], subject.get("rede_id"), subject.get("source_entity_id")
         )
         if resolved is None:
             return None
@@ -10528,7 +10531,7 @@ def resolve_fact_citation(
         resolved_rows = [
             row
             for row in (
-                _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("page"), r.get("page_quadrant"))
+                _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("source_entity_id"))
                 for r in receipts
             )
             if row is not None
@@ -10547,7 +10550,7 @@ def resolve_fact_citation(
             "speaker_mps": resolved_rows,
         }
     if kind == "agenda_item":
-        resolved = _fact_agenda_item_citation(conn, subject["document_number"], subject.get("page"), subject.get("page_quadrant"))
+        resolved = _fact_agenda_item_citation(conn, subject["document_number"], subject.get("source_entity_id"))
         if resolved is None:
             return None
         return {
@@ -10572,7 +10575,7 @@ def resolve_fact_citation(
         resolved_occurrences = [
             row
             for row in (
-                _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant"))
+                _fact_proceeding_citation(conn, r["document_number"], r.get("source_entity_id"))
                 for r in receipts
             )
             if row is not None
