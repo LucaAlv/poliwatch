@@ -463,14 +463,13 @@ def known_differences(path: Path | None) -> set[tuple[str, str, str, str]]:
     except UnicodeDecodeError as error:
         raise InputError(f"--known-differences {path}: not UTF-8 ({error})") from error
     for row in rows:
-        if True:
-            if row.get("field") and (row.get("reason") or "").strip():
-                if row["field"] == "only_theirs" and not (row.get("rede_id") or "").strip():
-                    raise InputError(f"--known-differences {path}: an only_theirs row has no rede_id "
-                                     "and would mark every Rede only CPP-BT holds as known")
-                known.add((row["field"], (row.get("rede_id") or "").strip(),
-                           fold_difference(row["field"], row.get("ours") or ""),
-                           fold_difference(row["field"], row.get("theirs") or "")))
+        if row.get("field") and (row.get("reason") or "").strip():
+            if row["field"] == "only_theirs" and not (row.get("rede_id") or "").strip():
+                raise InputError(f"--known-differences {path}: an only_theirs row has no rede_id "
+                                 "and would mark every Rede only CPP-BT holds as known")
+            known.add((row["field"], (row.get("rede_id") or "").strip(),
+                       fold_difference(row["field"], row.get("ours") or ""),
+                       fold_difference(row["field"], row.get("theirs") or "")))
     return known
 
 
