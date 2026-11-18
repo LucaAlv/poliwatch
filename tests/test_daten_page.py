@@ -397,6 +397,7 @@ class DatenPageTests(unittest.TestCase):
             ("https://notgithub.com/issues", False),
             ("https://github.com@evil.example/issues", False),
             ("http://github.com/LucaAlv/poliwatch/issues", False),
+            ("https://[::1/issues", False),  # urlsplit raises ValueError on the open bracket
         ):
             with self.subTest(url=url):
                 manifest = dict(self.manifest, issues_url=url)
