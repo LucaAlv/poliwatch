@@ -750,8 +750,11 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     }
 
 
-def parse_toc(root: ET.Element) -> dict[str, dict[str, Any]]:
-    toc: dict[str, dict[str, Any]] = {}
+def parse_toc(root: ET.Element) -> list[dict[str, Any]]:
+    """Every Inhaltsverzeichnis block in source order. A title can repeat (18/44
+    prints "Tagesordnungspunkt II: (Fortsetzung)" twice, the first block listing
+    13 Reden and the second none), so blocks are never keyed by title."""
+    toc: list[dict[str, Any]] = []
     for block in root.findall("./vorspann/inhaltsverzeichnis/ivz-block"):
         title = elem_text(block.find("ivz-block-titel"))
         pages: list[dict[str, Any]] = []
@@ -766,13 +769,12 @@ def parse_toc(root: ET.Element) -> dict[str, dict[str, Any]]:
             pages.append(page_ref)
             if rid:
                 rid_pages[rid] = page_ref
-        key = title or f"toc-block-{len(toc) + 1}"
-        toc[key] = {
+        toc.append({
             "title": title,
             "drucksachen": extract_drucksachen(block),
             "pages": sorted(pages, key=page_sort_key),
             "rid_pages": rid_pages,
-        }
+        })
     return toc
 
 
@@ -999,19 +1001,26 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
     each one's item ("Einzelplan 06", "Zur Geschäftsordnung"), the labels other sittings
     use as ``top-id``. Each run in one block is wrapped in place under that label and
     marked ``top_source``; a TOP the chair called in ``<sitzungsbeginn>`` moves in with
-    the run after it. A Rede with no entry, or after a TOP, is a shape no source has
-    shown yet: refused, never placed by guess.
+    the run after it. A Rede with no entry, one listed under two different titles, or
+    one after any other element is a shape no source has shown yet: refused, never
+    placed by guess. ``top_source`` is the parser's mark, so a source element carrying
+    it loses it first.
     """
     verlauf = root.find("sitzungsverlauf")
-    if verlauf is None or verlauf.find("rede") is None:
+    if verlauf is None:
         return
-    blocks: dict[str, ET.Element] = {}
+    for element in verlauf.iter():
+        element.attrib.pop("top_source", None)
+    if verlauf.find("rede") is None:
+        return
+    blocks: dict[str, list[ET.Element]] = {}
     for block in root.findall("./vorspann/inhaltsverzeichnis/ivz-block"):
         for xref in block.findall(".//xref"):
-            if xref.get("rid"):
-                blocks.setdefault(xref.get("rid"), block)
+            if xref.get("rid") and block not in blocks.setdefault(xref.get("rid"), []):
+                blocks[xref.get("rid")].append(block)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     arranged: list[ET.Element] = []
+    adopted: list[ET.Element] = []
     open_block = None
     for child in list(verlauf):
         verlauf.remove(child)
@@ -1020,25 +1029,40 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
             open_block = None
             continue
         rid = child.get("id")
-        if any(c.tag != "sitzungsbeginn" and c.get("top_source") is None for c in arranged):
-            raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, after a TOP")
-        block = blocks.get(rid)
-        title = elem_text(block.find("ivz-block-titel")) if block is not None else ""
+        before = next((c for c in arranged if c.tag != "sitzungsbeginn" and not any(c is a for a in adopted)), None)
+        if before is not None:
+            what = "a TOP" if before.tag == "tagesordnungspunkt" else f"a <{before.tag}> element"
+            raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, after {what}")
+        listed = blocks.get(rid, [])
+        labels = {toc_block_label(block) for block in listed}
+        if len(labels) > 1:
+            raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP and two Inhaltsverzeichnis titles list it: "
+                             + ", ".join(sorted(labels)))
+        block = listed[0] if listed else None
+        title = toc_block_label(block) if block is not None else ""
         if not title:
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, with no Inhaltsverzeichnis entry")
         if block is not open_block:
-            if title.endswith("-"):
-                title = title[:-1] + elem_text(block.find("p[@klasse='A_TOP']"))
-            top = ET.Element("tagesordnungspunkt", {"top-id": title.rstrip(": "), "top_source": "inhaltsverzeichnis"})
+            top = ET.Element("tagesordnungspunkt", {"top-id": title, "top_source": "inhaltsverzeichnis"})
             if arranged and arranged[-1].tag == "sitzungsbeginn" and title.startswith(("Tagesordnungspunkt", "Zusatzpunkt")):
                 for paragraph in arranged[-1].findall("p"):
                     if (paragraph.get("klasse") or "").startswith("T_"):
                         arranged[-1].remove(paragraph)
                         top.append(paragraph)
             arranged.append(top)
+            adopted.append(top)
             open_block = block
         arranged[-1].append(child)
     verlauf.extend(arranged)
+
+
+def toc_block_label(block: ET.Element) -> str:
+    """The item an Inhaltsverzeichnis block names, as a ``top-id``: its title, a
+    title broken with "-" joined to its ``A_TOP`` continuation, without the colon."""
+    title = elem_text(block.find("ivz-block-titel"))
+    if title.endswith("-"):
+        title = title[:-1] + elem_text(block.find("p[@klasse='A_TOP']"))
+    return title.rstrip(": ")
 
 
 def presidium_marker(redner: ET.Element | None) -> bool:
@@ -1721,7 +1745,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     adopt_reden_outside_tops(root)
     toc = parse_toc(root)
     rid_pages: dict[str, dict[str, Any]] = {}
-    for block in toc.values():
+    for block in toc:
         rid_pages.update(block["rid_pages"])
 
     agenda_items: list[dict[str, Any]] = []

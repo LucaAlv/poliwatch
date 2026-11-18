@@ -204,11 +204,11 @@ A list of places where an official source file says something wrong or files con
 - **What looks wrong:** the start of her reply sits inside the Fraktion element.
 - **Our side:** since 2026-11-17 the parser reads a known Fraktion followed by a colon as that Fraktion (`derive.printed_fraktion`), so her Erwiderung counts for CDU/CSU, as CPP-BT has it, and no "CDU/CSU: Ich glaube, …" group or parties row is stored. The same shape, "SPD: Ja." in 19/30 (`<redner id="11004622">`), reaches no stored unit. Any other `<fraktion>` value that names no Fraktion we know refuses the sitting; on the 801 cached sittings none does.
 
-### C7. Reden outside any `<tagesordnungspunkt>` in 18/44 and 18/49
+### C7. Reden outside any `<tagesordnungspunkt>` in 18/44, 18/49 and 18/89
 
 - **Status:** candidate. Found 2026-11-07.
-- **Source:** 18/49: 26 of 51 `<rede>` elements sit directly under `<sitzungsverlauf>`, from `ID1804900100` (Dr. Wolfgang Schäuble, budget 2015) on. 18/44: 3 such elements, from `ID1804400100`.
-- **What looks wrong:** every other `<rede>` outside the annexes in the 716 files sits inside a `<tagesordnungspunkt>`.
+- **Source:** 18/49: 26 of 51 `<rede>` elements sit directly under `<sitzungsverlauf>`, from `ID1804900100` (Dr. Wolfgang Schäuble, budget 2015) on. 18/44: 3 such elements, from `ID1804400100`. 18/89, stored since 2026-11-17: 15 such elements, which its Inhaltsverzeichnis lists under "Zusatztagesordnungspunkt 4".
+- **What looks wrong:** every other `<rede>` outside the annexes in the 716 files sits inside a `<tagesordnungspunkt>`, and in the 801 files of 2026-11-17 every one outside these three sittings.
 - **To check before reporting:** whether the schema allows this.
 - **Our side:** since v0.36.0.0 each run is read under the item the protocol's Inhaltsverzeichnis names for it (`docs/data-methods.md`). Their DIP links: TODOS.md, "Give the agenda items of 18/49 and 18/44 adopted from the Inhaltsverzeichnis their DIP links".
 
