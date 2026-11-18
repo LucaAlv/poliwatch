@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.11.0] - 2026-11-18
+
+Four rules that decide whose abgeordnetenwatch profile, roster record or page link a speaker gets are now strict where they were loose. On an offline replay of the 801-sitting reference store against main, nothing moves: every table's row count, every vote and Rede, the person pages and `abgeordnete.json` are the same, and all 91,658 speaker units in the 802 cached reports keep their profile. Each rule closes a gap no stored sitting reaches today.
+
+### Fixed
+
+- **A profile found under a Redner-ID the Bundestag printed for two people reaches only its owner.** When cached sittings are read again, a profile is taken from, and copied to, only the occurrences of the person the corrections file names as that id's profile owner, by printed name or by the name reviewed for that occurrence. Before, a profile matched by name could pass from the profile owner to another person printed under the same id, such as from de Maizière to Steinmeier's address in 18/223.
+- **A re-issued DIP person record is kept from an older store only if it was a roster record.** A record a sitting merely sampled under the old id is no longer carried forward with roster fields it never had.
+- **A speaker link that carries a re-issued DIP id reaches the successor's page also for a person in a reviewed partition.** Before, only the plain DIP key was aliased.
+- **A DIP person record whose Wahlperioden are not a list of numbers no longer cuts a Bundestag period.** A Land office excludes a Bundestag seat in the same Wahlperiode, so such periods are cut from a person's MdB periods; a role with an unreadable Wahlperiode now cuts nothing instead of being half read. On the cached records, the cut is the same for all 1,949 persons.
+
 ## [0.46.10.0] - 2026-11-18
 
 The check that refuses a build when the Bundestag prints one Redner-ID for two people no longer treats an office as a shared name. Before, two people printed under one Redner-ID with the same office in the name fields, such as "Dr. Carsten Sieling, Bürgermeister" and "Dr. Andreas Bovenschulte, Bürgermeister", shared the word "Bürgermeister", so the check filed both under one person. It now ignores office words and the punctuation around them, as it already ignored titles and name particles. The person corrections file also refuses three more mistakes before a build starts. On an offline replay of the 801-sitting reference store against main, no figure, person or page moves and no Redner-ID is refused. The check keeps its old limit. Two people printed with a word in common other than the office, such as the ministry's name, are still not told apart.
