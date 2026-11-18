@@ -58,6 +58,7 @@ import abgeordnetenwatch as aw
 import build_dip_pulse_site as build
 import derive
 import person_registry as registry
+import sqlite_open
 import stammdaten
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -636,7 +637,7 @@ def run(args: argparse.Namespace) -> int:
     if args.sleep is not None and args.sleep < aw.DEFAULT_MIN_INTERVAL:
         raise UsageError(f"--sleep {args.sleep} is faster than abgeordnetenwatch's fair-use limit ({aw.DEFAULT_MIN_INTERVAL} s)")
 
-    conn = sqlite3.connect(f"{database_path.as_uri()}?mode=ro", uri=True)
+    conn = sqlite_open.open_readonly(database_path)
     try:
         sittings = stored_sittings(conn)
         if not sittings:

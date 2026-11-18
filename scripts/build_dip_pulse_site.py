@@ -111,6 +111,7 @@ import abgeordnetenwatch as aw
 import derive
 import reviewed_units
 import speech_kinds
+import sqlite_open
 import stammdaten
 import publication_state as publication
 import facts
@@ -1629,7 +1630,7 @@ def _content_digests(database_path: Path) -> dict[str, str] | None:
     the rows, so no table is sorted by its text primary key (that sort was most
     of the cost); a changed, deleted or duplicated row still changes the digest."""
     try:
-        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
+        conn = sqlite_open.open_readonly(database_path)
     except sqlite3.Error:
         return None
     try:
@@ -2542,7 +2543,7 @@ def log_seat_crosscheck(database_path: Path) -> None:
     misattribution on a roll-call page must not stop a routine update."""
     path = stammdaten.crosscheck_path(database_path)
     try:
-        conn = sqlite3.connect(f"{Path(database_path).resolve().as_uri()}?mode=ro", uri=True)
+        conn = sqlite_open.open_readonly(database_path)
         try:
             result = stammdaten.crosscheck(conn)
         finally:
@@ -2598,7 +2599,7 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
             file=sys.stderr,
         )
     try:
-        conn = sqlite3.connect(f"{Path(database_path).resolve().as_uri()}?mode=ro", uri=True)
+        conn = sqlite_open.open_readonly(database_path)
         try:
             counts = {
                 kind: dict(conn.execute(f"SELECT source, COUNT(DISTINCT {key}) FROM {table} GROUP BY source"))
@@ -2635,7 +2636,7 @@ def require_vorgang_cache_for_tags(
     if not database_path.exists():
         return
     try:
-        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
+        conn = sqlite_open.open_readonly(database_path)
         try:
             tables = {row[0] for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE name IN ('agenda_item_politikfelder', 'vote_politikfelder')"
@@ -4966,9 +4967,10 @@ def _run_export(
     vacuum_path = Path(vacuum_name)
     vacuum_path.unlink()  # VACUUM INTO requires the target to not exist
 
-    dist_conn = sqlite3.connect(dist_path, isolation_level=None)
+    dist_conn = sqlite_open.create_database(dist_path)
+    dist_conn.isolation_level = None
     dist_conn.row_factory = sqlite3.Row
-    source_conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
+    source_conn = sqlite_open.open_readonly(database_path)
     try:
         source_conn.backup(dist_conn)
     except sqlite3.Error:
@@ -5023,7 +5025,7 @@ def _run_export(
         dist_conn.close()
     dist_path.unlink()
 
-    snapshot_conn = sqlite3.connect(vacuum_path)
+    snapshot_conn = sqlite_open.open_readonly(vacuum_path)
     snapshot_conn.row_factory = sqlite3.Row
     try:
         tables_info = iter_tables(snapshot_conn)
@@ -14618,7 +14620,7 @@ def _write_facts_staged(database_path: Path, snapshot: Mapping[str, list[list[An
     temp_path = _staged_store_path(database_path)
     try:
         source = facts.open_readonly(database_path)
-        staged = sqlite3.connect(temp_path)
+        staged = pulse_store.connect(temp_path)
         try:
             source.backup(staged)
             facts.write_snapshot(staged, snapshot)

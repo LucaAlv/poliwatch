@@ -64,6 +64,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from dip_cache import PERSON_FILENAME  # noqa: E402
+from sqlite_open import open_readonly  # noqa: E402
 from stable_ids import key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
 STORE = Path("data") / "bundestag-pulse.sqlite"
@@ -75,12 +76,8 @@ _LINK = re.compile(r'\b(?:href|src)\s*=\s*"([^"]*)"')
 _ID = re.compile(r'\bid\s*=\s*"([^"]*)"')
 
 
-def _open_readonly(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True)
-
-
 def binding_ids(database_path: Path) -> set[str]:
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return {row[0] for row in conn.execute("SELECT id FROM person_bindings")}
     finally:
@@ -93,7 +90,7 @@ def grouping_fingerprint(database_path: Path, *, only: set[str] | None = None) -
     ids, and the sorted list of those groups is hashed. ``only`` restricts it to
     those bindings (a replayed store also keeps the bindings of retired
     occurrences, which a fresh store cannot have)."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         groups: dict[str, list[str]] = {}
         for binding_id, person_id in conn.execute("SELECT id, person_id FROM person_bindings"):
@@ -116,7 +113,7 @@ def dip_person_occurrences(database_path: Path) -> set[tuple[str, int]]:
     DIP persons the build saw and which of them the roster listed as MdBs. A
     record of this build has an ``mps`` row; a retired one keeps only its binding."""
     prefix = key_prefix("roster")
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return {(row[0], int(row[1])) for row in conn.execute(
             "SELECT b.id, m.is_mdb FROM person_bindings b JOIN mps m ON m.id = b.record_id WHERE substr(b.id, 1, ?) = ?",
@@ -137,7 +134,7 @@ def person_pages(database_path: Path, *, only: set[str] | None = None) -> dict[s
     restricts them); a person holding none of them keys on all of its own."""
     import build_dip_pulse_site as site
 
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     conn.row_factory = sqlite3.Row
     try:
         bindings: dict[str, list[str]] = {}
@@ -242,7 +239,7 @@ def check_export(output_dir: Path) -> dict[str, Any]:
             problems.append(f"{entry['name']}: listed in the manifest, missing in {generation.name}")
         elif path.stat().st_size != entry["bytes"] or _sha256(path) != entry["sha256"]:
             problems.append(f"{entry['name']}: size or sha256 differs from the manifest")
-    conn = _open_readonly(Path(output_dir) / "data" / "bundestag-pulse.sqlite")
+    conn = open_readonly(Path(output_dir) / "data" / "bundestag-pulse.sqlite")
     try:
         store = {
             "protocols": conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0],
@@ -266,7 +263,7 @@ def store_counts(database_path: Path) -> dict[str, Any]:
     """The row counts the receipt records, plus Beiträge per kind. The withheld
     tables (schema 12, ADR 0005) read as None in a store from before them: the
     gate counts the owner's store before the replay that upgrades it."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         counts = {
             table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -296,7 +293,7 @@ def store_counts(database_path: Path) -> dict[str, Any]:
 
 
 def integrity(database_path: Path) -> dict[str, Any]:
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         check = [row[0] for row in conn.execute("PRAGMA integrity_check")]
         violations = conn.execute("PRAGMA foreign_key_check").fetchall()
@@ -314,7 +311,7 @@ def withheld_also_counted(database_path: Path) -> list[str]:
     names the Rede it answers, and it stays counted when that Rede is withheld.
     The parent is compared exactly: when only a split part ``R:n`` is withheld,
     the outer ``R`` stays stored (D4) and may have Beiträge."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
             "SELECT w.protocol_id, w.rede_id FROM withheld_units w WHERE EXISTS (SELECT 1 FROM speeches s "
@@ -329,7 +326,7 @@ def withheld_without_redner_id(database_path: Path) -> list[str]:
     """Up to five withheld Reden with no Redner-ID. erste-reden binds a withheld
     Rede to its speaker by Redner-ID (ADR 0005 "Facts"); one without binds no
     one, so the owner reads it before the gate passes."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
             "SELECT protocol_id, rede_id FROM withheld_units WHERE xml_redner_id IS NULL OR TRIM(xml_redner_id) = '' "
@@ -343,7 +340,7 @@ def abweichler_count_mismatches(database_path: Path) -> list[str]:
     members' persisted Abweichungen. Persist writes both from one derive call,
     so a difference is a registry merge folding two listed members into one
     row, or a writer that skipped one of the columns."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return [f"{vote_id} abweichler_count {count}, SUM(abweichung) {total}" for vote_id, count, total in conn.execute(
             "SELECT v.id, v.abweichler_count, COALESCE(SUM(vm.abweichung), 0) FROM votes v "

@@ -17,6 +17,24 @@ The Daten page's report link, the Impressum's contact details and the repository
 - **The authored codebook inputs (`LICENSE-DATA.md`, `docs/data-methods.md`, `scripts/data_dictionary.json`) are checked out with LF line endings on every machine**, so the exported copies equal the bytes the release commit holds.
 - **`operator.json` and `operator.local.json` are ignored by git**, so a local operator file with a name and postal address is not committed by accident.
 - **README and the design docs point to `PRODUCT.md` and `DESIGN.md`**, which replaced the deleted product design document.
+## [0.46.18.0] - 2026-11-18
+
+The test suite now checks three rules in `scripts/` that reviews used to catch by hand. They cover how a script opens a SQLite file, where a missing value could be published as a zero, and which modules may import which. Each failure message says why the rule exists and how to fix the cause. No stored figure, export or page changes in this release; only the way scripts open SQLite files changed, and the store comparison now reads the right store under an unusual path.
+
+### Added
+
+- **Only the build store's own opener can write to an existing database.** `scripts/sqlite_open.py` opens any SQLite file read-only, or creates a new one. `persist_dip_pulse_store.connect`, which refuses a downloaded distribution copy and turns on foreign keys, stays the only way to write an existing store. A test fails when a script opens SQLite any other way or attaches a second database.
+- **A new `x or 0`, or a SQL `= ?` on a store column that can be NULL, fails a test unless it is listed with a reason.** The 86 existing `or 0` expressions are frozen in a list that only shrinks. Each of the 11 existing comparisons is listed with why it is right, or with the fix it waits for.
+- **Every module in `scripts/` belongs to a layer, and an import that goes up a layer or sideways fails a test**, as does a new import cycle.
+
+### Changed
+
+- **The facts engine's staged copy of the store now has foreign keys on**, as the rebuild's staged copy already had.
+- **The export reads its finished snapshot read-only.**
+
+### Fixed
+
+- **The store comparison and the store gate read the right store when its path contains `#`, `?` or `%`.** They built the SQLite address from the raw path, so a `#` or `?` opened an empty database in place of the store, and a `%20` failed to open.
 
 ## [0.46.17.0] - 2026-11-18
 
