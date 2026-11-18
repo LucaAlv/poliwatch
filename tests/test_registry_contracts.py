@@ -30,7 +30,7 @@ def report(pid="s1", names=("Ada Example",), rede_ids=None):
     speakers = [
         {"rede_id": (rede_ids or {}).get(name, f"{pid}-r{index}"),
          "speaker": {"display_name": name, "xml_redner_id": str(index + 1), "fraktion": "SPD"},
-         "char_count": 20, "text": "Ein geprüfter Text."}
+         "paragraph_count": 1, "char_count": 19, "text": "Ein geprüfter Text."}
         for index, name in enumerate(names)
     ]
     return {"validation_summary": {"speech_kinds_version": store.speech_kinds.VERSION}, "protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10",
@@ -658,7 +658,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         minister = {"display_name": "Bea Minister", "xml_redner_id": "77", "fraktion": "SPD",
                     "role": "Bundesministerin für Beispiele"}
         r["agenda_items"][0]["xml_speakers"].append(
-            {"rede_id": "s1-r9", "speaker": minister, "char_count": 20, "text": "Eine Regierungsrede."})
+            {"rede_id": "s1-r9", "speaker": minister, "paragraph_count": 1, "char_count": 20, "text": "Eine Regierungsrede."})
         r["agenda_items"].append({"index": 2, "heading": "Fragestunde", "xml_speakers": [], "xml_contributions": [
             {"kind": "fragestunde_antwort", "sequence": 1, "rede_id": "s1-a1", "char_count": 10, "text": "Antwort.",
              "speaker": {"display_name": "Cem Antwort", "xml_redner_id": "78", "role": "Parl. Staatssekretär bei der Bundesministerin für Beispiele"}},

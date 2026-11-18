@@ -328,54 +328,6 @@
         "count": 1
       },
       {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_contributions",
-        "expression": "contribution.get('char_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_speeches",
-        "expression": "speech.get('char_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_speeches",
-        "expression": "speech.get('paragraph_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_withheld",
-        "expression": "turn.get('char_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_withheld",
-        "expression": "turn.get('word_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_withheld",
-        "expression": "unit.get('char_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_withheld",
-        "expression": "unit.get('nested_word_count') or 0",
-        "count": 1
-      },
-      {
-        "file": "scripts/persist_dip_pulse_store.py",
-        "function": "persist_withheld",
-        "expression": "unit.get('word_count') or 0",
-        "count": 1
-      },
-      {
         "file": "scripts/prefetch_dip_bulk.py",
         "function": "prefetch_drucksachen",
         "expression": "s.get('numFound') or 0",

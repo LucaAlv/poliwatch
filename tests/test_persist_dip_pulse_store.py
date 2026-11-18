@@ -389,6 +389,129 @@ class PersistReportTests(unittest.TestCase):
         }
 
 
+def _report_with_every_counted_unit() -> dict:
+    """report.json plus one TOP Beitrag, one sitting-level Beitrag and one
+    withheld Rede with one turn, so every stored count has a row to land in."""
+    report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+    item = report["agenda_items"][0]
+    speaker = json.loads(json.dumps(item["xml_speakers"][0]["speaker"]))
+    beitrag = {"kind": "kurzintervention", "rede_id": "K1", "parent_rede_id": "R1", "sequence": 1,
+               "source_page": None, "speaker": speaker, "char_count": 12, "text": "Kurz gesagt."}
+    item["xml_contributions"] = [beitrag]
+    report["xml_contributions"] = [{**beitrag, "kind": "zu_protokoll", "rede_id": "Z1", "parent_rede_id": None}]
+    item["xml_withheld"] = [{
+        "rede_id": "W1", "sequence": 9, "reason": "refused_nested_contribution", "reason_detail": "test",
+        "speaker": speaker, "source_page": None, "char_count": 5, "word_count": 1, "nested_word_count": 2,
+        "text": "Text.", "nested_turns": [{"marker": 2, "speaker": speaker, "char_count": 9, "word_count": 2, "text": "Zwei Wort"}],
+    }]
+    return report
+
+
+class StoredCountTests(unittest.TestCase):
+    # Value: protects=a Rede, Beitrag or withheld count the report lacks or holds as None stops the persist with the store untouched;
+    #   fails_when=persist stores the unknown count as a real 0 again (`int(x.get(k) or 0)`); why_new=the or-0 baseline audit; seam=none
+    LOOKUPS = {
+        "speech": (lambda r: r["agenda_items"][0]["xml_speakers"][0], ("paragraph_count", "char_count")),
+        "contribution": (lambda r: r["agenda_items"][0]["xml_contributions"][0], ("char_count",)),
+        "sitting contribution": (lambda r: r["xml_contributions"][0], ("char_count",)),
+        "withheld unit": (lambda r: r["agenda_items"][0]["xml_withheld"][0], ("char_count", "word_count", "nested_word_count")),
+        "withheld turn": (lambda r: r["agenda_items"][0]["xml_withheld"][0]["nested_turns"][0], ("char_count", "word_count")),
+    }
+    TABLES = ("protocols", "speeches", "contributions", "withheld_units", "withheld_turns")
+
+    def test_a_missing_or_none_count_is_refused_and_nothing_is_written(self) -> None:
+        for block, (unit_of, keys) in self.LOOKUPS.items():
+            for key in keys:
+                for case, error in (("absent", KeyError), ("None", TypeError)):
+                    with self.subTest(block=block, key=key, case=case), tempfile.TemporaryDirectory() as tmp:
+                        report = _report_with_every_counted_unit()
+                        unit = unit_of(report)
+                        if case == "absent":
+                            del unit[key]
+                        else:
+                            unit[key] = None
+                        conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+                        try:
+                            with self.assertRaises(error) as raised:
+                                pulse_store.persist_report(conn, report)
+                            if case == "absent":
+                                self.assertEqual(raised.exception.args, (key,))
+                            for table in self.TABLES:
+                                self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0, table)
+                        finally:
+                            conn.close()
+
+    def test_a_real_zero_is_stored_as_zero(self) -> None:
+        report = _report_with_every_counted_unit()
+        for block, (unit_of, keys) in self.LOOKUPS.items():
+            for key in keys:
+                unit_of(report)[key] = 0
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                rows = {
+                    "speech": conn.execute("SELECT paragraph_count, char_count FROM speeches WHERE rede_id = 'R1'").fetchall(),
+                    "contribution": conn.execute("SELECT char_count FROM contributions").fetchall(),
+                    "withheld unit": conn.execute("SELECT char_count, word_count, nested_word_count FROM withheld_units").fetchall(),
+                    "withheld turn": conn.execute("SELECT char_count, word_count FROM withheld_turns").fetchall(),
+                }
+            finally:
+                conn.close()
+        self.assertEqual({block: [tuple(row) for row in found] for block, found in rows.items()}, {
+            "speech": [(0, 0)], "contribution": [(0,), (0,)], "withheld unit": [(0, 0, 0)], "withheld turn": [(0, 0)],
+        })
+
+
+class ParserCountContractTests(unittest.TestCase):
+    # Value: protects=every parser path that makes a Rede, Beitrag or withheld unit sets each count persist reads, as an int;
+    #   fails_when=a producer drops a count, which persist now refuses (StoredCountTests); why_new=the direct lookups rest on it; seam=none
+    def test_every_producer_sets_each_stored_count(self) -> None:
+        import validate_dip_protocol as dip
+
+        def parse(name: str, change=lambda xml: xml) -> dict:
+            return dip.parse_protocol_xml(change((FIXTURES / name).read_text(encoding="utf-8")), reviewed=[])
+
+        def path(contribution: dict) -> str:
+            rede_id = contribution.get("rede_id") or ""
+            if contribution["kind"] == "zu_protokoll":
+                return "annex"
+            if rede_id.startswith("nested:"):
+                return "nested Zwischenfrage"
+            return "Rede as Beitrag" if rede_id else "Fragestunde turn"
+
+        found: dict[str, list[tuple[dict, tuple[str, ...]]]] = {}
+        parses = [
+            parse("withholding/18-10-top3.xml"),
+            parse("speech-kinds-befragung-fragestunde.xml"),
+            parse("offline-v5/plenarprotokoll-20-28.xml"),
+            parse("a1-written-18-100.xml"),
+            parse("a1-written-18-100.xml", lambda xml: xml.replace("(Tagesordnungspunkt 15)", "(Tagesordnungspunkt 999)")),
+        ]
+        for parsed in parses:
+            for top in parsed["agenda_items"]:
+                fields = dip.xml_top_fields(top)
+                for speech in fields["xml_speakers"]:
+                    found.setdefault("Rede", []).append((speech, ("paragraph_count", "char_count")))
+                for contribution in fields["xml_contributions"]:
+                    found.setdefault(path(contribution), []).append((contribution, ("char_count",)))
+                for unit in fields["xml_withheld"]:
+                    found.setdefault("withheld unit", []).append((unit, ("char_count", "word_count", "nested_word_count")))
+                    for turn in unit["nested_turns"]:
+                        found.setdefault("withheld turn", []).append((turn, ("char_count", "word_count")))
+            for contribution in parsed["sitting_contributions"]:
+                found.setdefault("sitting-level Beitrag", []).append((contribution, ("char_count",)))
+        self.assertEqual(sorted(found), sorted([
+            "Rede", "Rede as Beitrag", "Fragestunde turn", "nested Zwischenfrage", "annex",
+            "sitting-level Beitrag", "withheld unit", "withheld turn",
+        ]))
+        for producer, units in found.items():
+            for unit, keys in units:
+                for key in keys:
+                    with self.subTest(producer=producer, key=key):
+                        self.assertIs(type(unit.get(key)), int)
+
+
 class PartyNameTests(unittest.TestCase):
     """DIP's person.fraktion is a list; the store must hold the plain name."""
 

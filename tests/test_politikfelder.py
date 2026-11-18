@@ -1449,7 +1449,7 @@ class RenderTests(unittest.TestCase):
     def test_the_archive_shows_the_persisted_tags_and_the_front_page_the_render_time_cache(self) -> None:
         report = self.report()
         report["agenda_items"][0]["xml_speakers"] = [
-            {"speaker": {"name": "A", "faction": "SPD"}, "text": "x", "text_length": 1, "rede_id": "r1"}
+            {"speaker": {"name": "A", "faction": "SPD"}, "text": "x", "paragraph_count": 1, "char_count": 1, "rede_id": "r1"}
         ]
         cache = cache_of({"v1": vorgang("Verkehr")})
         pages: dict[tuple[bool, bool], tuple[str, str]] = {}

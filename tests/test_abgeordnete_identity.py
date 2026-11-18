@@ -79,7 +79,7 @@ def report_with_speaker_and_vote() -> dict[str, Any]:
                             "fraktion": "SPD",
                         },
                         "source_page": {"page": 12},
-                        "char_count": 120,
+                        "paragraph_count": 1, "char_count": 120,
                         "snippet": "Redeauszug",
                     }
                 ],
