@@ -6,7 +6,7 @@ Use Python 3.11 or newer. Run `python3 -m unittest discover -s tests` from the r
 
 See CONTRIBUTING.md and `.github/workflows/ci.yml` for the development and CI checks.
 
-`tests/test_code_rules.py` holds code rules for `scripts/`: how SQLite is opened, absent vs zero, and import layers. When one fails, its message says why the rule exists and how to fix the cause. Fix the cause; don't add a baseline entry to make it pass.
+`tests/test_code_rules.py` holds code rules for `scripts/`: how SQLite is opened, absent vs zero, and import layers. When one fails, its message says why the rule exists and how to fix the cause. Fix the cause. The `or_zero` baseline in `tests/code_rules_baseline.json` only shrinks. A `nullable_comparisons` entry is right only when its reason is true of the code, so a reviewer can check it.
 
 On this macOS machine, system `python3` is 3.9; use uv's CPython: `uv run --python 3.13.18 python -m unittest discover -s tests` (3.11.18 is installed too, for the supported floor).
 

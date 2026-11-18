@@ -11,7 +11,7 @@ and how to fix the cause.
   import graph has no cycle beyond KNOWN_CYCLES.
 
 The rules read the source with ``ast``; they cannot see imports made through
-importlib or SQL assembled with ``+``."""
+importlib or SQL assembled with ``+``, and they read docstrings as prose, not SQL."""
 from __future__ import annotations
 
 import ast
@@ -84,6 +84,35 @@ def walk_with_function(tree: ast.AST) -> Iterator[tuple[ast.AST, str]]:
     yield from visit(tree, ())
 
 
+@functools.cache
+def scoped(tree: ast.Module) -> tuple[tuple[ast.AST, str], ...]:
+    """``walk_with_function``, once per tree: every rule reads this."""
+    return tuple(walk_with_function(tree))
+
+
+@functools.cache
+def literals(tree: ast.Module) -> tuple[tuple[ast.AST, str, str], ...]:
+    """(node, text, enclosing function) for every string that can hold SQL: each
+    string constant, and each f-string with its fields as ``{}``. A docstring or
+    other bare string statement is prose, so it is left out."""
+    skip: set[int] = set()
+    for node, _ in scoped(tree):
+        if isinstance(node, ast.JoinedStr):
+            skip |= {id(value) for value in node.values}
+        elif isinstance(node, ast.Expr) and isinstance(node.value, (ast.Constant, ast.JoinedStr)):
+            skip.add(id(node.value))
+    found = []
+    for node, function in scoped(tree):
+        if id(node) in skip:
+            continue
+        if isinstance(node, ast.JoinedStr):
+            text = "".join(value.value if isinstance(value, ast.Constant) else "{}" for value in node.values)
+            found.append((node, text, function))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.append((node, node.value, function))
+    return tuple(found)
+
+
 # ---------------------------------------------------------------------------
 # Class 1: who may open SQLite
 # ---------------------------------------------------------------------------
@@ -110,7 +139,7 @@ def sqlite_connect_calls(tree: ast.Module) -> Iterator[tuple[int, str]]:
     ``dbapi2`` included."""
     module_aliases = {"sqlite3"}
     function_aliases: set[str] = set()
-    for node in ast.walk(tree):
+    for node, _ in scoped(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name in _SQLITE_MODULES:
@@ -122,7 +151,7 @@ def sqlite_connect_calls(tree: ast.Module) -> Iterator[tuple[int, str]]:
                 elif alias.name == "dbapi2":
                     module_aliases.add(alias.asname or alias.name)
     module_aliases |= {f"{alias}.dbapi2" for alias in module_aliases}
-    for node, function in walk_with_function(tree):
+    for node, function in scoped(tree):
         if not isinstance(node, ast.Call):
             continue
         target = node.func
@@ -141,10 +170,9 @@ def sqlite_open_violations(modules: Mapping[str, Path]) -> list[Finding]:
         for line, function in sqlite_connect_calls(tree):
             if (name, function) not in SQLITE_OPENERS:
                 found.append(Finding(relative(path), line, function, "sqlite3.connect"))
-        scopes = {id(node): function for node, function in walk_with_function(tree)}
-        for node, text in string_literals(tree):
+        for node, text, function in literals(tree):
             if _ATTACH.search(text):
-                found.append(Finding(relative(path), node.lineno, scopes[id(node)], "ATTACH"))
+                found.append(Finding(relative(path), node.lineno, function, "ATTACH"))
     return found
 
 
@@ -180,7 +208,7 @@ def is_zero(node: ast.AST) -> bool:
 def or_zero_findings(path: Path, tree: ast.Module) -> list[Finding]:
     return [
         Finding(relative(path), node.lineno, function, ast.unparse(node))
-        for node, function in walk_with_function(tree)
+        for node, function in scoped(tree)
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or) and is_zero(node.values[-1])
     ]
 
@@ -228,30 +256,18 @@ def store_schema() -> dict[str, dict[str, bool]]:
             conn.close()
 
 
-def string_literals(tree: ast.Module) -> Iterator[tuple[ast.AST, str]]:
-    """Every string constant, and every f-string with its fields as ``{}``."""
-    inside_fstring: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.JoinedStr):
-            inside_fstring |= {id(value) for value in node.values}
-    for node, function in walk_with_function(tree):
-        if isinstance(node, ast.JoinedStr):
-            text = "".join(value.value if isinstance(value, ast.Constant) else "{}" for value in node.values)
-            yield node, text
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in inside_fstring:
-            yield node, node.value
-
-
-def table_references(sql: str) -> tuple[dict[str, str], list[str]]:
-    """(alias -> table, tables in order) named after FROM, JOIN, UPDATE or INTO."""
-    aliases: dict[str, str] = {}
+def table_references(sql: str) -> tuple[dict[str, list[str]], list[str]]:
+    """(alias -> every table it names, tables in order) after FROM, JOIN, UPDATE
+    or INTO. An alias reused for another table keeps both."""
+    aliases: dict[str, list[str]] = {}
     tables: list[str] = []
     for match in _TABLE_REF.finditer(sql):
         table = match.group(1)
-        tables.append(table)
-        aliases[table] = table
-        if match.group(2):
-            aliases[match.group(2)] = table
+        if table not in tables:
+            tables.append(table)
+        for alias in (table, match.group(2)):
+            if alias and table not in aliases.setdefault(alias, []):
+                aliases[alias].append(table)
     return aliases, tables
 
 
@@ -269,8 +285,9 @@ def is_comparison(sql: str, match: re.Match[str]) -> bool:
 def nullable_comparisons(sql: str, schema: Mapping[str, Mapping[str, bool]], context: str = "") -> list[str]:
     """``table.column op ?`` for each comparison with a bound value on a column
     that can be NULL. A fragment that names no table takes its tables from
-    ``context``, the other literals of its function; a statement whose tables
-    are not in the schema is skipped."""
+    ``context``, the other literals of its function. An alias that names several
+    tables counts for each, so a nullable column in any of them is flagged. A
+    statement whose tables are not in the schema is skipped."""
     aliases, tables = table_references(sql)
     if not tables and context:
         aliases, tables = table_references(context)
@@ -279,10 +296,7 @@ def nullable_comparisons(sql: str, schema: Mapping[str, Mapping[str, bool]], con
         if not is_comparison(sql, match):
             continue
         qualifier, column, operator = match.groups()
-        if qualifier:
-            owners = [aliases.get(qualifier, qualifier)]
-        else:
-            owners = list(dict.fromkeys(tables))
+        owners = aliases.get(qualifier, [qualifier]) if qualifier else tables
         nullable = [table for table in owners if schema.get(table, {}).get(column)]
         if nullable:
             found.append(f"{nullable[0]}.{column} {operator} ?")
@@ -290,15 +304,16 @@ def nullable_comparisons(sql: str, schema: Mapping[str, Mapping[str, bool]], con
 
 
 def nullable_comparison_findings(path: Path, tree: ast.Module, schema: Mapping[str, Mapping[str, bool]]) -> list[Finding]:
-    scopes = {id(node): function for node, function in walk_with_function(tree)}
-    literals = [(node, text, scopes[id(node)]) for node, text in string_literals(tree)]
-    context: dict[str, list[str]] = {}
-    for _, text, function in literals:
-        context.setdefault(function, []).append(text)
+    """Module-level strings get no context: a module's statements are unrelated
+    (facts.py keeps every metric's SQL there), so their aliases prove nothing."""
+    texts: dict[str, list[str]] = {}
+    for _, text, function in literals(tree):
+        texts.setdefault(function, []).append(text)
+    context = {function: "\n".join(parts) for function, parts in texts.items() if function != "<module>"}
     return [
         Finding(relative(path), node.lineno, function, comparison)
-        for node, text, function in literals
-        for comparison in nullable_comparisons(text, schema, "\n".join(context[function]))
+        for node, text, function in literals(tree)
+        for comparison in nullable_comparisons(text, schema, context.get(function, ""))
     ]
 
 
@@ -407,7 +422,7 @@ def imports_of(name: str, path: Path, tree: ast.Module, modules: Mapping[str, Pa
             candidate = candidate.rpartition(".")[0]
         return None
 
-    for node in ast.walk(tree):
+    for node, _ in scoped(tree):
         targets: list[str] = []
         if isinstance(node, ast.Import):
             targets = [alias.name for alias in node.names]
@@ -503,6 +518,51 @@ def load_baseline() -> dict:
     return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 
 
+def or_zero_problems(findings: list[Finding], baseline: Counter[tuple[str, str, str]]) -> list[str]:
+    """Every finding of a key the code has more often than the baseline, and every
+    baseline entry the code has fewer of."""
+    actual = counted_or_zero(findings)
+    added = actual - baseline
+    new = [or_zero_message(finding) for finding in findings if added[(finding.file, finding.function, finding.text)]]
+    stale = [
+        f"tests/code_rules_baseline.json lists `{expression}` in {file} {function} {count} more time(s) than the "
+        "code has it: lower or remove the entry (the baseline only shrinks; after renaming a function, move its "
+        "entries to the new name)."
+        for (file, function, expression), count in sorted((baseline - actual).items())
+    ]
+    return new + stale
+
+
+def nullable_problems(findings: list[Finding], listed: Mapping[tuple[str, str, str], str]) -> list[str]:
+    """Listed entries without a reason, unlisted findings, and listed entries the code no longer has."""
+    seen = {(finding.file, finding.function, finding.text) for finding in findings}
+    reasonless = [
+        f"tests/code_rules_baseline.json lists `{comparison}` in {file} {function} without a reason: say why it is right."
+        for (file, function, comparison), reason in sorted(listed.items())
+        if not reason.strip()
+    ]
+    new = [
+        nullable_comparison_message(finding)
+        for finding in findings
+        if (finding.file, finding.function, finding.text) not in listed
+    ]
+    stale = [
+        f"tests/code_rules_baseline.json lists `{comparison}` in {file} {function}, which the code no longer has: remove it."
+        for (file, function, comparison) in sorted(set(listed) - seen)
+    ]
+    return reasonless + new + stale
+
+
+def cycle_problems(found: set[frozenset[str]], known: Mapping[frozenset[str], str]) -> list[str]:
+    return [
+        f"import cycle {sorted(cycle)}: move the shared code into a module both can import"
+        for cycle in sorted(found - set(known), key=sorted)
+    ] + [
+        f"KNOWN_CYCLES lists {sorted(cycle)}, which no longer exists: remove it"
+        for cycle in sorted(set(known) - found, key=sorted)
+    ]
+
+
 class RuleTestCase(unittest.TestCase):
     def assertNoProblems(self, problems: list[str]) -> None:
         """Each problem in full, one paragraph apiece: the messages are the fix instructions."""
@@ -541,16 +601,7 @@ class AbsentVersusZeroRuleTests(RuleTestCase):
             for entry in load_baseline()["or_zero"]["entries"]
         })
         findings = [finding for path in script_modules().values() for finding in or_zero_findings(path, parsed(path))]
-        actual = counted_or_zero(findings)
-        added = actual - baseline
-        new = [or_zero_message(finding) for finding in findings if added[(finding.file, finding.function, finding.text)]]
-        stale = [
-            f"tests/code_rules_baseline.json lists `{expression}` in {file} {function} {count} more time(s) than the "
-            "code has it: lower or remove the entry (the baseline only shrinks; after renaming a function, move its "
-            "entries to the new name)."
-            for (file, function, expression), count in sorted((baseline - actual).items())
-        ]
-        self.assertNoProblems(new + stale)
+        self.assertNoProblems(or_zero_problems(findings, baseline))
 
     # Value: protects=no SQL comparison with a bound value on a nullable store column lands without a stated reason; fails_when=`col = ?` is added on a column that can be NULL, or a listed comparison disappears; why_new=NULL page_quadrant silently broke citations (9edb6a5) and nothing checks for the pattern; seam=none
     def test_no_unlisted_comparison_on_a_nullable_column(self):
@@ -558,21 +609,13 @@ class AbsentVersusZeroRuleTests(RuleTestCase):
             (entry["file"], entry["function"], entry["comparison"]): entry["reason"]
             for entry in load_baseline()["nullable_comparisons"]
         }
-        for key, reason in listed.items():
-            self.assertTrue(reason.strip(), f"{key} has no reason")
         schema = store_schema()
         findings = [
             finding
             for path in script_modules().values()
             for finding in nullable_comparison_findings(path, parsed(path), schema)
         ]
-        seen = {(finding.file, finding.function, finding.text) for finding in findings}
-        new = [nullable_comparison_message(finding) for finding in findings if (finding.file, finding.function, finding.text) not in listed]
-        stale = [
-            f"tests/code_rules_baseline.json lists `{comparison}` in {file} {function}, which the code no longer has: remove it."
-            for (file, function, comparison) in sorted(set(listed) - seen)
-        ]
-        self.assertNoProblems(new + stale)
+        self.assertNoProblems(nullable_problems(findings, listed))
 
 
 class ImportLayerRuleTests(RuleTestCase):
@@ -590,11 +633,7 @@ class ImportLayerRuleTests(RuleTestCase):
 
     # Value: protects=no new import cycle forms and a broken-up known cycle leaves KNOWN_CYCLES; fails_when=two modules start importing each other; why_new=the validate_dip_protocol/vote_links cycle went unnoticed; seam=none
     def test_no_import_cycle_beyond_the_known_ones(self):
-        found = set(cycles(import_graph(script_modules())))
-        self.assertNoProblems(
-            [f"import cycle {sorted(cycle)}: move the shared code into a module both can import" for cycle in found - set(KNOWN_CYCLES)]
-            + [f"KNOWN_CYCLES lists {sorted(cycle)}, which no longer exists: remove it" for cycle in set(KNOWN_CYCLES) - found]
-        )
+        self.assertNoProblems(cycle_problems(set(cycles(import_graph(script_modules()))), KNOWN_CYCLES))
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +698,64 @@ class DetectorTests(unittest.TestCase):
         for sql, expected in fragments.items():
             with self.subTest(fragment=sql):
                 self.assertEqual(expected, nullable_comparisons(sql, schema, context))
+        # An alias reused for another table counts for both, whichever comes last.
+        reused = "SELECT 1 FROM speeches s WHERE {}; SELECT 1 FROM votes s WHERE {}"
+        self.assertEqual(["speeches.mp_id = ?"], nullable_comparisons("s.mp_id = ? AND s.id = ?", schema, reused))
+
+    # Value: protects=a module-level fragment gets no aliases from unrelated module-level statements, while a function's fragment does; fails_when=the <module> exclusion goes; why_new=facts.py keeps every metric's SQL at module level (code review 2026-11-18); seam=parsed source and the real store schema
+    def test_module_level_fragments_get_no_context(self):
+        source = (
+            'BASE = "SELECT 1 FROM speeches s WHERE {}"\n'
+            'WHERE = "s.page = ? AND s.id = ?"\n'
+            "def f():\n"
+            '    base = "SELECT 1 FROM speeches s WHERE {}"\n'
+            '    where = "s.page = ? AND s.id = ?"\n'
+        )
+        found = nullable_comparison_findings(ROOT / "probe.py", ast.parse(source), store_schema())
+        self.assertEqual([("f", "speeches.page = ?")], [(finding.function, finding.text) for finding in found])
+
+    # Value: protects=docstrings and bare string statements are not read as SQL, while query strings and f-strings are; fails_when=the Expr exclusion goes or f-string parts are read twice; why_new=prose about a query could fail the suite (code review 2026-11-18); seam=parsed source
+    def test_literals_skip_docstrings(self):
+        source = (
+            '"""ATTACH \'x\' explains FROM votes WHERE protocol_id = ?."""\n'
+            "def f(conn, t):\n"
+            '    """Reads FROM votes WHERE protocol_id = ?."""\n'
+            '    conn.execute("SELECT 1 FROM votes WHERE protocol_id = ?")\n'
+            '    conn.execute(f"SELECT 1 FROM {t} WHERE id = ?")\n'
+        )
+        texts = [text for _, text, _ in literals(ast.parse(source))]
+        self.assertEqual(["SELECT 1 FROM votes WHERE protocol_id = ?", "SELECT 1 FROM {} WHERE id = ?"], texts)
+
+    # Value: protects=each baseline comparison reports a new finding, a stale entry and (for comparisons) a missing reason; fails_when=the Counter or set arithmetic flips, so a fixed site stays in the baseline; why_new=the stale paths had no test (code review 2026-11-18); seam=hand-built findings
+    def test_baseline_comparisons_report_new_and_stale(self):
+        finding = Finding("scripts/x.py", 3, "f", "a or 0")
+        baseline = Counter({("scripts/x.py", "f", "a or 0"): 1, ("scripts/x.py", "g", "b or 0"): 1})
+        problems = or_zero_problems([finding, finding._replace(line=4)], baseline)
+        self.assertEqual(3, len(problems), problems)
+        self.assertTrue(problems[0].startswith("scripts/x.py:3 `a or 0`"))
+        self.assertTrue(problems[1].startswith("scripts/x.py:4 `a or 0`"))
+        self.assertIn("lists `b or 0` in scripts/x.py g 1 more time(s)", problems[2])
+
+        listed = {
+            ("scripts/x.py", "f", "votes.protocol_id = ?"): "binds a checked id",
+            ("scripts/x.py", "g", "votes.detail_url = ?"): " ",
+        }
+        found = [
+            Finding("scripts/x.py", 5, "f", "votes.protocol_id = ?"),
+            Finding("scripts/x.py", 9, "h", "speeches.page = ?"),
+        ]
+        problems = nullable_problems(found, listed)
+        self.assertEqual(3, len(problems), problems)
+        self.assertIn("`votes.detail_url = ?` in scripts/x.py g without a reason", problems[0])
+        self.assertTrue(problems[1].startswith("scripts/x.py:9 `speeches.page = ?` in h"))
+        self.assertIn("`votes.detail_url = ?` in scripts/x.py g, which the code no longer has", problems[2])
+
+        problems = cycle_problems({frozenset({"a", "b"})}, {frozenset({"c", "d"}): "why"})
+        self.assertEqual(
+            ["import cycle ['a', 'b']: move the shared code into a module both can import",
+             "KNOWN_CYCLES lists ['c', 'd'], which no longer exists: remove it"],
+            problems,
+        )
 
     # Value: protects=the layer check flags upward and sideways imports and unplaced modules; fails_when=the layer order test drifts; why_new=see above; seam=a hand-built graph over real group names
     def test_layer_check(self):
