@@ -66,6 +66,8 @@ EINZELPLAENE_IN_THE_CACHE = (
     # The Einzelplan headings of the budget weeks 18/68-71 (Nov 2014) and 19/63-66
     # (Nov 2018), A3 pilot census (docs/plans/a3-pilot.md).
     + [("18", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 23 30 32 60".split()]
+    # 18/138 and 18/201 debate Einzelplan 21 (found in the real-store test, 2026-11-18).
+    + [("18", "21")]
     + [("19", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 21 23 30 32 60".split()]
 )
 
@@ -216,6 +218,12 @@ class AgendaItemTests(unittest.TestCase):
         top = item(heading="Einzelplan 12 Bundesministerium für Verkehr")
         self.assertEqual(self.tags(top, cache_of(), "20"), (["Verkehr", "Digitales"], "einzelplan"))
         self.assertEqual(self.tags(top, cache, "21"), (["Verkehr"], "einzelplan"))
+
+    def test_the_data_protection_commissioner_is_an_einzelplan_in_wp_18_as_in_wp_19(self) -> None:
+        # 18/138 and 18/201: "b) Einzelplan 21 Bundesbeauftragte für den Datenschutz und die Informationsfreiheit".
+        top = item(heading="b) Einzelplan 21 Bundesbeauftragte für den Datenschutz und die Informationsfreiheit")
+        for wahlperiode in ("18", "19"):
+            self.assertEqual(self.tags(top, cache_of(), wahlperiode), (["Digitales"], "einzelplan"))
 
     def test_the_einzelplan_may_be_only_in_the_top_id(self) -> None:
         top = dict(item(heading=""), top_id="Einzelplan 04")
