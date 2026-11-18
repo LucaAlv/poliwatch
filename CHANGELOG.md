@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.46.11.0] - 2026-11-18
+## [0.46.12.0] - 2026-11-18
 
 Four rules that decide whose abgeordnetenwatch profile, roster record or page link a speaker gets are now strict where they were loose. On an offline replay of the 801-sitting reference store against main, nothing moves: every table's row count, every vote and Rede, the person pages and `abgeordnete.json` are the same, and all 91,658 speaker units in the 802 cached reports keep their profile. Each rule closes a gap no stored sitting reaches today.
 
@@ -12,6 +12,15 @@ Four rules that decide whose abgeordnetenwatch profile, roster record or page li
 - **A re-issued DIP person record is kept from an older store only if it was a roster record.** A record a sitting merely sampled under the old id is no longer carried forward with roster fields it never had.
 - **A speaker link that carries a re-issued DIP id reaches the successor's page also for a person in a reviewed partition.** Before, only the plain DIP key was aliased.
 - **A DIP person record whose Wahlperioden are not a list of numbers no longer cuts a Bundestag period.** A Land office excludes a Bundestag seat in the same Wahlperiode, so such periods are cut from a person's MdB periods; a role with an unreadable Wahlperiode now cuts nothing instead of being half read. On the cached records, the cut is the same for all 1,949 persons.
+
+## [0.46.11.0] - 2026-11-18
+
+The 83 sittings restored on 2026-11-17 are now measured against outside sources, and the record names every figure that moved, old and new. The reference store holds 801 sittings, up from 718. Of the 737 roll-call votes the Bundestag lists from WP 18 on, 727 are stored under their own date; the other 10 fall on 18/20, which stays out, or on two sittings newer than the store. Every restored sitting stores exactly the agenda items its XML prints, 8,189 in all. The abgeordnetenwatch match share of WP 18 and 19 Reden is 98.34% (98.27% on the earlier 400-sitting store), and no speech of ours is missing from CPP-BT. No code, export or page changes in this release; the measurements and their receipts are in `docs/plans/t4-acquire.md`.
+
+### Changed
+
+- **The CPP-BT comparison reads 77 more speeches as known differences.** Forty are units the project reviewed and files as procedure or chairing on purpose: the presidium elections of 18/1 and 19/1, the chancellor's election and the oaths of 19/19, two acceptances (19/68 and 19/158), and the chair's Sitzungsleitung in 19/1 and 19/19. The other 37 are the § 31 declarations 18/158 prints in its Sitzungsverlauf. A release review now has only the length ratios left to read by hand.
+- **The source error E4 records its scale on the restored sittings.** 157 Stimmen in 87 roll-calls count for the group the Stammdaten prove on the vote's day, 57 of them in restored votes, all in the windows E4 already names.
 
 ## [0.46.10.0] - 2026-11-18
 
