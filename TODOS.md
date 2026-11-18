@@ -2004,6 +2004,18 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Priority:** P3
 **Depends on:** None
 
+### Code rules: close the detector gaps reviews found
+
+**What:** The detectors in `tests/test_code_rules.py` miss or misread some shapes that `scripts/` does not use today. (1) `ATTACH DATABASE $path` and `ATTACH DATABASE (?)` escape the ATTACH check, because `_ATTACH` needs a quote, `?`, `:` or `{` right after the keyword. (2) A quoted or uppercase name, `"protocol_id" = ?` or `PROTOCOL_ID = ?`, escapes the nullable-comparison check, because the schema lookup is case- and quote-sensitive. (3) `UPDATE t SET a = CASE WHEN … END, b = ?` is misread: `is_comparison` sees the `WHEN` and counts the assignment to `b` as a comparison, a false alarm. (4) Comma joins (`FROM a, b`), a wrapped column (`LOWER(col) = ?`), a reversed comparison (`? = col`), named parameters (`= :p`), `IN (?)` and `BETWEEN` are not checked. (5) An import made through importlib is invisible to the layer rule.
+
+**Why:** Found by the Codex structured review and an adversarial reader of v0.46.16.0 (2026-11-18). A miss lets a new instance of the bug class through; the false alarm in (3) would fail the suite on valid SQL.
+
+**Context:** Each fix goes with a row in `DetectorTests` that shows the miss first. For (3), track the clause while skipping `CASE … END` nesting instead of taking the last keyword. For (2), normalize identifiers before the lookup.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Correct a cached report's XML Drucksache references at the source, not at every reader
 
 **What:** A report cached before `validate_dip_protocol.extract_drucksachen` checked the link host keeps a number read off a quoted URL in `xml_drucksachen` (88/739016 from a syriahr.com link in 20/206), for good: `reparse_report_xml` re-reads Reden and Beiträge from the cached XML but not the Drucksache references. Since v0.23.6.0 every reader filters through `derive.xml_drucksachen` (persist, `item_document_numbers`, the dossier pills, the vote panel's link map), so nothing shows or stores it, but a new reader that reads `item["xml_drucksachen"]` directly brings the bug back. Either refresh `xml_drucksachen` from the cached XML in `--offline --repersist` (then the stored report is right and the filter can go after one replay of every cache), or filter once where reports are loaded (`load_existing_detail_entries`) and drop the per-reader calls.
