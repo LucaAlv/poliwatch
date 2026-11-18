@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.19.0] - 2026-11-18
+
+The Daten page's report link, the Impressum's contact details and the repository's own checks now say what is true. No stored figure or export changes. An offline render of the reference store with a `mailto:` report address writes the footer link "Datenfehler melden", without "(GitHub)".
+
+### Fixed
+
+- **The Daten page's "Datenfehler melden" link says "(GitHub)" only when it goes to github.com.** A `mailto:` address or a site path given as `--data-issues-url` was labelled GitHub before.
+- **An operator e-mail whose name part holds `?`, `&`, `%` or `=` is refused.** The address becomes a `mailto:` link on the Impressum, where `?cc=` or `&bcc=` would add recipients. The build stops with "email is not an e-mail address" before any page is written.
+- **An operator URL with a space anywhere in it is refused**, like one with a user or password.
+
+### Changed
+
+- **The authored codebook inputs (`LICENSE-DATA.md`, `docs/data-methods.md`, `scripts/data_dictionary.json`) are checked out with LF line endings on every machine**, so the exported copies equal the bytes the release commit holds.
+- **`operator.json` and `operator.local.json` are ignored by git**, so a local operator file with a name and postal address is not committed by accident.
+- **README and the design docs point to `PRODUCT.md` and `DESIGN.md`**, which replaced the deleted product design document.
+
 ## [0.46.17.0] - 2026-11-18
 
 The Sitzungskalender line and the week-radar RSS feed now handle a calendar that lists a week twice, a cache stamped in the future, a stray control character in a title and a feed base URL carrying a user and password. No page or stored figure moves on the reference store. Its cached calendar (22 Sitzungswochen for 2026 and 21 for 2027, from 2 .ics files) lists every week once. An offline render of it with a site URL set writes a well-formed feed of 12 weeks, and the header still reads "Nächste Sitzungswoche: 23.–27. November 2026 (KW 48)".
