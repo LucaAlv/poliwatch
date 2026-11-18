@@ -3,12 +3,17 @@
 These tests read the shipped scripts/person_corrections.json, so they cover the
 reviewed entries themselves and not a fixture of them."""
 from __future__ import annotations
+import contextlib
+import io
 import itertools
 import json
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest import mock
 import _support
+import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as store
 import person_registry as registry
@@ -84,8 +89,26 @@ def t4_units():
     return units
 
 
+def _rede(rede_id, redner_id, first, last, role):
+    return (f'<rede id="{rede_id}"><p klasse="redner"><redner id="{redner_id}"><name><vorname>{first}</vorname>'
+            f'<nachname>{last}</nachname><rolle><rolle_lang>{role}</rolle_lang><rolle_kurz>{role}</rolle_kurz></rolle></name></redner>'
+            f'{first} {last}, {role}: </p><p klasse="J_1">Herr Präsident! Meine Damen und Herren! Wir beraten heute über den '
+            f'vorliegenden Antrag und die Frage, wie die Länder und der Bund die Mittel künftig verteilen. </p></rede>')
+
+
+#: A sitting with two speakers under 999990127 and the profile owner of 11005304.
+REPARSE_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<dbtplenarprotokoll wahlperiode="20" sitzung-nr="998" sitzung-datum="01.01.2023" start-seitennr="1">'
+    '<sitzungsverlauf><tagesordnungspunkt top-id="Tagesordnungspunkt 1"><p klasse="T_ohne_NaS">Beratung des Antrags zur Verteilung der Mittel </p>'
+    + _rede("ID2099800100", "999990127", "Peter", "Beuth", "Staatsminister (Hessen)")
+    + _rede("ID2099800200", "999990127", "Enak", "Ferlemann", "Parl. Staatssekretär beim Bundesminister für Verkehr und digitale Infrastruktur")
+    + _rede("ID2099800300", "11005304", "Alexander", "Föhr", "Staatssekretär (Hessen)")
+    + '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+
+
 class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
-    def build(self, conn=None, speakers=SPEAKERS, roster=()):
+    def build(self, conn=None, speakers=SPEAKERS, roster=(), extra=None):
         self.stores = getattr(self, "stores", 0) + 1
         conn = conn or self.open_store(f"build-store-{self.stores}.sqlite")
         registry.begin_build(conn)
@@ -95,7 +118,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         for index, entry in enumerate(speakers):
             occurrence = f"occ-{entry[1]}-{index}"
             self.results[occurrence] = store.resolve_speaker(
-                conn, speaker(*entry), store.utc_now(), "p1", f"ID{index}", occurrence, PROTOCOL)
+                conn, speaker(*entry, **(extra or {})), store.utc_now(), "p1", f"ID{index}", occurrence, PROTOCOL)
         registry.reconcile(conn)
         return conn
 
@@ -307,6 +330,86 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         with self.assertRaisesRegex(registry.RegistryError, "11009999"):
             self.build(speakers=[("11009999", "Dr. Anna von Berg", "SPD", None), ("11009999", "Dr. Max von Tal", "SPD", None)])
 
+    # Value: protects=a role word the XML puts into the name fields ("Dr. Carsten Sieling, Bürgermeister") makes no two people one; fails_when=role words count as shared words, so two Bürgermeister or two Senatorinnen under one id pass the guard, or a feminine ending ("ministerin", "präsidentin") or the strip of brackets and commas around an office is dropped; why_new=TODOS "Shared Redner-IDs" item 12; seam=none
+    def test_a_role_word_does_not_make_two_people_one(self):
+        for left, right in (("Dr. Carsten Sieling, Bürgermeister", "Dr. Andreas Bovenschulte, Bürgermeister"),
+                            ("Elke Breitenbach, Senatorin", "Dr. Lena Kreck, Senatorin"),
+                            ("Peter Beuth, Staatsminister", "Thomas Schmidt, Staatsminister"),
+                            ("Anette Kramme, Parl. Staatssekretärin", "Rita Schwarzelühr-Sutter, Parl. Staatssekretärin"),
+                            ("Winfried Kretschmann, Ministerpräsident", "Bodo Ramelow, Ministerpräsident"),
+                            ("Reinhold Gall, Innenminister", "Thomas Strobl, Innenminister"),
+                            ("Michael Müller, Regierender Bürgermeister", "Klaus Wowereit, Regierender Bürgermeister"),
+                            # A feminine office is its own ending: "ministerin" does not end in "minister".
+                            ("Dr. Barbara Hendricks, Bundesministerin", "Svenja Schulze, Bundesministerin"),
+                            ("Malu Dreyer, Ministerpräsidentin", "Manuela Schwesig, Ministerpräsidentin"),
+                            # An office in brackets or before a further comma is still an office.
+                            ("Dr. Carsten Sieling (Bürgermeister)", "Dr. Andreas Bovenschulte (Bürgermeister)"),
+                            ("Dr. Carsten Sieling, Bürgermeister,", "Dr. Andreas Bovenschulte, Bürgermeister,")):
+            with self.subTest(left), self.assertRaisesRegex(registry.RegistryError, "11009999"):
+                self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
+        # One person printed with and without the role, or with a surname that is no role ("Meister"), passes.
+        for left, right in (("Dr. Carsten Sieling, Bürgermeister", "Dr. Carsten Sieling"), ("Dr. Michael Meister", "Michael Meister, Staatsminister")):
+            with self.subTest(left):
+                self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
+
+    # Value: protects=the name check reads only records that hold a Redner-ID: a record keyed by a DIP id that two printed names reach is not refused; fails_when=the guard compares names on every record, so a reviewed own dip: id or a DIP-only speaker printed under two names stops the build; why_new=TODOS "Shared Redner-IDs" item 14; seam=none
+    def test_a_record_with_no_redner_id_and_two_unrelated_names_is_not_refused(self):
+        conn = self.build(speakers=[(None, "Erika Mustermann", None, None), (None, "Max Beispiel", None, None)],
+                          extra={"dip_person_id": "4242"})
+        pairs = json.loads(conn.execute("SELECT evidence_json FROM person_records WHERE identity_key='dip:4242'").fetchone()[0])["pairs"]
+        self.assertEqual(sorted(pair[0] for pair in pairs), ["Erika Mustermann", "Max Beispiel"])
+
+    # Value: protects=reconcile reads the records' evidence twice before the guesses, not three times, each read with the full vote_members join; fails_when=the name check loads its own copy again; why_new=TODOS "Shared Redner-IDs" item 7; seam=none
+    def test_reconcile_loads_the_records_once_before_the_guesses(self):
+        conn = self.open_store("loads.sqlite")
+        registry.begin_build(conn)
+        for index, entry in enumerate(SPEAKERS):
+            store.resolve_speaker(conn, speaker(*entry), store.utc_now(), "p1", f"ID{index}", f"occ-{index}", PROTOCOL)
+        with mock.patch.object(registry, "_load_rows", wraps=registry._load_rows) as loads:
+            registry.reconcile(conn)
+        self.assertEqual(loads.call_count, 2)
+
+    # Value: protects=a re-parse gives no speaker of a shared id with no reviewed profile owner the profile another speaker of that id carried, while the profile owner of 11005304 still gets the profile found for its id in another sitting; fails_when=the profile_follows_redner_id clause in reparse_cached_xml is dropped (Ferlemann shows Beuth's profile) or blocks every partitioned id (Föhr loses his); why_new=TODOS "Shared Redner-IDs" item 6: the clause was tested only through a direct call; seam=build_dip_pulse_site.reparse_cached_xml
+    def test_a_reparse_copies_no_profile_across_a_shared_id(self):
+        beuth = {"id": 135405, "match": "name", "url": "https://www.abgeordnetenwatch.de/profile/peter-beuth"}
+        foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
+        protocol = {"id": "fixture-20-998", "dokumentnummer": "20/998", "datum": "2023-01-01"}
+        raw_xml = REPARSE_XML
+        parsed = dip.parse_protocol_xml(raw_xml)
+
+        class NoApi:
+            def list_all(self, path, params):
+                return []
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            enrichment = dip.enrich_with_api(NoApi(), protocol, parsed, person_limit=0, vote_scan_pages=0)
+        cached = {"protocol": protocol, "agenda_items": enrichment["agenda_items"], "api_records": enrichment["api_records"],
+                  "warnings": enrichment["warnings"], "validation_summary": {}, "xml_contributions": parsed.get("sitting_contributions", [])}
+        for item in cached["agenda_items"]:
+            for key in build.SPEAKER_LISTS:
+                for unit in item.get(key) or []:
+                    unit["speaker"].pop("abgeordnetenwatch", None)
+                    if unit["speaker"].get("last_name") == "Beuth":
+                        unit["speaker"]["abgeordnetenwatch"] = beuth
+        # Föhr's profile was resolved in another sitting, under the same Redner-ID.
+        elsewhere = {"report": {"agenda_items": [{"xml_speakers": [{"speaker": {
+            "xml_redner_id": "11005304", "first_name": "Alexander", "last_name": "Föhr", "abgeordnetenwatch": foehr}}]}]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            cache_path = build.xml_cache_path(output_dir, "20/998")
+            cache_path.parent.mkdir(parents=True)
+            cache_path.write_text(raw_xml, encoding="utf-8")
+            report_path, _, _ = build.report_paths(output_dir, "20/998")
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps(cached), encoding="utf-8")
+            entries = build.load_existing_detail_entries(output_dir, [protocol])
+            self.assertEqual(build.reparse_cached_xml(output_dir, entries, [*entries, elsewhere]), 1)
+        profiles = {}
+        for item in entries[0]["report"]["agenda_items"]:
+            for unit in item.get("xml_speakers") or []:
+                profiles[unit["speaker"]["last_name"]] = unit["speaker"].get("abgeordnetenwatch")
+        self.assertEqual(profiles, {"Beuth": beuth, "Ferlemann": None, "Föhr": foehr})
+
     # Value: protects=a store built before the fix replays like a fresh build: every occurrence leaves the contaminated record, also where the new key is a dip: one that names no conflicting Redner-ID; fails_when=bind keeps a bound occurrence on xml:<shared id> because no hard id contradicts, so Beuth's Reden stay on Ferlemann's record; why_new=the replay's old bindings differ from a fresh build's; seam=none
     def test_an_old_contaminated_store_replays_like_a_fresh_build(self):
         with self.correction_file({}):
@@ -362,6 +465,27 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             with self.subTest(message), self.correction_file({"partitions": [{**base, "own_ids": own_ids}]}):
                 with self.assertRaisesRegex(registry.RegistryError, message):
                     registry.corrections()
+        # A repeated own id files two reviewed people under one record; a dip: own id for
+        # the profile owner keys its record aw:N while it holds the roster's dip:N; a dip:
+        # own id the roster reads differently ("0" as none, "007" as "7") misses its row.
+        two = {"Ada Example": "ada", "Bea Example": "bea"}
+        for partitions, message in (
+            ([{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "dip:5", "bea": "dip:5"}}], "own id dip:5 is named twice"),
+            ([{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:5", "bea": "xml:5"}}], "own id xml:5 is named twice"),
+            ([{**base, "own_ids": {"ada": "xml:5"}}, {"xml_redner_id": "8", "labels": {"Cid Example": "cid"}, "own_ids": {"cid": "xml:5"}}],
+             "own id xml:5 is named twice"),
+            ([{"xml_redner_id": "9", "labels": two, "profile_owner": "ada", "own_ids": {"ada": "dip:5"}}],
+             "own id dip:5 of partition owner 'ada' is a DIP id, but 'ada' is the profile owner"),
+            ([{**base, "own_ids": {"ada": "dip:0"}}], "own id 'dip:0' of partition owner 'ada' is not a canonical DIP id"),
+            ([{**base, "own_ids": {"ada": "dip:007"}}], "own id 'dip:007' of partition owner 'ada' is not a canonical DIP id"),
+        ):
+            with self.subTest(message), self.correction_file({"partitions": partitions}):
+                with self.assertRaisesRegex(registry.RegistryError, message):
+                    registry.corrections()
+        # The profile owner may leave under an xml: own id, and another owner under a dip: one.
+        with self.correction_file({"partitions": [{"xml_redner_id": "9", "labels": two, "profile_owner": "ada",
+                                                   "own_ids": {"ada": "xml:5", "bea": "dip:7"}}]}):
+            self.assertEqual(registry.corrections()["partitions"][0]["own_ids"], {"ada": "xml:5", "bea": "dip:7"})
 
     # Value: protects=a holder is unambiguous: one per id, every other owner leaves under an own id, the holder owns the profile, and an own id never lands on another listed id; fails_when=the loader accepts a shape that leaves a partition record beside the holder's live record, or two owners for one record; why_new=holders are new; seam=none
     def test_malformed_holders_are_refused(self):
