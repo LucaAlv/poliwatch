@@ -34,13 +34,17 @@ class ChangesError(RuntimeError):
     """The changelog of a release cannot be assembled."""
 
 
+def _refuse_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not a JSON value")
+
+
 def load_authored(path: Path) -> dict[str, Any]:
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise ChangesError(f"cannot read the changes file {path}: {exc}") from exc
     try:
-        return json.loads(text)
+        return json.loads(text, parse_constant=_refuse_constant)
     # ValueError covers JSONDecodeError and an integer past the 4300-digit
     # limit; RecursionError a nesting deeper than the parser's stack.
     except (ValueError, RecursionError) as exc:

@@ -153,9 +153,31 @@ class ResolveCommitTests(unittest.TestCase):
     # Value: protects=only a bare 12-digit id passes the release gate; fails_when=a dirty, unverified, short, long, upper-case or empty revision is accepted; why_new=the gate looked only for a hyphen; seam=is_release_revision; no_claim=whether the id exists
     def test_release_gate_accepts_only_a_bare_twelve_digit_id(self) -> None:
         self.assertTrue(rev.is_release_revision("0123456789ab"))
-        for bad in (None, "", "abc123", "0123456789abc", "0123456789AB", "0123456789ab-dirty-01234567", "0123456789ab-unverified", "0123456789ab\n"):
+        for bad in (None, "", "abc123", "0123456789abc", "0123456789AB", "0123456789ab-dirty-01234567", "0123456789ab-unverified", "0123456789ab\n", 123456789012, b"0123456789ab", ["0123456789ab"]):
             with self.subTest(bad=bad):
                 self.assertFalse(rev.is_release_revision(bad))
+        self.assertEqual(rev._RELEASE_REVISION_RE.pattern, "[0-9a-f]{%d}" % rev.REVISION_LENGTH)
+
+    # Value: protects=a dirty revision does not move with the reader's blank-line, prefix, line-ending, file-mode or submodule diff settings; fails_when=one of those settings is left unpinned and changes the patch bytes; why_new=_PINNED_CONFIG lacked them (release item 8); seam=resolve_commit; no_claim=release revisions (bare commits, never hashed)
+    def test_same_edit_same_revision_under_more_diff_settings(self) -> None:
+        repo = make_repo({"a.txt": "one\n\ntwo\n\nthree\n", "run.sh": "echo\n"})
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        (repo / "a.txt").write_text("one\n\nTWO\n\nthree\n", encoding="utf-8")
+        os.chmod(repo / "run.sh", 0o755)
+        baseline = rev.resolve_commit(repo)
+        self.assertRegex(baseline, r"^[0-9a-f]{12}-dirty-[0-9a-f]{8}$")
+        for key, value in (
+            ("diff.suppressBlankEmpty", "true"),
+            ("diff.srcPrefix", "x/"),
+            ("diff.dstPrefix", "y/"),
+            ("core.fileMode", "false"),
+            ("core.autocrlf", "true"),
+            ("diff.ignoreSubmodules", "all"),
+        ):
+            with self.subTest(key=key):
+                git(repo, "config", key, value)
+                self.assertEqual(rev.resolve_commit(repo), baseline)
+                git(repo, "config", "--unset", key)
 
 
 class CommitLookupTests(unittest.TestCase):

@@ -332,8 +332,8 @@ server so downloads work on `localhost`.
   §7 hosting paragraph named here has not been written.
   *Status update 2026-11-01:* `LICENSE-DATA.md` now exists at the repository root and is
   carried by every export (export format 12), so `--publish` no longer refuses for a
-  missing file; it refuses an export whose licence string is empty or whose
-  `LICENSE-DATA.md` differs from the one the manifest's commit holds.
+  missing file; it refuses an export whose licence string is not the short string of the
+  commit's `LICENSE-DATA.md` or whose `LICENSE-DATA.md` differs from the one the manifest's commit holds.
 
 ### Copy and links elsewhere
 
