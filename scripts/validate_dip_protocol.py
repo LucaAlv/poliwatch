@@ -999,11 +999,11 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
     """18/49 and 18/44 print Reden directly under ``<sitzungsverlauf>``: the source
     lost the ``<tagesordnungspunkt>`` around them. The Inhaltsverzeichnis still names
     each one's item ("Einzelplan 06", "Zur Geschäftsordnung"), the labels other sittings
-    use as ``top-id``. Each run in one block is wrapped in place under that label and
-    marked ``top_source``; a TOP the chair called in ``<sitzungsbeginn>`` moves in with
-    the run after it. A Rede with no entry, one listed under two different titles, or
-    one after any other element is a shape no source has shown yet: refused, never
-    placed by guess. ``top_source`` is the parser's mark, so a source element carrying
+    use as ``top-id``. Each run under one Inhaltsverzeichnis label is wrapped in place
+    under that label and marked ``top_source``; a TOP the chair called in
+    ``<sitzungsbeginn>`` moves in with the run after it. A Rede with no entry, one
+    listed under two different titles, or one after any other element is a shape no
+    source has shown yet: refused, never placed by guess. ``top_source`` is the parser's mark, so a source element carrying
     it loses it first.
     """
     verlauf = root.find("sitzungsverlauf")
