@@ -71,7 +71,7 @@ Corrections are applied durably. A merge that was applied stays in the registry 
 
 ## Backup and recovery
 
-Back up the **build store**, not only the distribution download. The build store holds all issued keys, aliases, historical source evidence and occurrence bindings. Also retain the cached reports, authoritative catalog and the version-controlled correction file. Losing the registry loses person-key continuity even if the reports can be downloaded again.
+Back up the **build store**, not only the distribution download. The build store holds all issued keys, aliases, historical source evidence and occurrence bindings. Also retain the cached reports, authoritative catalog, the cached MdB-Stammdaten file in the store's private directory (`mdb-stammdaten.zip`: a plain offline render refuses a store whose file is missing or another one, until `--offline --repersist` rebuilds it) and the version-controlled correction file. Losing the registry loses person-key continuity even if the reports can be downloaded again.
 
 Use SQLite's backup API or `.backup` to obtain a consistent copy. Restore it with its cached evidence before replay. Distribution copies are marked with `user_version` and cannot be used as writable build stores.
 
