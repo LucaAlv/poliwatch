@@ -14512,7 +14512,10 @@ def default_license_text() -> str:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise RuntimeError(f"default licence string: cannot read {path}: {exc}") from exc
-    return license_short_string(text, str(path))
+    try:
+        return license_short_string(text, str(path))
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc}; pass --data-license") from exc
 
 
 def license_short_string(text: str, source: str = CODEBOOK_INPUT_FILES["license"]) -> str:
@@ -14522,7 +14525,7 @@ def license_short_string(text: str, source: str = CODEBOOK_INPUT_FILES["license"
     quoted = [line[1:].strip() for line in section.group(1).splitlines() if line.startswith(">")] if section else []
     short = " ".join(part for part in quoted if part)
     if not short:
-        raise RuntimeError(f'default licence string: {source} has no blockquote under "## Short string"; pass --data-license')
+        raise RuntimeError(f'default licence string: {source} has no blockquote under "## Short string"')
     return short
 
 

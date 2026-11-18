@@ -128,8 +128,12 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
             ):
                 with self.subTest(label):
                     (root / "LICENSE-DATA.md").write_text(content, encoding="utf-8")
-                    with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string"):
+                    with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string.*pass --data-license"):
                         b.default_license_text()
+                    # The release gate reuses the helper, where a --data-license override is refused: no advice to pass one.
+                    with self.assertRaises(RuntimeError) as caught:
+                        b.license_short_string(content, "LICENSE-DATA.md at commit x")
+                    self.assertNotIn("--data-license", str(caught.exception))
             (root / "LICENSE-DATA.md").unlink()
             with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "cannot read"):
                 b.default_license_text()
