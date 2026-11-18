@@ -377,7 +377,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             registry.reconcile(conn)
         self.assertEqual(loads.call_count, 2)
 
-    # Value: protects=a re-parse gives no speaker of a shared id with no reviewed profile owner the profile another speaker of that id carried, while the profile owner of 11005304 still gets the profile found for its id in another sitting; fails_when=the profile_follows_redner_id clause in reparse_cached_xml is dropped (Ferlemann shows Beuth's profile) or blocks every partitioned id (Föhr loses his); why_new=TODOS "Shared Redner-IDs" item 6: the clause was tested only through a direct call; seam=build_dip_pulse_site.reparse_cached_xml
+    # Value: protects=a re-parse gives no speaker of a shared id with no reviewed profile owner the profile another speaker of that id carried, while the profile owner of 11005304 still gets the profile found for its id in another sitting; fails_when=the redner_id_profile_reaches check in reparse_cached_xml is dropped (Ferlemann shows Beuth's profile) or blocks every partitioned id (Föhr loses his); why_new=TODOS "Shared Redner-IDs" item 6: the clause was tested only through a direct call; seam=build_dip_pulse_site.reparse_cached_xml
     def test_a_reparse_copies_no_profile_across_a_shared_id(self):
         beuth = {"id": 135405, "match": "name", "url": "https://www.abgeordnetenwatch.de/profile/peter-beuth"}
         foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
@@ -401,7 +401,8 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
                         unit["speaker"]["abgeordnetenwatch"] = beuth
         # Föhr's profile was resolved in another sitting, under the same Redner-ID.
         elsewhere = {"report": {"agenda_items": [{"xml_speakers": [{"speaker": {
-            "xml_redner_id": "11005304", "first_name": "Alexander", "last_name": "Föhr", "abgeordnetenwatch": foehr}}]}]}}
+            "xml_redner_id": "11005304", "first_name": "Alexander", "last_name": "Föhr", "display_name": "Alexander Föhr",
+            "abgeordnetenwatch": foehr}}]}]}}
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
             cache_path = build.xml_cache_path(output_dir, "20/998")
