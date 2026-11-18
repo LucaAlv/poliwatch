@@ -406,6 +406,17 @@ class WriteTests(unittest.TestCase):
             with self.subTest(url=bad):
                 self.assertFalse(feed.valid_site_url(bad))
 
+    # Value: protects=a refused site URL carrying a user or password is not echoed into the build log; fails_when=the invalid-URL warning prints the configured value with its credentials; why_new=Codex ship review: the credential refusal routed such URLs into the !r warning; seam=write; no_claim=other log sinks
+    def test_refused_credential_url_is_not_logged(self) -> None:
+        self.write({feed.SITE_URL_ENV: SITE})
+        secret = "s3cr" + "etpw"
+        for bad in ("https://user:" + secret + "@pulse.example.org/", "https://" + secret + "@pulse.example.org/", "https://user:" + secret + "/x@pulse.example.org/"):
+            with self.subTest(url=bad):
+                log = self.write({feed.SITE_URL_ENV: bad})
+                self.assertFalse((self.out / "feeds" / "week-radar.xml").exists())
+                self.assertEqual(log.count("warning: [week-radar]"), 1, log)
+                self.assertNotIn(secret, log)
+
     # Value: protects=a malformed BUNDESTAG_PULSE_SITE_URL (an unclosed IPv6 bracket, an impossible port) takes the documented invalid-URL path: the JSON is written, no RSS exists, a stale RSS is removed, one warning, and the build does not raise; fails_when=urlparse's ValueError (or the port check) escapes write() and aborts the build; why_new=Codex review found valid_site_url crashing on "https://[example.org/"; seam=valid_site_url, write; no_claim=that every possible malformed string is listed
     def test_malformed_site_url_does_not_abort_the_build(self) -> None:
         self.write({feed.SITE_URL_ENV: SITE})

@@ -378,9 +378,11 @@ def write(
     else:
         rss_path.unlink(missing_ok=True)
         if configured:
+            # A refused value with an "@" may carry a user and password: never echo it into the build log.
+            shown = "eine URL mit @ (nicht angezeigt, kann Zugangsdaten enthalten)" if "@" in configured else repr(configured)
             print(
-                f"warning: [week-radar] {SITE_URL_ENV} muss eine absolute https-URL mit abschließendem / sein, "
-                f"war {configured!r}; kein RSS",
+                f"warning: [week-radar] {SITE_URL_ENV} muss eine absolute https-URL ohne Zugangsdaten mit abschließendem / sein, "
+                f"war {shown}; kein RSS",
                 file=sys.stderr,
             )
         rss_note = f"RSS übersprungen ({SITE_URL_ENV} nicht gesetzt)" if not configured else "RSS übersprungen (ungültige URL)"
