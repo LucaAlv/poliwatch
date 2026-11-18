@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 import persist_dip_pulse_store as pulse_store
+import sqlite_open
 from stable_ids import source_index
 
 STORE = Path("data") / "bundestag-pulse.sqlite"
@@ -225,7 +226,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
     database = output_dir / STORE
     if not database.is_file():
         raise ReviewInputError(f"no store at {database}")
-    conn = sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)
+    conn = sqlite_open.open_readonly(database)
     conn.row_factory = sqlite3.Row
     try:
         pulse_store.require_current_schema(conn)
