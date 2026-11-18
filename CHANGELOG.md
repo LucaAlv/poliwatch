@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.20.0] - 2026-11-18
+
+An online build that asks DIP again for a Vorgang no longer loses the title and summary it had cached, and the private directory beside a published site is no longer listable by other users. No stored figure moves, because offline replays do not ask DIP. An offline build of the reference store whose private directory was left world-readable still exports and ends with that directory closed to others.
+
+### Fixed
+
+- **A Vorgang asked for again keeps the cached fields DIP's answer leaves empty.** A vote's "Worum es geht" kept losing its title and summary when an online build refetched a Vorgang still without a Sachgebiet and the answer lacked them. The Sachgebiet and Sachbegriff lists are still replaced by the fresh answer.
+- **The private directory beside a published site is closed to other users.** A directory left readable by group or others (an export run under the usual umask made it so) is set back to owner-only, so the names of the staged store copies inside are not listed to others. A symlinked or foreign private directory is refused before the export creates anything in it.
+- **A CSV export that cannot set its file permissions leaves no half-written temporary file behind.**
+
 ## [0.46.19.0] - 2026-11-18
 
 The Daten page's report link, the Impressum's contact details and the repository's own checks now say what is true. No stored figure or export changes. An offline render of the reference store with a `mailto:` report address writes the footer link "Datenfehler melden", without "(GitHub)".
