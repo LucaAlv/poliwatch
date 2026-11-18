@@ -898,7 +898,47 @@ class RepersistTests(unittest.TestCase):
             code, err = self.run_main()
         self.assertEqual(code, 1, err)
         self.assertIn("ERROR [cached input]: The cached MdB-Stammdaten cannot be read: kaputt", err)
+        # Removing the file and re-running a plain --offline would leave the panels and the store filing
+        # Stimmen from different files (TODOS E4 /gstack-review item 3): the fix names the rebuild.
+        self.assertIn("--offline --repersist", err)
+        self.assertNotIn("remove it, then re-run", err)
         self.render.assert_not_called()
+
+    # Value: protects=a plain --offline render refuses, before any page is rendered, when the cached
+    #   MdB-Stammdaten file is not the one the store was built with (another sha256, no file for a store built
+    #   with one, a file for a store built without), and names --offline --repersist; the matching file and
+    #   no file on either side render; fails_when=the render files the panels from the file on disk while the
+    #   store holds the moves of the file it was built with (a refresh swapped the cache and the rebuild then
+    #   failed); why_new=TODOS E4 /gstack-review item 3; seam=main with read_cached_stammdaten patched
+    def test_an_offline_render_refuses_a_stammdaten_file_the_store_was_not_built_with(self) -> None:
+        built_with = cached(stammdaten_wp21())
+        other = stammdaten.Stammdaten(records=built_with.records, stand=built_with.stand, sha256="cd" * 32)
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=built_with):
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        for label, on_disk, refused in (("same file", built_with, False), ("other file", other, True),
+                                        ("no file", None, True)):
+            with self.subTest(label), mock.patch.object(build, "read_cached_stammdaten", return_value=on_disk):
+                code, err = self.run_main()
+                if refused:
+                    self.assertEqual(code, 1, err)
+                    self.assertIn("ERROR [cached input]:", err)
+                    self.assertIn("ab" * 6, err)
+                    self.assertIn("Fix: run --offline --repersist", err)
+                    self.render.assert_not_called()
+                else:
+                    self.assertEqual(code, 0, err)
+                    self.render.assert_called_once()
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        for label, on_disk, refused in (("file for a store built without", built_with, True), ("none on either side", None, False)):
+            with self.subTest(label), mock.patch.object(build, "read_cached_stammdaten", return_value=on_disk):
+                code, err = self.run_main()
+                self.assertEqual(code, 1 if refused else 0, err)
+                if refused:
+                    self.assertIn("Fix: run --offline --repersist", err)
+                    self.render.assert_not_called()
 
     # Value: protects=the Vorgang cache file in the site directory is loaded by main and its Sachgebiete reach the store on --offline --repersist; fails_when=main stops loading or passing the cache, so every tag silently becomes not_fetched; why_new=other tests hand the cache to persist_report directly or have none; seam=none
     def test_an_offline_repersist_reads_the_cache_file_and_stores_sachgebiet_tags(self) -> None:
