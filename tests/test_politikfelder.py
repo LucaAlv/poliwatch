@@ -795,6 +795,20 @@ class FetchTests(unittest.TestCase):
             self.assertEqual(record["a"], expected_a)
             self.assertEqual(record["b"], expected_b)
 
+    # Value: protects=a refetched Vorgang whose cached record predates titel/abstract keeps those keys (stored as None) so the cache has one shape, and a Vorgang not yet cached is stored as the answer; fails_when=the merge keeps only non-None answer fields (drops the `or key not in merged` clause) or indexes the cache without .get, so the keys go missing or an uncached id raises KeyError; why_new=the first merge test only covers records cached with every key; seam=FakeClient answers /vorgang
+    def test_a_refetch_stores_a_none_for_a_key_the_old_record_lacks_and_an_uncached_id_whole(self) -> None:
+        cache = cache_of(
+            {"a": {"sachgebiet": [], "deskriptor_sachbegriffe": []}, "c": dip.vorgang_cache_record(raw("Recht"))},
+            {"21/7": ["a", "c", "e"]},
+        )
+        client = FakeClient({"a": {"sachgebiet": ["Gesundheit"]}, "e": raw("Recht")})
+        _, saved, _ = self.run_refresh(client, cache)
+        self.assertEqual([p["f.id"] for _, p in client.calls if "f.id" in p], [["a", "b", "e"]])  # b: from the fixture entries, uncached
+        for record in (cache["vorgaenge"], saved["vorgaenge"]):
+            self.assertEqual(record["a"], dip.vorgang_cache_record({"sachgebiet": ["Gesundheit"]}))
+            self.assertEqual(record["a"]["titel"], None)
+            self.assertEqual(record["e"], dip.vorgang_cache_record(raw("Recht")))
+
     def test_a_cached_vorgang_without_sachgebiet_is_refetched_and_a_second_run_fetches_nothing(self) -> None:
         records = {"a": raw("Gesundheit"), "b": raw("Recht")}
         cache = cache_of(
