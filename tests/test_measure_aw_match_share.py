@@ -123,7 +123,7 @@ def fake_get(api: dict, names: dict | None = None, fail: set | None = None):
 
 
 class Fixture:
-    def __init__(self, root: Path, *, table: bool = True, zip_: bool = True) -> None:
+    def __init__(self, root: Path, *, table: bool = True, zip_: bool = True, table_rows: list = TABLE) -> None:
         self.output = root / "site"
         data = self.output / "data"
         data.mkdir(parents=True)
@@ -142,7 +142,7 @@ class Fixture:
                          [("s1", "p18", "m1"), ("s2", "p18", "m2"), ("s3", "p19", "m1"), ("s4", "p21", "m1")])
         if table:
             conn.execute("CREATE TABLE mdb_zugehoerigkeiten (mdb_id TEXT, name TEXT, wahlperiode INTEGER, party_id TEXT, valid_from TEXT, valid_until TEXT)")
-            conn.executemany("INSERT INTO mdb_zugehoerigkeiten VALUES (?, '', ?, '', '', NULL)", TABLE)
+            conn.executemany("INSERT INTO mdb_zugehoerigkeiten VALUES (?, '', ?, '', '', NULL)", table_rows)
         conn.commit()
         conn.close()
         if zip_:
@@ -154,8 +154,9 @@ class Fixture:
     def run(self, *args: str, api: dict = API, names: dict = NAMES, fail: set | None = None) -> tuple[int, dict, list]:
         receipt = self.output.parent / "receipt.json"
         get = fake_get(api, names, fail)
+        self.stdout = io.StringIO()
         with mock.patch.object(aw.AbgeordnetenwatchResolver, "_get", get), \
-                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+                contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(io.StringIO()) as err:
             code = share.main([str(self.output), "--cache", str(self.cache), "--json", str(receipt), *args])
         if code == 2:
             raise AssertionError(err.getvalue())
@@ -378,7 +379,12 @@ class MeasureTests(unittest.TestCase):
     # fails_when=lookup_all indexes an entry it never checked; seam=none;
     # no_claim=none.
     def test_a_malformed_answers_entry_exits_2_naming_the_file(self) -> None:
-        for n, entry in enumerate(("hit", None, [], {}, {"state": "bogus"}, {"state": "not_cached"}, {"state": 5})):
+        hit = {"state": "hit", "candidates": 1, "cached_state": "not_cached", "cached_id": None}
+        bad = ("hit", None, [], {}, {"state": "bogus"}, {"state": "not_cached"}, {"state": 5},
+               # A hit without cached_id (measure reads it), a candidate count that is no int.
+               {key: value for key, value in hit.items() if key != "cached_id"},
+               {**hit, "candidates": "2"}, {**hit, "candidates": True}, {**hit, "candidates": 1.5}, {**hit, "cached_id": "7"})
+        for n, entry in enumerate(bad):
             with self.subTest(entry=entry):
                 fixture = Fixture(self.root / f"e{n}")
                 self.assertEqual(fixture.run()[0], 0)
@@ -391,6 +397,37 @@ class MeasureTests(unittest.TestCase):
                 self.assertIn("11000001", str(raised.exception))
                 self.assertNotIn("Traceback", str(raised.exception))
                 self.assertEqual(answers.read_text(encoding="utf-8"), body)
+
+    # Value (A3 item 1.5 review, item 13): protects=the offline message counts the
+    # ids an online run would ask (no answer, or a failed one), not every Redner-ID;
+    # fails_when=it prints len(keys) again; seam=main over a stub API, then --offline;
+    # no_claim=the number of name searches.
+    def test_the_offline_request_count_skips_the_ids_the_answers_file_holds(self) -> None:
+        fixture = Fixture(self.root)
+        self.assertEqual(fixture.run("--offline")[0], 0)
+        self.assertIn("sends 7 ext_id requests", fixture.stdout.getvalue())
+        fixture.run(fail={"11000006"})
+        fixture.run("--offline")
+        self.assertIn("sends 1 ext_id requests", fixture.stdout.getvalue())
+
+    # Value (A3 item 1.5 review, item 9): protects=a stored mdb_zugehoerigkeiten
+    # table without a WP 18 and a WP 19 row is not the Mandat source; fails_when=any
+    # row makes the table the source; seam=a table of WP 21 rows; no_claim=the T4 store.
+    def test_a_table_without_wp_18_and_19_rows_falls_back_to_the_zip(self) -> None:
+        fixture = Fixture(self.root, table_rows=[("11000001", 21)])
+        code, receipt, _ = fixture.run()
+        self.assertTrue(receipt["mdb_source"].startswith("zip:"))
+        self.assertEqual(receipt["figures"]["18"]["M1"]["ids"], 2)
+        for rows in ([("11000001", 18), ("11000001", 21)], [("11000001", 19), ("11000001", 21)]):
+            with self.subTest(rows=rows):
+                self.assertTrue(Fixture(self.root / str(len(rows)) / str(rows[0][1]), table_rows=rows).run()[1]["mdb_source"].startswith("zip:"))
+
+    def test_a_partial_table_without_a_zip_exits_2_naming_the_store(self) -> None:
+        fixture = Fixture(self.root, zip_=False, table_rows=[("11000001", 21)])
+        with self.assertRaises(AssertionError) as raised:
+            fixture.run()
+        self.assertIn("mdb_zugehoerigkeiten", str(raised.exception))
+        self.assertIn("--roster-wahlperiode", str(raised.exception))
 
     # Value (A3 item 1.5 review, item 11): protects=the answers file is written
     # through a unique temporary file, like the cache; fails_when=_save writes a

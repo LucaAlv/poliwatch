@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,6 +48,21 @@ class AbgeordnetenwatchCacheTests(unittest.TestCase):
             self.assertEqual(reloaded.resolve(ext_id="11001"), profile)
             self.assertEqual(reloaded.stats["api_calls"], 0)
             self.assertEqual(reloaded.stats["ext_id"], 1)
+
+    # Value (A3 item 1.5 review, item 14): protects=write_text_atomic gives the file
+    # the mode write_text would (0666 minus the umask), so a private umask keeps the
+    # cache private; fails_when=a fixed mode is set again; seam=umask round trip;
+    # no_claim=Windows modes.
+    def test_write_text_atomic_follows_the_umask(self) -> None:
+        for umask, mode in ((0o077, 0o600), (0o022, 0o644)):
+            with self.subTest(umask=oct(umask)), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "out.json"
+                old = os.umask(umask)
+                try:
+                    aw.write_text_atomic(path, "x")
+                finally:
+                    os.umask(old)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
 
 
 def _politician(politician_id: int, label: str) -> dict:
