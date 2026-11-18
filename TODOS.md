@@ -2432,6 +2432,16 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 **Priority:** P3 (1), P4 (2, 3)
 **Depends on:** None
 
+### publication-guards review: deferred findings
+
+**What:** Non-correctness findings of the review of `todo/publication-guards` (2026-11-18): (1) `load_existing_detail_entries` skips the vote-shape check for `recorded_exclusions(output_dir)`, but an online run with `--include-document-number N` takes N back while the record still lists it, so a stale report of N loads unchecked and is refused only later by `persist_report`'s `require_vote_shape` (after dossiers and roster are fetched; no figure is wrong). Pass the run's effective exclusion set (record plus `--exclude`, minus `--include`) as the skip set, or keep the check for numbers in `included`. (2) `measure_aw_match_share.py` (~147) calls `load_existing_detail_entries` with a temporary `view` directory that has no `coverage-exclusions.json`, so the skip never applies there and a stale report of an excluded sitting still stops it with a `UsageError` (predates the branch; the cache holds 0 of 246 stale votes). Link the record into the view or run the shape check after `without_recorded_exclusions`. (3) Stale comments: the `# Two paths through this function:` comment of `main` now sits above `open_checked_store` (move the helper above it); the `require_build_store` docstring (`persist_dip_pulse_store.py`, ~169) should name `open_checked_store`; the `sqlite_open.open_readonly` docstring still says a read-only connection "needs none of the build store's refusals", which the build store read paths now apply through `open_checked_store`. (4) Tests: the mp-pages and post-rebuild reads through `open_checked_store` have no test of their own (a patched `open_checked_store` asserted called on the online post-rebuild path would pin them).
+
+**Why:** Review lenses correctness, spec, standards and checklist; none changes a figure or output.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
 ## Completed
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).

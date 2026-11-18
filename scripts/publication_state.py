@@ -352,9 +352,9 @@ def validate_relative_output_path(value: str) -> str:
 
 class _LocalPath:
     r"""/Users/ or /home/ anywhere (so /Volumes/Data/Users/ and /mnt/c/Users/ count) or a C:\Users\ path,
-    except inside a URL token: www.sr.de/sr/home/... in a quoted speech is a URL, not a path."""
+    except inside a URL token (which ends at whitespace, a quote or a bracket): www.sr.de/sr/home/... in a quoted speech is a URL, not a path."""
 
-    _pattern = re.compile(r"(?:https?://|www\.)\S*|(?P<path>/Users/|/home/|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)")
+    _pattern = re.compile(r"(?<![\w./-])(?:https?://|www\.)[^\s\"'<>]*|(?P<path>/Users/|/home/|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)")
 
     def search(self, line: str) -> bool:
         return any(match.group("path") for match in self._pattern.finditer(line))
