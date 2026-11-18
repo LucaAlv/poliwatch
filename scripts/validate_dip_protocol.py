@@ -1020,29 +1020,28 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
                 blocks[xref.get("rid")].append(block)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     arranged: list[ET.Element] = []
-    adopted: list[ET.Element] = []
-    open_block = None
+    before: ET.Element | None = None  # the first source element other than <sitzungsbeginn>
+    open_label = None
     for child in list(verlauf):
         verlauf.remove(child)
         if child.tag != "rede":
             arranged.append(child)
-            open_block = None
+            if before is None and child.tag != "sitzungsbeginn":
+                before = child
+            open_label = None
             continue
         rid = child.get("id")
-        before = next((c for c in arranged if c.tag != "sitzungsbeginn" and not any(c is a for a in adopted)), None)
         if before is not None:
             what = "a TOP" if before.tag == "tagesordnungspunkt" else f"a <{before.tag}> element"
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, after {what}")
-        listed = blocks.get(rid, [])
-        labels = {toc_block_label(block) for block in listed}
+        labels = {toc_block_label(block) for block in blocks.get(rid, [])} - {""}
         if len(labels) > 1:
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP and two Inhaltsverzeichnis titles list it: "
                              + ", ".join(sorted(labels)))
-        block = listed[0] if listed else None
-        title = toc_block_label(block) if block is not None else ""
+        title = next(iter(labels), "")
         if not title:
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, with no Inhaltsverzeichnis entry")
-        if block is not open_block:
+        if title != open_label:
             top = ET.Element("tagesordnungspunkt", {"top-id": title, "top_source": "inhaltsverzeichnis"})
             if arranged and arranged[-1].tag == "sitzungsbeginn" and title.startswith(("Tagesordnungspunkt", "Zusatzpunkt")):
                 for paragraph in arranged[-1].findall("p"):
@@ -1050,8 +1049,7 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
                         arranged[-1].remove(paragraph)
                         top.append(paragraph)
             arranged.append(top)
-            adopted.append(top)
-            open_block = block
+            open_label = title
         arranged[-1].append(child)
     verlauf.extend(arranged)
 
@@ -1706,6 +1704,9 @@ def raw_rede_inventory(root: ET.Element) -> dict[str, str]:
             location = "in " + "/".join(reversed(path))
         if not key:
             raise ReconciliationError(f"{sitting}: rede reconciliation: a <rede> without id ({location})")
+        if ":" in (rede.get("id") or ""):
+            raise ReconciliationError(f"{sitting}: rede reconciliation: <rede> id {key} ({location}) contains a colon, "
+                                      "which marks a part split_nested_reden made")
         if key in inventory:
             raise ReconciliationError(f"{sitting}: rede reconciliation: <rede> {key} occurs twice ({inventory[key]}; {location})")
         inventory[key] = location
@@ -1746,7 +1747,11 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     toc = parse_toc(root)
     rid_pages: dict[str, dict[str, Any]] = {}
     for block in toc:
-        rid_pages.update(block["rid_pages"])
+        for rid, page_ref in block["rid_pages"].items():
+            listed = rid_pages.setdefault(rid, page_ref)
+            if listed != page_ref:
+                raise ValueError(f"{sitting}: Rede {rid} is listed in the Inhaltsverzeichnis at two pages: "
+                                 + ", ".join(f"{p['page']} {p['quadrant'] or ''}".strip() for p in (listed, page_ref)))
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}

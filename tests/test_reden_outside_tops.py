@@ -185,6 +185,17 @@ class RepeatedInhaltsverzeichnisTitleTests(unittest.TestCase):
         self.assertEqual(item["speeches"][0]["source_page"], {"page": 3952, "quadrant": "B"})
         self.assertEqual(item["page_range"]["start"], {"page": 3952, "quadrant": "B"})
 
+    # Value: protects=a Rede two blocks list at different pages refuses instead of taking the later block's page;
+    #   fails_when=rid_pages is merged with dict.update again; why_new=blocks A, B, A let the last A win silently; seam=none
+    def test_a_rede_listed_at_two_pages_refuses_the_sitting(self):
+        root = dip.ET.fromstring(source("18-44"))
+        listed = copy.deepcopy(next(x for x in root.iter("xref") if x.get("rid") == "ID1804401300"))
+        listed.set("pnr", "99999")
+        listed.set("div", "D")
+        toc_block(root, "Tagesordnungspunkt V:").append(listed)
+        with self.assertRaisesRegex(ValueError, r"^18/44: Rede ID1804401300 .*Inhaltsverzeichnis at two pages: 99999 D, 3952 B$"):
+            parse_tree(root)
+
 
 class AdoptionGuardTests(unittest.TestCase):
     def test_a_rede_two_inhaltsverzeichnis_titles_list_refuses_the_sitting(self):
@@ -193,6 +204,39 @@ class AdoptionGuardTests(unittest.TestCase):
         toc_block(root, "Einzelplan 06").append(copy.deepcopy(listed))
         with self.assertRaisesRegex(ValueError, "18/49: Rede ID1804900200 .*two Inhaltsverzeichnis titles"):
             parse_tree(root)
+
+    # Value: protects=an untitled block beside a titled one neither counts as a second title nor hides the title;
+    #   fails_when=empty labels are counted again, or the first listed block is taken whatever its label; why_new=the
+    #   refusal read "two Inhaltsverzeichnis titles list it: , X"; seam=none
+    def test_an_untitled_block_beside_a_titled_one_is_not_a_second_title(self):
+        root = dip.ET.fromstring(source("18-49"))
+        toc = root.find("./vorspann/inhaltsverzeichnis")
+        untitled = dip.ET.Element("ivz-block")
+        dip.ET.SubElement(untitled, "ivz-block-titel")
+        untitled.append(copy.deepcopy(next(x for x in root.iter("xref") if x.get("rid") == "ID1804900200")))
+        toc.insert(list(toc).index(toc.find("ivz-block")), untitled)
+        items = parse_tree(root)["agenda_items"]
+        self.assertIn("ID1804900200", speech_ids(items[1]))
+        self.assertTrue(items[1]["top_id"].startswith("Allgemeine Finanzdebatte"))
+
+    # Value: protects=one item's run stays one adopted TOP when its Reden are listed in several blocks of that label;
+    #   fails_when=open_block is compared by object again; why_new=each block gave its own TOP with one top-id; seam=none
+    def test_a_run_listed_in_two_blocks_of_one_label_is_one_top(self):
+        root = dip.ET.fromstring(source("18-49"))
+        block = toc_block(root, "Einzelplan 06")
+        second = dip.ET.Element("ivz-block")
+        dip.ET.SubElement(second, "ivz-block-titel").text = "Einzelplan 06:"
+        entries = [e for e in block if e.find(".//xref[@rid]") is not None]
+        for entry in entries[len(entries) // 2:]:
+            block.remove(entry)
+            second.append(entry)
+        toc = root.find("./vorspann/inhaltsverzeichnis")
+        toc.insert(list(toc).index(block) + 1, second)
+        items = parse_tree(root)["agenda_items"]
+        self.assertEqual([(i["top_id"], len(i["speeches"])) for i in items if i["top_source"]],
+                         [("Tagesordnungspunkt 1", 1),
+                          ("Allgemeine Finanzdebatte (einschließlich Einzelpläne 08, 20, 32 und 60)", 12),
+                          ("Einzelplan 06", 13)])
 
     def test_a_rede_a_repeated_title_lists_twice_is_adopted_once(self):
         root = dip.ET.fromstring(source("18-49"))

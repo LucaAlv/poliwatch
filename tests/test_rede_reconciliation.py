@@ -111,6 +111,16 @@ class SourceShapeTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(dip.ReconciliationError, message.strip()):
                 dip.parse_protocol_xml(xml)
 
+    # Value: protects=a source id never looks like a split part <id>:<marker>, which shares the status dict;
+    #   fails_when=raw_rede_inventory accepts a colon again; why_new=a <rede id="R1:2"> where the parser does not read
+    #   was covered by the status of R1's second part; seam=none
+    def test_a_source_rede_id_with_a_colon_refuses(self):
+        for xml in [sitting(verlauf=f"<sitzungsende>{rede('R1:2')}</sitzungsende>"),
+                    sitting(verlauf=f'<tagesordnungspunkt top-id="T2">{rede("R:2")}</tagesordnungspunkt>'),
+                    sitting(anlagen=annex("Zu Protokoll gegebene Reden", rede("A:1")))]:
+            with self.subTest(xml=xml), self.assertRaisesRegex(dip.ReconciliationError, r"^18/7: .* id \S+:\S+ .*colon"):
+                dip.parse_protocol_xml(xml)
+
     # Value: protects=annex Reden without id are keyed one way by the reader and the inventory;
     #   fails_when=written_contributions and raw_rede_inventory count blocks or Reden differently; why_new=two keys built in two places; seam=none
     def test_annex_reden_without_id_are_keyed_alike_by_reader_and_inventory(self):
