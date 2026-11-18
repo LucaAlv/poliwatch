@@ -160,7 +160,7 @@ Important generated files:
 | `index.html` | Homepage with direct entries to the latest generated sitting and the selected sitting week |
 | `puls.html` | Wochenübersicht and week radar (docs/designs/puls-wochenradar.md): the newest dated sitting week (or `--week`) with one chip per sitting, "Themen der Woche" ranked by speech count and named by DIP Vorgang titles with a receipt on every row, and the Wochenvergleich band incl. the week's roll-call votes; when `data/sitzungskalender.json` exists, the header also names the next planned Sitzungswoche ("Nächste Sitzungswoche", chosen for the reader's date by a small inline script) |
 | `feeds/week-radar.json` | The week radar as data, written on every build: the shown week and the 11 weeks with a Sitzung before it, newest first, with the ranked rows, the Redeanteil as `fraktion`/`sprechrolle` counts and links relative to the site root. `schema_version` 1: fields are only added; a rename or removal raises it. Scanned by the publication check. See README §7 |
-| `feeds/week-radar.xml` | RSS 2.0 feed of the same weeks, one item per finished week (GUID like `2026-W43`). Written only when `BUNDESTAG_PULSE_SITE_URL` is an absolute `https://` URL ending in `/`; a build without it, or with an invalid value, deletes an older feed. Scanned by the publication check |
+| `feeds/week-radar.xml` | RSS 2.0 feed of the same weeks, one item per finished week (GUID like `2026-W43`). Written only when `BUNDESTAG_PULSE_SITE_URL` is an absolute `https://` URL ending in `/` with no user or password, whitespace or control character; a build without it, or with an invalid value, deletes an older feed. Scanned by the publication check |
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
@@ -643,7 +643,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `BUNDESTAG_PULSE_OPERATOR_FILE` | build | Before the site goes public | Path of the operator file for `impressum.html` and `datenschutz.html`; `--operator-file` wins when both are set; an empty value stops the build |
 | `BUNDESTAG_PULSE_ENRICHMENTS` | build | No | Comma-separated update enrichments such as `votes,aw-profiles` |
 | `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.5.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
-| `BUNDESTAG_PULSE_SITE_URL` | build | No | Absolute `https://` URL of the deployed site, ending in `/` (for example `https://example.org/puls/`). Turns on `feeds/week-radar.xml`, whose links must be absolute; unset or invalid, the build writes no RSS feed and deletes an older one (an invalid value also prints a warning) |
+| `BUNDESTAG_PULSE_SITE_URL` | build | No | Absolute `https://` URL of the deployed site, ending in `/` (for example `https://example.org/puls/`), with no user or password, whitespace or control character. Turns on `feeds/week-radar.xml`, whose links must be absolute; unset or invalid, the build writes no RSS feed and deletes an older one (an invalid value also prints a warning, which does not repeat a value containing `@`) |
 
 ## Offline vs Online Behavior
 
