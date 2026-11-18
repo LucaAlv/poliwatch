@@ -1727,17 +1727,10 @@ class ExportDistributionDataTests(unittest.TestCase):
             lock_path.unlink(missing_ok=True)
 
     def test_sqlite_errors_during_the_copy_become_runtime_errors(self) -> None:
-        # sqlite3.Connection is immutable, so fail the first statement the
-        # copy runs on the fresh distribution connection instead.
-        real_connect = sqlite3.connect
-
-        def failing_connect(*args, **kwargs):
-            conn = real_connect(*args, **kwargs)
-            if kwargs.get("isolation_level", "unset") is None:
-                raise sqlite3.OperationalError("database is locked")
-            return conn
-
-        with mock.patch.object(b.sqlite3, "connect", side_effect=failing_connect):
+        # sqlite3.Connection is immutable, so fail opening the fresh
+        # distribution file, the copy's first SQLite step, instead.
+        locked = sqlite3.OperationalError("database is locked")
+        with mock.patch.object(b.sqlite_open, "create_database", side_effect=locked):
             with self.assertRaises(RuntimeError) as ctx:
                 self.export()
         self.assertIn("distribution copy failed", str(ctx.exception))

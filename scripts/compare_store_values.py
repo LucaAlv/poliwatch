@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, TextIO
 
 import facts
+import sqlite_open
 
 UNAVAILABLE = "unavailable"
 STORE_RELATIVE = Path("data") / "bundestag-pulse.sqlite"
@@ -97,7 +98,7 @@ def open_store(directory: Path) -> Store:
     if not path.is_file():
         raise CompareError(f"{directory}: no {STORE_RELATIVE} (pass the site output directory)")
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn = sqlite_open.open_readonly(path)
         conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
     except sqlite3.Error as error:
         raise CompareError(f"{path}: not a readable SQLite store ({error})") from error
@@ -418,7 +419,7 @@ def _recipe_rows(store: Store, recipe_id: str) -> int | None:
         unpacked = Path(scratch) / "copy.sqlite"
         with gzip.open(copy, "rb") as source, unpacked.open("wb") as target:
             shutil.copyfileobj(source, target)
-        conn = sqlite3.connect(f"file:{unpacked}?mode=ro", uri=True)
+        conn = sqlite_open.open_readonly(unpacked)
         try:
             return len(conn.execute(sql).fetchall())
         except sqlite3.Error:

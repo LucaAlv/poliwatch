@@ -1018,6 +1018,18 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
 
+### Resolve fact citations by id
+
+**What:** `_fact_agenda_item_citation` and `_fact_proceeding_citation` in `scripts/build_dip_pulse_site.py` find a receipt's agenda item by `(document_number, page_start = ?, page_start_quadrant IS ?)`. An agenda item without a printed page has a NULL `page_start`, which `= ?` never matches, so its citation does not resolve and `_renderable_fact` drops the fact. `IS ?` would be wrong too: several page-less items of one protocol would tie. Look the item up by the receipt's `source_entity_id` (`ai.id = ?`) instead. In the 2026-11-17 reference store, all 317 agenda-item receipts resolve by id. `_fact_speech_citation` has the same flaw in its page anchor for synthetic rede ids (`s.page = ?`); no receipt reaches it today, but resolve it by id too.
+
+**Why:** Found by `tests/test_code_rules.py` (class 5, absent vs zero) on 2026-11-18. The reference store has 1,810 agenda items with a NULL `page_start`, 106 of them with speeches. Today only two withheld `laengste-debatte` facts cite one (2023-W16 on 20/97 as `below_floor`, 2025-W28 on 21/17 as `no_topic`), so no page changes. A page-less item that wins a publishable fact would vanish without a warning.
+
+**Context:** When it's fixed, remove the three page entries from `nullable_comparisons` in `tests/code_rules_baseline.json`. The docstrings' "0 duplicates, measured 2026-09-22" covers only the page key.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### Fakt der Woche, rasterize and post one card
 
 **What:** Open a published Fakt der Woche card, rasterise it with `qlmanage` (or equivalent), and post it. The one A1 "done when" criterion that isn't code - split out on its own so it doesn't keep a fully-shipped engineering item sitting open.
@@ -1957,6 +1969,28 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 **Depends on:** None
 
 ## Architektur
+
+### Audit the or-0 baseline
+
+**What:** `tests/code_rules_baseline.json` froze the 86 `x or 0` expressions (78 entries) that scripts/ had when `tests/test_code_rules.py` arrived on 2026-11-18. For each one, decide what a missing value means. If it was not measured, keep None and let the page say so. If the source leaves zero counts out, use `mapping.get(key, 0)`. If None really means zero, write `0 if value is None else value`. Remove each entry once it's handled. Start with the ones that write into the store, such as `persist_dip_pulse_store` storing `char_count`, `word_count` and `paragraph_count`, and the counts the pages print.
+
+**Why:** Class 5 of the review checklist. `x or 0` publishes an unknown figure as a real 0. The rule stops new ones; the old ones are unchecked.
+
+**Context:** A change that turns a stored 0 into NULL moves figures: replay it with the README recipe "Validate a data correction" and report old and new values.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Move title_matches below the parser
+
+**What:** `vote_links` imports `validate_dip_protocol` only for `title_matches` (and its `norm_title`), while `validate_dip_protocol` calls `vote_links` to place votes. That is the one import cycle in scripts/, listed in `KNOWN_CYCLES` in `tests/test_code_rules.py`. Move `title_matches` and what it needs into `vote_links` or a domain module, then remove the entry.
+
+**Why:** A cycle makes import order matter and keeps the parser and the vote linker from being read or tested apart.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Correct a cached report's XML Drucksache references at the source, not at every reader
 

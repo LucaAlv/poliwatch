@@ -63,6 +63,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from dip_cache import PERSON_FILENAME  # noqa: E402
+from sqlite_open import open_readonly as _open_readonly  # noqa: E402
 from stable_ids import key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
 STORE = Path("data") / "bundestag-pulse.sqlite"
@@ -72,10 +73,6 @@ REFERENCE_2026_10_05 = {"speeches": 26271, "contributions": 16799, "persons": 33
 
 _LINK = re.compile(r'\b(?:href|src)\s*=\s*"([^"]*)"')
 _ID = re.compile(r'\bid\s*=\s*"([^"]*)"')
-
-
-def _open_readonly(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True)
 
 
 def binding_ids(database_path: Path) -> set[str]:
