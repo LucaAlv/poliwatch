@@ -332,6 +332,33 @@ class RefusalPathTests(unittest.TestCase):
         self.assertIn("rede reconciliation failed for 18/7", str(raised.exception))
         self.assertNotIn("--fetch-xml", str(raised.exception))
 
+    UNKNOWN_FRAKTION = sitting().replace("<fraktion>SPD</fraktion>", "<fraktion>Piraten</fraktion>")
+
+    # Value: protects=an unknown <fraktion> names its fix (derive._SPELLINGS, docs/source-errors.md), online and on replay;
+    #   fails_when=it reads as corrupt XML ("--fetch-xml") or as a source to exclude; why_new=TODOS "Fraktion check and
+    #   vote binding" item 2; seam=fetch_text stubbed
+    def test_an_unknown_fraktion_names_the_spelling_list(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/7", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18007.xml"}}
+        with patch.object(dip, "fetch_text", return_value=self.UNKNOWN_FRAKTION), self.assertRaises(dip.DipError) as online:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(online.exception.source_rejected)
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "data" / "xml").mkdir(parents=True)
+            (output_dir / "data" / "xml" / "plenarprotokoll-18-7.xml").write_text(self.UNKNOWN_FRAKTION, encoding="utf-8")
+            report = {"protocol": {"id": "p1", "dokumentnummer": "18/7"}, "agenda_items": []}
+            (output_dir / "data" / "plenarprotokoll-18-7.json").write_text(json.dumps(report), encoding="utf-8")
+            entries = build.load_existing_detail_entries(output_dir, [{"dokumentnummer": "18/7"}])
+            with self.assertRaises(build.CachedReportError) as replay:
+                build.reparse_cached_xml(output_dir, entries)
+        for message in (str(online.exception), str(replay.exception)):
+            with self.subTest(message=message):
+                self.assertIn("unknown Fraktion 'Piraten'", message)
+                self.assertIn("derive._SPELLINGS", message)
+                self.assertIn("docs/source-errors.md", message)
+                self.assertNotIn("--fetch-xml", message)
+                self.assertNotIn("--exclude-document-number", message)
+
 
 if __name__ == "__main__":
     unittest.main()

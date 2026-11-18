@@ -4533,6 +4533,9 @@ def build_report(
         raise DipError(f"{document_number}: protocol source rejected: {mismatch}", source_rejected=True)
     try:
         parsed_xml = parse_protocol_xml(xml_text)
+    except derive.UnknownFraktionError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}; {derive.UNKNOWN_FRAKTION_FIX}",
+                       source_rejected=True) from exc
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])

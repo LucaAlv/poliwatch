@@ -63,7 +63,8 @@ _SPELLINGS = {
     "bündnis 90/die grüne n": "BÜNDNIS 90/DIE GRÜNEN",
     "bündnis 90/ die grünen": "BÜNDNIS 90/DIE GRÜNEN",
     # Printed in the cached XML where no unit is read yet (Inhaltsverzeichnis,
-    # Rednerliste, an 18/144 annex); printed_fraktion would refuse them in a Rede.
+    # Rednerliste, an 18/144 annex); listed so printed_fraktion accepts them if a
+    # Rede ever prints them.
     "bündnis90/die grünen": "BÜNDNIS 90/DIE GRÜNEN",
     "cdu/ csu": "CDU/CSU",
     "linke": "Die Linke",
@@ -138,6 +139,11 @@ def zusammenschluss(value: Any) -> str | None:
 
 class UnknownFraktionError(ValueError):
     """A ``<fraktion>`` value that names no Zusammenschluss we know."""
+
+
+#: What an operator does about an UnknownFraktionError, for every path that reports one.
+UNKNOWN_FRAKTION_FIX = ("add the spelling to derive._SPELLINGS if it names a known Zusammenschluss, "
+                        "and record the source error in docs/source-errors.md")
 
 
 def printed_fraktion(value: Any, role: Any = None) -> str | None:
