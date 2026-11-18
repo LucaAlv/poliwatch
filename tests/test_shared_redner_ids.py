@@ -330,7 +330,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         with self.assertRaisesRegex(registry.RegistryError, "11009999"):
             self.build(speakers=[("11009999", "Dr. Anna von Berg", "SPD", None), ("11009999", "Dr. Max von Tal", "SPD", None)])
 
-    # Value: protects=a role word the XML puts into the name fields ("Dr. Carsten Sieling, Bürgermeister") makes no two people one; fails_when=role words count as shared words, so two Bürgermeister or two Senatorinnen under one id pass the guard; why_new=TODOS "Shared Redner-IDs" item 12; seam=none
+    # Value: protects=a role word the XML puts into the name fields ("Dr. Carsten Sieling, Bürgermeister") makes no two people one; fails_when=role words count as shared words, so two Bürgermeister or two Senatorinnen under one id pass the guard, or a feminine ending ("ministerin", "präsidentin") or the strip of brackets and commas around an office is dropped; why_new=TODOS "Shared Redner-IDs" item 12; seam=none
     def test_a_role_word_does_not_make_two_people_one(self):
         for left, right in (("Dr. Carsten Sieling, Bürgermeister", "Dr. Andreas Bovenschulte, Bürgermeister"),
                             ("Elke Breitenbach, Senatorin", "Dr. Lena Kreck, Senatorin"),
@@ -338,7 +338,13 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
                             ("Anette Kramme, Parl. Staatssekretärin", "Rita Schwarzelühr-Sutter, Parl. Staatssekretärin"),
                             ("Winfried Kretschmann, Ministerpräsident", "Bodo Ramelow, Ministerpräsident"),
                             ("Reinhold Gall, Innenminister", "Thomas Strobl, Innenminister"),
-                            ("Michael Müller, Regierender Bürgermeister", "Klaus Wowereit, Regierender Bürgermeister")):
+                            ("Michael Müller, Regierender Bürgermeister", "Klaus Wowereit, Regierender Bürgermeister"),
+                            # A feminine office is its own ending: "ministerin" does not end in "minister".
+                            ("Dr. Barbara Hendricks, Bundesministerin", "Svenja Schulze, Bundesministerin"),
+                            ("Malu Dreyer, Ministerpräsidentin", "Manuela Schwesig, Ministerpräsidentin"),
+                            # An office in brackets or before a further comma is still an office.
+                            ("Dr. Carsten Sieling (Bürgermeister)", "Dr. Andreas Bovenschulte (Bürgermeister)"),
+                            ("Dr. Carsten Sieling, Bürgermeister,", "Dr. Andreas Bovenschulte, Bürgermeister,")):
             with self.subTest(left), self.assertRaisesRegex(registry.RegistryError, "11009999"):
                 self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
         # One person printed with and without the role, or with a surname that is no role ("Meister"), passes.
