@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.13.0] - 2026-11-18
+
+The abgeordnetenwatch client fails cleanly where it used to stop a build, and a speaker printed under a merged Redner-ID is now looked up by the right id. Nothing changes offline: the reference store holds no abgeordnetenwatch data, and profiles are only looked up on an online update. On the next one, Svenja Schulze's 10 Reden in 21/18, 21/24, 21/25, 21/28, 21/44 and 21/45, printed under the merged record "11005217 999990074", are looked up under her id 11005217. Before, the whole merged value was sent, which matches no profile.
+
+### Fixed
+
+- **A dropped connection, a timeout or a reply cut short no longer stops a build with a traceback.** Each counts as a failure, and after 8 in a row the client stops asking for the rest of the run. Nothing is cached for a failed lookup, so the next build asks again.
+- **A speaker printed under a merged Redner-ID is looked up by its first id**, as the rest of the build already reads it.
+- **A resolver that is switched off never asks the API.** It answers from its cache only.
+- **The cache and the answers file are written through a temporary file of their own.** Two runs no longer share one temporary file, and a run stopped mid-write leaves the previous file whole.
+
+### Changed
+
+- **An HTTP 429 waits 60 seconds before each retry, up to 4 retries.** The old exponential back-off was capped at 60 seconds anyway.
+- **The match-share measurement asks by the first id of a merged Redner-ID, as the build does.** Its M5 check no longer looks the raw value up, so the `merged_hit_by_first_not_by_raw` count is gone. It refuses a malformed answers file with exit 2, naming the file and the id, and it keeps the name searches already answered when a run is cut short.
+
 ## [0.46.12.0] - 2026-11-18
 
 Four rules that decide whose abgeordnetenwatch profile, roster record or page link a speaker gets are now strict where they were loose. On an offline replay of the 801-sitting reference store against main, nothing moves: every table's row count, every vote and Rede, the person pages and `abgeordnete.json` are the same, and all 91,658 speaker units in the 802 cached reports keep their profile. Each rule closes a gap no stored sitting reaches today.
