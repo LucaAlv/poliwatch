@@ -350,13 +350,22 @@ def validate_relative_output_path(value: str) -> str:
     return path.as_posix()
 
 
+class _LocalPath:
+    r"""/Users/ or /home/ anywhere (so /Volumes/Data/Users/ and /mnt/c/Users/ count) or a C:\Users\ path,
+    except inside a URL token: www.sr.de/sr/home/... in a quoted speech is a URL, not a path."""
+
+    _pattern = re.compile(r"(?:https?://|www\.)\S*|(?P<path>/Users/|/home/|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)")
+
+    def search(self, line: str) -> bool:
+        return any(match.group("path") for match in self._pattern.finditer(line))
+
+
 DENYLIST = {
     "developer-class": re.compile(r"(?:\.dev-only\b|class=[\"'][^\"']*\bdev-only\b)"),
     "developer-feature": re.compile(r"data-(?:feature-)?dev-view"),
     "retired-feature-state": re.compile(r"data-feature(?:-|=)"),
     "file-url": re.compile(r"file://", re.IGNORECASE),
-    # Not after a word, dot or hyphen: www.sr.de/sr/home/... in a quoted speech is a URL, not a path.
-    "local-path": re.compile(r"(?:(?<![\w.-])(?:/Users/|/home/)|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)"),
+    "local-path": _LocalPath(),
     "raw-payload": re.compile(r'"(?:raw_api_response|build_command)"\s*:'),
 }
 

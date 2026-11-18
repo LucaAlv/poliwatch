@@ -2596,6 +2596,22 @@ class LegacyVoteShapeTests(unittest.TestCase):
                             Path(tmp), [{"dokumentnummer": "21/82"}], strict=strict
                         )
 
+    # Value: protects=a stale-shape report of a sitting on the exclusion record loads (no caller reads its shape), while the same report unlisted still raises; fails_when=require_vote_shape runs on a recorded-excluded sitting again and one stale file stops every build; why_new=TODOS.md "A stale cached report of an excluded sitting stops every build"; seam=load_existing_detail_entries
+    def test_a_stale_report_of_a_recorded_excluded_sitting_loads(self) -> None:
+        report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [{"index": 1, "vote": {"id": "v1"}}]}
+        record = {"exclusions": [{"document_number": "21/82", "reason": "source_defect", "reason_detail": "test fixture"}]}
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp) / "data"
+                data.mkdir()
+                (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
+                catalog = [{"dokumentnummer": "21/82"}]
+                with self.assertRaises(build_dip_pulse_site.CachedReportError):
+                    build_dip_pulse_site.load_existing_detail_entries(Path(tmp), catalog, strict=strict)
+                (data / "coverage-exclusions.json").write_text(json.dumps(record), encoding="utf-8")
+                entries = build_dip_pulse_site.load_existing_detail_entries(Path(tmp), catalog, strict=strict)
+                self.assertEqual([entry["report"]["protocol"]["dokumentnummer"] for entry in entries], ["21/82"])
+
     # Value: protects=a stale report outside the build's catalog, or one whose "vote"/"votes" value is null or empty, loads without stopping the build; fails_when=the check runs before the catalog filter or tests key presence, so one unused file stops every build; why_new=B4 ship review (2026-10-22); seam=none
     def test_an_out_of_catalog_stale_report_and_an_empty_vote_value_do_not_stop_a_load(self) -> None:
         reports = {
@@ -3975,6 +3991,26 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             os.environ.pop("SOURCE_DATE_EPOCH", None)
             code = build_dip_pulse_site.main()
         return code, stderr.getvalue()
+
+    # Value: protects=an exported distribution SQLite (user_version or datenstand table) given as the store is refused by the offline render and by the read-only helper every read path uses, with the existing "distribution copy" message and no page written; fails_when=a read-only path checks the schema only and renders a downloaded release as if it were the build store; why_new=A.2 follow-up (1): only the rebuild paths called require_build_store; seam=open_checked_store
+    def test_offline_render_refuses_a_distribution_copy(self) -> None:
+        for marker in ("PRAGMA user_version = 1", "CREATE TABLE datenstand (tag TEXT)"):
+            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as tmp:
+                output_dir = self._seed(tmp)
+                store = _site_store_fixture.store_path(output_dir)
+                conn = sqlite3.connect(store)
+                conn.execute(marker)
+                conn.commit()
+                conn.close()
+                code, stderr = self._build(output_dir)
+                self.assertEqual(code, 1, stderr)
+                self.assertIn("distribution copy", stderr)
+                # Up front: before any facts are computed or any politikfelder line is logged.
+                self.assertNotIn("facts: wrote", stderr)
+                self.assertNotIn("politikfelder:", stderr)
+                self.assertFalse((output_dir / "puls.html").exists())
+                with self.assertRaisesRegex(RuntimeError, "distribution copy"):
+                    build_dip_pulse_site.open_checked_store(store).close()
 
     def test_offline_rebuild_with_pinned_flags_is_byte_identical(self) -> None:
         # Two offline rebuilds with the same --week/--today produce the same

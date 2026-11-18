@@ -169,6 +169,7 @@ class PublicationStateContractTests(unittest.TestCase):
             for text in (
                 "<p>( www.sr.de/sr/home/nachrichten/politik_wirtschaft/rag_grubenwasser102.html )?</p>",
                 '<a href="https://example.test/Users/list">x</a>',
+                "<p>https://example.test/a/Users/b/home/c</p>",
             ):
                 with self.subTest(text=text):
                     (root / "index.html").write_text(text, encoding="utf-8")
@@ -178,6 +179,10 @@ class PublicationStateContractTests(unittest.TestCase):
                 '<a href="file:///Users/example/site">x</a>',
                 '<code>"/Users/example"</code>',
                 r"<p>C:\\Users\\example</p>",
+                "<p>/Volumes/Data/Users/example/site</p>",
+                "<p>/mnt/c/Users/example/site</p>",
+                "<p>/System/Volumes/Data/home/example</p>",
+                "<p>see https://example.test/a and then /Users/example</p>",
             ):
                 with self.subTest(text=text):
                     (root / "index.html").write_text(text, encoding="utf-8")
