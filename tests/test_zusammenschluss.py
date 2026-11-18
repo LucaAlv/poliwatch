@@ -178,7 +178,10 @@ class PrintedFraktionTests(unittest.TestCase):
 
     # Value: protects=every known spelling, a merged record and a missing value still parse; fails_when=the check refuses a spelling the stored sittings print; why_new=the check is new; seam=none
     def test_known_values_pass_as_printed(self) -> None:
-        for printed in ("SPD", "DIE LINKE", "BÜNDNIS 90/DIE GRÜNE N", "fraktionslos", "BSW (Gruppe)", "SPDSPD", "SPDCDU/CSU", "", "  CDU/CSU "):
+        # "CDU/ CSU" and "BÜNDNIS90/DIE GRÜNEN" are printed in the cached XML (Inhaltsverzeichnis, Rednerliste,
+        # an 18/144 annex) where no unit is read yet; one reaching a Rede must not stop the build.
+        for printed in ("SPD", "DIE LINKE", "BÜNDNIS 90/DIE GRÜNE N", "fraktionslos", "BSW (Gruppe)", "SPDSPD", "SPDCDU/CSU", "", "  CDU/CSU ",
+                        "CDU/ CSU", "BÜNDNIS90/DIE GRÜNEN"):
             with self.subTest(printed):
                 self.assertEqual(derive.printed_fraktion(printed, None), printed.strip() or None)
         self.assertEqual(derive.printed_fraktion("BÜNDNIS 90/DIE GRÜNEN", "Ministerin (Hessen)"), "BÜNDNIS 90/DIE GRÜNEN")

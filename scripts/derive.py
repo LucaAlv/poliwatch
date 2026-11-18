@@ -62,6 +62,10 @@ _SPELLINGS = {
     # only observed ones, no fuzzy whitespace folding that could merge names.
     "bündnis 90/die grüne n": "BÜNDNIS 90/DIE GRÜNEN",
     "bündnis 90/ die grünen": "BÜNDNIS 90/DIE GRÜNEN",
+    # Printed in the cached XML where no unit is read yet (Inhaltsverzeichnis,
+    # Rednerliste, an 18/144 annex); printed_fraktion would refuse them in a Rede.
+    "bündnis90/die grünen": "BÜNDNIS 90/DIE GRÜNEN",
+    "cdu/ csu": "CDU/CSU",
     "linke": "Die Linke",
     "die linke": "Die Linke",
     "fraktionslose": "fraktionslos",

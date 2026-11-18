@@ -386,6 +386,14 @@ class DipDecisionEvidenceTests(unittest.TestCase):
                 (item,) = interpret_with_decisions([self.ballot(**ballot)], decisions)
                 self.assertIs(item["inverted"], expected)
 
+    # Value: protects=a vote bound by its tally alone needs that tally to be unique, and a rival whose missing count could match still counts as a rival; fails_when=the rival check compares tallies with a missing count as unknown-equals-nothing; why_new=Codex reproduced the false attribution in the v0.46.9.0 ship review; seam=none
+    def test_a_rival_with_a_missing_count_still_blocks_a_tally_only_bind(self) -> None:
+        note = "574:71:0 (Annahme der Beschlussempfehlung auf Ablehnung)"
+        target = self.ballot(document_numbers=[], total={"yes": 574, "no": 71, "abstain": 0})
+        rival = self.ballot(id="775", document_numbers=["20/10"], total={"yes": 574, "no": 71})
+        interpret_with_decisions([target, rival], [decision(note, "20/10")])
+        self.assertEqual([target["inverted"], rival["inverted"]], [None, None])
+
     def test_the_excerpt_does_not_depend_on_the_order_of_the_positions(self) -> None:
         decisions = [decision(self.REJECTING, "20/20"), decision(self.REJECTING, "20/10")]
         excerpts = [interpret_with_decisions([self.ballot()], order)[0]["inversion_excerpt"] for order in (decisions, decisions[::-1])]
@@ -532,6 +540,15 @@ class ContradictoryOfficialResultTests(unittest.TestCase):
                 dip.interpret_sitting_votes([item], [], [])
                 self.assertEqual((vote_["inverted"], vote_["inversion_source"]), (True, source))
                 self.assertEqual((vote_["result_source"], vote_["result_scope"]), ("official", "application"))
+
+    # Value: protects=a title that agrees with DIP's decision never weakens the re-scope DIP alone gives; fails_when=the gate keys on the recorded inversion_source, which a title outranks; why_new=Codex and the native adversarial pass reproduced it in the v0.46.9.0 ship review (votes 983, 1001, 1002, 1025-1028 carry this evidence mix); seam=none
+    def test_a_title_that_agrees_with_dip_keeps_the_ballots_word(self) -> None:
+        ballot = DipDecisionEvidenceTests().ballot(title="Ablehnung des Antrags", official_result="accepted",
+                                                   result_scope="application")
+        (item,) = interpret_with_decisions([ballot], [decision(DipDecisionEvidenceTests.REJECTING)])
+        self.assertEqual((item["inverted"], item["inversion_source"]), (True, "bundestag-roll-call"))
+        self.assertEqual((item["result_source"], item["result_scope"]), ("official", "proposition"))
+        self.assertEqual(derive.vote_outcome(item), "rejected")
 
     def test_every_copy_of_the_vote_reads_the_same(self) -> None:
         first = self.inverted("accepted", 507, 47)

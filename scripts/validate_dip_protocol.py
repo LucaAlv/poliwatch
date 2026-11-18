@@ -2538,17 +2538,21 @@ def dip_decision_evidence(
     to reject, else None. Its exact tally and a shared Drucksache prove which vote
     it is. A vote with no document numbers (638) rests on the tally alone, so that
     tally must occur once among the sitting's decisions and once among its votes.
-    A count the vote does not give is unknown and equals no decision's count."""
+    A count the vote does not give is unknown: it equals no decision's count, and a
+    rival vote missing a count may still be the one the decision speaks of."""
     def tally_of(candidate: dict[str, Any]) -> tuple[int | None, ...]:
         counts = candidate.get("total") or {}
         return tuple(None if counts.get(key) in (None, "") else int(counts[key]) for key in ("yes", "no", "abstain"))
+
+    def could_be(other: tuple[int | None, ...]) -> bool:
+        return all(count is None or count == mine for count, mine in zip(other, tally))
 
     tally = tally_of(vote)
     numbers = set(vote.get("document_numbers") or [])
     fitting = [decision for decision in decisions if decision.tally == tally and any(tally)]
     if numbers:
         fitting = [decision for decision in fitting if decision.numbers & numbers]
-    elif len(fitting) > 1 or sum(tally_of(other) == tally for other in sitting_votes) > 1:
+    elif len(fitting) > 1 or sum(could_be(tally_of(other)) for other in sitting_votes) > 1:
         return None
     # A decision on the vote that does not say so leaves the direction open, as a chair's conflict does.
     if not fitting or not all(_DIP_REJECTING_RECOMMENDATION_RE.search(decision.note) for decision in fitting):
@@ -2656,7 +2660,7 @@ def interpret_vote(
         vote["result_scope"] = "proposition"
 
 
-def _read_contradicted_official_result(vote: dict[str, Any]) -> None:
+def _read_contradicted_official_result(vote: dict[str, Any], dip_decision: str | None = None) -> None:
     """The ballot was on a Beschlussempfehlung to reject, so a Ja majority cannot
     have accepted the Antrag: where a page's box says so (vote 990,
     docs/source-errors.md E6), its word is the ballot's, as the page's own Beschluss
@@ -2664,10 +2668,13 @@ def _read_contradicted_official_result(vote: dict[str, Any]) -> None:
     majority: the Antrag can fall or stand in a vote of its own. Runs once the
     sitting's evidence is in, since a title alone can read as a rejection the
     chair then refutes. Only the chair's announcement or DIP's decision on the
-    ballot says what the ballot was on: an inversion read from a roll-call or
-    Drucksache title leaves the page's word about the Antrag."""
+    ballot says what the ballot was on: an inversion read only from a roll-call or
+    Drucksache title leaves the page's word about the Antrag. A title outranks DIP
+    as the recorded ``inversion_source``, so a DIP decision bound to the ballot
+    (``dip_decision``) counts here whichever source the inversion names."""
     counts = vote.get("total") or {}
-    if (vote.get("inverted") and vote.get("inversion_source") in ("bundestag-protocol", DIP_DECISION_SOURCE)
+    ballot_evidence = vote.get("inversion_source") in ("bundestag-protocol", DIP_DECISION_SOURCE) or dip_decision is not None
+    if (vote.get("inverted") and ballot_evidence
             and vote.get("result_source") == "official" and vote.get("result_raw") == "accepted"
             and vote.get("result_scope") == "application" and int(counts.get("yes") or 0) > int(counts.get("no") or 0)):
         vote["result_scope"] = "proposition"
@@ -2771,9 +2778,10 @@ def interpret_sitting_votes(
         if official is not None:
             representative["official_result"] = official
             representative["result_scope"] = scope or "proposition"
+        dip_decision = dip_decision_evidence(representative, decisions, representatives)
         interpret_vote(representative, documents=vote_documents, procedure_context=context, protocol_evidence=evidence,
-                       dip_decision=dip_decision_evidence(representative, decisions, representatives))
-        _read_contradicted_official_result(representative)
+                       dip_decision=dip_decision)
+        _read_contradicted_official_result(representative, dip_decision)
         fields = ("inverted", "inversion_source", "inversion_excerpt", "procedure_type", "result_raw", "result_source", "result_scope")
         for vote in copies:
             vote.update({field: representative.get(field) for field in fields})
