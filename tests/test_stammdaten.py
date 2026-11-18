@@ -241,7 +241,6 @@ class ReadZipTests(unittest.TestCase):
             stammdaten.read_zip(self.tmp / "absent.zip")
 
 
-
 CDU_CSU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
 
 
