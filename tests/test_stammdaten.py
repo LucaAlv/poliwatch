@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import urllib.error
+import urllib.request
 import unittest
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -227,6 +228,19 @@ class ReadZipTests(unittest.TestCase):
                     with self.assertRaisesRegex(derive.StammdatenError, "VERSION .* is a Stand before 2017 or after"):
                         stammdaten.read_zip(path)
 
+    # Value: protects=a cached file over MAX_ZIP_BYTES or missing is a StammdatenError before any byte is read,
+    #   not a MemoryError or a bare OSError; fails_when=read_zip reads the file whole first;
+    #   why_new=TODOS C1 deferred items 38, 42, 44; seam=stammdaten.read_zip
+    def test_an_oversized_or_missing_cached_file_is_a_stammdaten_error(self) -> None:
+        path = self.zip({"MDB_STAMMDATEN.XML": XML})
+        with mock.patch.object(stammdaten, "MAX_ZIP_BYTES", 100), \
+                mock.patch.object(Path, "read_bytes", side_effect=AssertionError("read before the size check")):
+            with self.assertRaisesRegex(stammdaten.StammdatenError, "larger than 100 bytes"):
+                stammdaten.read_zip(path)
+        with self.assertRaisesRegex(stammdaten.StammdatenError, "not a zip file"):
+            stammdaten.read_zip(self.tmp / "absent.zip")
+
+
 
 CDU_CSU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
 
@@ -276,7 +290,7 @@ class RefreshTests(unittest.TestCase):
             return FakeResponse(*answer)
 
         err = io.StringIO()
-        with mock.patch("urllib.request.urlopen", side_effect=urlopen), contextlib.redirect_stderr(err):
+        with mock.patch("urllib.request.OpenerDirector.open", side_effect=urlopen), contextlib.redirect_stderr(err):
             stammdaten.refresh(self.database, since_wahlperiode=18)
         return err.getvalue()
 
@@ -512,6 +526,29 @@ class RefreshTests(unittest.TestCase):
         with mock.patch.object(stammdaten, "MAX_ZIP_BYTES", 100):
             err = self.refresh((self.newer, '"z"'))
         self.assertIn("larger than 100 bytes", err)
+        self.assertEqual(self.cache.read_bytes(), self.good)
+
+    # Value: protects=a redirect off https://www.bundestag.de (another host, plain http) is refused and the
+    #   cache is kept; fails_when=urllib's default handler follows it; why_new=TODOS C1 deferred item 28;
+    #   seam=stammdaten._download with the real opener, no network
+    def test_a_redirect_off_the_bundestag_host_is_refused(self) -> None:
+        handler = stammdaten._SameHostRedirects()
+        request = urllib.request.Request(stammdaten.URL)
+        for target in ("http://www.bundestag.de/x.zip", "https://evil.example/x.zip", "https://www.bundestag.de.evil.example/x"):
+            with self.subTest(target), self.assertRaisesRegex(stammdaten.StammdatenError, "redirect"):
+                handler.redirect_request(request, None, 302, "Found", {}, target)
+        followed = handler.redirect_request(request, io.BytesIO(), 302, "Found", {}, "https://www.bundestag.de/other.zip")
+        self.assertEqual(followed.full_url, "https://www.bundestag.de/other.zip")
+
+    # Value: protects=a server that drips bytes cannot stall a build past the total deadline; fails_when=the body
+    #   is read in one call under a per-socket timeout only; why_new=TODOS C1 deferred item 32;
+    #   seam=stammdaten._download with a slow fake response
+    def test_a_slow_drip_download_stops_at_the_total_deadline(self) -> None:
+        self.seed(self.good)
+        ticks = iter(range(0, 100000, 400))
+        with mock.patch.object(stammdaten.time, "monotonic", side_effect=lambda: next(ticks)):
+            err = self.refresh((self.newer, '"z"'))
+        self.assertIn("deadline", err)
         self.assertEqual(self.cache.read_bytes(), self.good)
 
     def refresh_download(self, body: bytes) -> str:

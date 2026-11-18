@@ -21,6 +21,7 @@ import re
 import sqlite3
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -43,6 +44,8 @@ ETAG_NAME = "mdb-stammdaten.json"
 #: The real download is 0.95 MB (plan step 1b); a larger body is refused.
 MAX_ZIP_BYTES = 32 * 1024 * 1024
 FETCH_TIMEOUT_SECONDS = 60
+FETCH_DEADLINE_SECONDS = 5 * 60  # the whole download, not one socket operation
+READ_CHUNK_BYTES = 64 * 1024
 XML_MEMBER = "MDB_STAMMDATEN.XML"
 #: The real XML is 15.3 MB (plan S1); a member declared or read larger is
 #: refused before it is parsed.
@@ -180,6 +183,10 @@ def read_zip(path: Path) -> Stammdaten:
     bytes the records came from, even if the file is replaced meanwhile. Raises
     StammdatenError as ``read_zip_bytes`` does, and for a file that cannot be read."""
     try:
+        # A hand-placed file over the cap is refused unread (the cache is only ever written from a capped download).
+        size = path.stat().st_size
+        if size > MAX_ZIP_BYTES:
+            raise StammdatenError(f"{path.name}: larger than {MAX_ZIP_BYTES} bytes")
         data = path.read_bytes()
     except OSError as exc:
         raise StammdatenError(f"{path.name}: not a zip file the Stammdaten can be read from ({exc})") from None
@@ -385,15 +392,38 @@ def _stand_day(stand: str) -> str:
     return datetime.fromisoformat(stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
 
 
+class _SameHostRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to https://www.bundestag.de, never to plain http or another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.startswith("https://www.bundestag.de/"):
+            raise StammdatenError(f"refusing a redirect to {newurl[:200]!r}: only https://www.bundestag.de is followed")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _download(etag: str | None) -> tuple[bytes, str | None] | None:
     """GET the file, conditionally on ``etag``: its body and ETag, or None on
-    304 Not Modified. Raises StammdatenError for a body over MAX_ZIP_BYTES."""
+    304 Not Modified. Raises StammdatenError for a body over MAX_ZIP_BYTES, a
+    redirect off https://www.bundestag.de, or a body not complete within
+    FETCH_DEADLINE_SECONDS."""
     headers = {"Accept": "application/zip"}
     if etag:
         headers["If-None-Match"] = etag
     try:
-        with urllib.request.urlopen(urllib.request.Request(URL, headers=headers), timeout=FETCH_TIMEOUT_SECONDS) as response:
-            body = response.read(MAX_ZIP_BYTES + 1)
+        deadline = time.monotonic() + FETCH_DEADLINE_SECONDS
+        opener = urllib.request.build_opener(_SameHostRedirects())
+        with opener.open(urllib.request.Request(URL, headers=headers), timeout=FETCH_TIMEOUT_SECONDS) as response:
+            chunks: list[bytes] = []
+            total = 0
+            while total <= MAX_ZIP_BYTES:
+                if time.monotonic() > deadline:
+                    raise StammdatenError(f"the download did not finish within the {FETCH_DEADLINE_SECONDS} s deadline")
+                chunk = response.read(min(READ_CHUNK_BYTES, MAX_ZIP_BYTES + 1 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+            body = b"".join(chunks)
             new_etag = response.headers.get("ETag")
     except urllib.error.HTTPError as exc:
         if exc.fp is not None:

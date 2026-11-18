@@ -940,6 +940,23 @@ class RepersistTests(unittest.TestCase):
                     self.assertIn("Fix: run --offline --repersist", err)
                     self.render.assert_not_called()
 
+    # Value: protects=a store the offline Stammdaten check cannot query (mdb_stammdaten_stand missing) stops the
+    #   render with the rebuild pointer, not a bare "cannot be read"; fails_when=the message loses the
+    #   --offline --repersist remedy; why_new=TODOS C1 deferred item 40; seam=build.stammdaten_store_mismatch
+    def test_a_store_without_the_stammdaten_stand_table_names_the_rebuild(self) -> None:
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("DROP TABLE mdb_stammdaten_stand")
+            conn.commit()
+        finally:
+            conn.close()
+        message = build.stammdaten_store_mismatch(self.database, None)
+        self.assertIn("cannot be read", message)
+        self.assertIn("Fix: run --offline --repersist", message)
+
     # Value: protects=the Vorgang cache file in the site directory is loaded by main and its Sachgebiete reach the store on --offline --repersist; fails_when=main stops loading or passing the cache, so every tag silently becomes not_fetched; why_new=other tests hand the cache to persist_report directly or have none; seam=none
     def test_an_offline_repersist_reads_the_cache_file_and_stores_sachgebiet_tags(self) -> None:
         cache = {
