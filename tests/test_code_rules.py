@@ -592,6 +592,39 @@ class SqliteOpenRuleTests(RuleTestCase):
             empty.touch()
             sqlite_open.create_database(empty).close()
 
+    # Value: protects=open_readonly opens an existing file by a relative path or one with URI characters as that file, cannot write, and leaves a missing file missing (callers catch sqlite3.Error for it); fails_when=the mode=ro is dropped, the path is pasted into the URI unquoted, or a missing file is created; why_new=the 14 call sites' own tests cover only the happy path and facts.open_readonly; seam=none; no_claim=nothing about build-store refusals
+    def test_open_readonly_reads_cannot_write_and_never_creates(self):
+        import os
+        import sqlite3
+        import sqlite_open
+
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch) / "a#b?c%20d"
+            folder.mkdir()
+            path = folder / "s.sqlite"
+            conn = sqlite3.connect(path)
+            conn.execute("CREATE TABLE t (x)")
+            conn.execute("INSERT INTO t VALUES (1)")
+            conn.commit()
+            conn.close()
+            for opened in (sqlite_open.open_readonly(path), sqlite_open.open_readonly(str(path))):
+                self.assertEqual(opened.execute("SELECT x FROM t").fetchall(), [(1,)])
+                with self.assertRaises(sqlite3.OperationalError):
+                    opened.execute("INSERT INTO t VALUES (2)")
+                opened.close()
+            cwd = os.getcwd()
+            os.chdir(folder)
+            try:
+                relative_conn = sqlite_open.open_readonly(Path("s.sqlite"))
+                self.assertEqual(relative_conn.execute("SELECT COUNT(*) FROM t").fetchone()[0], 1)
+                relative_conn.close()
+            finally:
+                os.chdir(cwd)
+            missing = folder / "absent.sqlite"
+            with self.assertRaises(sqlite3.OperationalError):
+                sqlite_open.open_readonly(missing)
+            self.assertFalse(missing.exists())
+
 
 class AbsentVersusZeroRuleTests(RuleTestCase):
     # Value: protects=no new `or 0` lands in scripts/ and fixed ones leave the baseline; fails_when=an `or 0` is added, or one is removed while its baseline entry stays; why_new=checklist class 5 was prose only and 78 sites accumulated; seam=none
