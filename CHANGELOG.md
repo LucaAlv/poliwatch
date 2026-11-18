@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.10.0] - 2026-11-18
+
+The check that refuses a build when the Bundestag prints one Redner-ID for two people no longer treats an office as a shared name. Before, two people printed under one Redner-ID with the same office in the name fields, such as "Dr. Carsten Sieling, Bürgermeister" and "Dr. Andreas Bovenschulte, Bürgermeister", shared the word "Bürgermeister", so the check filed both under one person. It now ignores office words and the punctuation around them, as it already ignored titles and name particles. The person corrections file also refuses three more mistakes before a build starts. On an offline replay of the 801-sitting reference store against main, no figure, person or page moves and no Redner-ID is refused. The check keeps its old limit. Two people printed with a word in common other than the office, such as the ministry's name, are still not told apart.
+
+### Fixed
+
+- **An office printed in the name fields no longer makes two people one.** The check ignores office words when it compares the names printed under one Redner-ID: Bürgermeister, Senator, Minister, Präsident and Staatssekretär with their compounds and feminine forms (Innenminister, Ministerpräsidentin), plus Parl., Stellv., Regierender, MdBR and similar. Brackets and commas around a word are stripped too, so "(Bürgermeister)" and "Bürgermeister," count as the same word. A real surname such as Meister still counts.
+- **The person corrections file refuses three more mistakes.** It refuses one own id given to two people, a DIP own id written with leading zeros or as 0 ("dip:007", "dip:0"), which would miss the roster or the page link, and a DIP own id for the person who keeps a shared Redner-ID's profile, which would collide with that person's roster record.
+
+### Changed
+
+- **A registry rebuild reads the speaker records twice instead of three times.** The Redner-ID check now uses the read the merges already make. The successor map for re-issued DIP person records is built once per corrections file instead of on every lookup.
+
 ## [0.46.9.0] - 2026-11-18
 
 Every Fraktion the parser reads from a Plenarprotokoll is now checked against the Fraktionen and Gruppen we know, so a stray string can no longer become a group of its own in a per-Fraktion count. Two such strings were stored. 18/222 printed the start of Dr. Astrid Freudenstein's reply inside her Fraktion ("CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –"), and 19/60 printed the Land "Bremen" as the Fraktion of Bürgermeister Dr. Carsten Sieling. On an offline replay of the 801-sitting reference store, contributions naming CDU/CSU go from 5,713 to 5,714, Bundesrat Reden with no Fraktion from 108 to 109, and the parties table from 11 rows to 9. Each Redeanteil holds, because Sieling's Rede already counted for the Bundesrat by its Sprechrolle. Nothing else moves, and all 727 votes read as before. A store built before this keeps the two values until its next `--offline --repersist`.
