@@ -1,0 +1,135 @@
+# Turns printed under a non-chair <name> inside another speaker's <rede> (15 words or more), whose text is in no table of the T4 store (phrase test). TODOS.md "ADR 0004 follow-ups".
+sitting	rede_id	element_speaker_tail	name_tag	words	restored_by_t4
+18/6	ID1800601300	RÜNENKerstin Andreae (BÜNDNIS 90/DIE GRÜNEN):	Sven Morlok, Staatsminister (Sachsen) :	269	yes
+18/6	ID1800601300	RÜNENKerstin Andreae (BÜNDNIS 90/DIE GRÜNEN):	Sven Morlok, Staatsminister (Sachsen) :	216	yes
+18/6	ID1800602300	DU/CSUElisabeth Winkelmeier-Becker (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	30	yes
+18/6	ID1800603300	LarsKlingbeilSPDLars Klingbeil (SPD):	Dr. Alexander S. Neu (DIE LINKE) :	36	yes
+18/8	ID1800800400	IE GRÜNENÖzcan Mutlu (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	1746	yes
+18/8	ID1800802100	E GRÜNENDoris Wagner (BÜNDNIS 90/DIE GRÜNEN):	Dr. Karl-Heinz Brunner (SPD) :	572	yes
+18/10	ID1801002700	der Leyen, Bundesministerin der Verteidigung:	Dr. Alexander S. Neu (DIE LINKE) :	436	yes
+18/10	ID1801002700	der Leyen, Bundesministerin der Verteidigung:	Dr. Alexander S. Neu (DIE LINKE) :	146	yes
+18/10	ID1801002700	der Leyen, Bundesministerin der Verteidigung:	Dr. Alexander S. Neu (DIE LINKE) :	170	yes
+18/10	ID1801002700	der Leyen, Bundesministerin der Verteidigung:	Dr. Alexander S. Neu (DIE LINKE) :	21	yes
+18/10	ID1801002700	der Leyen, Bundesministerin der Verteidigung:	Dr. Alexander S. Neu (DIE LINKE) :	182	yes
+18/11	ID1801108000	eier-HeiteSPDMichaela Engelmeier-Heite (SPD):	Heiko Maas, Bundesminister der Justiz und für	1117	yes
+18/11	ID1801108900	MechthildHeilCDU/CSUMechthild Heil (CDU/CSU):	Manuela Schwesig, Bundesministerin für Famili	1289	yes
+18/12	ID1801202600	SteffenKanitzCDU/CSUSteffen Kanitz (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	1157	no
+18/12	ID1801202600	SteffenKanitzCDU/CSUSteffen Kanitz (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	284	no
+18/14	ID1801401900	pMißfelderCDU/CSUPhilipp Mißfelder (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	44	no
+18/14	ID1801401900	pMißfelderCDU/CSUPhilipp Mißfelder (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	31	no
+18/15	ID1801502800	DIE GRÜNENKatja Keul (BÜNDNIS 90/DIE GRÜNEN):	Dr. Karl-Heinz Brunner (SPD) :	715	no
+18/17	ID1801700700	AndrejHunkoDIE LINKEAndrej Hunko (DIE LINKE):	Andrej Hunko (DIE LINKE ) :	297	no
+18/17	ID1801700800	tRöttgenCDU/CSUDr. Norbert Röttgen (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	88	no
+18/18	ID1801802000	ardtRehbergCDU/CSUEckhardt Rehberg (CDU/CSU):	Daniela Kolbe (SPD) :	656	no
+18/18	ID1801802000	ardtRehbergCDU/CSUEckhardt Rehberg (CDU/CSU):	Daniela Kolbe (SPD) :	95	no
+18/19	ID1801902500	es, Bundesministerin für Arbeit und Soziales:	Daniela Kolbe (SPD) :	117	no
+18/21	ID1802100500	RainerArnoldSPDRainer Arnold (SPD):	Dr. Alexander S. Neu (DIE LINKE) :	797	yes
+18/21	ID1802100600	pMißfelderCDU/CSUPhilipp Mißfelder (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	136	yes
+18/22	ID1802201500	KlausMindrupSPDKlaus Mindrup (SPD):	Andreas Jung (CDU/CSU) :	767	no
+18/23	ID1802301000	chaelStübgenCDU/CSUMichael Stübgen (CDU/CSU):	Christian Petry (SPD) :	546	no
+18/23	ID1802304700	ENVolker Beck (Köln) (BÜNDNIS 90/DIE GRÜNEN):	Dr. Karl-Heinz Brunner (SPD) :	731	no
+18/23	ID1802306200	WadephulCDU/CSUDr. Johann Wadephul (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	782	no
+18/24	ID1802402200	yserCDU/CSUChristel Voßbeck-Kayser (CDU/CSU):	Daniela Kolbe (SPD) :	298	no
+18/24	ID1802402200	yserCDU/CSUChristel Voßbeck-Kayser (CDU/CSU):	Daniela Kolbe (SPD) :	603	no
+18/25	ID1802500100	mileGiousoufCDU/CSUCemile Giousouf (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	158	no
+18/25	ID1802500200	eHeinDIE LINKEDr. Rosemarie Hein (DIE LINKE):	Dr. Johanna Wanka, Bundesministerin für Bildu	363	no
+18/25	ID1802500300	RudolfHenkeCDU/CSURudolf Henke (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	156	no
+18/25	ID1802500400	ENVolker Beck (Köln) (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	300	no
+18/25	ID1802500500	ThomasFeistCDU/CSUDr. Thomas Feist (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	212	no
+18/25	ID1802500600	RenéRöspelSPDRené Röspel (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	77	no
+18/25	ID1802500600	RenéRöspelSPDRené Röspel (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	107	no
+18/25	ID1802500700	erRossmannSPDDr. Ernst Dieter Rossmann (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	164	no
+18/25	ID1802500800	MartinRabanusSPDMartin Rabanus (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	375	no
+18/25	ID1802500900	ENVolker Beck (Köln) (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	91	no
+18/25	ID1802500900	ENVolker Beck (Köln) (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	16	no
+18/25	ID1802501000	Dr.KarambaDiabySPDDr. Karamba Diaby (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	245	no
+18/25	ID1802501100	StephanAlbaniCDU/CSUStephan Albani (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	201	no
+18/25	ID1802501200	GRÜNENCorinna Rüffer (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	128	no
+18/25	ID1802501300	NDr. Anton Hofreiter (BÜNDNIS 90/DIE GRÜNEN):	Andreas Jung (CDU/CSU) :	754	no
+18/26	ID1802606500	ÜNENBritta Haßelmann (BÜNDNIS 90/DIE GRÜNEN):	Dr. André Berghegger (CDU/CSU) :	877	yes
+18/28	ID1802801800	AndréHahnDIE LINKEDr. André Hahn (DIE LINKE):	Dr. André Berghegger (CDU/CSU) :	942	no
+18/28	ID1802802400	dt(Berlin)SPDMatthias Schmidt (Berlin) (SPD):	Heiko Maas, Bundesminister der Justiz und für	1496	no
+18/29	ID1802900900	asselfeldtCDU/CSUGerda Hasselfeldt (CDU/CSU):	Sigrid Hupach (DIE LINKE) :	599	yes
+18/29	ID1802900900	asselfeldtCDU/CSUGerda Hasselfeldt (CDU/CSU):	Dr. Hans-Ulrich Krüger (SPD) :	1552	yes
+18/29	ID1802901200	RüdigerKruseCDU/CSURüdiger Kruse (CDU/CSU):	Hiltrud Lotze (SPD) :	636	yes
+18/29	ID1802901600	Dr. Frithjof Schmidt (BÜNDNIS 90/DIE GRÜNEN):	Niels Annen (SPD) :	792	yes
+18/29	ID1802901800	MichaelBrandCDU/CSUMichael Brand (CDU/CSU):	Dr. Franziska Brantner (BÜNDNIS 90/DIE GRÜNEN	37	yes
+18/29	ID1802901900	ENDr. Tobias Lindner (BÜNDNIS 90/DIE GRÜNEN):	Gabriela Heinrich (SPD) :	696	yes
+18/29	ID1802902700	GRÜNENOmid Nouripour (BÜNDNIS 90/DIE GRÜNEN):	Thorsten Frei (CDU/CSU) :	652	yes
+18/29	ID1802902700	GRÜNENOmid Nouripour (BÜNDNIS 90/DIE GRÜNEN):	Julia Bartz (CDU/CSU) :	629	yes
+18/29	ID1802903200	HenningOtteCDU/CSUHenning Otte (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	138	yes
+18/29	ID1802903200	HenningOtteCDU/CSUHenning Otte (CDU/CSU):	Dr. Alexander S. Neu (DIE LINKE) :	848	yes
+18/29	ID1802903300	WolfgangHellmichSPDWolfgang Hellmich (SPD):	Doris Wagner (BÜNDNIS 90/DIE GRÜNEN) :	615	yes
+18/29	ID1802903900	Dr.BärbelKoflerSPDDr. Bärbel Kofler (SPD):	Anja Hajduk (BÜNDNIS 90/DIE GRÜNEN) :	683	yes
+18/29	ID1802904500	StefanRebmannSPDStefan Rebmann (SPD):	Peter Stein (CDU/CSU) :	822	yes
+18/30	ID1803000400	RÜNENOliver Krischer (BÜNDNIS 90/DIE GRÜNEN):	Thomas Jurk (SPD) :	1197	no
+18/30	ID1803000600	s G.LämmelCDU/CSUAndreas G. Lämmel (CDU/CSU):	Anja Hajduk (BÜNDNIS 90/DIE GRÜNEN) :	873	no
+18/30	ID1803000700	tusHeil(Peine)SPDHubertus Heil (Peine) (SPD):	Dieter Janecek (BÜNDNIS 90/DIE GRÜNEN) :	103	no
+18/30	ID1803001000	NENDr. Thomas Gambke (BÜNDNIS 90/DIE GRÜNEN):	Jan Metzler (CDU/CSU) :	1180	no
+18/30	ID1803001100	sMattfeldtCDU/CSUAndreas Mattfeldt (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	1722	no
+18/30	ID1803001400	E GRÜNENKatja Dörner (BÜNDNIS 90/DIE GRÜNEN):	Albert Rupprecht (CDU/CSU) :	1115	no
+18/30	ID1803002000	chipanskiCDU/CSUTankred Schipanski (CDU/CSU):	Dr. Daniela De Ridder (SPD) :	650	no
+18/30	ID1803002700	Dr.CarolaReimannSPDDr. Carola Reimann (SPD):	Dr. Franziska Brantner (BÜNDNIS 90/DIE GRÜNEN	967	no
+18/30	ID1803002900	SönkeRixSPDSönke Rix (SPD):	Sylvia Pantel (CDU/CSU) :	761	no
+18/30	ID1803002900	SönkeRixSPDSönke Rix (SPD):	Gülistan Yüksel (SPD) :	718	no
+18/30	ID1803002900	SönkeRixSPDSönke Rix (SPD):	Alois Rainer (CDU/CSU) :	895	no
+18/30	ID1803003700	orgNüßleinCDU/CSUDr. Georg Nüßlein (CDU/CSU):	Pia Zimmermann (DIE LINKE) :	645	no
+18/30	ID1803004000	MariaMichalkCDU/CSUMaria Michalk (CDU/CSU):	Burkhard Blienert (SPD) :	821	no
+18/30	ID1803004200	utHeiderichCDU/CSUHelmut Heiderich (CDU/CSU):	Pia Zimmermann (DIE LINKE) :	128	no
+18/30	ID1803004600	Dr. Frithjof Schmidt (BÜNDNIS 90/DIE GRÜNEN):	Dr. Karl-Heinz Brunner (SPD) :	681	no
+18/30	ID1803004800	rdBrandlCDU/CSUDr. Reinhard Brandl (CDU/CSU):	Harald Petzold (Havelland) (DIE LINKE) :	64	no
+18/30	ID1803005000	es, Bundesministerin für Arbeit und Soziales:	Sabine Zimmermann (Zwickau) (DIE LINKE) :	105	no
+18/30	ID1803005300	E GRÜNENEkin Deligöz (BÜNDNIS 90/DIE GRÜNEN):	Dr. Martin Rosemann (SPD) :	16	no
+18/30	ID1803005300	E GRÜNENEkin Deligöz (BÜNDNIS 90/DIE GRÜNEN):	Dr. Martin Rosemann (SPD) :	57	no
+18/30	ID1803005400	EwaldSchurerSPDEwald Schurer (SPD):	Sabine Zimmermann (Zwickau) (DIE LINKE) :	889	no
+18/30	ID1803005400	EwaldSchurerSPDEwald Schurer (SPD):	Sabine Zimmermann (Zwickau) (DIE LINKE) :	24	no
+18/30	ID1803005700	KatjaMastSPDKatja Mast (SPD):	Mark Helfrich (CDU/CSU) :	812	no
+18/30	ID1803005700	KatjaMastSPDKatja Mast (SPD):	Mark Helfrich (CDU/CSU) :	205	no
+18/30	ID1803005700	KatjaMastSPDKatja Mast (SPD):	Mark Helfrich (CDU/CSU) :	61	no
+18/30	ID1803005700	KatjaMastSPDKatja Mast (SPD):	Gabriele Schmidt (Ühlingen) (CDU/CSU) :	909	no
+18/30	ID1803006300	RolandClausDIE LINKERoland Claus (DIE LINKE):	Dr. Anja Weisgerber (CDU/CSU) :	1132	no
+18/30	ID1803006400	ENSylvia Kotting-Uhl (BÜNDNIS 90/DIE GRÜNEN):	Hubertus Zdebel (DIE LINKE) :	79	no
+18/30	ID1803006500	MatthiasMierschSPDDr. Matthias Miersch (SPD):	Carsten Müller (Braunschweig) (CDU/CSU) :	968	no
+18/30	ID1803006700	ristianHirteCDU/CSUChristian Hirte (CDU/CSU):	Dr. André Berghegger (CDU/CSU) :	927	no
+18/30	ID1803006700	ristianHirteCDU/CSUChristian Hirte (CDU/CSU):	Steffen Kanitz (CDU/CSU) :	802	no
+18/35	ID1803500100	rtRupprechtCDU/CSUAlbert Rupprecht (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	233	no
+18/35	ID1803500200	RenéRöspelSPDRené Röspel (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	56	no
+18/35	ID1803500300	IE GRÜNENKai Gehring (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	239	no
+18/35	ID1803500400	erRossmannSPDDr. Ernst Dieter Rossmann (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	199	no
+18/35	ID1803500500	lphLenkertDIE LINKERalph Lenkert (DIE LINKE):	Dr. Johanna Wanka, Bundesministerin für Bildu	250	no
+18/35	ID1803500600	KaufmannCDU/CSUDr. Stefan Kaufmann (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	221	no
+18/35	ID1803500700	MartinRabanusSPDMartin Rabanus (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	133	no
+18/35	ID1803500800	RenéRöspelSPDRené Röspel (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	36	no
+18/35	ID1803500900	IE GRÜNENKai Gehring (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	154	no
+18/35	ID1803501000	Dr.KarambaDiabySPDDr. Karamba Diaby (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	154	no
+18/35	ID1803501100	erRossmannSPDDr. Ernst Dieter Rossmann (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	218	no
+18/35	ID1803501200	lphLenkertDIE LINKERalph Lenkert (DIE LINKE):	Dr. Johanna Wanka, Bundesministerin für Bildu	344	no
+18/35	ID1803501300	ThomasFeistCDU/CSUDr. Thomas Feist (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	317	no
+18/35	ID1803501400	IE GRÜNENKai Gehring (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	271	no
+18/35	ID1803501500	OliverKaczmarekSPDOliver Kaczmarek (SPD):	Dr. Johanna Wanka, Bundesministerin für Bildu	169	no
+18/35	ID1803501600	KaufmannCDU/CSUDr. Stefan Kaufmann (CDU/CSU):	Dr. Johanna Wanka, Bundesministerin für Bildu	228	no
+18/35	ID1803501700	IE GRÜNENKai Gehring (BÜNDNIS 90/DIE GRÜNEN):	Dr. Johanna Wanka, Bundesministerin für Bildu	256	no
+18/42	ID1804201700	RüdigerKruseCDU/CSURüdiger Kruse (CDU/CSU):	Annette Schavan (CDU/CSU) :	1067	yes
+18/53	ID1805302300	Kordula Schulz-Asche (BÜNDNIS 90/DIE GRÜNEN):	Michaela Engelmeier (SPD) :	641	no
+18/57	ID1805703800	GRÜNENRenate Künast (BÜNDNIS 90/DIE GRÜNEN):	Waldemar Westermayer (CDU/CSU) :	906	no
+18/58	ID1805804200	netteGrothDIE LINKEAnnette Groth (DIE LINKE):	Michaela Engelmeier (SPD) :	896	no
+18/63	ID1806307200	tian Kühn (Tübingen) (BÜNDNIS 90/DIE GRÜNEN):	Jutta Blankau-Rosenfeldt, Senatorin (Hamburg)	728	yes
+18/66	ID1806610300	MarkusKoobCDU/CSUMarkus Koob (CDU/CSU):	Norbert Müller (Potsdam) (DIE LINKE) :	805	no
+18/68	ID1806804800	SusanneMittagSPDSusanne Mittag (SPD):	Michaela Engelmeier (SPD) :	29	no
+18/68	ID1806804800	SusanneMittagSPDSusanne Mittag (SPD):	Michaela Engelmeier (SPD) :	452	no
+18/70	ID1807004600	UlrikeGottschalckSPDUlrike Gottschalck (SPD):	Norbert Müller (Potsdam) (DIE LINKE) :	1071	no
+18/75	ID1807504900	anLiebichDIE LINKEStefan Liebich (DIE LINKE):	Angelika Glöckner (SPD) :	721	no
+18/87	ID1808700900	rin für Familie, Senioren, Frauen und Jugend:	Norbert Müller (Potsdam) (DIE LINKE) :	103	no
+18/87	ID1808702000	rin für Familie, Senioren, Frauen und Jugend:	Norbert Müller (Potsdam) (DIE LINKE) :	115	no
+18/88	ID1808806500	HeidtrudHennSPDHeidtrud Henn (SPD):	Julia Obermeier (CDU/CSU) :	518	yes
+18/88	ID1808809900	gang Strengmann-Kuhn (BÜNDNIS 90/DIE GRÜNEN):	Angelika Glöckner (SPD) :	809	yes
+18/91	ID1809110600	g)CDU/CSUMarcus Weinberg (Hamburg) (CDU/CSU):	Norbert Müller (Potsdam) (DIE LINKE) :	94	no
+18/94	ID1809405300	SusannRüthrichSPDSusann Rüthrich (SPD):	Norbert Müller (Potsdam) (DIE LINKE) :	765	no
+18/101	ID1810103700	/CSUArmin Schuster (Weil am Rhein) (CDU/CSU):	Dr. Konstantin von Notz ( BÜNDNIS 90/DIE GRÜN	101	no
+18/104	ID1810402200		Christian Kühn ( Tübingen) (BÜNDNIS 90/DIE GR	933	no
+18/106	ID1810607400	UweFeilerCDU/CSUUwe Feiler (CDU/CSU):	Norbert Müller (Potsdam) (DIE LINKE) :	200	no
+18/107	ID1810703900	rin für Familie, Senioren, Frauen und Jugend:	Norbert Müller (Potsdam) (DIE LINKE) :	996	no
+18/107	ID1810703900	rin für Familie, Senioren, Frauen und Jugend:	Norbert Müller (Potsdam) (DIE LINKE) :	27	no
+19/104	ID1910400800	Dr.MarcJongenAfDDr. Marc Jongen (AfD):	Dr. Dietmar Woidke, Ministerpräsident (Brande	726	no
+20/25	ID202506700	GRÜNEN Lamya Kaddor (BÜNDNIS 90/DIE GRÜNEN):	(Vizepräsident Wolfgang Kubicki räuspert sich	52	no
+20/144	ID2014407300	MarkusFrohnmaierAfDMarkus Frohnmaier (AfD):	Wolfgang Kubicki:	86	no

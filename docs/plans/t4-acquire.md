@@ -1,6 +1,6 @@
 # T4: acquire the excluded sittings
 
-**Status:** acquired and measured. The online run (step 1) restored 83 sittings on 2026-11-16 and 17, and V1 to V5 passed at adfe50c. Step 2 measured the result on 2026-11-18; see "Outcome" at the end. M3's online run and M4 wait for the owner's terminal. Planned 2026-11-15, when the owner accepted all nine recommended decisions (see "Decisions"). N8 ran offline on 2026-11-15 ([n8-review.md](t4-acquire/n8-review.md)), and its findings landed in #165 and #166 before the fetch.
+**Status:** acquired and measured. The online run (step 1) restored 83 sittings on 2026-11-16 and 17, and V1 to V5 passed at adfe50c. Step 2 measured the result on 2026-11-18; see "Outcome" at the end. Planned 2026-11-15, when the owner accepted all nine recommended decisions (see "Decisions"). N8 ran offline on 2026-11-15 ([n8-review.md](t4-acquire/n8-review.md)), and its findings landed in #165 and #166 before the fetch.
 **Parent:** `TODOS.md` "Coverage gate before the first data release", steps 6 (acquire), 7 (measure) and 8 (gate), with N8 (review of restored sittings) and N10 (vote links).
 **Base:** main fd4760d (v0.46.0.0): store schema 14, export format 20, speech rule 9. The reference store `.context/dip-pulse-site` (main checkout) is still at schema 12: it was last replayed on v0.41.0.0 (2026-11-14) and holds 718 sittings, 619 votes and 590 vote links.
 **Read for this plan:** `CLAUDE.md`, `docs/agents/review-checklist.md`, ADR 0005, `docs/plans/withholding-preflight/report.md`, `docs/plans/withheld-before-t4.md`, `docs/plans/vote-links-and-figures.md`, `docs/release-review.md`, `docs/release-reviews/cpp-bt-first-run-2026-11-14.md`, `~/agent-runs/fresh/run.sh` and its `requests.log`.
@@ -329,11 +329,79 @@ The online run went from 2026-11-16 12:15 to 2026-11-17 17:18 UTC (`~/agent-runs
 
 ### M3. abgeordnetenwatch match share
 
-PENDING, the owner's run of `~/agent-runs/t4/aw-match/run.sh online`. The offline pass on the T4 store, using a copy of the 2026-11-12 cache and answers (`regen2`, byte-identical to `scratch`), read 481 WP 18/19 sittings and **1,041 Redner-IDs (1,021 before)**. 20 ids are not yet answered: M1 4, M1a 7, M1b 9. Bounds: union M1 0.9874 to 0.9916 (949 ids), M2 32,353 of 32,908 Reden hit (0.9831 to 0.9836). Item 9 of "A3 item 1.5 review" holds: the script reads `mdb_zugehoerigkeiten`, not the zip. Its offline line "an online run sends 1041 ext_id requests" overstates the cost: `lookup_all` does not ask an id again once it is answered, so the online run asks the 20 plus the name searches (filed in TODOS.md).
+**Passes, 0 failures.** Receipt [aw-match-share.json](t4-acquire/aw-match-share.json), cited beside the first, [a3-aw-match-share.json](a3-aw-match-share.json). The owner ran it online on 2026-11-18 at adfe50c, with a copy of the 2026-11-12 cache and answers (`regen2`, byte-identical to `scratch`), then once more with the one new verdict below; all answers came from the cache on that second run.
+
+| Figure | A3, 400 sittings | T4, 481 sittings |
+|---|---|---|
+| Redner-IDs read | 1,021 | 1,041 |
+| M1, WP 18/19 MdB found by ext_id | 937 / 945 (0.9915) | 941 / 949 (0.9916) |
+| M1a, other ids with an MdB record | 4 / 7 | 10 / 14 |
+| M1b, ids without an MdB record | 0 / 69 | 0 / 78 |
+| M2, Reden whose speaker is found | 26,251 / 26,714 (0.9827) | 32,361 / 32,908 (0.9834) |
+| M3 flags | 8 `name_rule` | the same 8 |
+| M4 name search | 11 of 11 linked | 12 of 12 linked |
+
+- **The new figures are right because they count the 81 restored WP 18/19 sittings** (194 → 242 and 206 → 239). M2 by WP: 18 goes 9,720 / 9,862 (0.9856) → 12,750 / 12,926 (0.9864), and 19 goes 16,531 / 16,852 (0.981) → 19,611 / 19,982 (0.9814). Each WP still has one Rede without a Redner-ID.
+- **The run asked 21 questions:** the 20 new ids and 1 name search. The other 11 name searches were answered from the cache. That is inside the plan's "a few dozen at most". Item 9 of "A3 item 1.5 review" holds: the script reads `mdb_zugehoerigkeiten`, not the zip.
+- **The 20 new ids:**
+  - M1, 4, all found by ext_id: Norbert Lammert, Heinz Wiese, Matthias Lietz and Jimmy Schulz.
+  - M1a, 7. Six are found by ext_id: Guido Westerwelle, Ernst Burgbacher, Cornelia Pieper, Ulrike Höfken, Winfried Hermann and Volker Wissing. The seventh, Karl-Josef Laumann (11001294), is linked by name.
+  - M1b, 9: Malu Dreyer, Joachim Gauck, Reinhold Gall, Andreas Geisel, Georg Maier, Helmuth Markov, Sven Morlok, Reinhard Meyer and François de Rugy. They are Land ministers, the Bundespräsident and a French guest; no MdB record, so they fall outside M1 by definition. `m1b_hits_matching_an_mdb_by_name` stays 0.
+- **The one new item read by hand is Laumann's name link, and it is the right person.** The MdB-Stammdaten give 11.07.1957, Riesenbeck; aw's profile 136809 gives 1957 and Hörstel-Riesenbeck, and lists him as NRW Minister für Arbeit, Gesundheit und Soziales. aw holds no ext_id for him (source gap b, like Seehofer, Kramp-Karrenbauer and Pinkwart). He spoke without a Fraktion. His verdict was added to the verdicts file for the second run.
+- No new M3 flag: the 8 `name_rule` flags are the same ids with the same verdicts. M5: partitioned ids that spoke go 4 → 7. The three new ones are #171's (11004105, 11002190, 999990055), whose sittings T4 restored. The first two are found under their MdB owner (de Maizière, Solms), and none is hit by the first id only.
 
 ### M4. CPP-BT
 
-PENDING. The CPP-BT file (SHA-256 `d40cd969…`) is not on this laptop. `~/agent-runs/t4/cpp-bt/get.sh` fetches the same version from Zenodo and checks the hash, in the owner's terminal.
+**Passes:** no id of ours is missing from CPP-BT, and every new difference is explained. Receipt [cpp-bt.tsv](t4-acquire/cpp-bt.tsv). The CPP-BT file is the first run's: version 2026-09-19, SHA-256 `d40cd969…`, fetched again on 2026-11-18 by `~/agent-runs/t4/cpp-bt/get.sh` in the owner's terminal, with the hash checked. Run offline with `python -I`, as the plan's command, on the T4 store. The same run on `.context/dip-pulse-site.pre-t4` reproduces every figure of the first run ([cpp-bt-first-run-2026-11-14.md](../release-reviews/cpp-bt-first-run-2026-11-14.md)), so the old column is that store.
+
+| WP | Sittings ours / theirs / both | Before T4 |
+|---|---|---|
+| 18 | 242 / 244 / 242 | 194 / 244 / 194 |
+| 19 | 239 / 239 / 239 | 206 / 239 / 206 |
+| 20 | 214 / 214 / 214 | 213 / 214 / 213 |
+| 21 | 106 / 94 / 94 | 105 / 94 / 94 |
+
+| Figure | Before T4 | T4 |
+|---|---|---|
+| Ids in both | 73,772 | 81,354 |
+| Ids only ours | 0 | 0 |
+| Ids only theirs | 1,752 | 2,311 |
+| of them § 31 declarations | 1,666 | 2,053 |
+| withheld (ADR 0005) | 0 | 95 |
+| `in_top_presidium` | 0 | 9 |
+| `in_top_other` | 82 | 150 |
+| Their ids in sittings we lack | 8,235 | 94 |
+| Surname differences | 282 of 73,767 | 320 of 81,348 |
+| Fraktion differences | 2 of 64,156 | 2 of 71,257 |
+| Ratio rows (15%, 50 tokens) | 1,487 of 53,819 | 1,862 of 60,111 |
+
+- **Every one of the 972 new difference rows sits in a restored sitting, and no old row changed.** The new figures are right because they add the 83 sittings, and only those.
+- **Sittings:**
+  - The plan's expectations hold: WP 18 reaches 242, WP 19 239 and WP 20 214.
+  - CPP-BT holds 18/62 and 18/90 (41 and 53 ids), which wait for step 5's rule.
+  - CPP-BT has no 18/20 either, the sitting our record keeps out as `source_defect`.
+- **Only theirs grows by 559:**
+  - 387 § 31 declarations.
+  - 95 withheld Reden: the 102 rows, less 21/106 (newer than the file) and 6 whose element also has a stored part (five `:N` splits, and 18/2's Beyer, whose `:4` part holds Oppermann), so CPP-BT's id is shared.
+  - 77 procedural ids, read by hand:
+    - 40 are ADR 0004 reviewed units in `scripts/reviewed_units.json`. 31 are `in_top_other`: the presidium elections of 18/1 and 19/1, the chancellor's election, oath and ministers' oaths of 19/19, and Kelber's (19/68) and Högl's (19/158) acceptances. 9 are `in_top_presidium`, Solms's and Schäuble's Sitzungsleitung in 19/1 and 19/19.
+    - 37 are 18/158's § 31 declarations printed in the Sitzungsverlauf (`docs/source-errors.md` E9). The parser holds them out as § 31 declarations; the script's classifier reads only annex titles, as TODOS.md predicted.
+  - All 77 are added to `scripts/cpp_bt_known_differences.tsv` (97 → 174 lines), the second option that TODOS item "T4 parser rules for 18/158 and 19/13" names. After the file, only the ratio rows are left to read.
+- **Surname and Fraktion:**
+  - All 38 new surname differences fall into pairs the known-differences file already lists.
+  - The 2 Fraktion rows are the old two (C5, C6).
+- **Ratio:**
+  - The 375 new rows are 6.0% of the 6,292 newly compared Reden, against 2.8% overall. These are the sittings refused before for nested turns.
+  - The 20 largest in restored sittings were read against the XML:
+    - **14 are C1** (`docs/source-errors.md`): the `<rede>` runs on into the chair's business, such as vote results read out or the sitting resumed. CPP-BT counts all of it; we store the speech. Examples: 18/98 `ID1809801700` 597 against 8,436 tokens; 18/1 `ID1800100100`, Kauder's nomination, where the element holds the election and Lammert's acceptance.
+    - **2 are withheld units with a stored part:** 18/2 `ID1800202300` and 18/83 `ID1808301300`. With the withheld words (2,466 and 2,620) they reach the expected count.
+    - **2 hold speeches printed under a `<name>` tag:** 18/29 `ID1802902700`, with Thorsten Frei's 652 and Julia Bartz's 629 words, and 18/42 `ID1804201700`, with Annette Schavan's 1,067. These are speeches counted nowhere; see the next point.
+    - **2 hold more words than CPP-BT's tokens:** 18/8 `ID1800805400` (Ströbele, 137 against 86) and 19/18 `ID191803000` (Hirte, 348 against 218). Our words equal the speaker's own paragraphs in the XML, so CPP-BT's count is the short one.
+- **Finding, a known defect that T4 grows:** speakers printed as a `<name>` that is not the chair, inside another speaker's `<rede>`, are read as chair text and stored in no table (TODOS.md "ADR 0004 follow-ups", census finding 8).
+  - Measured on all 801 XML files for turns of 15 words or more, with a phrase test against every text table: 100 turns, 45,699 words, in 30 kept sittings before T4, unchanged.
+  - T4 adds **33 turns, 19,861 words, in 10 restored sittings**. 18/29 alone has 13, among them Hans-Ulrich Krüger's 1,552 words.
+  - Total 133 turns, 65,560 words, 40 sittings, all but 3 in WP 18. Receipt [name-tag-speakers.tsv](t4-acquire/name-tag-speakers.tsv).
+  - These words are not in M7's withheld shares, so they are missing coverage on top of those. The TODO now carries the figures. The fix is a parser rule and an owner decision, not part of this step.
 
 ### M5. `erste-reden` v3
 
@@ -398,5 +466,5 @@ The 2016 and 2018 words exceed the plan's offline figures (9,338 and 11,360) by 
 
 ### What is left after step 2
 
-- M3 and M4 above (the owner's terminal), then the hand reading each calls for: new M3 flags, and new CPP-BT differences to add to `scripts/cpp_bt_known_differences.tsv` or fix.
+- The speeches printed as `<name>` that M4 found (133 turns, 65,560 words, 33 of them from T4) need a parser rule and an owner decision before the first release (TODOS.md "ADR 0004 follow-ups").
 - Step 3 (N8) passed before the fetch ([n8-review.md](t4-acquire/n8-review.md)). Step 4 (N10 over the 801 sittings, then vote PR C), step 5's rule and the two-sitting run for 18/62 and 18/90, and an online update for 21/107 to 21/109 come before the first release.
