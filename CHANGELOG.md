@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.17.0] - 2026-11-18
+
+The Sitzungskalender line and the week-radar RSS feed now handle a calendar that lists a week twice, a cache stamped in the future, a stray control character in a title and a feed base URL carrying a user and password. No page or stored figure moves on the reference store. Its cached calendar (22 Sitzungswochen for 2026 and 21 for 2027, from 2 .ics files) lists every week once. An offline render of it with a site URL set writes a well-formed feed of 12 weeks, and the header still reads "Nächste Sitzungswoche: 23.–27. November 2026 (KW 48)".
+
+### Fixed
+
+- **A Sitzungswoche listed twice in the Bundestag calendar, or split into two events, counts once.** Before, ten events for five weeks passed the check that a year lists at least ten weeks, and a doubled week was stored twice.
+- **A calendar cache stamped in the future is refreshed.** Before, a cache written while the clock ran ahead counted as fresh until the clock caught up with its stamp.
+- **A control character in a heading or title no longer makes the whole RSS feed unreadable.** Characters XML forbids are dropped from item titles, links and descriptions.
+- **An RSS item's date range reaches a Sondersitzung on the weekend when the sitting's date carries a time.**
+
+### Changed
+
+- **A feed base URL (`BUNDESTAG_PULSE_SITE_URL`) with a user or password, whitespace or a control character is refused.** The build writes no RSS and warns, as for any invalid URL. A refused value containing `@` is not shown in the warning, so the password never reaches the build log.
+
 ## [0.46.15.0] - 2026-11-18
 
 A site rendered offline can no longer show vote panels filed from a different MdB-Stammdaten file than the one its store was built from, and a refresh can no longer move the seat tables back to an older file. Nothing moves on the offline replay of the 801-sitting reference store against main: no vote, group count, Rede or Fakt changes, the store records the same Stammdaten file, and a plain offline render of it runs as before.
