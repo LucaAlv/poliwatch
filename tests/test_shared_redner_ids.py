@@ -11,6 +11,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import re
 from unittest import mock
 import _support
 import build_dip_pulse_site as build
@@ -176,10 +177,17 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         rows = {row["identity_key"]: row for row in conn.execute("SELECT identity_key, aw_politician_id, profile_url FROM mps")}
         self.assertEqual(rows["dip:1809"]["aw_politician_id"], 135405)
         self.assertEqual((rows["xml:11003525"]["aw_politician_id"], rows["xml:11003525"]["profile_url"]), (None, None))
-        self.assertFalse(registry.profile_follows_redner_id("999990127"))
-        self.assertFalse(registry.profile_follows_redner_id("10000"))
-        self.assertTrue(registry.profile_follows_redner_id("11005304"))  # the partition with a reviewed profile owner
-        self.assertTrue(registry.profile_follows_redner_id("11003525"))
+        self.assertFalse(registry.redner_id_profile_reaches(speaker("999990127", "Enak Ferlemann"), "p1", "ID1"))
+        self.assertFalse(registry.redner_id_profile_reaches(speaker("10000", "Olaf in der Beek"), "p1", "ID1"))
+        # The partition with a reviewed profile owner: the owner's occurrences only.
+        self.assertTrue(registry.redner_id_profile_reaches(speaker("11005304", "Dr. Alexander Föhr"), "p1", "ID1"))
+        self.assertFalse(registry.redner_id_profile_reaches(speaker("11005304", "Dirk-Ulrich Mende"), "p1", "ID1"))
+        # A garbled printed name counts under its reviewed occurrence's name.
+        garbled = speaker("11005304", "Dirk-UlrichAlexander Mende Föhr")
+        self.assertTrue(registry.redner_id_profile_reaches(garbled, "5570", "ID2010305900"))
+        self.assertFalse(registry.redner_id_profile_reaches(garbled, "5585", "ID2011606700"))
+        self.assertFalse(registry.redner_id_profile_reaches(garbled, "p1", "ID1"))
+        self.assertTrue(registry.redner_id_profile_reaches(speaker("11003525", "Enak Ferlemann"), "p1", "ID1"))
 
     # Value: protects=the garbled name of 20/82 becomes Dr. Lena Kreck on her DIP person; fails_when=the reviewed occurrence or the label is dropped; why_new=the store shows a person called "Dr. Dirk-UlrichLena Mende Kreck"; seam=none
     def test_the_garbled_kreck_record_is_lena_kreck(self):
@@ -263,7 +271,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(self.person_of(conn, "18/119/ID1811903700"), self.person_of(conn, "18/100/ID1810007200"))
         self.assertEqual(self.person_of(conn, "18/180/ID1818001000"), self.person_of_identity(conn, "dip:6983"))
 
-    # Value: protects=the holder keeps the abgeordnetenwatch profile its Redner-ID found and stays a join key, and the speaker printed under it does not get it; fails_when=the holder's record is marked partitioned or loses its ext_id profile, or Steinmeier's occurrence keeps de Maizière's profile; why_new=a holder is new; seam=build_dip_pulse_site.py reparse_cached_reports (profile_follows_redner_id)
+    # Value: protects=the holder keeps the abgeordnetenwatch profile its Redner-ID found and stays a join key, and the speaker printed under it does not get it; fails_when=the holder's record is marked partitioned or loses its ext_id profile, or Steinmeier's occurrence keeps de Maizière's profile; why_new=a holder is new; seam=build_dip_pulse_site.py reparse_cached_xml (redner_id_profile_reaches)
     def test_a_holder_keeps_the_profile_of_its_id(self):
         profile = {"id": 79042, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/thomas-de-maiziere"}
         units = [unit for unit in t4_units() if unit[2]["xml_redner_id"] == "11004105"]
@@ -273,7 +281,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         rows = {row["identity_key"]: row for row in conn.execute("SELECT identity_key, aw_politician_id, aw_match FROM mps")}
         self.assertEqual((rows["aw:79042"]["aw_politician_id"], rows["aw:79042"]["aw_match"]), (79042, "ext_id"))
         self.assertIsNone(rows["xml:11004167"]["aw_politician_id"])
-        self.assertTrue(registry.profile_follows_redner_id("11004105"))
+        self.assertTrue(registry.redner_id_profile_reaches(speaker("11004105", "Dr. Thomas de Maizière"), "p1", "ID1"))
         steinmeier = registry.corrected_speaker(speaker("11004105", "Dr. Frank-Walter Steinmeier", abgeordnetenwatch=profile), "p1", "ID1")
         self.assertEqual((steinmeier["xml_redner_id"], steinmeier["abgeordnetenwatch"]), ("11004167", {}))
         holder = registry.corrected_speaker(speaker("11004105 999990001", "Dr. Thomas de Maizière", abgeordnetenwatch=profile), "p1", "ID1")
@@ -369,7 +377,7 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             registry.reconcile(conn)
         self.assertEqual(loads.call_count, 2)
 
-    # Value: protects=a re-parse gives no speaker of a shared id with no reviewed profile owner the profile another speaker of that id carried, while the profile owner of 11005304 still gets the profile found for its id in another sitting; fails_when=the profile_follows_redner_id clause in reparse_cached_xml is dropped (Ferlemann shows Beuth's profile) or blocks every partitioned id (Föhr loses his); why_new=TODOS "Shared Redner-IDs" item 6: the clause was tested only through a direct call; seam=build_dip_pulse_site.reparse_cached_xml
+    # Value: protects=a re-parse gives no speaker of a shared id with no reviewed profile owner the profile another speaker of that id carried, while the profile owner of 11005304 still gets the profile found for its id in another sitting; fails_when=the redner_id_profile_reaches check in reparse_cached_xml is dropped (Ferlemann shows Beuth's profile) or blocks every partitioned id (Föhr loses his); why_new=TODOS "Shared Redner-IDs" item 6: the clause was tested only through a direct call; seam=build_dip_pulse_site.reparse_cached_xml
     def test_a_reparse_copies_no_profile_across_a_shared_id(self):
         beuth = {"id": 135405, "match": "name", "url": "https://www.abgeordnetenwatch.de/profile/peter-beuth"}
         foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
@@ -393,7 +401,8 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
                         unit["speaker"]["abgeordnetenwatch"] = beuth
         # Föhr's profile was resolved in another sitting, under the same Redner-ID.
         elsewhere = {"report": {"agenda_items": [{"xml_speakers": [{"speaker": {
-            "xml_redner_id": "11005304", "first_name": "Alexander", "last_name": "Föhr", "abgeordnetenwatch": foehr}}]}]}}
+            "xml_redner_id": "11005304", "first_name": "Alexander", "last_name": "Föhr", "display_name": "Alexander Föhr",
+            "abgeordnetenwatch": foehr}}]}]}}
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
             cache_path = build.xml_cache_path(output_dir, "20/998")
@@ -504,6 +513,79 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
         for extra in ({}, {"profile_owner": None}):  # left out or null: the holder owns the profile
             with self.subTest(extra), self.correction_file({"partitions": [{"xml_redner_id": "9", "labels": two, "own_ids": {"ada": "xml:9", "bea": "dip:1"}, **extra}]}):
                 self.assertEqual(registry.corrections()["partitions"][0]["profile_owner"], "ada")
+
+
+def sitting_xml(rede_id, xml_id, first, last, title=""):
+    """The 18/223 fixture with its one <rede> given to another printed speaker."""
+    xml = (T4_FIXTURES / "18-223-steinmeier.xml").read_text(encoding="utf-8")
+    name = f"<name>{f'<titel>{title}</titel>' if title else ''}<vorname>{first}</vorname><nachname>{last}</nachname></name>"
+    xml = re.sub(r'<redner id="11004105">.*?</redner>[^<]*', f'<redner id="{xml_id}">{name}</redner>{first} {last}:', xml, count=1)
+    return xml.replace("ID1822300400", rede_id)
+
+
+class ReparseProfileTests(unittest.TestCase):
+    """reparse_cached_xml gives a re-parsed speaker the profile a cached report holds
+    for its Redner-ID only where that profile is the speaker's own (item 17 of
+    TODOS.md "Shared Redner-IDs: what the fix leaves open")."""
+
+    def reparsed_profile(self, xml_id, source_name, target_name, profile,
+                         source_at=("src", "ID180100100"), target_at=("5099", "ID1822300400")):
+        source = {"protocol": {"id": source_at[0], "dokumentnummer": "18/1"}, "agenda_items": [{"index": 1, "xml_speakers": [
+            {"rede_id": source_at[1], "speaker": {"xml_redner_id": xml_id, "display_name": source_name,
+                                                    "first_name": source_name.split()[-2], "last_name": source_name.split()[-1],
+                                                    "abgeordnetenwatch": profile}}]}]}
+        *given, last = target_name.split()
+        title = "Dr." if given[0] == "Dr." else ""
+        xml = sitting_xml(target_at[1], xml_id, " ".join(given[1:] if title else given), last, title)
+        parsed = dip.parse_protocol_xml(xml)
+        items = [{"index": i + 1, **dip.xml_top_fields(top), "api": {"positions": [{"id": top["top_id"]}]}}
+                 for i, top in enumerate(parsed["agenda_items"])]
+        target = {"protocol": {"id": target_at[0], "dokumentnummer": "18/223"}, "agenda_items": items,
+                  "validation_summary": {"xml_top_count": len(items)}}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = build.xml_cache_path(Path(tmp), "18/223")
+            path.parent.mkdir(parents=True)
+            path.write_text(xml, encoding="utf-8")
+            self.assertEqual(build.reparse_cached_xml(Path(tmp), [{"report": target}], profiles_from=[{"report": source}]), 1)
+        [speech] = target["agenda_items"][0]["xml_speakers"]
+        self.assertEqual(derive.first_redner_id(speech["speaker"]["xml_redner_id"]), xml_id)
+        return speech["speaker"].get("abgeordnetenwatch")
+
+    # Value: protects=a name-found profile of a partition's profile owner stays off the other owners' occurrences, and theirs off the owner's, while the owner's other occurrences and an unpartitioned id still get it; fails_when=reparse_cached_xml copies a profile found under a Redner-ID with a profile_owner to every speaker printed under it (de Maizière's name-found profile on Steinmeier's Rede), or the shared-id check is dropped (Beuth's on Ferlemann's); why_new=corrected_speaker drops only an ext_id profile for a non-owner, and the clause was only tested through a direct call; seam=build_dip_pulse_site.py reparse_cached_xml
+    def test_a_profile_found_under_a_redner_id_reaches_only_its_own_person(self):
+        maiziere = {"id": 79042, "match": "name", "url": "https://www.abgeordnetenwatch.de/profile/thomas-de-maiziere"}
+        steinmeier = {"id": 13001, "match": "name", "url": "https://www.abgeordnetenwatch.de/profile/frank-walter-steinmeier"}
+        foehr = {"id": 123, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
+        beuth = {"id": 135405, "match": "name", "url": "https://www.abgeordnetenwatch.de/profile/peter-beuth"}
+        for xml_id, source, target, profile, expected in (
+            ("11004105", "Dr. Thomas de Maizière", "Dr. Frank-Walter Steinmeier", maiziere, None),
+            ("11004105", "Dr. Frank-Walter Steinmeier", "Dr. Thomas de Maizière", steinmeier, None),
+            ("11004105", "Dr. Thomas de Maizière", "Dr. Thomas de Maizière", maiziere, maiziere),
+            ("11002190", "Dr. Hermann Otto Solms", "Dr. Wolfgang Schäuble", {**maiziere, "id": 1}, None),
+            ("11005304", "Alexander Föhr", "Alexander Föhr", foehr, foehr),
+            ("11005304", "Alexander Föhr", "Dirk-Ulrich Mende", foehr, None),
+            ("999990127", "Peter Beuth", "Enak Ferlemann", beuth, None),
+            ("11003516", "Alexander Dobrindt", "Alexander Dobrindt", foehr, foehr),
+        ):
+            with self.subTest(xml_id=xml_id, source=source, target=target):
+                self.assertEqual(self.reparsed_profile(xml_id, source, target, profile), expected)
+
+    # Value: protects=a garbled printed name under 11005304 ("Dirk-UlrichAlexander Mende Föhr") counts as
+    #   its reviewed occurrence's name on both sides of a re-parse: the profile is taken from, and copied
+    #   to, an occurrence reviewed as Alexander Föhr, the profile owner; fails_when=reparse_cached_xml or
+    #   redner_id_profiles stops passing the report's protocol id or the speech's rede_id to
+    #   redner_id_profile_reaches (attach_speaker_profiles defaults protocol_id to None), so only the
+    #   printed name is read; why_new=every other re-parse row reads a printed name, and the reviewed
+    #   occurrence is only tested through a direct call; seam=none
+    def test_a_reparse_reads_a_garbled_name_under_its_reviewed_occurrence(self):
+        foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
+        garbled = "Dirk-UlrichAlexander Mende Föhr"
+        for source, target, sides in (
+            ("Alexander Föhr", garbled, {"target_at": ("5570", "ID2010305900")}),
+            (garbled, "Alexander Föhr", {"source_at": ("5583", "ID2011411000")}),
+        ):
+            with self.subTest(source=source, target=target):
+                self.assertEqual(self.reparsed_profile("11005304", source, target, foehr, **sides), foehr)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.12.0] - 2026-11-18
+
+Four rules that decide whose abgeordnetenwatch profile, roster record or page link a speaker gets are now strict where they were loose. On an offline replay of the 801-sitting reference store against main, nothing moves: every table's row count, every vote and Rede, the person pages and `abgeordnete.json` are the same, and all 91,658 speaker units in the 802 cached reports keep their profile. Each rule closes a gap no stored sitting reaches today.
+
+### Fixed
+
+- **A profile found under a Redner-ID the Bundestag printed for two people reaches only its owner.** When cached sittings are read again, a profile is taken from, and copied to, only the occurrences of the person the corrections file names as that id's profile owner, by printed name or by the name reviewed for that occurrence. Before, a profile matched by name could pass from the profile owner to another person printed under the same id, such as from de Maizière to Steinmeier's address in 18/223.
+- **A re-issued DIP person record is kept from an older store only if it was a roster record.** A record a sitting merely sampled under the old id is no longer carried forward with roster fields it never had.
+- **A speaker link that carries a re-issued DIP id reaches the successor's page also for a person in a reviewed partition.** Before, only the plain DIP key was aliased.
+- **A DIP person record whose Wahlperioden are not a list of numbers no longer cuts a Bundestag period.** A Land office excludes a Bundestag seat in the same Wahlperiode, so such periods are cut from a person's MdB periods; a role with an unreadable Wahlperiode now cuts nothing instead of being half read. On the cached records, the cut is the same for all 1,949 persons.
+
 ## [0.46.11.0] - 2026-11-18
 
 The 83 sittings restored on 2026-11-17 are now measured against outside sources, and the record names every figure that moved, old and new. The reference store holds 801 sittings, up from 718. Of the 737 roll-call votes the Bundestag lists from WP 18 on, 727 are stored under their own date; the other 10 fall on 18/20, which stays out, or on two sittings newer than the store. Every restored sitting stores exactly the agenda items its XML prints, 8,189 in all. The abgeordnetenwatch match share of WP 18 and 19 Reden is 98.34% (98.27% on the earlier 400-sitting store), and no speech of ours is missing from CPP-BT. No code, export or page changes in this release; the measurements and their receipts are in `docs/plans/t4-acquire.md`.
