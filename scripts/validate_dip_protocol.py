@@ -3959,9 +3959,18 @@ def xml_sitting_mismatch(document_number: str, parsed_xml: dict[str, Any]) -> st
     wahlperiode, _, sitzung = document_number.partition("/")
     xml_protocol = parsed_xml.get("xml_protocol") or {}
     found = (str(xml_protocol.get("wahlperiode") or ""), str(xml_protocol.get("sitzung_nr") or ""))
+    if not document_number:
+        return f"the DIP record has no dokumentnummer to check the XML of {found[0]}/{found[1]} against"
     if found != (wahlperiode, sitzung):
         return f"it is the XML of {found[0]}/{found[1]}, not of {document_number}"
     return None
+
+
+def xml_root_sitting(root: ET.Element) -> dict[str, Any]:
+    """The sitting a Plenarprotokoll root names, shaped like ``parsed_xml`` for
+    ``xml_sitting_mismatch``, so a caller can check it before the parse."""
+    return {"xml_protocol": {"wahlperiode": root.attrib.get("wahlperiode"),
+                             "sitzung_nr": root.attrib.get("sitzung-nr")}}
 
 
 def check_xml_belongs_to_report(
@@ -4509,14 +4518,20 @@ def build_report(
     xml_sink = getattr(args, "xml_sink", None)
     if isinstance(xml_sink, dict):
         xml_sink["text"] = xml_text
+    # Before the parse, which applies the reviewed list of the XML's own number and
+    # can refuse a wrong-sitting file with ReviewedUnitsError, and before enrichment,
+    # so no DIP request is spent on the wrong file (P3f).
+    try:
+        root_sitting = xml_root_sitting(ET.fromstring(xml_text))
+    except ET.ParseError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
+    mismatch = xml_sitting_mismatch(str(protocol.get("dokumentnummer") or ""), root_sitting)
+    if mismatch:
+        raise DipError(f"{document_number}: protocol source rejected: {mismatch}", source_rejected=True)
     try:
         parsed_xml = parse_protocol_xml(xml_text)
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
-    # Before enrichment, so no DIP request is spent on the wrong file (P3f).
-    mismatch = xml_sitting_mismatch(str(protocol.get("dokumentnummer") or ""), parsed_xml)
-    if mismatch:
-        raise DipError(f"{document_number}: protocol source rejected: {mismatch}", source_rejected=True)
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
     progress(
         f"Parsed XML: {len(parsed_xml['agenda_items'])} agenda item(s), "

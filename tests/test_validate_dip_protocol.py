@@ -163,7 +163,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
 
         with (
             mock.patch.object(dip, "find_protocol", return_value=protocol) as find_protocol,
-            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87" />'),
             mock.patch.object(dip, "parse_protocol_xml", return_value=parsed_xml),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
@@ -204,7 +204,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
 
         with (
             mock.patch.object(dip, "find_protocol") as find_protocol,
-            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87" />'),
             mock.patch.object(dip, "parse_protocol_xml", return_value=parsed_xml),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
@@ -252,7 +252,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [],
                       "api_records": {"sitting_votes": [sitting_vote]}, "sitting_votes": [sitting_vote]}
         with (
-            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87" />'),
             mock.patch.object(dip, "parse_protocol_xml", return_value={"xml_protocol": {"wahlperiode": "21", "sitzung_nr": "87"}, "agenda_items": []}),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),

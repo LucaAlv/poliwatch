@@ -279,6 +279,31 @@ class RefusalPathTests(unittest.TestCase):
             self.assertIn("not of " + number, str(raised.exception))
             enrich.assert_not_called()
 
+    # Value: protects=the sitting check runs before the parse, so a wrong-sitting file the parser refuses with ReviewedUnitsError
+    #   (not a ValueError) is still a source refusal naming the other sitting; fails_when=build_report parses before comparing;
+    #   why_new=TODOS "Withheld-Reden PRs A and B" B latent; seam=fetch_text stubbed, reviewed list patched
+    def test_wrong_sitting_with_a_stale_reviewed_entry_is_a_source_refusal(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/20", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18020.xml"}}
+        entry = {"sitting": "18/7", "rede_id": "ID999", "redner_id": "X", "kind": "withhold", "reason": "test"}
+        with patch.object(dip, "fetch_text", return_value=sitting()), \
+                patch.object(dip.reviewed_units, "for_sitting", return_value=[entry]), \
+                self.assertRaises(dip.DipError) as raised:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(raised.exception.source_rejected)
+        self.assertIn("it is the XML of 18/7, not of 18/20", str(raised.exception))
+
+    # Value: protects=a DIP record without dokumentnummer is refused with a message that says so; fails_when=the refusal
+    #   reads "not of " with nothing after it; why_new=TODOS "Withheld-Reden PRs A and B" B latent; seam=fetch_text stubbed
+    def test_a_record_without_dokumentnummer_is_refused_by_name(self):
+        protocol = {"id": "p1", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18007.xml"}}
+        with patch.object(dip, "fetch_text", return_value=sitting()), \
+                patch.object(dip, "enrich_with_api") as enrich, self.assertRaises(dip.DipError) as raised:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(raised.exception.source_rejected)
+        self.assertIn("the DIP record has no dokumentnummer", str(raised.exception))
+        self.assertNotIn("not of ", str(raised.exception))
+        enrich.assert_not_called()
+
     # Value: protects=offline, a reconciliation failure names itself, not a corrupt file; fails_when=the generic "is not the Plenarprotokoll XML" message returns;
     #   why_new=the offline message would send the operator to refetch good XML; seam=none
     def test_offline_reparse_says_reconciliation_not_corrupt_xml(self):
