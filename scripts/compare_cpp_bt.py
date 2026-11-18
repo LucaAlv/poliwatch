@@ -45,6 +45,7 @@ import tempfile
 import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -162,7 +163,7 @@ def open_export(path: Path, workdir: Path) -> sqlite3.Connection:
         try:
             with gzip.open(path, "rb") as src, source.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
-        except (OSError, EOFError) as error:
+        except (OSError, EOFError, zlib.error) as error:
             raise InputError(f"--export {path}: cannot decompress ({error})") from error
     connection = None
     try:
@@ -451,13 +452,22 @@ def known_differences(path: Path | None) -> set[tuple[str, str, str, str]]:
 
     A row with an empty ``rede_id`` covers every Rede with that pair of values (a name
     change or a spelling); a row with an id covers that Rede only. Both values are
-    folded as the report folds them. A row without a reason is ignored."""
+    folded as the report folds them. A row without a reason is ignored. An ``only_theirs``
+    row must name its Rede: with an empty id it would mark every id only CPP-BT holds as known."""
     if path is None or not path.is_file():
         return set()
     known = set()
-    with path.open(encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle, delimiter="\t"):
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
+    except UnicodeDecodeError as error:
+        raise InputError(f"--known-differences {path}: not UTF-8 ({error})") from error
+    for row in rows:
+        if True:
             if row.get("field") and (row.get("reason") or "").strip():
+                if row["field"] == "only_theirs" and not (row.get("rede_id") or "").strip():
+                    raise InputError(f"--known-differences {path}: an only_theirs row has no rede_id "
+                                     "and would mark every Rede only CPP-BT holds as known")
                 known.add((row["field"], (row.get("rede_id") or "").strip(),
                            fold_difference(row["field"], row.get("ours") or ""),
                            fold_difference(row["field"], row.get("theirs") or "")))

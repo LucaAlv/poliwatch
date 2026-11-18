@@ -286,8 +286,8 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 **Lower-priority edges of `scripts/compare_cpp_bt.py`** (the PR's review found them; none is reached by the first run's inputs):
 - A Rede whose speaker has no `mp_id` has no name on our side, so its surname is not compared; Fraktion is not compared for 9,616 shared ids (about 13%). Neither count is in the pass rule of `docs/release-review.md` step 4. Add both to the rule, or list the not-compared Reden missing from the known file.
-- Corrupt input still gives a traceback, not exit 2: a `.sqlite.gz` with a bad deflate stream (`zlib.error`), a known-differences file that is not UTF-8, an encrypted or unsupported zip, an unwritable `--out` directory.
-- A known-differences row with `only_theirs` and an empty `rede_id` would mark every id only CPP-BT has as known; the shipped file has none. Refuse such a row. A duplicate id in CPP-BT is first-wins and only counted.
+- Corrupt input still gives a traceback, not exit 2: an encrypted or unsupported zip, an unwritable `--out` directory. (~~a `.sqlite.gz` with a bad deflate stream, a known-differences file that is not UTF-8~~ done 2026-11-18.)
+- ~~A known-differences row with `only_theirs` and an empty `rede_id`~~ is refused now (2026-11-18). A duplicate id in CPP-BT is first-wins and only counted.
 
 **Why:** The owner cannot review every release once the project is live. Decision Q3.
 
@@ -609,11 +609,11 @@ Open: (3) and (4) below.
 
 From the v0.46.14.0 /gstack-ship review (specialist and adversarial passes, 2026-11-18). None is reachable by a store the current code builds, or each is wording only:
 10. **The one-sided member rows header can be false.** It says "the member list changed, no Abweichung moved", but a re-keyed member (item 2) or an orphan row on one side can carry abweichung 1 in old and 0 in new: a real flag move then reads as a list change. Figures stay right, and the vote still lists under "changed" through `abweichler_count`. Fix: drop "no Abweichung moved", or count the one-sided rows that carry abweichung 1.
-11. **Stale docstrings.** `_vote_figure_rows` still says a member on one side only reads as "no row"; the code lists such rows under "only in old/new". The module docstring lists the cohort-scoped quantities without the vote groups section.
-12. **The vote groups section reads "(all) present -> present" when one store lacks `votes.application_result` or `abweichler_count`.** `_vote_group_rows` then compares nothing, though both stores hold `vote_fractions` counts. Unreachable: those columns predate the count columns. Fix: print `unavailable` for the side whose vote figures are missing, with a test that drops `votes.abweichler_count`.
+11. ~~**Stale docstrings.**~~ Done 2026-11-18.
+12. ~~**The vote groups section reads "(all) present -> present" when one store lacks the vote figures.**~~ Done 2026-11-18: the side reads `unavailable`.
 13. **Two keys can fold into one.** A `vote_fractions` row whose party has no `parties` row is keyed "None" in the count lines (the member lines print "NULL"), so two such rows in one vote collapse; an orphan `mp_id` equal to another member's `identity_key` would collapse the same way. Unreachable: `party_id` is a NOT NULL foreign key with ON DELETE CASCADE, and 0 such rows exist on the reference store. Fix: key a missing party by `vf.party_id` with a marker, and prefix orphan keys (`mp_id:<id>`).
-14. **Every OSError while unpacking the export copy reads "unavailable".** `_recipe_rows` catches OSError around both the gzip read and the temporary file, so a full disk or an unwritable temp directory looks like a missing copy. Fix: catch only the gzip read errors, or print a warning.
-15. **One-sided member rows are not tested past the list limits.** `test_vote_figure_changes_mark_missing_members_and_truncate_long_lists` now has every member on both sides, so the "... N more members" and "... N more votes" lines of the one-sided rows have no test.
+14. ~~**Every OSError while unpacking the export copy reads "unavailable".**~~ Done 2026-11-18: only `gzip.BadGzipFile`, `EOFError` and `zlib.error` do.
+15. ~~**One-sided member rows are not tested past the list limits.**~~ Done 2026-11-18.
 
 The earlier entry here, "compare_store_values cannot find a tagged export's SQLite copy", is done in v0.46.3.0: the copy is the first file of the generation `datenstand.json` names.
 
@@ -2447,6 +2447,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- compare_cpp_bt and compare_store_values edges (2026-11-18, branch `todo/compare-tools`): an `only_theirs` known-differences row without a `rede_id`, a bad deflate stream and a non-UTF-8 known file now exit 2; compare_store_values docstrings, the `unavailable` vote groups row, the narrower `_recipe_rows` catch and the one-sided member list tails. No figure moved.
 - Puls outward (batch 7) feed and calendar hardening (items 1 partly, 2 partly, 3, 6 RSS date): 2026-11-17. `week_radar_feed` strips XML-illegal control characters from feed text, `valid_site_url` refuses credentials and whitespace, the description parses `datum[:10]`; `sitzungskalender` merges weeks per ISO week before the minimum and the gap count, treats a future `fetched_at` as due, and its docstring records the verified format. No published figure moved.
 - Stammdaten reader and store gate hardening: v0.46.15.0, 2026-11-18. C1 deferred items 11 (hash the parsed buffer; the sweep half stays open), 15, 17 and 37; E4 /gstack-review item 3 (offline render refuses a Stammdaten file the store was not built with; the rebuild's double read stays open) and item 5's `_data_clone` part; Registry fix review (c), (g) and (i)'s second half. No figure moved: the reference store's file and `mdb_stammdaten_stand` share sha256 `29ae4ba1…` and an offline render of its clone passes the check (801 dossiers, 157 Stimmen in 87 Abstimmungen re-filed in the panels)
 - compare_store_values review notes 1, 4, 5, 7, 8, 9 and the E4 per-(vote, group) comparison: v0.46.14.0, 2026-11-18, `scripts/compare_store_values.py`; items 2, 3, 6 and the ship review's 10 to 15 stay open in their entry. No stored figure moves; the report gains one-sided vote lines, a member-list line and a "vote groups" section.
