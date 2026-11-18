@@ -15,7 +15,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import ExitStack
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -229,6 +229,30 @@ class RefreshIfDueTests(unittest.TestCase):
         self.assertEqual(after["2026"], cached)
         self.assertIn("3 weeks for 2026", log)
         self.assertEqual(len(after["2027"]), 10)  # the other file was still read
+
+    # Value: protects=the same week listed twice, or split into two events, counts once toward MIN_WEEKS_PER_YEAR and in the cache; fails_when=ten events for five weeks pass the 10-week minimum, or a duplicate week is stored twice and doubles the gap sentence; why_new=TODOS Puls outward batch 7 item 1; seam=refresh_if_due; no_claim=none
+    def test_a_week_listed_twice_counts_once(self) -> None:
+        mondays = ["20260112", "20260126", "20260209", "20260223", "20260309"]
+        ends = ["20260117", "20260131", "20260214", "20260228", "20260314"]
+        doubled = calendar(*[event(m, e) for m, e in zip(mondays, ends)], *[event(m, e) for m, e in zip(mondays, ends)])
+        log = refresh(self.out, FakeSource({cal.INDEX_URL: '<a href="/resource/blob/9000001/x.ics">x</a>', "https://www.bundestag.de/resource/blob/9000001/x.ics": doubled}))
+        self.assertIn("5 weeks for 2026", log)
+        self.assertFalse(self.cache_file.exists())
+        # Twelve distinct weeks, one of them split into two events, are stored as twelve.
+        twelve = [(date(2026, 1, 12) + timedelta(days=14 * k)) for k in range(12)]
+        events = [event(d.strftime("%Y%m%d"), (d + timedelta(days=5)).strftime("%Y%m%d")) for d in twelve]
+        events.append(event("20260112", "20260115"))  # a second event inside the first week
+        refresh(self.out, FakeSource({cal.INDEX_URL: '<a href="/resource/blob/9000001/x.ics">x</a>', "https://www.bundestag.de/resource/blob/9000001/x.ics": calendar(*events)}))
+        weeks = json.loads(self.cache_file.read_text(encoding="utf-8"))["years"]["2026"]
+        self.assertEqual(len(weeks), 12)
+        self.assertEqual(weeks[0], ["2026-01-12", "2026-01-16"])
+
+    # Value: protects=a cache stamped in the future (clock jump) is due, so it is replaced instead of never refreshed; fails_when=a negative age counts as fresh; why_new=TODOS Puls outward batch 7 item 2; seam=_is_due; no_claim=none
+    def test_a_cache_from_the_future_is_due(self) -> None:
+        cache = synthetic_cache()
+        cache["fetched_at"] = "2026-12-24T12:00:00+00:00"
+        self.assertTrue(cal._is_due(cache, NOW))
+        self.assertFalse(cal._is_due({**cache, "fetched_at": "2026-11-01T11:00:00+00:00"}, NOW))
 
     # Value: protects=a moved week is visible in the build log; fails_when=the added and removed weeks are not printed; why_new=the Ältestenrat can change the plan and the page would change silently; seam=refresh_if_due; no_claim=none
     def test_added_and_removed_weeks_are_logged(self) -> None:
