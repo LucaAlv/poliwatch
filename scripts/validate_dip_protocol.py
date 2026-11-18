@@ -2132,12 +2132,6 @@ def find_protocol(client: ApiClient, protocol_id: str | None, document_number: s
     return documents[0]
 
 
-def norm_title(value: str | None) -> str:
-    value = clean_text(value).lower()
-    value = re.sub(r"[^a-zäöüß0-9]+", " ", value)
-    return clean_text(value)
-
-
 def overlaps(top: dict[str, Any], position: dict[str, Any]) -> bool:
     page_range = top.get("page_range") or {}
     start_ref = page_range.get("start")
@@ -2152,20 +2146,6 @@ def overlaps(top: dict[str, Any], position: dict[str, Any]) -> bool:
     if None in {top_start, top_end, pos_start, pos_end}:
         return False
     return int(pos_start) <= int(top_end) and int(pos_end) >= int(top_start)
-
-
-def title_matches(heading: str | None, title: str | None) -> bool:
-    heading_norm = norm_title(heading)
-    title_norm = norm_title(title)
-    if not heading_norm or not title_norm:
-        return False
-    if title_norm in heading_norm or heading_norm in title_norm:
-        return True
-    title_tokens = {token for token in title_norm.split() if len(token) > 4}
-    heading_tokens = {token for token in heading_norm.split() if len(token) > 4}
-    if not title_tokens:
-        return False
-    return len(title_tokens & heading_tokens) / len(title_tokens) >= 0.65
 
 
 def activity_page(activity: dict[str, Any]) -> int | None:
@@ -4193,10 +4173,10 @@ def enrich_with_api(
             if doc.get("dokumentnummer")
         }
         if xml_numbers:
-            return bool(xml_numbers & position_drucksache_numbers(position, vorgang_drucksache_numbers)) or title_matches(
+            return bool(xml_numbers & position_drucksache_numbers(position, vorgang_drucksache_numbers)) or vote_links.title_matches(
                 top.get("heading"), position.get("titel")
             )
-        return title_matches(top.get("heading"), position.get("titel"))
+        return vote_links.title_matches(top.get("heading"), position.get("titel"))
 
     enriched_tops: list[dict[str, Any]] = []
     agenda_items = parsed_xml["agenda_items"]

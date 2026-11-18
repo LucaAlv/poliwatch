@@ -388,12 +388,7 @@ LAYERS: tuple[tuple[str, ...], ...] = (
 )
 
 #: Import cycles that predate the rule, with why they exist.
-KNOWN_CYCLES: dict[frozenset[str], str] = {
-    frozenset({"validate_dip_protocol", "vote_links"}): (
-        "vote_links uses validate_dip_protocol.title_matches while the parser calls vote_links "
-        "(TODOS.md \"Move title_matches below the parser\")"
-    ),
-}
+KNOWN_CYCLES: dict[frozenset[str], str] = {}
 
 
 def group_of(module: str) -> str | None:
