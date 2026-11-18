@@ -281,6 +281,19 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                 self.assertEqual(lookup["dip:7"], adas[0]["id"])
                 self.assertEqual(lookup["dip:9"], adas[0]["id"])
 
+    # Value: protects=bind, mp_keys and roster_member read the successor map without rebuilding it
+    #   on every call (about 524k binds on the reference store), and no caller can change the
+    #   cached map; fails_when=dip_successors() builds a fresh dict per call again, or hands out the
+    #   loader's own mutable dict; why_new=TODOS "Registry fix review" item (e); seam=none
+    def test_the_successor_map_is_read_once_per_corrections_file(self):
+        with self.correction_file({"dip_successors": [successor("7", "9")]}):
+            first = registry.dip_successors()
+            self.assertEqual(dict(first), {"7": "9"})
+            self.assertIs(registry.dip_successors(), first)
+            with self.assertRaises(TypeError):
+                first["8"] = "9"  # type: ignore[index]
+            self.assertEqual(registry.current_dip_person_id("07"), "9")
+
     # Value: protects=a store written before the dip_successors entry existed, where the old
     #   record is an MdB roster record with ever_mdb, replays with the entry into the grouping and
     #   evidence of a fresh build with it (Köstering 8054 on the 2026-11-12 reference store);
