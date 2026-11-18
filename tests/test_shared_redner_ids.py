@@ -360,6 +360,28 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             with self.subTest(left):
                 self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
 
+    # Value: protects=a name that is only an office is still compared, the compound offices
+    #   Wehrbeauftragte, Vizekanzler, Staatsrätin and Bevollmächtigte prove nothing, and a surname
+    #   that ends like an office ("Karl Bürgermeister") still joins its own initial; fails_when=an
+    #   office-only name empties and is skipped (fail-open), a compound office counts as a shared
+    #   word, or a given name plus an office-like surname loses the surname (fail-closed);
+    #   why_new=TODOS "Redner-ID name check" items 2, 3 and 4; seam=none
+    def test_an_office_only_name_and_compound_offices_are_compared(self):
+        for left, right in (("Bürgermeister", "Anna Beispiel"), ("Senatorin", "Dr. Lena Kreck"),
+                            ("Dr. Hans-Peter Bartels, Wehrbeauftragter", "Reinhold Robbe, Wehrbeauftragter"),
+                            ("Olaf Scholz, Vizekanzler", "Robert Habeck, Vizekanzler"),
+                            ("Anna Muster, Staatsrätin", "Bea Probe, Staatsrätin"), ("Max Muster, Staatsrat", "Erik Probe, Staatsrat"),
+                            ("Max Muster, Landesbevollmächtigter", "Erik Probe, Landesbevollmächtigter"),
+                            ("Anna Muster, Bevollmächtigte", "Bea Probe, Bevollmächtigte"),
+                            # An office in brackets after a lone surname is still an office.
+                            ("Sieling (Bürgermeister)", "Bovenschulte (Bürgermeister)")):
+            with self.subTest(left), self.assertRaisesRegex(registry.RegistryError, "11009999"):
+                self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
+        for left, right in (("Karl Bürgermeister", "K. Bürgermeister"), ("Dr. Karl Bürgermeister", "Bürgermeister, Karl"),
+                            ("Bürgermeister", "Bürgermeister")):
+            with self.subTest(left):
+                self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
+
     # Value: protects=the name check reads only records that hold a Redner-ID: a record keyed by a DIP id that two printed names reach is not refused; fails_when=the guard compares names on every record, so a reviewed own dip: id or a DIP-only speaker printed under two names stops the build; why_new=TODOS "Shared Redner-IDs" item 14; seam=none
     def test_a_record_with_no_redner_id_and_two_unrelated_names_is_not_refused(self):
         conn = self.build(speakers=[(None, "Erika Mustermann", None, None), (None, "Max Beispiel", None, None)],

@@ -958,14 +958,16 @@ _NAME_PARTICLES = frozenset({"von", "van", "vom", "zu", "de", "der", "den", "dos
 # Offices the XML sometimes prints in the name fields ("Dr. Carsten Sieling,
 # Bürgermeister"): two people in the same office share the word, so it proves
 # nothing either. A compound office ("Innenminister", "Ministerpräsidentin") is
-# matched by its ending; "Meister" and other surnames are not offices.
+# matched by its ending ("Wehrbeauftragter", "Landesbevollmächtigte"); "Meister"
+# and other surnames are not offices.
 _ROLE_WORDS = frozenset({
     "parl", "parlamentarischer", "parlamentarische", "stellv", "stellvertretender", "stellvertretende",
     "regierender", "regierende", "erster", "erste", "mdb", "mdbr", "staatssekr", "bundesmin", "staatsmin",
-    "beauftragter", "beauftragte", "bundeskanzler", "bundeskanzlerin",
+    "bundeskanzler", "bundeskanzlerin", "vizekanzler", "vizekanzlerin", "staatsrat", "staatsrätin",
 })
 _ROLE_ENDINGS = ("minister", "ministerin", "präsident", "präsidentin", "bürgermeister", "bürgermeisterin",
-                 "staatssekretär", "staatssekretärin", "senator", "senatorin")
+                 "staatssekretär", "staatssekretärin", "senator", "senatorin", "beauftragter", "beauftragte",
+                 "bevollmächtigter", "bevollmächtigte")
 
 
 def _role_word(word: str) -> bool:
@@ -973,9 +975,18 @@ def _role_word(word: str) -> bool:
 
 
 def _name_words(name: Any) -> frozenset[str]:
-    words = {word.strip(".,()") for word in _normalized_mp_name(name).split()}
-    return frozenset(word for word in words - _MP_TITLE_WORDS - _NAME_PARTICLES - {"unbekannt", ""}
-                     if not _role_word(word))
+    """The words of a name that can tell two people apart: no title, particle or
+    office. Two exceptions keep an office word, so the name is still compared: a
+    given name or initial and one unbracketed word read as an office is that
+    person's surname ("Karl Bürgermeister", "K. Bürgermeister"), and a name that
+    is only offices ("Bürgermeister") keeps them rather than emptying."""
+    words = [(word.strip(".,()"), word.startswith("(")) for word in _normalized_mp_name(name).split()]
+    words = [(word, bracketed) for word, bracketed in words
+             if word and word not in _MP_TITLE_WORDS and word not in _NAME_PARTICLES and word != "unbekannt"]
+    kept = {word for word, _ in words if not _role_word(word)}
+    if len(words) == 2 and not _role_word(words[0][0]) and _role_word(words[1][0]) and not words[1][1]:
+        kept.add(words[1][0])
+    return frozenset(kept or {word for word, _ in words})
 
 
 def require_reviewed_redner_ids(rows: list[dict[str, Any]]) -> None:
