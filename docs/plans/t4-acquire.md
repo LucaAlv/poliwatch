@@ -2,7 +2,7 @@
 
 **Status:** acquired and measured. The online run (step 1) restored 83 sittings on 2026-11-16 and 17, and V1 to V5 passed at adfe50c. Step 2 measured the result on 2026-11-18; see "Outcome" at the end. Planned 2026-11-15, when the owner accepted all nine recommended decisions (see "Decisions"). N8 ran offline on 2026-11-15 ([n8-review.md](t4-acquire/n8-review.md)), and its findings landed in #165 and #166 before the fetch.
 **Parent:** `TODOS.md` "Coverage gate before the first data release", steps 6 (acquire), 7 (measure) and 8 (gate), with N8 (review of restored sittings) and N10 (vote links).
-**Base:** main fd4760d (v0.46.0.0): store schema 14, export format 20, speech rule 9. The reference store `.context/dip-pulse-site` (main checkout) is still at schema 12: it was last replayed on v0.41.0.0 (2026-11-14) and holds 718 sittings, 619 votes and 590 vote links.
+**Base:** main fd4760d (v0.46.0.0): store schema 14, export format 20, speech rule 9. When planned, the reference store `.context/dip-pulse-site` (main checkout) was at schema 12: last replayed on v0.41.0.0 (2026-11-14), with 718 sittings, 619 votes and 590 vote links. After T4 it holds 801 sittings, 727 votes and 701 vote links at schema 14 ("Outcome").
 **Read for this plan:** `CLAUDE.md`, `docs/agents/review-checklist.md`, ADR 0005, `docs/plans/withholding-preflight/report.md`, `docs/plans/withheld-before-t4.md`, `docs/plans/vote-links-and-figures.md`, `docs/release-review.md`, `docs/release-reviews/cpp-bt-first-run-2026-11-14.md`, `~/agent-runs/fresh/run.sh` and its `requests.log`.
 
 ## What T4 does
@@ -391,16 +391,17 @@ The online run went from 2026-11-16 12:15 to 2026-11-17 17:18 UTC (`~/agent-runs
   - All 38 new surname differences fall into pairs the known-differences file already lists.
   - The 2 Fraktion rows are the old two (C5, C6).
 - **Ratio:**
-  - The 375 new rows are 6.0% of the 6,292 newly compared Reden, against 2.8% overall. These are the sittings refused before for nested turns.
+  - The 375 new rows are 6.0% of the 6,292 newly compared Reden, against 2.8% in the kept sittings (1,487 of 53,819; 3.1% overall after T4). These are the sittings refused before for nested turns.
   - The 20 largest in restored sittings were read against the XML:
     - **14 are C1** (`docs/source-errors.md`): the `<rede>` runs on into the chair's business, such as vote results read out or the sitting resumed. CPP-BT counts all of it; we store the speech. Examples: 18/98 `ID1809801700` 597 against 8,436 tokens; 18/1 `ID1800100100`, Kauder's nomination, where the element holds the election and Lammert's acceptance.
     - **2 are withheld units with a stored part:** 18/2 `ID1800202300` and 18/83 `ID1808301300`. With the withheld words (2,466 and 2,620) they reach the expected count.
     - **2 hold speeches printed under a `<name>` tag:** 18/29 `ID1802902700`, with Thorsten Frei's 652 and Julia Bartz's 629 words, and 18/42 `ID1804201700`, with Annette Schavan's 1,067. These are speeches counted nowhere; see the next point.
     - **2 hold more words than CPP-BT's tokens:** 18/8 `ID1800805400` (Ströbele, 137 against 86) and 19/18 `ID191803000` (Hirte, 348 against 218). Our words equal the speaker's own paragraphs in the XML, so CPP-BT's count is the short one.
 - **Finding, a known defect that T4 grows:** speakers printed as a `<name>` that is not the chair, inside another speaker's `<rede>`, are read as chair text and stored in no table (TODOS.md "ADR 0004 follow-ups", census finding 8).
-  - Measured on all 801 XML files for turns of 15 words or more, with a phrase test against every text table: 100 turns, 45,699 words, in 30 kept sittings before T4, unchanged.
+  - Measured on all 801 XML files for turns of 15 words or more, with a phrase test against every text table: 98 turns, 45,561 words, in 28 kept sittings before T4, unchanged.
   - T4 adds **33 turns, 19,861 words, in 10 restored sittings**. 18/29 alone has 13, among them Hans-Ulrich Krüger's 1,552 words.
-  - Total 133 turns, 65,560 words, 40 sittings, all but 3 in WP 18. Receipt [name-tag-speakers.tsv](t4-acquire/name-tag-speakers.tsv).
+  - Total 131 turns, 65,422 words, 38 sittings, all but 1 in WP 18 (Woidke in 19/104). Receipt [name-tag-speakers.tsv](t4-acquire/name-tag-speakers.tsv).
+  - The name filter let two WP 20 rows through, removed on review: 20/144 `ID2014407300` "Wolfgang Kubicki:" (86 words) is the Vizepräsident's Ordnungsruf, chair text printed without his title. 20/25 `ID202506700` "(Vizepräsident Wolfgang Kubicki räuspert sich" (52 words) is a stage direction printed as `<name>`. The 52 words after it are Lamya Kaddor's own closing lines ("– Sofort, Herr Präsident. – …"), and no table holds them. That is a separate defect, a kept sitting's speaker cut short, filed in TODOS.md beside the `<name>` speakers.
   - These words are not in M7's withheld shares, so they are missing coverage on top of those. The TODO now carries the figures. The fix is a parser rule and an owner decision, not part of this step.
 
 ### M5. `erste-reden` v3
@@ -466,5 +467,5 @@ The 2016 and 2018 words exceed the plan's offline figures (9,338 and 11,360) by 
 
 ### What is left after step 2
 
-- The speeches printed as `<name>` that M4 found (133 turns, 65,560 words, 33 of them from T4) need a parser rule and an owner decision before the first release (TODOS.md "ADR 0004 follow-ups").
+- The speeches printed as `<name>` that M4 found (131 turns, 65,422 words, 33 of them from T4) need a parser rule and an owner decision before the first release (TODOS.md "ADR 0004 follow-ups").
 - Step 3 (N8) passed before the fetch ([n8-review.md](t4-acquire/n8-review.md)). Step 4 (N10 over the 801 sittings, then vote PR C), step 5's rule and the two-sitting run for 18/62 and 18/90, and an online update for 21/107 to 21/109 come before the first release.

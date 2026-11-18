@@ -790,12 +790,12 @@ vote_id	list_date	store_date	protocol	status	title
 1035	2026-10-15	2026-10-15	21/102	stored	Bundeswehreinsatz im Roten Meer (Eunavfor Aspides)
 1036	2026-10-15	2026-10-15	21/102	stored	Bundeswehreinsatz im Südsudan (Unmiss)
 1037	2026-10-15	2026-10-15	21/102	stored	Änderung des Brennstoffemissionshandelsgesetzes
-1038	2026-11-12			list_only_UNEXPLAINED	Startchancen- und Qualitätsentwicklungsgesetz
-1039	2026-11-12			list_only_UNEXPLAINED	Entschließungsantrag der Linken zum Startchancengesetz
-1040	2026-11-12			list_only_UNEXPLAINED	Reform des Erneuerbare-Energien-Gesetzes
-1041	2026-11-12			list_only_UNEXPLAINED	Bundeswehreinsatz im Mittelmeer (Eunavfor Med Irini)
-1042	2026-11-12			list_only_UNEXPLAINED	Antrag der Linken zur Ausgestaltung des Unterhaltsvorschusses
-1043	2026-11-13			list_only_UNEXPLAINED	Erster Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts
-1044	2026-11-13			list_only_UNEXPLAINED	Zweiter Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts
-1045	2026-11-13			list_only_UNEXPLAINED	Gesetzentwurf zur Reform des Nachrichtendienstrechts
-1046	2026-11-13			list_only_UNEXPLAINED	Bundeswehreinsatz im Mittelmeer (Sea Guardian)
+1038	2026-11-12			list_only_newer_than_store_21/108	Startchancen- und Qualitätsentwicklungsgesetz
+1039	2026-11-12			list_only_newer_than_store_21/108	Entschließungsantrag der Linken zum Startchancengesetz
+1040	2026-11-12			list_only_newer_than_store_21/108	Reform des Erneuerbare-Energien-Gesetzes
+1041	2026-11-12			list_only_newer_than_store_21/108	Bundeswehreinsatz im Mittelmeer (Eunavfor Med Irini)
+1042	2026-11-12			list_only_newer_than_store_21/108	Antrag der Linken zur Ausgestaltung des Unterhaltsvorschusses
+1043	2026-11-13			list_only_newer_than_store_21/109	Erster Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts
+1044	2026-11-13			list_only_newer_than_store_21/109	Zweiter Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts
+1045	2026-11-13			list_only_newer_than_store_21/109	Gesetzentwurf zur Reform des Nachrichtendienstrechts
+1046	2026-11-13			list_only_newer_than_store_21/109	Bundeswehreinsatz im Mittelmeer (Sea Guardian)

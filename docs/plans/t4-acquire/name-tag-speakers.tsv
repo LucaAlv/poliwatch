@@ -1,4 +1,4 @@
-# Turns printed under a non-chair <name> inside another speaker's <rede> (15 words or more), whose text is in no table of the T4 store (phrase test). TODOS.md "ADR 0004 follow-ups".
+# Turns printed under a non-chair <name> inside another speaker's <rede> (15 words or more), whose text is in no table of the T4 store (phrase test). TODOS.md "ADR 0004 follow-ups". Two rows the name filter let through were removed on review (2026-11-18): 20/144 ID2014407300 "Wolfgang Kubicki:" (86 words) is the Vizepräsident's Ordnungsruf, chair text printed without his title; 20/25 ID202506700 "(Vizepräsident Wolfgang Kubicki räuspert sich" (52 words) is a stage direction printed as <name>, and the words after it are Lamya Kaddor's own closing lines, a separate defect (t4-acquire.md, M4).
 sitting	rede_id	element_speaker_tail	name_tag	words	restored_by_t4
 18/6	ID1800601300	RÜNENKerstin Andreae (BÜNDNIS 90/DIE GRÜNEN):	Sven Morlok, Staatsminister (Sachsen) :	269	yes
 18/6	ID1800601300	RÜNENKerstin Andreae (BÜNDNIS 90/DIE GRÜNEN):	Sven Morlok, Staatsminister (Sachsen) :	216	yes
@@ -131,5 +131,3 @@ sitting	rede_id	element_speaker_tail	name_tag	words	restored_by_t4
 18/107	ID1810703900	rin für Familie, Senioren, Frauen und Jugend:	Norbert Müller (Potsdam) (DIE LINKE) :	996	no
 18/107	ID1810703900	rin für Familie, Senioren, Frauen und Jugend:	Norbert Müller (Potsdam) (DIE LINKE) :	27	no
 19/104	ID1910400800	Dr.MarcJongenAfDDr. Marc Jongen (AfD):	Dr. Dietmar Woidke, Ministerpräsident (Brande	726	no
-20/25	ID202506700	GRÜNEN Lamya Kaddor (BÜNDNIS 90/DIE GRÜNEN):	(Vizepräsident Wolfgang Kubicki räuspert sich	52	no
-20/144	ID2014407300	MarkusFrohnmaierAfDMarkus Frohnmaier (AfD):	Wolfgang Kubicki:	86	no
