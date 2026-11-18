@@ -7,10 +7,12 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import tempfile
 import urllib.error
 import unittest
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -148,14 +150,92 @@ class ReadZipTests(unittest.TestCase):
             with self.assertRaisesRegex(derive.StammdatenError, "larger than"):
                 stammdaten.read_zip(path)
 
+    # Value: protects=the sha256 read_zip returns names the bytes its records and Stand came from, even when
+    #   a concurrent refresh replaces the file between two reads; fails_when=read_zip parses one read of the
+    #   file and hashes another (path.read_bytes() after the zip was parsed), so the store's
+    #   mdb_stammdaten_stand names a file the seat rows did not come from; why_new=TODOS C1 deferred item 11;
+    #   seam=io.open, which swaps the file on the second open; no_claim=a real concurrent build
+    def test_the_sha256_names_the_bytes_the_records_came_from(self) -> None:
+        path = self.zip({"MDB_STAMMDATEN.XML": XML})
+        first = path.read_bytes()
+        other = self.tmp / "other.zip"
+        with zipfile.ZipFile(other, "w") as archive:
+            archive.writestr("MDB_STAMMDATEN.XML", XML.replace(b"1777449783", b"1780000000", 1))
+        real_open = io.open
+        opened: list[str] = []
+
+        def swapping_open(file, *args, **kwargs):
+            if isinstance(file, (str, os.PathLike)) and os.fspath(file) == os.fspath(path):
+                opened.append("open")
+                if len(opened) == 2:  # a concurrent refresh lands between the reads
+                    os.replace(other, path)
+            return real_open(file, *args, **kwargs)
+
+        with mock.patch("io.open", swapping_open):
+            result = stammdaten.read_zip(path)
+        self.assertEqual(result.stand, "2026-04-29T08:03:03+00:00")
+        self.assertEqual(result.sha256, hashlib.sha256(first).hexdigest())
+        self.assertEqual(opened, ["open"])
+
+    # Value: protects=an XML member whose prolog declares entities (a DOCTYPE with an internal subset, a bare
+    #   ENTITY) is refused before expat parses it, as is a prolog that reaches no root element in its first
+    #   bytes (a UTF-16 file hides a DOCTYPE from a byte scan); the Bundestag's own external-only DOCTYPE and
+    #   the comment after it still read; fails_when=read_zip hands any prolog to ET.fromstring, so entity
+    #   expansion rests on the linked expat alone; why_new=TODOS C1 deferred item 17, whose premise that the
+    #   real file has no DOCTYPE is wrong: it has <!DOCTYPE DOCUMENT SYSTEM "MDB_STAMMDATEN.DTD">;
+    #   seam=stammdaten.read_zip
+    def test_a_prolog_that_declares_entities_is_refused_before_it_is_parsed(self) -> None:
+        body = b"<DOCUMENT>" + XML.split(b"<DOCUMENT>", 1)[1]
+        declaration = b'<?xml version="1.0" encoding="UTF-8"?>\n'
+        refused = {
+            "internal subset": declaration + b'<!DOCTYPE DOCUMENT [<!ENTITY a "Muster">]>\n' + body,
+            "external id and internal subset": declaration + b'<!DOCTYPE DOCUMENT SYSTEM "x.dtd" [<!ENTITY a "b">]>' + body,
+            "subset after a comment": declaration + b'<!-- c --><!DOCTYPE DOCUMENT[<!ENTITY a "b">]>' + body,
+            "bare entity": b'<!ENTITY a "b">' + body,
+            "two doctypes": b'<!DOCTYPE DOCUMENT SYSTEM "x.dtd"><!DOCTYPE DOCUMENT [<!ENTITY a "b">]>' + body,
+            "utf-16": XML.decode("utf-8").replace('encoding="UTF-8"', 'encoding="UTF-16"').encode("utf-16"),
+            "root past the first bytes": b"<!--" + b"x" * stammdaten.PROLOG_BYTES + b"-->" + body,
+        }
+        for label, xml in refused.items():
+            with self.subTest(label), self.assertRaisesRegex(derive.StammdatenError, "DOCTYPE|root element"):
+                stammdaten.read_zip(self.zip({"MDB_STAMMDATEN.XML": xml}))
+        accepted = {
+            "the Bundestag's prolog": XML,
+            "public id": b'<!DOCTYPE DOCUMENT PUBLIC "-//X//DTD//DE" \'x.dtd\'>' + body,
+            "utf-8 byte order mark": b"\xef\xbb\xbf" + XML,
+            "no prolog": body,
+        }
+        for label, xml in accepted.items():
+            with self.subTest(label):
+                self.assertEqual(stammdaten.read_zip(self.zip({"MDB_STAMMDATEN.XML": xml})).stand, "2026-04-29T08:03:03+00:00")
+
+    # Value: protects=a VERSION stamp before 2017 or later than a day from now is refused, so it never becomes
+    #   the Stand that drives after_stand, the manifest, the Daten page and r2's caveat date; the bounds
+    #   themselves read; fails_when=read_zip accepts any VERSION that fits a datetime (0 is 1970, 99999999999
+    #   is the year 5138, which silences the drift warning); why_new=TODOS C1 deferred item 37; seam=stammdaten._now
+    def test_a_stand_before_2017_or_after_tomorrow_is_refused(self) -> None:
+        now = datetime(2026, 11, 17, 12, tzinfo=timezone.utc)
+        tomorrow = int((now + timedelta(days=1)).timestamp())
+        cases = {0: False, 1483228799: False, 1483228800: True, tomorrow: True, tomorrow + 1: False, 99999999999: False}
+        for version, ok in cases.items():
+            with self.subTest(version=version), mock.patch.object(stammdaten, "_now", return_value=now):
+                path = self.zip({"MDB_STAMMDATEN.XML": XML.replace(b"1777449783", str(version).encode(), 1)})
+                if ok:
+                    self.assertEqual(stammdaten.read_zip(path).stand,
+                                     datetime.fromtimestamp(version, timezone.utc).isoformat())
+                else:
+                    with self.assertRaisesRegex(derive.StammdatenError, "VERSION .* is a Stand before 2017 or after"):
+                        stammdaten.read_zip(path)
+
 
 CDU_CSU = "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union"
 
 
-def whole_bundestag_zip(path: Path, version: int = 1777449783, art: str = "Fraktion/Gruppe") -> bytes:
+def whole_bundestag_zip(path: Path, version: int = 1777449783, art: str = "Fraktion/Gruppe", prolog: str = "") -> bytes:
     """A zip the size check accepts: a WP 21 Bundestag of 630 CDU/CSU MdBs
     from the constituent day, in the file's element names. ``art`` is the
-    ``INSART_LANG`` label of their membership."""
+    ``INSART_LANG`` label of their membership, ``prolog`` what precedes the
+    root element."""
     mdbs = "".join(
         f"<MDB><ID>110{index:05d}</ID><NAMEN><NAME><NACHNAME>Muster{index}</NACHNAME><VORNAME>Max</VORNAME>"
         f"<HISTORIE_VON>25.03.2025</HISTORIE_VON></NAME></NAMEN><WAHLPERIODEN><WAHLPERIODE><WP>21</WP>"
@@ -165,7 +245,7 @@ def whole_bundestag_zip(path: Path, version: int = 1777449783, art: str = "Frakt
         for index in range(630)
     )
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("MDB_STAMMDATEN.XML", f"<DOCUMENT><VERSION>{version}</VERSION>{mdbs}</DOCUMENT>")
+        archive.writestr("MDB_STAMMDATEN.XML", f"{prolog}<DOCUMENT><VERSION>{version}</VERSION>{mdbs}</DOCUMENT>")
     return path.read_bytes()
 
 
@@ -433,6 +513,59 @@ class RefreshTests(unittest.TestCase):
             err = self.refresh((self.newer, '"z"'))
         self.assertIn("larger than 100 bytes", err)
         self.assertEqual(self.cache.read_bytes(), self.good)
+
+    def refresh_download(self, body: bytes) -> str:
+        """``refresh`` with ``_download`` answering ``body`` under the ETag "n"."""
+        err = io.StringIO()
+        with mock.patch.object(stammdaten, "_download", return_value=(body, '"n"')), contextlib.redirect_stderr(err):
+            stammdaten.refresh(self.database, since_wahlperiode=18)
+        return err.getvalue()
+
+    # Value: protects=a download whose Stand is older than the cached file's (a CDN serving an old zip under
+    #   another ETag) keeps the cached file and its ETag and warns with both Stands, so the seat tables, r2
+    #   and the manifest Stand never move backwards; a newer or equal Stand still replaces it; fails_when=
+    #   refresh never compares the Stand and replaces a newer cache with only a "fetched" line;
+    #   why_new=TODOS C1 deferred item 15; seam=stammdaten._download stubbed
+    def test_an_older_download_keeps_the_newer_cached_file_and_warns(self) -> None:
+        self.seed(self.newer)
+        err = self.refresh_download(self.good)
+        self.assertEqual(self.cache.read_bytes(), self.newer)
+        self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"old"')
+        self.assertIn("warning: [stammdaten] the downloaded file has Stand 29.04.2026, older than the cached file's", err)
+        self.assertIn("keeping the cached file (Stand 28.05.2026)", err)
+        self.assertNotIn("stammdaten: fetched", err)
+        self.assertEqual(self.leftovers(), [])
+        same_stand = whole_bundestag_zip(self.tmp / "same-stand.zip", prolog="<!-- republished -->")
+        for label, cached, fetched in (("newer", self.good, self.newer), ("same Stand", self.good, same_stand)):
+            with self.subTest(label):
+                self.seed(cached)
+                err = self.refresh_download(fetched)
+                self.assertEqual(self.cache.read_bytes(), fetched)
+                self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"n"')
+                self.assertIn("stammdaten: fetched", err)
+                self.assertNotIn("warning:", err)
+
+    # Value: protects=a download that declares entities in its prolog, or stamps a Stand before 2017 or after
+    #   tomorrow, is refused and the cached file kept, with the cause named; fails_when=refresh caches a file
+    #   read_zip would accept only before these checks; why_new=TODOS C1 deferred items 17 and 37;
+    #   seam=stammdaten._download stubbed
+    def test_a_download_with_entities_or_an_implausible_stand_keeps_the_cached_file(self) -> None:
+        bad = {
+            "entity": (whole_bundestag_zip(self.tmp / "entity.zip", version=1780000000,
+                                           prolog='<!DOCTYPE DOCUMENT [<!ENTITY a "b">]>'), "DOCTYPE"),
+            "far future": (whole_bundestag_zip(self.tmp / "future.zip", version=99999999999), "after"),
+            "before 2017": (whole_bundestag_zip(self.tmp / "old.zip", version=1400000000), "before 2017"),
+        }
+        for label, (body, cause) in bad.items():
+            with self.subTest(label):
+                self.seed(self.good)
+                err = self.refresh_download(body)
+                self.assertIn("warning: [stammdaten]", err)
+                self.assertIn(cause, err)
+                self.assertIn("keeping the cached file (Stand 29.04.2026)", err)
+                self.assertEqual(self.cache.read_bytes(), self.good)
+                self.assertEqual(json.loads(stammdaten.etag_path(self.database).read_text())["etag"], '"old"')
+                self.assertEqual(self.leftovers(), [])
 
 
 class CachePathTests(unittest.TestCase):

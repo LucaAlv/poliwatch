@@ -1121,20 +1121,49 @@ def attach_speaker_profiles(
     item: dict[str, Any],
     profiles: dict[tuple[str, str, str], Any],
     by_redner_id: dict[str, Any] | None = None,
+    protocol_id: Any = None,
 ) -> None:
     """Give the speakers of an agenda item the profile a cached one of the same
     identity carried, where they have none yet; else the profile any cached report
-    resolved for the same Redner-ID (``by_redner_id``)."""
+    resolved for the same Redner-ID (``by_redner_id``), where that profile is this
+    occurrence's (``registry.redner_id_profile_reaches``: under a shared id, only
+    the reviewed profile owner's occurrences)."""
     for key in SPEAKER_LISTS:
         for speech in item.get(key) or []:
             speaker = speech.get("speaker")
             if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
                 continue
             identity = speaker_identity(speaker)
+            redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
             if identity in profiles:
                 speaker["abgeordnetenwatch"] = copy.deepcopy(profiles[identity])
-            elif by_redner_id and derive.first_redner_id(speaker.get("xml_redner_id")) in by_redner_id:
-                speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[derive.first_redner_id(speaker.get("xml_redner_id"))])
+            elif (by_redner_id and redner_id in by_redner_id
+                  and registry.redner_id_profile_reaches(speaker, protocol_id, speech.get("rede_id"))):
+                speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[redner_id])
+
+
+def redner_id_profiles(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Redner-ID -> the abgeordnetenwatch profile the cached reports resolved for
+    it, taken only from an occurrence whose profile may follow its Redner-ID
+    (``registry.redner_id_profile_reaches``). Within an item the last occurrence
+    of a speaker identity counts, across items and reports the first."""
+    by_redner_id: dict[str, Any] = {}
+    for entry in entries:
+        report = entry["report"]
+        protocol_id = (report.get("protocol") or {}).get("id")
+        for item in [report, *(report.get("agenda_items") or [])]:
+            found: dict[tuple[str, str, str], Any] = {}
+            for key in SPEAKER_LISTS:
+                for speech in item.get(key) or []:
+                    speaker = speech.get("speaker")
+                    if (isinstance(speaker, dict) and "abgeordnetenwatch" in speaker
+                            and registry.redner_id_profile_reaches(speaker, protocol_id, speech.get("rede_id"))):
+                        found[speaker_identity(speaker)] = speaker["abgeordnetenwatch"]
+            for identity, profile in found.items():
+                redner_id = derive.first_redner_id(identity[0])
+                if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
+                    by_redner_id.setdefault(redner_id, profile)
+    return by_redner_id
 
 
 def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
@@ -1159,8 +1188,11 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
                     continue
                 if key == "xml_contributions" and not speaker.get("xml_redner_id"):
                     continue  # a question whose asker never speaks: a name only
+                # A merged record's <redner id> holds two ids ("11005217
+                # 999990074", docs/source-errors.md C2); the first is the person,
+                # as in the reparse carry-over and the store.
                 speaker["abgeordnetenwatch"] = resolver.resolve(
-                    ext_id=speaker.get("xml_redner_id"),
+                    ext_id=derive.first_redner_id(speaker.get("xml_redner_id")),
                     first_name=speaker.get("first_name"),
                     last_name=speaker.get("last_name"),
                     fraktion=speaker.get("fraktion"),
@@ -1580,8 +1612,10 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
             )
             # Retain biographies after a known non-MdB role clears its old flag,
             # and a re-issued DIP record, which the roster lists beside its
-            # successor (upsert_mp stores it with is_mdb 0).
-            if row["is_mdb"] or row["id"] in roster_records or registry.superseded_dip_person(dict(row))
+            # successor (upsert_mp stores it with is_mdb 0): only a roster row,
+            # whose DIP funktion is "MdB", not one a report merely sampled.
+            if row["is_mdb"] or row["id"] in roster_records
+            or (registry.superseded_dip_person(dict(row)) and derive.is_mdb_funktion(_parse_listish(row["function"])))
         ]
     finally:
         previous.close()
@@ -1687,6 +1721,52 @@ def refile_entry_votes(entries: list[dict[str, Any]], database_path: Path) -> No
     that cannot be read."""
     try:
         cached = read_cached_stammdaten(database_path)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    refile_entries_from(entries, cached)
+
+
+def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten | None) -> str | None:
+    """Why the offline render must not file the vote panels from ``cached`` (the
+    file on disk) for the store at ``database_path``, or None when the store was
+    built from that very file (same sha256 in ``mdb_stammdaten_stand``), or
+    without one and none is cached, or there is no store yet. A refresh swaps
+    the cache before the rebuild, so a rebuild that then failed leaves a new file
+    beside a store whose ``vote_members`` and ``vote_fractions`` carry the old
+    file's moves."""
+    if not database_path.exists():
+        return None
+    try:
+        conn = facts.open_readonly(database_path)
+        try:
+            row = conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        return f"the store {database_path} cannot be read ({exc}); it is left as it is"
+    rebuild = "Fix: run --offline --repersist to rebuild the store from the cached reports"
+    if row is None and cached is None:
+        return None
+    if row is not None and cached is not None and row[1] == cached.sha256:
+        return None
+    if row is None:
+        return (f"a MdB-Stammdaten file is cached (Stand {cached.stand}, sha256 {cached.sha256[:12]}…), but the store was "
+                "built without one, so the vote panels would re-file Stimmen the store keeps under the page's groups. "
+                f"{rebuild} and that file.")
+    if cached is None:
+        return (f"no MdB-Stammdaten file is cached, but the store was built with one (Stand {row[0]}, sha256 {row[1][:12]}…), "
+                "so the vote panels would put back the Stimmen the store re-filed. "
+                f"{rebuild} without it, or restore that file to {stammdaten.cache_path(database_path)} and re-run.")
+    return (f"the cached MdB-Stammdaten file (Stand {cached.stand}, sha256 {cached.sha256[:12]}…) is not the file the store "
+            f"was built with (Stand {row[0]}, sha256 {row[1][:12]}…), so the vote panels would file Stimmen differently "
+            f"from the store. {rebuild} and the cached file.")
+
+
+def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammdaten | None) -> None:
+    """``refile_entry_votes`` with the Stammdaten already read (None: no file
+    is cached, so the marks a cached report holds are cleared). Raises
+    DatabaseRebuildError for records the derivation refuses."""
+    try:
         source = (derive.refiling_source(derive.mdb_zugehoerigkeiten(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE), cached.stand)
                   if cached else None)
     except derive.StammdatenError as exc:
@@ -2098,13 +2178,7 @@ def reparse_cached_xml(
     Returns how many reports it re-parsed."""
     # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
-    by_redner_id: dict[str, Any] = {}
-    for entry in entries if profiles_from is None else profiles_from:
-        for item in [entry["report"], *(entry["report"].get("agenda_items") or [])]:
-            for identity, profile in speaker_profiles(item).items():
-                redner_id = derive.first_redner_id(identity[0])
-                if redner_id and isinstance(profile, dict) and profile.get("id") is not None and registry.profile_follows_redner_id(redner_id):
-                    by_redner_id.setdefault(redner_id, profile)
+    by_redner_id = redner_id_profiles(entries if profiles_from is None else profiles_from)
     reparsed = 0
     for entry in entries:
         report = entry["report"]
@@ -2133,7 +2207,7 @@ def reparse_cached_xml(
                 [document_number],
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
-            attach_speaker_profiles(item, profiles.get(id(item), {}), by_redner_id)
+            attach_speaker_profiles(item, profiles.get(id(item), {}), by_redner_id, (report.get("protocol") or {}).get("id"))
         vote_links.attribute_votes(report)
         dip.interpret_report_votes(report, parsed["vote_recommendations"])
         reparsed += 1
@@ -9133,13 +9207,22 @@ def land_office_wahlperioden(person: Mapping[str, Any]) -> set[int]:
     Wahlperiode of any office while ``funktion`` names only the latest one, so
     Olaf Scholz (Erster Bürgermeister in Hamburg in WP 18/19) is listed for WP 18
     with ``funktion`` MdB. A Land office excludes a Bundestag seat; a federal
-    minister's role has no ``bundesland`` and is left alone."""
+    minister's role has no ``bundesland`` and is left alone.
+
+    ``wahlperiode_nummer`` counts only as a list of ints (DIP's shape). A role
+    holding anything else (a bare number, a string, a bool) is unreadable, so
+    nothing is cut: a misread Fraktion role could drop a real MdB period."""
     land: set[int] = set()
     fraktion: set[int] = set()
     for role in person.get("person_roles") or []:
         if not isinstance(role, Mapping):
             continue
-        numbers = {int(n) for n in role.get("wahlperiode_nummer") or [] if str(n).isdigit()}
+        raw = role.get("wahlperiode_nummer")
+        if raw is None:
+            raw = []
+        if not isinstance(raw, list) or any(type(n) is not int for n in raw):
+            return set()
+        numbers = set(raw)
         if role.get("fraktion"):
             fraktion |= numbers
         elif role.get("bundesland"):
@@ -9298,6 +9381,17 @@ def has_abgeordnete_page(mp: dict[str, Any]) -> bool:
         or (mp.get("speech_count") or 0) > 0
         or (mp.get("contribution_count") or 0) > 0
     )
+
+
+def alias_superseded_dip_keys(lookup: dict[str, str]) -> None:
+    """Let a speaker link that still carries a re-issued DIP id reach the
+    successor's page: every key ``mp_keys`` gives the successor (``dip:<id>``,
+    and ``dip:<id>:<partition>`` for a record in a reviewed partition) gets the
+    same key under the old id (mp_keys reads the old id as the successor's)."""
+    for superseded, successor in registry.dip_successors().items():
+        plain, partitioned = f"dip:{successor}", f"dip:{successor}:"
+        for key in [key for key in lookup if key == plain or key.startswith(partitioned)]:
+            lookup[f"dip:{superseded}{key[len(plain):]}"] = lookup[key]
 
 
 def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, str]]:
@@ -9536,11 +9630,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         for key in registry.mp_keys(row):
             key_owners.setdefault(key, set()).add(assignments[row["id"]])
     lookup = {key: owner for key, owner in lookup.items() if len(key_owners[key]) == 1}
-    # A speaker link that still carries a re-issued DIP id reaches the successor's
-    # page (mp_keys reads the old id as the successor's).
-    for superseded, successor in registry.dip_successors().items():
-        if f"dip:{successor}" in lookup:
-            lookup[f"dip:{superseded}"] = lookup[f"dip:{successor}"]
+    alias_superseded_dip_keys(lookup)
     page_ids = {mp["id"] for mp in mps if has_abgeordnete_page(mp)}
     for binding in conn.execute("SELECT id, person_id FROM person_bindings"):
         if binding["person_id"] in page_ids:
@@ -14828,11 +14918,24 @@ def main() -> int:
                 return 1
             warn_unparsed_reports(cached_entries)
             # The store may have been rebuilt without writing these reports back
-            # (validate_store_gate --persist-only): the panels must match it.
+            # (validate_store_gate --persist-only): the panels must match it, so
+            # they are filed from the file the store was built with, read once.
             try:
-                refile_entry_votes(cached_entries, database_path)
+                cached_stammdaten = read_cached_stammdaten(database_path)
+            except derive.StammdatenError as exc:
+                print(f"ERROR [cached input]: The cached MdB-Stammdaten cannot be read: {exc}. "
+                      "Fix: refresh the file with --enrich mdb-stammdaten, or remove it and rebuild the store "
+                      "with --offline --repersist; then re-run.", file=sys.stderr)
+                return 1
+            mismatch = stammdaten_store_mismatch(database_path, cached_stammdaten)
+            if mismatch:
+                print(f"ERROR [cached input]: {mismatch}", file=sys.stderr)
+                return 1
+            try:
+                refile_entries_from(cached_entries, cached_stammdaten)
             except DatabaseRebuildError as exc:
-                print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten or remove it, then re-run.", file=sys.stderr)
+                print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten, or remove it "
+                      "and rebuild the store with --offline --repersist; then re-run.", file=sys.stderr)
                 return 1
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before

@@ -10,11 +10,14 @@ stay out.
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import http.client
+import io
 import json
 import lzma
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -24,7 +27,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 import zlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +47,24 @@ XML_MEMBER = "MDB_STAMMDATEN.XML"
 #: The real XML is 15.3 MB (plan S1); a member declared or read larger is
 #: refused before it is parsed.
 MAX_XML_BYTES = 64 * 1024 * 1024
+#: The root element must start within these first bytes of the XML: the real
+#: prolog (declaration, DOCTYPE, one comment) is 150 bytes.
+PROLOG_BYTES = 64 * 1024
+#: The earliest Stand accepted: the C1 seat counts start with WP 19 (2017), and
+#: the file the plan measured is stamped 2026.
+EARLIEST_STAND = datetime(2017, 1, 1, tzinfo=timezone.utc)
+
+# What may precede the root element: whitespace, processing instructions (the
+# XML declaration), comments, and at most one DOCTYPE naming an external DTD
+# only. The Bundestag's file has <!DOCTYPE DOCUMENT SYSTEM "MDB_STAMMDATEN.DTD">;
+# ElementTree never loads that DTD, so only an internal subset could declare an
+# entity, and that is refused before expat sees it.
+_PROLOG_MISC = re.compile(rb"(?:\s+|<\?.*?\?>|<!--.*?-->)*", re.S)
+_LITERAL = rb"(?:\"[^\"]*\"|'[^']*')"
+_EXTERNAL_DOCTYPE = re.compile(
+    rb"<!DOCTYPE\s+[A-Za-z_:][-A-Za-z0-9_.:]*(?:\s+(?:SYSTEM\s+" + _LITERAL + rb"|PUBLIC\s+" + _LITERAL + rb"\s+" + _LITERAL + rb"))?\s*>"
+)
+_ROOT_START = re.compile(rb"<[A-Za-z_:]")
 
 # The elements each record keeps, by the element that holds them.
 _NAME_FIELDS = ("NACHNAME", "VORNAME", "ORTSZUSATZ", "ADEL", "PRAEFIX", "HISTORIE_VON")
@@ -89,16 +110,16 @@ def _ascii_digits(text: str) -> bool:
     return text.isascii() and text.isdigit()
 
 
-def _xml_bytes(path: Path) -> bytes:
+def _xml_bytes(zip_bytes: bytes, name: str) -> bytes:
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
             # The Bundestag's zip carries a macOS resource fork (__MACOSX/) beside
             # the XML; only the top-level member is the file.
             info = next((item for item in archive.infolist() if item.filename == XML_MEMBER), None)
             if info is None:
-                raise StammdatenError(f"{path.name}: no {XML_MEMBER} in the zip")
+                raise StammdatenError(f"{name}: no {XML_MEMBER} in the zip")
             if info.file_size > MAX_XML_BYTES:
-                raise StammdatenError(f"{path.name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
+                raise StammdatenError(f"{name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
             with archive.open(info) as member:
                 data = member.read(MAX_XML_BYTES + 1)
     # zlib.error: a corrupt deflate stream; lzma.LZMAError: a corrupt LZMA one
@@ -106,41 +127,90 @@ def _xml_bytes(path: Path) -> bytes:
     # NotImplementedError: a compression method zipfile lacks.
     except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError, zlib.error, lzma.LZMAError,
             RuntimeError, NotImplementedError) as exc:
-        raise StammdatenError(f"{path.name}: not a zip file the Stammdaten can be read from ({exc})") from None
+        raise StammdatenError(f"{name}: not a zip file the Stammdaten can be read from ({exc})") from None
     if len(data) > MAX_XML_BYTES:
-        raise StammdatenError(f"{path.name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
+        raise StammdatenError(f"{name}: {XML_MEMBER} is larger than {MAX_XML_BYTES} bytes")
     return data
 
 
-def read_zip(path: Path) -> Stammdaten:
-    """The Stammdaten in the zip at ``path``. Raises StammdatenError naming the
-    cause for a file that is no zip, lacks the XML or a ``VERSION`` stamp, does
-    not parse, or holds an ``MDB`` without ``ID`` or a non-numeric ``WP``."""
-    data = _xml_bytes(path)
+def _refuse_declarations(xml: bytes, name: str) -> None:
+    """Raise unless the root element starts within PROLOG_BYTES after nothing
+    but whitespace, processing instructions, comments and one DOCTYPE that names
+    an external DTD only: an internal subset (where an ENTITY is declared) is
+    refused before expat parses it. A file in an encoding other than UTF-8 or
+    ASCII starts no root element in these bytes, so it is refused too."""
+    head = xml[:PROLOG_BYTES]
+    if head.startswith(codecs.BOM_UTF8):
+        head = head[len(codecs.BOM_UTF8):]
+    end = _PROLOG_MISC.match(head).end()
+    doctype = _EXTERNAL_DOCTYPE.match(head, end)
+    if doctype:
+        end = _PROLOG_MISC.match(head, doctype.end()).end()
+    if head.startswith(b"<!", end):
+        raise StammdatenError(f"{name}: {XML_MEMBER} declares a DOCTYPE with an internal subset or an ENTITY; "
+                              "only a DOCTYPE naming an external DTD is read")
+    if not _ROOT_START.match(head, end):
+        raise StammdatenError(f"{name}: {XML_MEMBER} starts no root element within its first {PROLOG_BYTES} bytes")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _stand(version: str, name: str) -> str:
+    """The Stand ``VERSION`` stamps, as ISO UTC. Raises StammdatenError for a
+    stamp that is no Unix timestamp, or one before EARLIEST_STAND or later than
+    a day from now, which would otherwise drive ``after_stand``, the manifest
+    and the Daten page."""
     try:
-        root = ET.fromstring(data)
+        instant = datetime.fromtimestamp(int(version), timezone.utc) if _ascii_digits(version) else None
+    except (OverflowError, OSError, ValueError):
+        instant = None
+    if instant is None:
+        raise StammdatenError(f"{name}: VERSION {version!r} is not a Unix timestamp")
+    latest = _now() + timedelta(days=1)
+    if not EARLIEST_STAND <= instant <= latest:
+        raise StammdatenError(f"{name}: VERSION {version!r} is a Stand before 2017 or after "
+                              f"{latest.replace(microsecond=0).isoformat()} ({instant.isoformat()})")
+    return instant.isoformat()
+
+
+def read_zip(path: Path) -> Stammdaten:
+    """The Stammdaten in the zip at ``path``, read once: the sha256 names the
+    bytes the records came from, even if the file is replaced meanwhile. Raises
+    StammdatenError as ``read_zip_bytes`` does, and for a file that cannot be read."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise StammdatenError(f"{path.name}: not a zip file the Stammdaten can be read from ({exc})") from None
+    return read_zip_bytes(data, path.name)
+
+
+def read_zip_bytes(data: bytes, name: str) -> Stammdaten:
+    """The Stammdaten in the zip ``data`` (``name`` labels the errors). Raises
+    StammdatenError naming the cause for a file that is no zip, lacks the XML or
+    a plausible ``VERSION`` stamp, declares entities, does not parse, or holds an
+    ``MDB`` without ``ID`` or a non-numeric ``WP``."""
+    xml = _xml_bytes(data, name)
+    _refuse_declarations(xml, name)
+    try:
+        root = ET.fromstring(xml)
     # LookupError: an XML declaration naming an encoding expat does not know.
     except (ET.ParseError, LookupError) as exc:
-        raise StammdatenError(f"{path.name}: {XML_MEMBER} does not parse ({exc})") from None
+        raise StammdatenError(f"{name}: {XML_MEMBER} does not parse ({exc})") from None
     if root.tag != "DOCUMENT":
-        raise StammdatenError(f"{path.name}: root element {root.tag!r}, not DOCUMENT")
-    version = (root.findtext("VERSION") or "").strip()
-    try:
-        stand = datetime.fromtimestamp(int(version), timezone.utc).isoformat() if _ascii_digits(version) else None
-    except (OverflowError, OSError, ValueError):
-        stand = None
-    if stand is None:
-        raise StammdatenError(f"{path.name}: VERSION {version!r} is not a Unix timestamp")
+        raise StammdatenError(f"{name}: root element {root.tag!r}, not DOCUMENT")
+    stand = _stand((root.findtext("VERSION") or "").strip(), name)
     records = []
     for mdb in root.iter("MDB"):
         mdb_id = (mdb.findtext("ID") or "").strip()
         if not mdb_id:
-            raise StammdatenError(f"{path.name}: an MDB without ID")
+            raise StammdatenError(f"{name}: an MDB without ID")
         periods = []
         for period in _children(mdb, "WAHLPERIODEN"):
             fields = _fields(period, _WAHLPERIODE_FIELDS)
             if not _ascii_digits(fields["WP"] or ""):
-                raise StammdatenError(f"{path.name}: MdB {mdb_id}: WP {fields['WP']!r} is not a number")
+                raise StammdatenError(f"{name}: MdB {mdb_id}: WP {fields['WP']!r} is not a number")
             fields["INSTITUTIONEN"] = [_fields(item, _INSTITUTION_FIELDS) for item in _children(period, "INSTITUTIONEN")]
             periods.append(fields)
         records.append({
@@ -148,11 +218,7 @@ def read_zip(path: Path) -> Stammdaten:
             "NAMEN": [_fields(item, _NAME_FIELDS) for item in _children(mdb, "NAMEN")],
             "WAHLPERIODEN": periods,
         })
-    return Stammdaten(
-        records=records,
-        stand=stand,
-        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-    )
+    return Stammdaten(records=records, stand=stand, sha256=hashlib.sha256(data).hexdigest())
 
 
 def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -388,6 +454,20 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
             print(f"stammdaten: unchanged (Stand {_stand_day(previous.stand)})", file=sys.stderr)
         return
     body, new_etag = answer
+    # Checked in memory, from the bytes that are then written: the sha256 the
+    # rebuild stores names the bytes these checks passed.
+    try:
+        fetched = read_zip_bytes(body, "the download")
+        seat_rows(fetched.records, since_wahlperiode=since_wahlperiode)
+    except StammdatenError as exc:
+        print(f"warning: [stammdaten] the downloaded file fails the seat checks ({exc}); {kept}", file=sys.stderr)
+        return
+    # A CDN serving an older zip under another ETag must not move the seat
+    # tables, r2 and the manifest Stand backwards.
+    if previous and datetime.fromisoformat(fetched.stand) < datetime.fromisoformat(previous.stand):
+        print(f"warning: [stammdaten] the downloaded file has Stand {_stand_day(fetched.stand)}, older than the cached file's; "
+              f"{kept}", file=sys.stderr)
+        return
     temp: Path | None = None
     try:
         # A refresh killed while writing leaves its temp file; refreshes run one
@@ -398,12 +478,6 @@ def refresh(database_path: Path, *, since_wahlperiode: int) -> None:
         temp = Path(temp_name)
         with os.fdopen(handle, "wb") as out:
             out.write(body)
-        try:
-            fetched = read_zip(temp)
-            seat_rows(fetched.records, since_wahlperiode=since_wahlperiode)
-        except StammdatenError as exc:
-            print(f"warning: [stammdaten] the downloaded file fails the seat checks ({exc}); {kept}", file=sys.stderr)
-            return
         os.replace(temp, path)
         # Written after the file: a crash in between leaves the new file with the
         # old ETag, which costs one full download next time, never a stale 304.
