@@ -587,6 +587,26 @@ class ReparseProfileTests(unittest.TestCase):
             with self.subTest(source=source, target=target):
                 self.assertEqual(self.reparsed_profile("11005304", source, target, foehr, **sides), foehr)
 
+    # Value: protects=the profile check finds a reviewed occurrence by the rede id persist and the
+    #   protocol page key it by (whitespace collapsed), on both the taking and the copying side;
+    #   fails_when=attach_speaker_profiles or redner_id_profiles passes the raw rede_id again, so a
+    #   reviewed occurrence printed with stray whitespace is read by its garbled printed name;
+    #   why_new=TODOS "Shared Redner-IDs" item 20; seam=none
+    def test_the_profile_check_reads_the_rede_id_persist_reads(self):
+        foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
+
+        def garbled(**extra):
+            return {"rede_id": " ID2010305900\xa0", "sequence": 1,
+                    "speaker": speaker("11005304", "Dirk-UlrichAlexander Mende Föhr", **extra)}
+
+        for key in ("xml_speakers", "xml_contributions"):
+            with self.subTest(key=key):
+                source = {"protocol": {"id": "5570"}, "agenda_items": [{"index": 1, key: [garbled(abgeordnetenwatch=foehr)]}]}
+                self.assertEqual(build.redner_id_profiles([{"report": source}]), {"11005304": foehr})
+                target = {"index": 1, key: [garbled()]}
+                build.attach_speaker_profiles(target, {}, {"11005304": foehr}, "5570")
+                self.assertEqual(target[key][0]["speaker"].get("abgeordnetenwatch"), foehr)
+
 
 if __name__ == "__main__":
     unittest.main()

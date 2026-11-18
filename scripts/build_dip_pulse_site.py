@@ -1118,6 +1118,15 @@ def speaker_profiles(item: dict[str, Any]) -> dict[tuple[str, str, str], Any]:
     return profiles
 
 
+def profile_rede_id(protocol_id: Any, item: dict[str, Any], key: str, speech: dict[str, Any], position: int) -> str | None:
+    """The rede id persist keys this occurrence's reviewed speaker by, so the
+    profile check reads the review persist and the protocol page read: a Rede's
+    whitespace-collapsed id or its synthetic one, a Beitrag's collapsed id or none."""
+    if key == "xml_contributions":
+        return " ".join(str(speech.get("rede_id") or "").replace("\xa0", " ").split()) or None
+    return speech_rede_id(protocol_id, source_index(item.get("index")), speech.get("sequence") or position, speech.get("rede_id"))
+
+
 def attach_speaker_profiles(
     item: dict[str, Any],
     profiles: dict[tuple[str, str, str], Any],
@@ -1130,7 +1139,7 @@ def attach_speaker_profiles(
     occurrence's (``registry.redner_id_profile_reaches``: under a shared id, only
     the reviewed profile owner's occurrences)."""
     for key in SPEAKER_LISTS:
-        for speech in item.get(key) or []:
+        for position, speech in enumerate(item.get(key) or [], start=1):
             speaker = speech.get("speaker")
             if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
                 continue
@@ -1139,7 +1148,7 @@ def attach_speaker_profiles(
             if identity in profiles:
                 speaker["abgeordnetenwatch"] = copy.deepcopy(profiles[identity])
             elif (by_redner_id and redner_id in by_redner_id
-                  and registry.redner_id_profile_reaches(speaker, protocol_id, speech.get("rede_id"))):
+                  and registry.redner_id_profile_reaches(speaker, protocol_id, profile_rede_id(protocol_id, item, key, speech, position))):
                 speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[redner_id])
 
 
@@ -1155,10 +1164,10 @@ def redner_id_profiles(entries: list[dict[str, Any]]) -> dict[str, Any]:
         for item in [report, *(report.get("agenda_items") or [])]:
             found: dict[tuple[str, str, str], Any] = {}
             for key in SPEAKER_LISTS:
-                for speech in item.get(key) or []:
+                for position, speech in enumerate(item.get(key) or [], start=1):
                     speaker = speech.get("speaker")
                     if (isinstance(speaker, dict) and "abgeordnetenwatch" in speaker
-                            and registry.redner_id_profile_reaches(speaker, protocol_id, speech.get("rede_id"))):
+                            and registry.redner_id_profile_reaches(speaker, protocol_id, profile_rede_id(protocol_id, item, key, speech, position))):
                         found[speaker_identity(speaker)] = speaker["abgeordnetenwatch"]
             for identity, profile in found.items():
                 redner_id = derive.first_redner_id(identity[0])
