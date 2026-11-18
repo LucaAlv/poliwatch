@@ -2,6 +2,128 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.17.0] - 2026-11-18
+
+The Sitzungskalender line and the week-radar RSS feed now handle a calendar that lists a week twice, a cache stamped in the future, a stray control character in a title and a feed base URL carrying a user and password. No page or stored figure moves on the reference store. Its cached calendar (22 Sitzungswochen for 2026 and 21 for 2027, from 2 .ics files) lists every week once. An offline render of it with a site URL set writes a well-formed feed of 12 weeks, and the header still reads "Nächste Sitzungswoche: 23.–27. November 2026 (KW 48)".
+
+### Fixed
+
+- **A Sitzungswoche listed twice in the Bundestag calendar, or split into two events, counts once.** Before, ten events for five weeks passed the check that a year lists at least ten weeks, and a doubled week was stored twice.
+- **A calendar cache stamped in the future is refreshed.** Before, a cache written while the clock ran ahead counted as fresh until the clock caught up with its stamp.
+- **A control character in a heading or title no longer makes the whole RSS feed unreadable.** Characters XML forbids are dropped from item titles, links and descriptions.
+- **An RSS item's date range reaches a Sondersitzung on the weekend when the sitting's date carries a time.**
+
+### Changed
+
+- **A feed base URL (`BUNDESTAG_PULSE_SITE_URL`) with a user or password, whitespace or a control character is refused.** The build writes no RSS and warns, as for any invalid URL. A refused value containing `@` is not shown in the warning, so the password never reaches the build log.
+
+## [0.46.15.0] - 2026-11-18
+
+A site rendered offline can no longer show vote panels filed from a different MdB-Stammdaten file than the one its store was built from, and a refresh can no longer move the seat tables back to an older file. Nothing moves on the offline replay of the 801-sitting reference store against main: no vote, group count, Rede or Fakt changes, the store records the same Stammdaten file, and a plain offline render of it runs as before.
+
+### Fixed
+
+- **A plain offline render stops when the cached MdB-Stammdaten file is not the one the store was built with.** This also covers a file missing for a store built with one, or a file present for a store built without one. It names both files' Stand and says to rebuild with `--offline --repersist`, before any page is written. Before, the vote panels could file Stimmen by one file while the store's counts came from another.
+- **A downloaded MdB-Stammdaten file older than the cached one is not used.** The cached file stays and the build warns. Before, a server handing out an older file replaced the newer one, and the seat tables and the Stand on the Daten page moved backwards.
+- **The stored fingerprint of the MdB-Stammdaten file names the exact bytes the seat tables came from.** The file is read once, so a file replaced mid-build can no longer pair the seat rows of one file with the fingerprint of another.
+
+### Changed
+
+- **An MdB-Stammdaten file that declares entities, or carries an implausible date, is refused.** A file whose header declares its own DTD entities is refused before it is parsed; the Bundestag's own header, which only names an external DTD, still reads. A Stand before 2017 or more than a day in the future is refused too.
+- **The store gate's rebuilds use the input store's MdB-Stammdaten file**, so they file Stimmen the way the input store does. Under `--persist-only`, only a person cache it cannot read is reported as a gate error; any other failure keeps its traceback. An input store the current code cannot read now fails the gate with its cause instead of ending it without a receipt.
+
+## [0.46.14.0] - 2026-11-18
+
+The store comparison that checks a data correction (`scripts/compare_store_values.py`, the README's "Validate a data correction" recipe) now shows a Stimme filed under another group even when no vote outcome and no Abweichler changes. No stored figure, export or page changes in this release. On a copy of the 801-sitting reference store with one member of vote 1000 moved from SPD to fraktionslos, the report names exactly that vote, both groups' counts and that member; on two copies with no change it reports 0 of 657 shared votes moved.
+
+### Added
+
+- **A "vote groups" section compares every vote both stores hold, group by group.** It lists each group whose Ja, Nein, Enthaltung, nicht abgegeben or total count moved, and each member whose counted group or listed group moved, old and new.
+- **Votes held by one store only are named.** The vote outcome section counts them and lists their ids; before, they moved the distribution rows with no line of their own.
+
+### Changed
+
+- **A member found in one store only is listed apart and no longer counts as an Abweichung move.** A changed member list showed up as "abweichung moved" before, even when no flag moved.
+- **A member row with no matching person row is counted under its own id.** Before, it dropped out of the Abweichung counts without a word.
+
+### Fixed
+
+- **A damaged or truncated export copy reads "unavailable" instead of stopping the report with a traceback.**
+- **An export manifest naming a path instead of a file name is refused**, so the comparison never reads outside the export directory.
+- **When the second store cannot be opened, the first is closed before the script exits with code 2.**
+
+## [0.46.13.0] - 2026-11-18
+
+The abgeordnetenwatch client fails cleanly where it used to stop a build, and a speaker printed under a merged Redner-ID is now looked up by the right id. Nothing changes offline: the reference store holds no abgeordnetenwatch data, and profiles are only looked up on an online update. On the next one, Svenja Schulze's 10 Reden in 21/18, 21/24, 21/25, 21/28, 21/44 and 21/45, printed under the merged record "11005217 999990074", are looked up under her id 11005217. Before, the whole merged value was sent, which matches no profile.
+
+### Fixed
+
+- **A dropped connection, a timeout or a reply cut short no longer stops a build with a traceback.** Each counts as a failure, and after 8 in a row the client stops asking for the rest of the run. Nothing is cached for a failed lookup, so the next build asks again.
+- **A speaker printed under a merged Redner-ID is looked up by its first id**, as the rest of the build already reads it.
+- **A resolver that is switched off never asks the API.** It answers from its cache only.
+- **The cache and the answers file are written through a temporary file of their own.** Two runs no longer share one temporary file, and a run stopped mid-write leaves the previous file whole.
+
+### Changed
+
+- **An HTTP 429 waits 60 seconds before each retry, up to 4 retries.** The old exponential back-off was capped at 60 seconds anyway.
+- **The match-share measurement asks by the first id of a merged Redner-ID, as the build does.** Its M5 check no longer looks the raw value up, so the `merged_hit_by_first_not_by_raw` count is gone. It refuses a malformed answers file with exit 2, naming the file and the id, and it keeps the name searches already answered when a run is cut short.
+
+## [0.46.12.0] - 2026-11-18
+
+Four rules that decide whose abgeordnetenwatch profile, roster record or page link a speaker gets are now strict where they were loose. On an offline replay of the 801-sitting reference store against main, nothing moves: every table's row count, every vote and Rede, the person pages and `abgeordnete.json` are the same, and all 91,658 speaker units in the 802 cached reports keep their profile. Each rule closes a gap no stored sitting reaches today.
+
+### Fixed
+
+- **A profile found under a Redner-ID the Bundestag printed for two people reaches only its owner.** When cached sittings are read again, a profile is taken from, and copied to, only the occurrences of the person the corrections file names as that id's profile owner, by printed name or by the name reviewed for that occurrence. Before, a profile matched by name could pass from the profile owner to another person printed under the same id, such as from de Maizière to Steinmeier's address in 18/223.
+- **A re-issued DIP person record is kept from an older store only if it was a roster record.** A record a sitting merely sampled under the old id is no longer carried forward with roster fields it never had.
+- **A speaker link that carries a re-issued DIP id reaches the successor's page also for a person in a reviewed partition.** Before, only the plain DIP key was aliased.
+- **A DIP person record whose Wahlperioden are not a list of numbers no longer cuts a Bundestag period.** A Land office excludes a Bundestag seat in the same Wahlperiode, so such periods are cut from a person's MdB periods; a role with an unreadable Wahlperiode now cuts nothing instead of being half read. On the cached records, the cut is the same for all 1,949 persons.
+
+## [0.46.11.0] - 2026-11-18
+
+The 83 sittings restored on 2026-11-17 are now measured against outside sources, and the record names every figure that moved, old and new. The reference store holds 801 sittings, up from 718. Of the 737 roll-call votes the Bundestag lists from WP 18 on, 727 are stored under their own date; the other 10 fall on 18/20, which stays out, or on two sittings newer than the store. Every restored sitting stores exactly the agenda items its XML prints, 8,189 in all. The abgeordnetenwatch match share of WP 18 and 19 Reden is 98.34% (98.27% on the earlier 400-sitting store), and no speech of ours is missing from CPP-BT. No code, export or page changes in this release; the measurements and their receipts are in `docs/plans/t4-acquire.md`.
+
+### Changed
+
+- **The CPP-BT comparison reads 77 more speeches as known differences.** Forty are units the project reviewed and files as procedure or chairing on purpose: the presidium elections of 18/1 and 19/1, the chancellor's election and the oaths of 19/19, two acceptances (19/68 and 19/158), and the chair's Sitzungsleitung in 19/1 and 19/19. The other 37 are the § 31 declarations 18/158 prints in its Sitzungsverlauf. A release review now has only the length ratios left to read by hand.
+- **The source error E4 records its scale on the restored sittings.** 157 Stimmen in 87 roll-calls count for the group the Stammdaten prove on the vote's day, 57 of them in restored votes, all in the windows E4 already names.
+
+## [0.46.10.0] - 2026-11-18
+
+The check that refuses a build when the Bundestag prints one Redner-ID for two people no longer treats an office as a shared name. Before, two people printed under one Redner-ID with the same office in the name fields, such as "Dr. Carsten Sieling, Bürgermeister" and "Dr. Andreas Bovenschulte, Bürgermeister", shared the word "Bürgermeister", so the check filed both under one person. It now ignores office words and the punctuation around them, as it already ignored titles and name particles. The person corrections file also refuses three more mistakes before a build starts. On an offline replay of the 801-sitting reference store against main, no figure, person or page moves and no Redner-ID is refused. The check keeps its old limit. Two people printed with a word in common other than the office, such as the ministry's name, are still not told apart.
+
+### Fixed
+
+- **An office printed in the name fields no longer makes two people one.** The check ignores office words when it compares the names printed under one Redner-ID: Bürgermeister, Senator, Minister, Präsident and Staatssekretär with their compounds and feminine forms (Innenminister, Ministerpräsidentin), plus Parl., Stellv., Regierender, MdBR and similar. Brackets and commas around a word are stripped too, so "(Bürgermeister)" and "Bürgermeister," count as the same word. A real surname such as Meister still counts.
+- **The person corrections file refuses three more mistakes.** It refuses one own id given to two people, a DIP own id written with leading zeros or as 0 ("dip:007", "dip:0"), which would miss the roster or the page link, and a DIP own id for the person who keeps a shared Redner-ID's profile, which would collide with that person's roster record.
+
+### Changed
+
+- **A registry rebuild reads the speaker records twice instead of three times.** The Redner-ID check now uses the read the merges already make. The successor map for re-issued DIP person records is built once per corrections file instead of on every lookup.
+
+## [0.46.9.0] - 2026-11-18
+
+Every Fraktion the parser reads from a Plenarprotokoll is now checked against the Fraktionen and Gruppen we know, so a stray string can no longer become a group of its own in a per-Fraktion count. Two such strings were stored. 18/222 printed the start of Dr. Astrid Freudenstein's reply inside her Fraktion ("CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –"), and 19/60 printed the Land "Bremen" as the Fraktion of Bürgermeister Dr. Carsten Sieling. On an offline replay of the 801-sitting reference store, contributions naming CDU/CSU go from 5,713 to 5,714, Bundesrat Reden with no Fraktion from 108 to 109, and the parties table from 11 rows to 9. Each Redeanteil holds, because Sieling's Rede already counted for the Bundesrat by its Sprechrolle. Nothing else moves, and all 727 votes read as before. A store built before this keeps the two values until its next `--offline --repersist`.
+
+### Fixed
+
+- **A Fraktion followed by spoken text reads as that Fraktion.** Freudenstein's Erwiderung in 18/222 counts for CDU/CSU, as CPP-BT has it.
+- **A Land's name beside a Bundesrat member who speaks for that Land is no Fraktion.** Sieling's Rede in 19/60 counts for the Bundesrat with no Fraktion, like every other Bundesrat Rede.
+- **Any other `<fraktion>` value that names no Fraktion we know refuses the sitting,** naming the speaker. None of the 801 cached sittings does. Two spellings the Bundestag prints where no Rede is read yet ("CDU/ CSU", "BÜNDNIS90/DIE GRÜNEN") count as known.
+- **An official "Antrag angenommen" is read as the ballot's word only on the chair's or DIP's evidence.** An inversion read only from a roll-call or Drucksache title no longer re-scopes the official result. A DIP decision bound to the ballot still does, also where a title agrees with it.
+- **A malformed DIP record adds nothing instead of stopping the sitting,** and a tally written in other than ASCII digits is no tally. A vote that does not give a count no longer matches a DIP decision on that count as if it were 0. A rival vote with a missing count still blocks a match made on the tally alone.
+
+## [0.46.8.0] - 2026-11-17
+
+1,227 Reden in 39 sittings now carry their page. Their Inhaltsverzeichnis listed them under a title the sitting printed twice, such as "Tagesordnungspunkt II (Fortsetzung)" in 18/44, and the parser kept only the last block of each title, so the page of every Rede listed in an earlier one was lost. On an offline replay of the 801-sitting reference store, Reden without a page go from 1,643 in 46 sittings to 416 in 7. Agenda items without a page range go from 1,810 to 1,740, and those that hold Reden from 106 to 36. Beiträge without a page go from 19,792 to 19,664. No page or range that was already set changes, and no other figure moves. The 416 left are a separate gap: four sittings print every Inhaltsverzeichnis entry with an empty page, and three print Reden their Inhaltsverzeichnis does not list.
+
+### Fixed
+
+- **A Rede listed under a repeated Inhaltsverzeichnis title keeps its page.** Every block is read in source order, so a later block of the same title no longer hides an earlier one. Example: 18/44's `ID1804401300` now cites page 3952 B, and the agenda item "Tagesordnungspunkt II (Fortsetzung)" its range 3952 B to 3981 D.
+- **A Rede outside any agenda item that two different Inhaltsverzeichnis titles list is refused.** It used to be filed silently under the first title. A Rede listed twice under one title is still placed once. No stored sitting has either shape.
+- **A Rede outside any agenda item after another element is refused with the element's name.** The message used to say "after a TOP" whatever stood there.
+- **The parser's mark for an agenda item it built from the Inhaltsverzeichnis can no longer come from the source XML.** A source element carrying it loses it before the parse, so it cannot be counted as such an item.
+
 ## [0.46.7.0] - 2026-11-17
 
 The release script now refuses to publish while a sitting DIP lists with its XML is neither in the export nor on the exclusion record. Before, it only refused exclusions still waiting for acquisition or a rule, so a sitting a stopped acquisition run dropped from the record without storing it would have gone out unnoticed. On the reference export of 2026-11-16 the check names one such sitting, 21/107. A follow-up release's previous manifest is now checked against the releases actually published, not against this clone's tags. Only the release script and its checks change; no figure, export, page or schema does.

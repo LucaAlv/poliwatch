@@ -34,6 +34,14 @@ def _store(path: Path, bindings: list[tuple[str, str]]) -> Path:
     return path
 
 
+def _drop_snippet(database: Path) -> None:
+    """Stage a store from an older schema: one without ``speeches.snippet``,
+    which ``collect_abgeordnete`` reads."""
+    with contextlib.closing(sqlite3.connect(database)) as conn:
+        conn.execute("ALTER TABLE speeches DROP COLUMN snippet")
+        conn.commit()
+
+
 def _person_cache(output: Path, *records: dict) -> None:
     """``data/dip-person-cache.json`` holding ``records``, as dip_cache saves it."""
     path = output / "data" / gate.PERSON_FILENAME
@@ -93,6 +101,31 @@ class PersistOnlyRosterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             roster.list_all("/aktivitaet", {"f.wahlperiode": 20})
 
+    # Value: protects=a boolean wahlperiode is no Wahlperiode, so a record with wahlperiode true is not listed
+    #   under WP 1; fails_when=_wahlperioden tests isinstance(int) first, which a bool passes;
+    #   why_new=TODOS "Registry fix review" (g); seam=none
+    def test_a_boolean_wahlperiode_lists_the_record_under_no_period(self) -> None:
+        self.assertEqual(gate._wahlperioden({"wahlperiode": True}), set())
+        self.assertEqual(gate._wahlperioden({"wahlperiode": [True, False, 20, "21"]}), {20, 21})
+        self.assertEqual(gate.CachedRoster([{"id": "1", "wahlperiode": True}]).list_all("/person", {"f.wahlperiode": 1}), [])
+
+    # Value: protects=main's --persist-only path turns only the person-cache refusal into "ERROR [gate]" with
+    #   exit 2; any other ValueError from the build code keeps its traceback instead of reading like a
+    #   person-cache problem; fails_when=main catches every ValueError from persist_only;
+    #   why_new=TODOS "Registry fix review" (i), second half; seam=persist_only patched
+    def test_persist_only_reports_only_the_person_cache_refusal_as_bad_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "data").mkdir()
+            with mock.patch.object(gate, "persist_only", side_effect=ValueError("a build bug")), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                with self.assertRaisesRegex(ValueError, "a build bug"):
+                    gate.main([tmp, "--persist-only"])
+            self.assertNotIn("ERROR [gate]", stderr.getvalue())
+            with mock.patch.object(gate, "persist_only", side_effect=gate.CachedRosterError("no person cache")), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(gate.main([tmp, "--persist-only"]), 2)
+            self.assertIn("ERROR [gate]: no person cache", stderr.getvalue())
+
 
 class CachedRosterFileTests(unittest.TestCase):
     # Value: protects=a person cache that is not a person cache is a refusal, and entries without a
@@ -106,7 +139,7 @@ class CachedRosterFileTests(unittest.TestCase):
             path.parent.mkdir()
             for text in ("{not json", "[]", json.dumps({"persons": []}), json.dumps({})):
                 path.write_text(text, encoding="utf-8")
-                with self.subTest(text=text), self.assertRaises(ValueError):
+                with self.subTest(text=text), self.assertRaises(gate.CachedRosterError):
                     gate.cached_roster(output)
             path.write_text(json.dumps({"persons": {"1": {"record": {"id": "1", "wahlperiode": 21}}, "2": "x", "3": {"record": 5}, "4": {}}}), encoding="utf-8")
             self.assertEqual([r["id"] for r in gate.cached_roster(output).records], ["1"])
@@ -293,6 +326,26 @@ class ReplayVsInputTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = gate.replay_vs_input(None, Path(tmp) / "missing.sqlite")
         self.assertEqual(result, {"equal": False, "reason": "no input store to compare the replay with"})
+
+    # Value: protects=an input store the current code cannot read (an older schema lacking a column
+    #   collect_abgeordnete reads) gives an unavailable snapshot with the cause, which fails the replay
+    #   comparison with a reason, instead of an OperationalError that ends the gate without a receipt;
+    #   fails_when=input_snapshot lets sqlite3.OperationalError out, or replay_vs_input reads an unavailable
+    #   snapshot as a store; why_new=TODOS "Registry fix review" (c); seam=none
+    def test_an_unreadable_input_store_gives_an_unavailable_snapshot_that_fails_the_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.build(Path(tmp))
+            snapshot = gate.input_snapshot(database)
+            self.assertEqual(set(snapshot), {"bindings", "grouping", "pages", "roster"})
+            self.assertTrue(gate.replay_vs_input(snapshot, database)["equal"])
+            _drop_snippet(database)
+            snapshot = gate.input_snapshot(database)
+            result = gate.replay_vs_input(snapshot, database)
+        self.assertEqual(set(snapshot), {"unavailable"})
+        self.assertIn("snippet", snapshot["unavailable"])
+        self.assertFalse(result["equal"])
+        self.assertIn("the input store's snapshot is unavailable", result["reason"])
+        self.assertIn("snippet", result["reason"])
 
 
 class IntegrityTest(unittest.TestCase):
@@ -494,6 +547,38 @@ class ClonePathSafetyTest(unittest.TestCase):
             self.assertFalse((target / "data" / "exports").exists())
             self.assertEqual((source / "data" / "bundestag-pulse.sqlite").read_text(), "keep")
 
+    # Value: protects=the gate's fresh and half clones get the source's cached MdB-Stammdaten (zip and ETag
+    #   sidecar) in their own private directory, so their rebuilds re-file the Stimmen as the input store
+    #   does, and a stale file from an earlier run is not left behind when the source has none; a clone that
+    #   lacks the file the source has is refused; fails_when=_data_clone copies only data/, so the gate never
+    #   sees a re-filed Stimme and a forgotten copy gives only a warning; why_new=TODOS E4 /gstack-review
+    #   item 5, the _data_clone part; seam=shutil.copy2 patched for the refusal
+    def test_the_clone_gets_the_sources_cached_stammdaten(self) -> None:
+        import person_registry as registry
+        import stammdaten
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, target = Path(tmp) / "site", Path(tmp) / "scratch" / "fresh"
+            (source / "data").mkdir(parents=True)
+            private = registry.private_dir(source / gate.STORE)
+            private.mkdir(mode=0o700)
+            (private / stammdaten.CACHE_NAME).write_bytes(b"zip bytes")
+            (private / stammdaten.ETAG_NAME).write_text('{"etag": "x"}', encoding="utf-8")
+            (private / "seat-crosscheck.json").write_text("{}", encoding="utf-8")
+            cloned = registry.private_dir(target / gate.STORE)
+            gate._data_clone(source, target)
+            self.assertEqual(sorted(path.name for path in cloned.iterdir()), [stammdaten.ETAG_NAME, stammdaten.CACHE_NAME])
+            self.assertEqual((cloned / stammdaten.CACHE_NAME).read_bytes(), b"zip bytes")
+            self.assertEqual(stammdaten.cache_path(target / gate.STORE), cloned / stammdaten.CACHE_NAME)
+
+            with mock.patch.object(gate.shutil, "copy2"), self.assertRaisesRegex(ValueError, "MdB-Stammdaten"):
+                gate._data_clone(source, target)
+
+            for path in private.iterdir():
+                path.unlink()
+            gate._data_clone(source, target)
+            self.assertEqual([path.name for path in cloned.iterdir()], [])
+
 
 class LinkAuditTest(unittest.TestCase):
     # Value: protects=every page a replay renders links only to pages and anchors that exist;
@@ -626,6 +711,39 @@ class GateVerdictTest(unittest.TestCase):
         self.assertFalse(written["checks"]["replay_exit_0"])
         self.assertFalse(written["checks"]["all_passed"])
         self.assertNotIn("integrity", written)
+
+    # Value: protects=a gate run on an input store the current code cannot read writes its receipt, with
+    #   replay_keeps_input_grouping_and_pages false, the snapshot recorded as unavailable and the cause as the
+    #   comparison's reason; fails_when=the snapshot's sqlite3.OperationalError ends the gate before the replay
+    #   with no receipt; why_new=TODOS "Registry fix review" (c); seam=replay patched to swap in a current store;
+    #   no_claim=the order-independence clones and the publication check (patched)
+    def test_an_unreadable_input_store_fails_the_replay_comparison_with_a_reason(self) -> None:
+        import shutil
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = ReplayVsInputTest.build(self, root / "current")
+            (root / "site" / "data" / "xml").mkdir(parents=True)
+            shutil.copy(current, root / "site" / gate.STORE)
+            _drop_snippet(root / "site" / gate.STORE)
+            receipt = root / "out" / "receipt.json"
+
+            def replay(output_dir: Path, today: str, log_path: Path) -> dict:
+                shutil.copy(current, output_dir / gate.STORE)
+                return {"exit_code": 0, "store_replaced": True, "store_kept": True, "tail": []}
+
+            with mock.patch.object(gate, "replay", side_effect=replay), \
+                    mock.patch.object(gate, "order_independence", return_value={"equal": True, "fresh": {}}), \
+                    mock.patch.object(gate, "_run", return_value={"exit_code": 0}), \
+                    mock.patch("sys.stderr"):
+                code = gate.main([str(root / "site"), "--scratch", str(root / "scratch"), "--receipt", str(receipt)])
+            written = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(code, 1)
+        self.assertTrue(written["checks"]["replay_exit_0"])
+        self.assertFalse(written["checks"]["replay_keeps_input_grouping_and_pages"])
+        self.assertIn("snippet", written["input_snapshot_unavailable"])
+        self.assertIn("the input store's snapshot is unavailable", written["replay_vs_input"]["reason"])
+        self.assertFalse(written["checks"]["all_passed"])
 
 
 if __name__ == "__main__":

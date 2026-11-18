@@ -18,6 +18,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -232,6 +233,9 @@ def valid_site_url(value: str | None) -> bool:
         parsed.port  # raises ValueError for a non-numeric or out-of-range port
     except ValueError:
         return False
+    # urlparse drops tabs and newlines itself, so whitespace and control characters (XML-illegal in the channel link) are checked on the raw value.
+    if re.search(r"[\s\x00-\x1f\x7f]", value) or parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
+        return False
     return parsed.scheme == "https" and bool(parsed.netloc) and value.endswith("/") and not parsed.query and not parsed.fragment
 
 
@@ -245,8 +249,16 @@ def _berlin_midnight(day: date) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=zone)
 
 
+#: Control characters XML 1.0 forbids; one stray \x01 makes the whole feed ill-formed.
+_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _xml_text(text: str) -> str:
+    return _XML_ILLEGAL.sub("", text)
+
+
 def _cut(text: str, limit: int) -> str:
-    text = " ".join(text.split())
+    text = " ".join(_xml_text(text).split())
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
@@ -276,7 +288,7 @@ def _item_description(week: dict[str, Any], site_url: str) -> str:
     last = monday + timedelta(days=4)
     for sitting in week["sittings"]:
         try:
-            last = max(last, date.fromisoformat(str(sitting["datum"])))
+            last = max(last, date.fromisoformat(str(sitting["datum"])[:10]))
         except ValueError:
             continue
     span = sitzungskalender.range_text(monday, min(last, date.fromisoformat(week["sunday"])))
@@ -327,11 +339,11 @@ def render_rss(payload: dict[str, Any], site_url: str) -> str:
         if sunday >= build_date or not week["sittings"]:
             continue
         item = ET.SubElement(channel, "item")
-        ET.SubElement(item, "title").text = _item_title(week)
-        ET.SubElement(item, "link").text = site_url + week["sittings"][-1]["href"]
+        ET.SubElement(item, "title").text = _xml_text(_item_title(week))
+        ET.SubElement(item, "link").text = _xml_text(site_url + week["sittings"][-1]["href"])
         ET.SubElement(item, "guid", {"isPermaLink": "false"}).text = week["week"]
         ET.SubElement(item, "pubDate").text = format_datetime(_berlin_midnight(sunday + timedelta(days=1)))
-        ET.SubElement(item, "description").text = _item_description(week, site_url)
+        ET.SubElement(item, "description").text = _xml_text(_item_description(week, site_url))
     ET.indent(rss)
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(rss, encoding="unicode") + "\n"
 
@@ -366,9 +378,11 @@ def write(
     else:
         rss_path.unlink(missing_ok=True)
         if configured:
+            # A refused value with an "@" may carry a user and password: never echo it into the build log.
+            shown = "eine URL mit @ (nicht angezeigt, kann Zugangsdaten enthalten)" if "@" in configured else repr(configured)
             print(
-                f"warning: [week-radar] {SITE_URL_ENV} muss eine absolute https-URL mit abschließendem / sein, "
-                f"war {configured!r}; kein RSS",
+                f"warning: [week-radar] {SITE_URL_ENV} muss eine absolute https-URL ohne Zugangsdaten mit abschließendem / sein, "
+                f"war {shown}; kein RSS",
                 file=sys.stderr,
             )
         rss_note = f"RSS übersprungen ({SITE_URL_ENV} nicht gesetzt)" if not configured else "RSS übersprungen (ungültige URL)"
