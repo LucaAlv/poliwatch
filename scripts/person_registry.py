@@ -65,8 +65,9 @@ def _euid() -> int:
 def ensure_private_dir(path: Path) -> Path:
     """A private directory that is safe to write and sweep: a real directory
     this user owns that no one else can write. Created (0700) when absent; an
-    existing one with group or other write bits is repaired, and refused only
-    when the bits stay (a file system that keeps no POSIX modes). A symlink, a
+    existing one with any group or other bits is repaired to 0700 (the staged
+    copies' names are not listed to others either), and refused only when write
+    bits stay (a file system that keeps no POSIX modes). A symlink, a
     non-directory or a foreign owner is refused before anything is created,
     written or swept there, so a directory planted in a shared tree cannot
     redirect the sweeps. ``OSError`` for a failed creation (errno kept) and
@@ -93,7 +94,7 @@ def ensure_private_dir(path: Path) -> Path:
         raise PermissionError(f"{path} is not a directory; remove it and rerun")
     if info.st_uid != _euid():
         raise PermissionError(f"{path} is owned by uid {info.st_uid}, not this user; remove it and rerun")
-    if info.st_mode & 0o022:
+    if info.st_mode & 0o077:
         os.chmod(path, 0o700)
         info = os.lstat(path)
         if info.st_mode & 0o022:
