@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.25.0] - 2026-11-20
+
+The week radar's RSS titles keep their words apart and drop characters that make a feed unreadable, the build warning about a refused site address no longer prints any part of a password, and an Antrag passage that the advance-copy watermark interrupts mid-line is quoted instead of refused. The Antrag extractor moves from version 9 to 10, so a store persisted with version 9 is refused until `--offline --repersist`; on the saved corpus of 112 Antrag texts no quote changes. DATA.md now names the MdB-Stammdaten beside the roll-call data as data whose redistribution is still an open question: the DATA.md bytes of every export change, no figure does.
+
+### Fixed
+
+- **RSS item titles keep their words apart.** A vertical tab, a form feed or one of the separator characters U+001C to U+001F between two words of a title was deleted, so the words ran together ("Titelmit"); it now becomes a space. A lone surrogate and U+FFFE or U+FFFF are dropped from the RSS text like the other characters XML forbids.
+- **The warning for a refused site address shows only the scheme and the host.** A `BUNDESTAG_PULSE_SITE_URL` that fails the check was printed whole, or hidden whole when it held an "@". The build log now shows `scheme://host/`, `***@host` when the value carries a user and password, `***` as the host when an "@" sits after the host part (the host read from such a value can be part of the password), and `ungueltig` for a value that cannot be read. The query, fragment and path are never shown.
+- **An advance-copy watermark in the middle of a line no longer stops an Antrag passage from being quoted.** After "Vorabfassung – wird durch die lektorierte Fassung ersetzt." and a space, the next text started with a blank, which reads as a list item whose marker the text lost, and the passage was refused. The watermark now goes together with the blanks after it.
+
+### Changed
+
+- **DATA.md names the MdB-Stammdaten as an open redistribution question.** Its sources paragraph named only the roll-call data. It now names both, and cites ADR 0003 for the roll-call data only, since the ADR does not cover the MdB-Stammdaten yet.
+
 ## [0.46.23.0] - 2026-11-19
 
 The check that keeps local file paths out of a published site now catches paths under a mount point, a downloaded release given as the build store is refused before anything is read from it, and a stale cached report of an excluded sitting no longer stops every build. No stored figure, page or export changes. The path check flags 0 lines of the 10,639 files of the reference site, before and after.
