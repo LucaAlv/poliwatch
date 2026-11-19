@@ -253,7 +253,7 @@ An MdB who makes an Abweichung in a namentliche Abstimmung. In public text this 
 _Avoid_: Dissident, Rebell; Fraktionslinie in public text
 
 **Umgebuchte Stimme**:
-A Stimme that counts for the group the MdB-Stammdaten prove on the day of the namentliche Abstimmung, where the roll-call page lists the member under another (docs/source-errors.md E4). The page's group stays recorded and the dossier names the difference. Where the Stammdaten prove nothing (after their Stand, a change on the vote's own day, no unique name in the Wahlperiode) the page stands.
+A Stimme that counts for the group the MdB-Stammdaten prove on the day of the namentliche Abstimmung, where the roll-call page lists the member under another (docs/source-errors.md E4). The page's group stays recorded and the dossier names the difference. Where the Stammdaten prove nothing (after their Stand, a change on the vote's own day, no unique name in the Wahlperiode, before the MdB's first Fraktion or Gruppe record in the Wahlperiode or with none) the page stands.
 _Avoid_: reading a change on the vote's own day as a page error (the day can't say which came first)
 
 **Vorgangsbeschreibung**:
