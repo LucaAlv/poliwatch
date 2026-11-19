@@ -7,6 +7,7 @@ being mistaken for an acquisition that was never requested.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from dataclasses import dataclass, field
@@ -351,13 +352,18 @@ def validate_relative_output_path(value: str) -> str:
 
 
 class _LocalPath:
-    r"""/Users/ or /home/ anywhere (so /Volumes/Data/Users/ and /mnt/c/Users/ count) or a C:\Users\ path,
-    except inside a URL token (which ends at whitespace, a quote or a bracket): www.sr.de/sr/home/... in a quoted speech is a URL, not a path."""
+    r"""/Users/ or /home/ anywhere (so /Volumes/Data/Users/ and /mnt/c/Users/ count) or a JSON-escaped C:\\Users\\ path,
+    except inside a URL token (http(s):// in any case, a protocol-relative //host. or www.; it ends at whitespace, a quote
+    or a bracket): www.sr.de/sr/home/... in a quoted speech is a URL, not a path. The line is read with its HTML entities
+    decoded, so &nbsp; or &quot; ends a URL where the browser shows it ending."""
 
-    _pattern = re.compile(r"(?<![\w./-])(?:https?://|www\.)[^\s\"'<>]*|(?P<path>/Users/|/home/|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)")
+    _pattern = re.compile(
+        r"(?<![\w./-])(?:(?i:https?:)?//(?=[\w-]+\.)|(?i:www\.))[^\s\"'<>]*"
+        r"|(?P<path>/Users/|/home/|(?<![\w.-])[A-Za-z]:\\\\Users\\\\)"
+    )
 
     def search(self, line: str) -> bool:
-        return any(match.group("path") for match in self._pattern.finditer(line))
+        return any(match.group("path") for match in self._pattern.finditer(html.unescape(line)))
 
 
 DENYLIST = {
