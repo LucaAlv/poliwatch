@@ -58,6 +58,7 @@ import abgeordnetenwatch as aw
 import build_dip_pulse_site as build
 import derive
 import person_registry as registry
+import reviewed_units
 import sqlite_open
 import stammdaten
 
@@ -708,6 +709,11 @@ def run(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        reviewed_units.load()
+    except reviewed_units.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 2
     try:
         return run(args)
     except UsageError as exc:
