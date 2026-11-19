@@ -240,8 +240,9 @@ def valid_site_url(value: str | None) -> bool:
 
 
 def _shown_url(value: str) -> str:
-    """A refused SITE_URL as scheme://host/ for the build log: userinfo masked, and a value whose
-    "@" sits outside the netloc (a secret read as the host) masked whole; query, fragment and path never shown."""
+    """A refused SITE_URL as scheme://host/ for the build log: userinfo masked, and a value with an
+    "@" outside the netloc masked whole, since its parsed host can be part of a password ("user:a@b/c@host");
+    query, fragment and path never shown."""
     try:
         parsed = urlparse(value)
         host = parsed.hostname
@@ -249,10 +250,10 @@ def _shown_url(value: str) -> str:
         return "ungueltig"
     if parsed.scheme not in ("http", "https") or not host or re.search(r"[^\w.:\-]", host):
         return "ungueltig"
-    if "@" in parsed.netloc:
-        host = "***@" + host
-    elif "@" in value:
+    if value.count("@") > parsed.netloc.count("@"):
         host = "***"
+    elif "@" in parsed.netloc:
+        host = "***@" + host
     return f"{parsed.scheme}://{host}/"
 
 

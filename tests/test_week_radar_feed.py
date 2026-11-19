@@ -445,6 +445,8 @@ class WriteTests(unittest.TestCase):
             "http://pulse.example.org/": "http://pulse.example.org/",
             "https://user:" + secret + "@pulse.example.org/": "https://***@pulse.example.org/",
             "https://user:" + secret + "/x@pulse.example.org/": "https://***/",
+            # An "@" in the netloc and another after it: the netloc's host is part of the password.
+            "https://user:prefix@" + secret + "/x@pulse.example.org/": "https://***/",
             "https://[" + secret: "ungueltig",
             secret: "ungueltig",
         }
