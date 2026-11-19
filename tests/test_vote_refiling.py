@@ -420,6 +420,22 @@ class CachedStammdatenTests(unittest.TestCase):
         left = [self.record("Fraktion Alternative für Deutschland", "24.10.2017", "02.01.2019")]
         self.assertEqual(self.filed_from([self.mdb(left)], afd("2019-06-01")), [("Muster, Ada", "fraktionslos")])
 
+    # Value: protects=an MdB with two Mandate in one Wahlperiode (left and came back) keeps the proof of the first
+    #   one: a page row on a day of the first Mandat is still re-filed, in either element order; fails_when=
+    #   first_record_days keeps the last WAHLPERIODE element's day, so the later Mandat's record hides the earlier
+    #   ones; why_new=Codex reproduced it in the ship review; seam=refile_entry_votes
+    def test_a_second_mandat_in_the_wahlperiode_keeps_the_first_mandats_proof(self) -> None:
+        spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        first = {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019",
+                 "INSTITUTIONEN": [self.record(spd, "24.10.2017", "31.12.2019")]}
+        second = {"WP": "19", "MDBWP_VON": "01.06.2020", "MDBWP_BIS": "26.10.2021",
+                  "INSTITUTIONEN": [self.record(spd, "01.06.2020")]}
+        for periods in ([first, second], [second, first]):
+            mdb = self.mdb([])
+            mdb["WAHLPERIODEN"] = periods
+            page = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
+            self.assertEqual(self.filed_from([mdb], page), [("Muster, Ada", "SPD")])
+
     # Value: protects=an unreadable cached file stops a rebuild as DatabaseRebuildError with the store untouched,
     #   as the seat step does; fails_when=StammdatenError escapes the CLI's handler; why_new=this read comes before the
     #   seat step's; seam=refile_entry_votes

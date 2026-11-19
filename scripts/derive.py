@@ -1204,7 +1204,8 @@ def first_record_days(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode: i
     """The first Mandat day a Fraktion or Gruppe record covers, ``Fraktionslos``
     records included, per (Wahlperiode, MdB id) of the records
     ``mdb_zugehoerigkeiten`` reads; an MdB-Wahlperiode with no such record has no
-    entry. Before that day the file's fraktionslos rows come from rule 3 alone
+    entry, and of two Mandate in one Wahlperiode the earlier record counts.
+    Before that day the file's fraktionslos rows come from rule 3 alone
     (a Mandat day no membership covers), which a Mandat entered before its
     Fraktion also produces, so they prove nothing (TODOS E4 deferred item 2).
     Malformed dates raise StammdatenError as in ``mdb_zugehoerigkeiten``."""
@@ -1221,7 +1222,9 @@ def first_record_days(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode: i
                       if _clean(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART]
             if starts:
                 mandate_from = _stammdaten_date(period.get("MDBWP_VON"), where, required=True)
-                days[(wahlperiode, mdb_id)] = max(min(starts), mandate_from).isoformat()
+                day = max(min(starts), mandate_from).isoformat()
+                # Two Mandate in one Wahlperiode (an MdB who leaves and comes back): the earlier record counts.
+                days[(wahlperiode, mdb_id)] = min(day, days.get((wahlperiode, mdb_id), day))
     return days
 
 
