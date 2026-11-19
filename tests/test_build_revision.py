@@ -181,7 +181,7 @@ class ResolveCommitTests(unittest.TestCase):
 
 
 class CommitLookupTests(unittest.TestCase):
-    # Value: protects=a release names its commit in full and checks file content as that commit holds it; fails_when=a short id that names no commit, a non-hex string or a missing path is accepted; why_new=the release script targets the manifest's commit, not HEAD; seam=full_commit and blob_sha256; no_claim=ambiguous prefixes
+    # Value: protects=a release names its commit in full and checks file content as that commit holds it; fails_when=a short id that names no commit, a non-hex string or a missing path is accepted; why_new=the release script targets the manifest's commit, not HEAD; seam=full_commit, blob_sha256 and blob_text (CRLF as LF, None for a missing or non-UTF-8 blob); no_claim=ambiguous prefixes
     def test_full_commit_and_blob_hash(self) -> None:
         import hashlib
 
@@ -195,6 +195,16 @@ class CommitLookupTests(unittest.TestCase):
         self.assertIsNone(rev.full_commit(repo, head[:12] + "-dirty-01234567"))
         self.assertEqual(rev.blob_sha256(repo, head, "a.txt"), hashlib.sha256(b"one\n").hexdigest())
         self.assertIsNone(rev.blob_sha256(repo, head, "missing.txt"))
+        # blob_text: the commit's text with CRLF read as LF; None for a missing path or bytes that are not UTF-8.
+        (repo / "crlf.txt").write_bytes(b"a\r\nb\r\n")
+        (repo / "latin.txt").write_bytes(b"caf\xe9\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "more")
+        head = git(repo, "rev-parse", "HEAD")
+        self.assertEqual(rev.blob_text(repo, head, "crlf.txt"), "a\nb\n")
+        self.assertEqual(rev.blob_text(repo, head, "a.txt"), "two\n")
+        self.assertIsNone(rev.blob_text(repo, head, "latin.txt"))
+        self.assertIsNone(rev.blob_text(repo, head, "missing.txt"))
 
     # Value: protects=a 12-hex release revision resolves to the one commit whose id starts with those digits, never to a branch or tag that happens to carry that name; fails_when=rev-parse resolves the refname first (release item 3, reproduced) so the release targets and hashes another commit, or a ref named like digits no object has passes as a commit; why_new=release item 3; seam=full_commit; no_claim=prefixes shared by two commits (needs a hash collision at 12 digits)
     def test_full_commit_ignores_refs_named_like_the_digits(self) -> None:
