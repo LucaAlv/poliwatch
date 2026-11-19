@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.22.0] - 2026-11-19
+
+When an MdB's Mandat appears in the MdB-Stammdaten before their Fraktion does, a roll-call vote on those first days keeps the group the Bundestag page gives instead of being moved to fraktionslos. No figure moves on today's file. An offline replay of the reference store against main gives the same 157 re-filed Stimmen in 87 roll-calls, and no group count, member Fraktion or stored fact changes.
+
+### Fixed
+
+- **A Mandat the Stammdaten list before any Fraktion or Gruppe record no longer proves fraktionslos.** The correction of misfiled roll-call members moved a member to fraktionslos on any Mandat day no membership covered, including the days before the file entered their Fraktion. It now moves nobody before an MdB's first Fraktion or Gruppe record in that Wahlperiode, an explicit "Fraktionslos" record included. Leaving a Fraktion still proves fraktionslos, as for the six MdBs corrected so far.
+- **An MdB with two Mandate in one Wahlperiode keeps the proof of the first one.**
+
+## [0.46.21.0] - 2026-11-19
+
+Two budget debates of Wahlperiode 18 on the data protection commissioner's Einzelplan now carry the Politikfeld Digitales, as the same debates do in Wahlperiode 19 to 21. On the 801-sitting reference store, the agenda items of Wahlperiode 18 with a Politikfeld go from 1,443 to 1,445 of 2,381 (60.60% to 60.69%). The schema and the export format stay as they are.
+
+### Fixed
+
+- **Einzelplan 21 of Wahlperiode 18 is tagged Digitales.** The items "b) Einzelplan 21 Bundesbeauftragte für den Datenschutz …" of the sittings 18/138 and 18/201 had no Politikfeld (stored as `untagged` with source `einzelplan_unknown`), because the budget table had no entry for that Einzelplan in Wahlperiode 18. They now read `Digitales` with source `einzelplan`. The two sitting pages show the tag on the next render; the stored table `agenda_item_politikfelder` and its CSV export show it after the next `--offline --repersist`. The two items hold 25 Reden with 192,790 characters.
+- **No other tag moves.** A replay of the tagging over all 801 sittings changes these two rows and nothing else: no vote tag, and Wahlperiode 19, 20 and 21 stay at 2,045 of 2,629, 1,750 of 2,109 and 903 of 1,070 agenda items with a Politikfeld.
+
+## [0.46.20.0] - 2026-11-18
+
+An online build that asks DIP again for a Vorgang no longer loses the title and summary it had cached, and the private directory beside a published site is no longer listable by other users. No stored figure moves, because offline replays do not ask DIP. An offline build of the reference store whose private directory was left world-readable still exports and ends with that directory closed to others.
+
+### Fixed
+
+- **A Vorgang asked for again keeps the cached fields DIP's answer leaves empty.** A vote's "Worum es geht" kept losing its title and summary when an online build refetched a Vorgang still without a Sachgebiet and the answer lacked them. The Sachgebiet and Sachbegriff lists are still replaced by the fresh answer.
+- **The private directory beside a published site is closed to other users.** A directory left readable by group or others (an export run under the usual umask made it so) is set back to owner-only, so the names of the staged store copies inside are not listed to others. A symlinked or foreign private directory is refused before the export creates anything in it.
+- **A CSV export that cannot set its file permissions leaves no half-written temporary file behind.**
+
+## [0.46.19.0] - 2026-11-18
+
+The Daten page's report link, the Impressum's contact details and the repository's own checks now say what is true. No stored figure or export changes. An offline render of the reference store with a `mailto:` report address writes the footer link "Datenfehler melden", without "(GitHub)".
+
+### Fixed
+
+- **The Daten page's "Datenfehler melden" link says "(GitHub)" only when it goes to github.com.** A `mailto:` address or a site path given as `--data-issues-url` was labelled GitHub before.
+- **An operator e-mail whose name part holds `?`, `&`, `%` or `=` is refused.** The address becomes a `mailto:` link on the Impressum, where `?cc=` or `&bcc=` would add recipients. The build stops with "email is not an e-mail address" before any page is written.
+- **An operator URL with a space anywhere in it is refused**, like one with a user or password.
+
+### Changed
+
+- **The authored codebook inputs (`LICENSE-DATA.md`, `docs/data-methods.md`, `scripts/data_dictionary.json`) are checked out with LF line endings on every machine**, so the exported copies equal the bytes the release commit holds.
+- **`operator.json` and `operator.local.json` are ignored by git**, so a local operator file with a name and postal address is not committed by accident.
+- **README and the design docs point to `PRODUCT.md` and `DESIGN.md`**, which replaced the deleted product design document.
 ## [0.46.18.0] - 2026-11-18
 
 The test suite now checks three rules in `scripts/` that reviews used to catch by hand. They cover how a script opens a SQLite file, where a missing value could be published as a zero, and which modules may import which. Each failure message says why the rule exists and how to fix the cause. No stored figure, export or page changes in this release; only the way scripts open SQLite files changed, and the store comparison now reads the right store under an unusual path.
