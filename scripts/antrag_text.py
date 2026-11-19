@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 9
+EXTRACTOR_VERSION = 10
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_NAMESPACE = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
