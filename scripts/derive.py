@@ -1190,23 +1190,62 @@ def person_name_key(name: Any) -> frozenset[str]:
 @dataclass(frozen=True)
 class RefilingSource:
     """``mdb_zugehoerigkeiten`` rows as ``refile_vote_members`` looks them up: the
-    MdBs behind a name per Wahlperiode, each MdB's rows, and the last day the file
-    covers."""
+    MdBs behind a name per Wahlperiode, each MdB's rows, the first day a
+    Fraktion or Gruppe record covers per MdB and Wahlperiode (absent: none
+    does), and the last day the file covers."""
 
     mdb_ids: dict[tuple[int, frozenset[str]], set[str]]
     rows: dict[tuple[int, str], list[Mapping[str, Any]]]
+    recorded_from: Mapping[tuple[int, str], str]
     stand_day: str
 
 
-def refiling_source(zugehoerigkeiten: Iterable[Mapping[str, Any]], stand: str) -> RefilingSource:
+def first_record_days(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode: int) -> dict[tuple[int, str], str]:
+    """The first Mandat day a Fraktion or Gruppe record covers, ``Fraktionslos``
+    records included, per (Wahlperiode, MdB id) of the records
+    ``mdb_zugehoerigkeiten`` reads; an MdB-Wahlperiode with no such record has no
+    entry, and of two Mandate in one Wahlperiode the earlier record counts.
+    Before that day the file's fraktionslos rows come from rule 3 alone
+    (a Mandat day no membership covers), which a Mandat entered before its
+    Fraktion also produces, so they prove nothing (TODOS E4 deferred item 2).
+    Malformed dates raise StammdatenError as in ``mdb_zugehoerigkeiten``."""
+    days: dict[tuple[int, str], str] = {}
+    for mdb in mdbs:
+        mdb_id = _clean(mdb["ID"])
+        for period in mdb.get("WAHLPERIODEN") or []:
+            wahlperiode = int(period["WP"])
+            if wahlperiode < since_wahlperiode:
+                continue
+            where = f"MdB {mdb_id}, WP {wahlperiode}"
+            starts = [_stammdaten_date(item.get("MDBINS_VON"), where, required=True)
+                      for item in period.get("INSTITUTIONEN") or []
+                      if _clean(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART]
+            if starts:
+                mandate_from = _stammdaten_date(period.get("MDBWP_VON"), where, required=True)
+                day = max(min(starts), mandate_from).isoformat()
+                # Two Mandate in one Wahlperiode (an MdB who leaves and comes back): the earlier record counts.
+                days[(wahlperiode, mdb_id)] = min(day, days.get((wahlperiode, mdb_id), day))
+    return days
+
+
+def refiling_source(zugehoerigkeiten: Iterable[Mapping[str, Any]], stand: str,
+                    recorded_from: Mapping[tuple[int, str], str]) -> RefilingSource:
     """The lookup for ``zugehoerigkeiten``; ``stand`` is the file's Stand, a UTC
-    instant, and the file covers the whole of its day."""
+    instant, and the file covers the whole of its day; ``recorded_from`` is
+    ``first_record_days`` of the same records."""
     mdb_ids: dict[tuple[int, frozenset[str]], set[str]] = {}
     rows: dict[tuple[int, str], list[Mapping[str, Any]]] = {}
     for row in zugehoerigkeiten:
         mdb_ids.setdefault((row["wahlperiode"], person_name_key(row["name"])), set()).add(row["mdb_id"])
         rows.setdefault((row["wahlperiode"], row["mdb_id"]), []).append(row)
-    return RefilingSource(mdb_ids, rows, datetime.fromisoformat(stand).astimezone(timezone.utc).date().isoformat())
+    return RefilingSource(mdb_ids, rows, dict(recorded_from), datetime.fromisoformat(stand).astimezone(timezone.utc).date().isoformat())
+
+
+def stammdaten_refiling_source(mdbs: list[Mapping[str, Any]], stand: str, *, since_wahlperiode: int) -> RefilingSource:
+    """The ``refiling_source`` of MdB-Stammdaten records with Stand ``stand``.
+    Raises StammdatenError as ``mdb_zugehoerigkeiten`` does."""
+    return refiling_source(mdb_zugehoerigkeiten(mdbs, since_wahlperiode=since_wahlperiode), stand,
+                           first_record_days(mdbs, since_wahlperiode=since_wahlperiode))
 
 
 def _proved_group(source: RefilingSource, wahlperiode: int | None, name: Any, day: str) -> str | None:
@@ -1215,6 +1254,8 @@ def _proved_group(source: RefilingSource, wahlperiode: int | None, name: Any, da
 
         after the Stand ───────────────────► None  (a later change is not in the file)
         no one MdB of that name in the WP ─► None  (a namesake, or no such MdB)
+        before the MdB's first Fraktion ───► None  (a Mandat entered before its
+          or Gruppe record in the WP              Fraktion reads fraktionslos)
         a change on that very day ─────────► None  (the day can't say which came first)
         no row covers the day ─────────────► None
     """
@@ -1222,7 +1263,11 @@ def _proved_group(source: RefilingSource, wahlperiode: int | None, name: Any, da
     ids = source.mdb_ids.get((wahlperiode, key), ()) if key else ()
     if day > source.stand_day or len(ids) != 1:
         return None
-    rows = source.rows[(wahlperiode, next(iter(ids)))]
+    mdb_id = next(iter(ids))
+    recorded_from = source.recorded_from.get((wahlperiode, mdb_id))
+    if recorded_from is None or day < recorded_from:
+        return None
+    rows = source.rows[(wahlperiode, mdb_id)]
     if any(day in (row["valid_from"], row["valid_until"]) for row in rows):
         return None
     covering = [row for row in rows if row["valid_from"] < day and (row["valid_until"] is None or day < row["valid_until"])]

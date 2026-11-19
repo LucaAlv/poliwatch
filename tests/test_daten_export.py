@@ -1459,6 +1459,23 @@ class ExportDistributionDataTests(unittest.TestCase):
                 self.assertEqual([p.name for p in self.tmp.iterdir() if p.name.startswith(copy.name + "-")], [])
                 copy.unlink()
 
+    # Value: protects=the export refuses an exported distribution SQLite as its source up front, so an export of an export never starts; fails_when=export_distribution_data checks the schema only; why_new=A.2 follow-up (1): only the write paths called require_build_store; seam=export_distribution_data
+    def test_export_refuses_a_distribution_copy_as_its_source(self) -> None:
+        for marker in ("PRAGMA user_version = 1", "CREATE TABLE datenstand (tag TEXT)"):
+            with self.subTest(marker=marker):
+                copy = self.tmp / "distribution.sqlite"
+                shutil.copyfile(self.db_path, copy)
+                conn = sqlite3.connect(copy)
+                conn.execute(marker)
+                conn.commit()
+                conn.close()
+                with self.assertRaisesRegex(RuntimeError, "distribution copy"):
+                    b.export_distribution_data(
+                        copy, self.tmp / "exports-of-copy", mp_lookup={}, readiness=READINESS,
+                        catalog_count=2, dossier_count=2, license_text="", commit="abc123",
+                    )
+                copy.unlink()
+
     # Value: protects=a rebuild (online build or --offline --repersist) given an exported distribution SQLite as --database-path refuses before staging and leaves the file byte for byte as it was; fails_when=the rebuild probe checks only that the store reads and replaces the downloaded release with a fresh build store; why_new=/ship QA probes 004/005 (2026-10-31): user_version 1 became 0 with a new inode; seam=none
     def test_rebuild_refuses_a_distribution_copy_and_leaves_it_untouched(self) -> None:
         for upgrade in (False, True):
