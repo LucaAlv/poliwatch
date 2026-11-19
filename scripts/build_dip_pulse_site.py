@@ -4745,7 +4745,7 @@ def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -
     return ["## Quellen, Bedingungen und Transformationen", "",
             f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch. Die vollständige Datei liegt diesem Export als `{LICENSE_FILE_NAME}` bei:", "",
             _license_notice(license_doc), "",
-            "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
+            "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten und der MdB-Stammdaten bleibt eine offene Frage nach ADR 0003.", "",
             "## Diesen Export zitieren", "",
             f"{ATTRIBUTION_NAME} (Arbeitstitel; der Produktname ist nicht festgelegt), {_export_label(manifest)}, Revision {_export_revision(manifest)}, Generation {manifest['generation']}, letzte gespeicherte Sitzung {_latest_sitting(manifest)}. SQLite-Datei und ihren SHA-256 aus der Dateiliste mit angeben.",
             "Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI.", ""]
