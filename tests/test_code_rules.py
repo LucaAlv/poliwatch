@@ -130,7 +130,7 @@ SQLITE_OPENERS = {
 
 _SQLITE_MODULES = ("sqlite3", "sqlite3.dbapi2")
 _OPENING_NAMES = ("connect", "Connection")
-_ATTACH = re.compile(r"\bATTACH\s+(?:DATABASE\s+)?['\"?:{]", re.IGNORECASE)
+_ATTACH = re.compile(r"\bATTACH\s+(?:DATABASE\s+)?(?:['\"?:{$(@`\[]|\w+\s+AS\b)", re.IGNORECASE)
 
 
 def sqlite_connect_calls(tree: ast.Module) -> Iterator[tuple[int, str]]:
@@ -224,14 +224,15 @@ def or_zero_message(finding: Finding) -> str:
     )
 
 
-_COMPARISON = re.compile(r"(?:\b([A-Za-z_]\w*)\.)?\b([A-Za-z_]\w*)\s*(!=|<>|==|=)\s*\?")
+_IDENT = r"""(?:"[^"]+"|`[^`]+`|\[[^\]]+\]|[A-Za-z_]\w*)"""
+_COMPARISON = re.compile(rf"(?:({_IDENT})\.)?({_IDENT})\s*(!=|<>|==|=)\s*\?")
 _CLAUSE = re.compile(r"\b(SET|WHERE|AND|OR|ON|HAVING|WHEN|NOT)\b", re.IGNORECASE)
 _NOT_ALIAS = (
     "WHERE|SET|ON|USING|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|JOIN|NATURAL|GROUP|ORDER|LIMIT|VALUES|SELECT|"
     "UNION|EXCEPT|INTERSECT|HAVING|WINDOW|DEFAULT|AND|OR|AS|DO|RETURNING"
 )
 _TABLE_REF = re.compile(
-    rf"\b(?:FROM|JOIN|UPDATE|INTO)\s+([A-Za-z_]\w*)(?:\s+(?:AS\s+)?(?!(?:{_NOT_ALIAS})\b)([A-Za-z_]\w*))?",
+    rf"\b(?:FROM|JOIN|UPDATE|INTO)\s+({_IDENT})(?:\s+(?:AS\s+)?(?!(?:{_NOT_ALIAS})\b)({_IDENT}))?",
     re.IGNORECASE,
 )
 
@@ -256,16 +257,25 @@ def store_schema() -> dict[str, dict[str, bool]]:
             conn.close()
 
 
+def normalize(identifier: str | None) -> str | None:
+    """An SQL identifier as the schema spells it: unquoted, lowercase."""
+    if identifier is None:
+        return None
+    if identifier[0] in '"`[':
+        identifier = identifier[1:-1]
+    return identifier.lower()
+
+
 def table_references(sql: str) -> tuple[dict[str, list[str]], list[str]]:
     """(alias -> every table it names, tables in order) after FROM, JOIN, UPDATE
     or INTO. An alias reused for another table keeps both."""
     aliases: dict[str, list[str]] = {}
     tables: list[str] = []
     for match in _TABLE_REF.finditer(sql):
-        table = match.group(1)
+        table = normalize(match.group(1))
         if table not in tables:
             tables.append(table)
-        for alias in (table, match.group(2)):
+        for alias in (table, normalize(match.group(2))):
             if alias and table not in aliases.setdefault(alias, []):
                 aliases[alias].append(table)
     return aliases, tables
@@ -295,7 +305,7 @@ def nullable_comparisons(sql: str, schema: Mapping[str, Mapping[str, bool]], con
     for match in _COMPARISON.finditer(sql):
         if not is_comparison(sql, match):
             continue
-        qualifier, column, operator = match.groups()
+        qualifier, column, operator = normalize(match.group(1)), normalize(match.group(2)), match.group(3)
         owners = aliases.get(qualifier, [qualifier]) if qualifier else tables
         nullable = [table for table in owners if schema.get(table, {}).get(column)]
         if nullable:
@@ -699,6 +709,25 @@ class DetectorTests(unittest.TestCase):
                 found = sqlite_open_violations({"probe": probe})
         self.assertEqual([Finding("probe.py", 2, "f", "ATTACH")], found)
 
+    # Value: protects=ATTACH is caught whatever follows it: $name, (expr), a bare name with AS, and not prose; fails_when=the ATTACH pattern needs a quote or ? again; why_new=ATTACH DATABASE $path escaped it (review 2026-11-18); seam=a real scripts/ module list with one probe file
+    def test_attach_shapes(self):
+        shapes = {
+            "ATTACH DATABASE $path AS s": True,
+            "ATTACH DATABASE (?) AS s": True,
+            "ATTACH (?) AS s": True,
+            "ATTACH DATABASE path AS s": True,
+            "ATTACH path AS s": True,
+            "ATTACH `p` AS s": True,
+            "ATTACH a file to the store": False,
+        }
+        for sql, flagged in shapes.items():
+            with self.subTest(sql=sql), tempfile.TemporaryDirectory() as scratch:
+                probe = Path(scratch) / "probe.py"
+                probe.write_text(f"def f(conn):\n    conn.execute({sql!r})\n", encoding="utf-8")
+                with mock.patch(f"{__name__}.relative", lambda path: path.name):
+                    found = sqlite_open_violations({"probe": probe})
+                self.assertEqual([Finding("probe.py", 2, "f", "ATTACH")] if flagged else [], found)
+
     # Value: protects=the or-0 detector flags int and float zero and leaves booleans and other defaults alone; fails_when=the zero test drifts; why_new=see above; seam=parsed source
     def test_or_zero_detector(self):
         source = "a = x or 0\nb = x or y or 0.0\nc = x or False\nd = x or 1\ne = 0 if x is None else x\n"
@@ -716,6 +745,11 @@ class DetectorTests(unittest.TestCase):
             "SELECT id FROM votes WHERE id = ?": [],
             "SELECT id FROM unknown WHERE protocol_id = ?": [],
             "protocol_id = ?": [],
+            'SELECT id FROM votes WHERE "protocol_id" = ?': ["votes.protocol_id = ?"],
+            "SELECT id FROM votes WHERE PROTOCOL_ID = ?": ["votes.protocol_id = ?"],
+            "SELECT id FROM VOTES WHERE `Protocol_Id` != ?": ["votes.protocol_id != ?"],
+            "SELECT id FROM votes WHERE [protocol_id] = ?": ["votes.protocol_id = ?"],
+            'SELECT 1 FROM "votes" V WHERE "V"."protocol_id" = ?': ["votes.protocol_id = ?"],
         }
         for sql, expected in cases.items():
             with self.subTest(sql=sql):
