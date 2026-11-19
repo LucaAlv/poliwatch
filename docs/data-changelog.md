@@ -32,7 +32,7 @@ What only a person knows is **authored** in a JSON file passed as `--changes`:
 
 - `summary` is required. `schema_changes`, `coverage_added`, `corrections` and `notes` default to empty. Unknown fields are refused.
 - `schema_changes[].change` is one of `added`, `removed`, `renamed`, `retyped`, `meaning`, `table-added`, `table-removed`, `other`; `column` may be `null` for a whole table.
-- A correction names the `table`, the stable row `key`, the `column`, the `old` and `new` value (text, number, true/false or `null`; they must differ) and the `reason`. Every correction that moved a figure published in an earlier release belongs here. It is the public form of the old/new report the project writes into commit messages.
+- A correction names the `table`, the stable row `key`, the `column`, the `old` and `new` value (text, number, true/false or `null`; they must differ; a number must be finite, so `NaN`, `Infinity` and `1e999` are refused when the file is read) and the `reason`. Every correction that moved a figure published in an earlier release belongs here. It is the public form of the old/new report the project writes into commit messages.
 
 ## Rules the release script enforces
 
