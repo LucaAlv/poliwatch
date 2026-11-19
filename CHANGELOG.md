@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.23.0] - 2026-11-19
+
+The check that keeps local file paths out of a published site now catches paths under a mount point, a downloaded release given as the build store is refused before anything is read from it, and a stale cached report of an excluded sitting no longer stops every build. No stored figure, page or export changes. The path check flags 0 lines of the 10,639 files of the reference site, before and after.
+
+### Fixed
+
+- **A local path under a mount point stops publication.** `/Volumes/Data/Users/…`, `/mnt/c/Users/…` and `/System/Volumes/Data/home/…` passed the check before. `/Users/` and `/home/` are now flagged anywhere in a line except inside a web address (`https://` in any case, a protocol-relative `//host.` link or `www.`). The address ends at a space, a quote or an angle bracket, also when the space or quote is written as `&nbsp;` or `&quot;`, so a path after a link is still caught. `www.sr.de/sr/home/…` in a quoted speech stays allowed.
+- **A downloaded release given as `--database-path` is refused up front on every read.** The offline render, the online pre-check, the Abgeordnete pages, the read after a rebuild and the Daten export now refuse an exported distribution SQLite with the "distribution copy" message, as the rebuild already did. An offline render of such a file stops before any page is written, earlier than before.
+- **A stale cached report of a sitting on the exclusion record no longer stops the build.** A report of an excluded sitting with an old vote shape stopped online, backfill and offline runs with "ERROR [cached input]", whose suggested re-fetch could acquire nothing for an excluded sitting. It now loads and is dropped with the exclusion as before. The same report of a sitting not on the record still stops the build.
+
 ## [0.46.22.0] - 2026-11-19
 
 When an MdB's Mandat appears in the MdB-Stammdaten before their Fraktion does, a roll-call vote on those first days keeps the group the Bundestag page gives instead of being moved to fraktionslos. No figure moves on today's file. An offline replay of the reference store against main gives the same 157 re-filed Stimmen in 87 roll-calls, and no group count, member Fraktion or stored fact changes.

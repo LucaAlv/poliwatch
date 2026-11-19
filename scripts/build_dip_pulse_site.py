@@ -1431,7 +1431,11 @@ def load_existing_detail_entries(
         try:
             derive.require_vote_shape(report)
         except ValueError as exc:
-            raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
+            # A sitting on the exclusion record keeps its cached report and no caller
+            # reads its shape; the record is read only here, so a malformed record
+            # changes nothing for a load that has no shape error.
+            if document_number not in recorded_exclusions(output_dir):
+                raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -4815,9 +4819,8 @@ def export_distribution_data(
         if problem:
             raise RuntimeError(f"export: release {tag} needs its authored inputs committed: {problem}")
 
-    source = facts.open_readonly(database_path)
+    source = open_checked_store(database_path)
     try:
-        pulse_store.require_current_schema(source)
         pulse_store.require_current_speech_rules(source)
         # Without the file the seat tables are empty and every Stimme is back under
         # the group its roll-call page lists (E4), while DATA.md describes the correction.
@@ -14740,6 +14743,20 @@ def run_data_pipeline(
 # Two paths through this function:
 #   --offline -> render from the cached JSON in OUTPUT_DIR/data only, no network
 #   default   -> fetch from DIP, build dossiers, persist, then render
+def open_checked_store(database_path: Path) -> sqlite3.Connection:
+    """The build store opened read-only after the refusals every read path shares:
+    a distribution copy (``require_build_store``) and an old schema. The
+    connection is closed again when one raises."""
+    store = facts.open_readonly(database_path)
+    try:
+        pulse_store.require_build_store(store, database_path)
+        pulse_store.require_current_schema(store)
+    except BaseException:
+        store.close()
+        raise
+    return store
+
+
 def main() -> int:
     # Reads .env so DIP_API_KEY and the LLM keys can live outside the shell.
     dip.load_local_env()
@@ -14869,8 +14886,7 @@ def main() -> int:
         try:
             # Opening is inside: a directory or an unreadable file at the store
             # path fails here (or at the first query), not as a traceback.
-            previous = facts.open_readonly(database_path)
-            pulse_store.require_current_schema(previous)
+            previous = open_checked_store(database_path)
             if args.offline:
                 pulse_store.require_current_speech_rules(previous)
                 # The render applies the corrections file to the pages without a
@@ -14991,9 +15007,8 @@ def main() -> int:
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network. Read only: the published
         # store is written by a staged rebuild alone.
-        store = facts.open_readonly(database_path)
+        store = open_checked_store(database_path)
         try:
-            pulse_store.require_current_schema(store)
             coverage_gap = store_coverage_gap(store, cached_entries, excluded=recorded_exclusions(output_dir))
             if coverage_gap:
                 print(f"error: {coverage_gap} {CONCURRENT_UPDATE_NOTE}", file=sys.stderr)
@@ -15335,9 +15350,8 @@ def main() -> int:
                 reason=getattr(args, "exclusion_reason", None), reason_detail=getattr(args, "exclusion_detail", None)
             )
             # Read only: the published store is written by a staged rebuild alone.
-            store = facts.open_readonly(database_path)
+            store = open_checked_store(database_path)
             try:
-                pulse_store.require_current_schema(store)
                 # The rebuild persisted exactly these entries; the check holds
                 # the same invariant the offline render refuses on.
                 coverage_gap = store_coverage_gap(store, entries, excluded=listed)
