@@ -1768,7 +1768,7 @@ def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammd
     is cached, so the marks a cached report holds are cleared). Raises
     DatabaseRebuildError for records the derivation refuses."""
     try:
-        source = (derive.refiling_source(derive.mdb_zugehoerigkeiten(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE), cached.stand)
+        source = (derive.stammdaten_refiling_source(cached.records, cached.stand, since_wahlperiode=V1_FIRST_WAHLPERIODE)
                   if cached else None)
     except derive.StammdatenError as exc:
         raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc

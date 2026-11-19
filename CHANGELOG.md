@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.22.0] - 2026-11-19
+
+When an MdB's Mandat appears in the MdB-Stammdaten before their Fraktion does, a roll-call vote on those first days keeps the group the Bundestag page gives instead of being moved to fraktionslos. No figure moves on today's file. An offline replay of the reference store against main gives the same 157 re-filed Stimmen in 87 roll-calls, and no group count, member Fraktion or stored fact changes.
+
+### Fixed
+
+- **A Mandat the Stammdaten list before any Fraktion or Gruppe record no longer proves fraktionslos.** The correction of misfiled roll-call members moved a member to fraktionslos on any Mandat day no membership covered, including the days before the file entered their Fraktion. It now moves nobody before an MdB's first Fraktion or Gruppe record in that Wahlperiode, an explicit "Fraktionslos" record included. Leaving a Fraktion still proves fraktionslos, as for the six MdBs corrected so far.
+- **An MdB with two Mandate in one Wahlperiode keeps the proof of the first one.**
+
 ## [0.46.21.0] - 2026-11-19
 
 Two budget debates of Wahlperiode 18 on the data protection commissioner's Einzelplan now carry the Politikfeld Digitales, as the same debates do in Wahlperiode 19 to 21. On the 801-sitting reference store, the agenda items of Wahlperiode 18 with a Politikfeld go from 1,443 to 1,445 of 2,381 (60.60% to 60.69%). The schema and the export format stay as they are.
