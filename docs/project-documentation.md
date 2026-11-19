@@ -642,7 +642,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `BUNDESTAG_PULSE_OPERATOR_FILE` | build | Before the site goes public | Path of the operator file for `impressum.html` and `datenschutz.html`; `--operator-file` wins when both are set; an empty value stops the build |
 | `BUNDESTAG_PULSE_ENRICHMENTS` | build | No | Comma-separated update enrichments such as `votes,aw-profiles` |
 | `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.5.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
-| `BUNDESTAG_PULSE_SITE_URL` | build | No | Absolute `https://` URL of the deployed site, ending in `/` (for example `https://example.org/puls/`), with no user or password, whitespace or control character. Turns on `feeds/week-radar.xml`, whose links must be absolute; unset or invalid, the build writes no RSS feed and deletes an older one (an invalid value also prints a warning, which does not repeat a value containing `@`) |
+| `BUNDESTAG_PULSE_SITE_URL` | build | No | Absolute `https://` URL of the deployed site, ending in `/` (for example `https://example.org/puls/`), with no user or password, whitespace or control character. Turns on `feeds/week-radar.xml`, whose links must be absolute; unset or invalid, the build writes no RSS feed and deletes an older one (an invalid value also prints a warning that shows only `scheme://host/`, with `***@host` where the netloc has a user or password, `***` where an `@` stands elsewhere in the value, and `ungueltig` where no host can be read; query, fragment and path are never shown) |
 
 ## Offline vs Online Behavior
 
