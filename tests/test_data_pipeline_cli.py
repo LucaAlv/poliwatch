@@ -173,6 +173,13 @@ class OperatorFileTests(unittest.TestCase):
             ("bidi control", {"name": "Erika\u202eMuster"}, "name contains a control character"),
             ("bad e-mail", {"email": "kein-at-zeichen"}, "is not an e-mail address"),
             ("e-mail with markup", {"email": "a<b>@example.org"}, "is not an e-mail address"),
+            # A mailto: link takes header parameters after "?" and "&": "to?cc=x", "to&bcc=x"; "%" and "=" escape or assign.
+            ("e-mail local part with ?", {"email": "impressum?cc=x@example.org"}, "is not an e-mail address"),
+            ("e-mail local part with &", {"email": "impressum&bcc=x@example.org"}, "is not an e-mail address"),
+            ("e-mail local part with %", {"email": "impressum%0Abcc@example.org"}, "is not an e-mail address"),
+            ("e-mail local part with =", {"email": "impressum=x@example.org"}, "is not an e-mail address"),
+            ("URL with a space", {"hosting": {"privacy_url": "https://hosting.example.org/daten schutz"}}, "hosting.privacy_url must be an https:// URL"),
+            ("URL with a space in the host", {"supervisory_authority": {"url": "https://lfd example.org/"}}, "supervisory_authority.url must be an https:// URL"),
             ("javascript: URL", {"hosting": {"privacy_url": "javascript:alert(1)"}}, "hosting.privacy_url must be an https:// URL"),
             ("http URL", {"supervisory_authority": {"url": "http://lfd.example.org/"}}, "supervisory_authority.url must be an https:// URL"),
             # Split so the pre-push credential scanner does not flag this fake value.

@@ -58,6 +58,7 @@ import abgeordnetenwatch as aw
 import build_dip_pulse_site as build
 import derive
 import person_registry as registry
+import sqlite_open
 import stammdaten
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -184,18 +185,24 @@ def collect(output_dir: Path, sittings: list[tuple[int, str]], view_root: Path) 
         recorder = Recorder()
         build.enrich_report_with_profiles(report, recorder)
         for call in recorder.calls:
-            raw = str(call.get("ext_id") or "").strip()
-            if not raw:
+            # The build asks by the first id of a merged <redner id>.
+            redner_id = str(call.get("ext_id") or "").strip()
+            if not redner_id:
                 continue  # a roll-call member or a Rede without a Redner-ID: a name search
-            redner_id = derive.first_redner_id(raw)
             record = ids.setdefault(redner_id, {
                 "wahlperioden": set(), "reden": Counter(), "names": Counter(), "fraktionen": Counter(), "raw": set()})
             record["wahlperioden"].add(wahlperiode)
             record["names"][(str(call.get("first_name") or "").strip(), str(call.get("last_name") or "").strip())] += 1
             if call.get("fraktion"):
                 record["fraktionen"][str(call["fraktion"])] += 1
-            if len(derive.redner_ids(raw)) > 1:
-                record["raw"].add(raw)
+        # M5: the merged raw values behind those first ids.
+        for item in items:
+            for key in build.SPEAKER_LISTS:
+                for unit in item.get(key) or []:
+                    speaker = unit.get("speaker")
+                    raw = str(speaker.get("xml_redner_id") or "").strip() if isinstance(speaker, dict) else ""
+                    if len(derive.redner_ids(raw)) > 1 and derive.first_redner_id(raw) in ids:
+                        ids[derive.first_redner_id(raw)]["raw"].add(raw)
         for item in items:
             for unit in item.get("xml_speakers") or []:
                 speaker = unit.get("speaker") if isinstance(unit.get("speaker"), dict) else {}
@@ -291,15 +298,20 @@ def _load_answers(cache: Path) -> dict[str, Any]:
         raise UsageError(f"{path} is unreadable: {exc}; delete it to ask every id again") from exc
     if not isinstance(data, dict) or not isinstance(data.get("answers"), dict):
         raise UsageError(f"{path} is not an answers file; delete it to ask every id again")
+    for key, entry in data["answers"].items():
+        # lookup_all writes only answers (hit, miss) and failures, never not_cached.
+        if not isinstance(entry, dict) or entry.get("state") not in ANSWER_STATES:
+            raise UsageError(f"{path}: the entry for {key!r} is not an answer ({entry!r}); delete the file to ask every id again")
     return data
+
+
+#: The states an answers-file entry may hold.
+ANSWER_STATES = ("hit", "miss", "failed")
 
 
 def _save(resolver: aw.AbgeordnetenwatchResolver, cache: Path, answers: dict[str, Any]) -> None:
     resolver.save()
-    path = _answers_path(cache)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(answers, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    aw.write_text_atomic(_answers_path(cache), json.dumps(answers, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
 
 
 def _profile_view(profile: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -309,7 +321,7 @@ def _profile_view(profile: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def lookup_all(resolver: aw.AbgeordnetenwatchResolver, keys: list[str], cache: Path, *, offline: bool) -> dict[str, Any]:
-    """The answer for every key (a Redner-ID, or a merged raw value). Online, a
+    """The answer for every key (a Redner-ID). Online, a
     key answered in an earlier run of this cache is not asked again."""
     answers = {"answers": {}} if offline else _load_answers(cache) or {
         "started_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "answers": {}}
@@ -358,20 +370,23 @@ def lookup_all(resolver: aw.AbgeordnetenwatchResolver, keys: list[str], cache: P
 def name_fallback(resolver: aw.AbgeordnetenwatchResolver, ids: dict[str, Any], misses: list[str]) -> dict[str, Any]:
     """The build's name search for each miss, with its most often printed name."""
     found = {}
-    for redner_id in misses:
-        (first, last), _ = ids[redner_id]["names"].most_common(1)[0]
-        fraktion = ids[redner_id]["fraktionen"].most_common(1)[0][0] if ids[redner_id]["fraktionen"] else None
-        searched = {"first_name": first, "last_name": last, "fraktion": fraktion}
-        if resolver._network_disabled:
-            # resolve() would answer None without asking: no answer, not a miss.
-            found[redner_id] = {"state": "failed", "profile": None, "searched": searched, "error": resolver.last_error}
-            continue
-        errors = resolver.stats["errors"]
-        profile = resolver.resolve(first_name=first or None, last_name=last or None, fraktion=fraktion)
-        failed = profile is None and resolver.stats["errors"] > errors
-        found[redner_id] = {"state": "failed" if failed else ("hit" if profile else "miss"), "profile": profile,
-                            "searched": searched, **({"error": resolver.last_error} if failed else {})}
-    resolver.save()
+    try:
+        for redner_id in misses:
+            (first, last), _ = ids[redner_id]["names"].most_common(1)[0]
+            fraktion = ids[redner_id]["fraktionen"].most_common(1)[0][0] if ids[redner_id]["fraktionen"] else None
+            searched = {"first_name": first, "last_name": last, "fraktion": fraktion}
+            if resolver._network_disabled:
+                # resolve() would answer None without asking: no answer, not a miss.
+                found[redner_id] = {"state": "failed", "profile": None, "searched": searched, "error": resolver.last_error}
+                continue
+            errors = resolver.stats["errors"]
+            profile = resolver.resolve(first_name=first or None, last_name=last or None, fraktion=fraktion)
+            failed = profile is None and resolver.stats["errors"] > errors
+            found[redner_id] = {"state": "failed" if failed else ("hit" if profile else "miss"), "profile": profile,
+                                "searched": searched, **({"error": resolver.last_error} if failed else {})}
+    finally:
+        # A run cut short keeps the name searches already answered.
+        resolver.save()
     return found
 
 
@@ -488,19 +503,16 @@ def measure(collected: dict[str, Any], found: dict[str, Any], mdb: dict[str, Any
         if rid in ids:
             partitioned.append({**describe(rid), "profile_owner": partition.get("profile_owner"),
                                 "hit": found[rid]["state"] == "hit"})
-    merged = []
-    for rid in sorted(ids):
-        for raw in sorted(ids[rid]["raw"]):
-            merged.append({"raw": raw, "redner_id": rid, "first_id_state": found[rid]["state"],
-                           "raw_state": found.get(raw, {}).get("state")})
+    # The build asks abgeordnetenwatch by the first id only.
+    merged = [{"raw": raw, "redner_id": rid, "first_id_state": found[rid]["state"]}
+              for rid in sorted(ids) for raw in sorted(ids[rid]["raw"])]
 
     return {
         "figures": figures,
         "m3": {"name_rule": flag_name, "several_politicians": flag_multi, "one_profile_several_ids": flag_shared,
                "cache_disagrees": flag_cache, "m1b_hits_matching_an_mdb_by_name": role_ids},
         "m4": m4,
-        "m5": {"partitioned_ids": partitioned, "merged_raw_values": merged,
-               "merged_hit_by_first_not_by_raw": sum(1 for row in merged if row["first_id_state"] == "hit" and row["raw_state"] != "hit")},
+        "m5": {"partitioned_ids": partitioned, "merged_raw_values": merged},
         "m6": {**m6, "wp18_19_mdb_ids_without_a_profile": {
             str(wp): sum(1 for rid, record in ids.items() if wp in record["wahlperioden"]
                          and category(rid, wp, mdb, record["wahlperioden"]) == "M1" and rid not in m6["ids_with_profile"])
@@ -565,8 +577,8 @@ def print_table(result: dict[str, Any], *, offline: bool) -> None:
         if result["m4"]:
             m4 = result["m4"]
             print(f"M4 name search: {m4['linked']} linked, {m4['unlinked']} unlinked, {m4['failed']} failed of {m4['searched']}")
-        print(f"M5: {len(result['m5']['partitioned_ids'])} partitioned ids spoke, {len(result['m5']['merged_raw_values'])} merged raw values, "
-              f"{result['m5']['merged_hit_by_first_not_by_raw']} hit by the first id only")
+        print(f"M5: {len(result['m5']['partitioned_ids'])} partitioned ids spoke, "
+              f"{len(result['m5']['merged_raw_values'])} merged raw values (asked by their first id)")
     print(f"M6: {result['m6']['reden_with_ext_id_profile']} WP 18/19 Reden hold a trusted profile in the store")
     print(f"failures: {len(result['failures'])}")
 
@@ -625,7 +637,7 @@ def run(args: argparse.Namespace) -> int:
     if args.sleep is not None and args.sleep < aw.DEFAULT_MIN_INTERVAL:
         raise UsageError(f"--sleep {args.sleep} is faster than abgeordnetenwatch's fair-use limit ({aw.DEFAULT_MIN_INTERVAL} s)")
 
-    conn = sqlite3.connect(f"{database_path.as_uri()}?mode=ro", uri=True)
+    conn = sqlite_open.open_readonly(database_path)
     try:
         sittings = stored_sittings(conn)
         if not sittings:
@@ -648,8 +660,9 @@ def run(args: argparse.Namespace) -> int:
         collected = collect(output_dir, sittings, Path(view_root))
     ids = collected["ids"]
     merged_raw = sorted({raw for record in ids.values() for raw in record["raw"]})
-    keys = sorted(ids) + merged_raw
-    print(f"[aw-share] {len(ids)} Redner-IDs and {len(merged_raw)} merged raw values from "
+    # As the build, the measurement asks by the first id of a merged raw value only.
+    keys = sorted(ids)
+    print(f"[aw-share] {len(ids)} Redner-IDs ({len(merged_raw)} merged raw values among them) from "
           f"{sum(collected['sittings'].values())} sittings", file=sys.stderr)
 
     found = lookup_all(resolver, keys, cache, offline=args.offline)
@@ -662,7 +675,7 @@ def run(args: argparse.Namespace) -> int:
     apply_verdicts(result, verdicts)
     print_table(result, offline=args.offline)
     if args.offline:
-        print(f"an online run sends {len(keys)} ext_id requests ({len(ids)} ids, {len(merged_raw)} merged raw values), "
+        print(f"an online run sends {len(keys)} ext_id requests, one per Redner-ID, "
               "plus one name search per MdB-Stammdaten miss with --name-fallback")
 
     if args.json:

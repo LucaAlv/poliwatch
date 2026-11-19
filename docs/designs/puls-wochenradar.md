@@ -6,7 +6,7 @@ Repo: LucaAlv/poliwatch
 Status: APPROVED · shipped as PR1 (#57, v0.2.3.0: data layer, build flags) and PR2 (v0.3.0.0: the page)
 Amended 2026-09-16 with the /autoplan review and Final Gate decisions (folded into premises 2, 4, 6, step 3, step 4, Open Questions and Success Criteria below). Build order: ~/.gstack/projects/LucaAlv-poliwatch/fix-redeanteile-build-order.md; audit trail: fix-redeanteile-plan.md.
 Mode: Builder
-Builds on: docs/design/bundestag-pulse-design.md (2026-06-15, "The Pulse" launch lens)
+Builds on: PRODUCT.md (its predecessor, docs/design/bundestag-pulse-design.md, was deleted; 2026-06-15, "The Pulse" launch lens)
 Wireframe: docs/designs/puls-wochenradar-sketch.png (real KW 24/2026 data; source HTML and the current page's screenshot in ~/.gstack/projects/LucaAlv-poliwatch/designs/puls-week-radar-20260914/)
 
 ## Problem Statement

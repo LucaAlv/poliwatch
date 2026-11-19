@@ -1,0 +1,801 @@
+vote_id	list_date	store_date	protocol	status	title
+247	2013-11-28	2013-11-28	18/3	stored	Bundeswehreinsatz in Darfur
+248	2013-11-28	2013-11-28	18/3	stored	Bundeswehreinsatz in Südsudan
+249	2014-01-29	2014-01-29	18/10	stored	Bundeswehreinsatz OAE
+250	2014-01-29	2014-01-29	18/10	stored	Bundeswehreinsatz OAF (Türkei)
+251	2014-01-30	2014-01-30	18/11	stored	Gentechnisch veränderte Maislinie 1507 für den Anbau in der EU
+252	2014-02-20	2014-02-20	18/17	stored	Bundeswehreinsatz in Afghanistan (ISAF)
+253	2014-02-20	2014-02-20	18/17	stored	Militärische Ausbildungsmission in Mali
+254	2014-02-21	2014-02-21	18/18	stored	Änderung des Abgeordnetengesetzes
+255	2014-02-21	2014-02-21	18/18	stored	Erweiterung des Straftatbestandes der Abgeordnetenbestechung
+256	2014-03-13			list_only_on_excluded_18/20	EU-Honigrichtlinie (Kennzeichnung von Gen-Honig)
+257	2014-04-03	2014-04-03	18/26	stored	Minderheitenrechte in der 18. Wahlperiode
+258	2014-04-03	2014-04-03	18/26	stored	Minderheitenrechte in der 18. Wahlperiode
+259	2014-04-03	2014-04-03	18/26	stored	Bundeswehreinsatz EUTM Somalia
+260	2014-04-09	2014-04-09	18/29	stored	Beteiligung bewaffneter deutscher Streitkräfte am maritimen Begleitschutz
+261	2014-04-10	2014-04-10	18/30	stored	Bundeswehreinsatz in der Zentralafrikanischen Republik (EUFOR RCA)
+262	2014-05-08	2014-05-08	18/33	stored	Kooperationen bei Nutzung atomarer Technologien
+263	2014-05-08	2014-05-08	18/33	stored	Arbeitnehmer-Entsendegesetz (Fleischwirtschaft)
+264	2014-05-08	2014-05-08	18/33	stored	Transparenz bei Rüstungsexportentscheidungen
+265				id_not_on_list	
+266	2014-05-22	2014-05-22	18/36	stored	EU-Operation Atalanta
+267				id_not_on_list	
+268	2014-05-22	2014-05-22	18/36	stored	Gentechnikfreiheit im Pflanzenbau
+269				id_not_on_list	
+270	2014-05-23	2014-05-23	18/37	stored	RV-Leistungsverbesserungsgesetz / 1. Änderungsantrag
+271	2014-05-23	2014-05-23	18/37	stored	RV-Leistungsverbesserungsgesetz / 2. Änderungsantrag
+272				id_not_on_list	
+273				id_not_on_list	
+274	2014-05-23	2014-05-23	18/37	stored	RV-Leistungsverbesserungsgesetz / 3. Änderungsantrag
+275	2014-06-05	2014-06-05	18/39	stored	Bundeswehreinsatz im Kosovo (KFOR)
+276	2014-05-22	2014-05-22	18/36	stored	Sukzessivadoption durch Lebenspartner
+277	2014-05-22	2014-05-22	18/36	stored	Gentechnikfreiheit im Pflanzenbau
+278	2014-05-23	2014-05-23	18/37	stored	RV-Leistungsverbesserungsgesetz
+279	2014-06-25	2014-06-25	18/42	stored	Feststellung des Bundeshaushaltsplans hier: Bundeskanzlerin und Bundeskanzl...
+280	2014-06-25	2014-06-25	18/42	stored	Bundeswehreinsatz in Mali (MINUSMA)
+281	2014-06-25	2014-06-25	18/42	stored	Bundeswehreinsatz in Libanon (UNIFIL)
+282	2014-06-25	2014-06-25	18/42	stored	Feststellung des Bundeshaushaltsplans hier: Wirtschaftliche Zusammenarbeit...
+283	2014-06-27	2014-06-27	18/44	stored	Reform des Erneuerbare-Energien-Gesetzes / Änderungsantrag Die Linke
+284	2014-06-27	2014-06-27	18/44	stored	Reform des Erneuerbare-Energien-Gesetzes / Änderungsantrag Die Linke
+285	2014-06-27	2014-06-27	18/44	stored	Reform des Erneuerbare-Energien-Gesetzes
+286	2014-06-27	2014-06-27	18/44	stored	Reform des Erneuerbare-Energien-Gesetzes / Entschließungsantrag Die Linke
+287	2014-06-27	2014-06-27	18/44	stored	Einführung einer Länderöffnungsklausel
+288	2014-06-27	2014-06-27	18/44	stored	Mindestabstände zwischen Windenergieanlagen / Entschließungsantrag...
+289	2014-06-27	2014-06-27	18/44	stored	Haushaltsgesetz 2014
+290	2014-07-03	2014-07-03	18/46	stored	Einführung eines Mindestlohnes
+291				id_not_on_list	
+292	2014-07-03	2014-07-03	18/46	stored	Einführung eines Mindestlohnes - Änderungsantrag
+293				id_not_on_list	
+294	2014-07-03	2014-07-03	18/46	stored	Änderung des Staatsangehörigkeitsgesetzes
+295	2014-07-03	2014-07-03	18/46	stored	Aufhebung der Optionsregelung im Staatsangehörigkeitsrecht
+296	2014-07-03	2014-07-03	18/46	stored	Angleichung der Renten in Ostdeutschland an das Westniveau
+297	2014-07-03	2014-07-03	18/46	stored	Befristung von Arbeitsverhältnissen
+298	2014-07-04	2014-07-04	18/47	stored	Lebensversicherungsreformgesetz
+299	2014-09-25	2014-09-25	18/54	stored	Freihandelsabkommen der EU mit USA und Kanada, 1. Entschließungsantrag
+300	2014-09-25	2014-09-25	18/54	stored	Freihandelsabkommen der EU mit USA und Kanada, 2. Entschließungsantrag
+301	2014-09-25	2014-09-25	18/54	stored	Freihandelsabkommen der EU mit USA und Kanada
+302	2014-10-16	2014-10-16	18/60	stored	Entschließungsantrag zu der Regierungserklärung durch die Bundeskanzlerin
+303	2014-10-17	2014-10-17	18/61	stored	Pflegeversicherung, Änderungsantrag Die Linke
+304	2014-10-17	2014-10-17	18/61	stored	Pflegeversicherung, Änderungsantrag Bündnis 90/Die Grünen
+305	2014-10-17	2014-10-17	18/61	stored	Pflegeversicherung, Entschließungsantrag Die Linke
+306	2014-10-17	2014-10-17	18/61	stored	Pflegeversicherung, Entschließungsantrag Bündnis 90/Die Grünen
+307	2014-11-13	2014-11-13	18/66	stored	Bund-Länder-Wissenschaftskooperation, Änderungsantrag Die Linke
+308	2014-11-13	2014-11-13	18/66	stored	Bund-Länder-Wissenschaftskooperation, Änderungsantrag Bündnis 90/Die...
+309	2014-11-13	2014-11-13	18/66	stored	Bund-Länder-Wissenschaftskooperation
+310	2014-11-13	2014-11-13	18/66	stored	Änderung des Bundesausbildungsförderungsgesetzes, 1. Änderungsantrag...
+311	2014-11-13	2014-11-13	18/66	stored	Änderung des Bundesausbildungsförderungsgesetzes, 2. Änderungsantrag...
+312	2014-11-13	2014-11-13	18/66	stored	Änderung des Bundesausbildungsförderungsgesetzes, 1. Änderungsantrag...
+313	2014-11-13	2014-11-13	18/66	stored	Änderung des Bundesausbildungsförderungsgesetzes, 2. Änderungsantrag...
+314	2014-11-13	2014-11-13	18/66	stored	Änderung des Bundesausbildungsförderungsgesetzes
+315	2014-11-13	2014-11-13	18/66	stored	Bundeswehreinsatz in Südsudan (UNMISS)
+316	2014-11-13	2014-11-13	18/66	stored	Bundeswehreinsatz in Dafur (UNAMID)
+317	2014-11-26	2014-11-26	18/69	stored	Feststellung des Bundeshaushaltsplans für das Haushaltsjahr 2015 (Einzelpla...
+318	2014-11-28	2014-11-28	18/71	stored	Haushaltsgesetz 2015, Entschließungsantrag Bündnis 90/Die Grünen
+319	2014-11-28	2014-11-28	18/71	stored	Haushaltsgesetz 2015
+320	2014-12-18	2014-12-18	18/76	stored	Bundeswehreinsatz in Afghanistan
+321	2014-12-18	2014-12-18	18/76	stored	Bundeswehreinsatz ACTIVE ENDEAVOUR (OAE)
+322	2014-12-18	2014-12-18	18/76	stored	Änderung des Bundesdatenschutzgesetzes, Änderungsantrag
+323	2014-12-18	2014-12-18	18/76	stored	Änderung des Bundesdatenschutzgesetzes
+324	2015-01-29	2015-01-29	18/82	stored	Ausbildungsunterstützungeinsatz Kurdistan-Irak
+325	2015-01-29	2015-01-29	18/82	stored	Bundeswehreinsatz Operation Active Fence (Türkei)
+326	2015-02-26	2015-02-26	18/88	stored	Bundeswehreinsatz in Mali (EUTM Mali)
+327	2015-02-27	2015-02-27	18/89	stored	Finanzhilfen zugunsten Griechenlands
+328	2015-03-05	2015-03-05	18/91	stored	Dämpfung des Mietanstiegs, 2. Änderungsantrag Bündnis 90/Die Grünen
+329	2015-03-05	2015-03-05	18/91	stored	Dämpfung des Mietanstiegs, 1. Änderungsantrag Bündnis 90/Die Grünen
+330	2015-03-26	2015-03-26	18/97	stored	Bundeswehreinsatz in Somalia (EUTM)
+331	2015-03-26	2015-03-26	18/97	stored	Nachhaltige Waldbewirtschaftung
+332	2015-03-27	2015-03-27	18/98	stored	Pkw-Maut, Änderungsantrag Bündnis 90/Die Grünen
+333	2015-03-27	2015-03-27	18/98	stored	Pkw-Maut, Änderungsantrag Bündnis 90/Die Grünen
+334	2015-03-27	2015-03-27	18/98	stored	Pkw-Maut
+335	2015-03-27	2015-03-27	18/98	stored	Pkw-Maut, Änderungsantrag Bündnis 90/Die Grünen
+336	2015-03-27	2015-03-27	18/98	stored	Pkw-Maut, Zweites Verkehrsteueränderungsgesetz
+337	2015-03-27	2015-03-27	18/98	stored	Liegenschaftspolitik des Bundes, Gesetzentwurf Die Linke
+338	2015-03-27	2015-03-27	18/98	stored	Liegenschaftspolitik des Bundes, Beschlussempfehlung des Haushaltsausschuss...
+339	2015-05-21	2015-05-21	18/106	stored	Bundeswehreinsatz UNMIL in Liberia
+340	2015-05-21	2015-05-21	18/106	stored	Bundeswehreinsatz Operation Atalanta
+341	2015-05-22	2015-05-22	18/107	stored	Gesetz zur Tarifeinheit
+342	2015-06-18	2015-06-18	18/112	stored	Grundfreibetrag, Kinderfreibetrag, -geld, -zuschlag
+343	2015-06-19	2015-06-19	18/113	stored	Bundeswehreinsatz in Kosovo (KFOR)
+344	2015-06-19	2015-06-19	18/113	stored	Bundeswehreinsatz in Mali (MINUSMA)
+345	2015-06-19	2015-06-19	18/113	stored	Bundeswehreinsatz in Libanon (UNIFIL)
+346	2015-07-02	2015-07-02	18/115	stored	Bleiberecht und Aufenthaltsbeendigung, Änderungsantrag Bündnis 90/Die...
+347	2015-07-02	2015-07-02	18/115	stored	Bleiberecht und Aufenthaltsbeendigung, 2. Änderungsantrag Bündnis...
+348	2015-07-02	2015-07-02	18/115	stored	Bleiberecht und Aufenthaltsbeendigung, 3. Änderungsantrag Bündnis...
+349	2015-07-02	2015-07-02	18/115	stored	Bleiberecht und Aufenthaltsbeendigung, Entschließungsantrag Die Linke
+350	2015-07-02	2015-07-02	18/115	stored	Subventionen für Atomkraftwerke in der EU, Beschlussempfehlung zum...
+351	2015-07-02	2015-07-02	18/115	stored	Subventionen für britisches Atomwerk Hinkley Point C stoppen, Beschlussempf...
+352	2015-07-17	2015-07-17	18/117	stored	Stabilitätshilfe zugunsten Griechenlands
+353	2015-07-17	2015-07-17	18/117	stored	Stabilitätshilfe zugunsten Griechenlands, Entschließungsantrag der...
+354	2015-07-17	2015-07-17	18/117	stored	Verwendung der SMP-Mittel 2014 zur Absicherung einer Brückenfinanzierung,...
+355	2015-08-19	2015-08-19	18/118	stored	Stabilitätshilfe zugunsten Griechenlands
+356	2015-10-01	2015-10-01	18/127	stored	Bundeswehreinsatz EU-Operation EUNAVFORMED
+357	2015-10-01	2015-10-01	18/127	stored	Sanktionen bei Hartz IV und Sozialhilfe, Antrag Die Linke
+358	2015-10-01	2015-10-01	18/127	stored	Sanktionen bei Hartz IV und Sozialhilfe, Antrag Bündnis 90/Die Grünen
+359	2015-10-02	2015-10-02	18/128	stored	Renten in Ostdeutschland
+360	2015-10-15	2015-10-15	18/130	stored	Asylverfahrensbeschleunigungsgesetz, hier: Artikel 1 Nummer 15, 16 und 19
+361				id_not_on_list	
+362	2015-10-15	2015-10-15	18/130	stored	Asylverfahrensbeschleunigungsgesetz, hier: Artikel 2
+363	2015-10-15	2015-10-15	18/130	stored	Asylverfahrensbeschleunigungsgesetz, hier: Artikel 8 und Artikel 12
+364				id_not_on_list	
+365	2015-10-16	2015-10-16	18/131	stored	Einführung einer Speicherpflicht und einer Höchstspeicherfrist für...
+366	2015-10-15	2015-10-15	18/130	stored	Asylverfahrensbeschleunigungsgesetz, hier: Artikel 1 Nummer 35
+367	2015-10-15	2015-10-15	18/130	stored	Asylverfahrensbeschleunigungsgesetz
+368	2015-11-05	2015-11-05	18/133	stored	Betreuungsgeld für den Kitaausbau nutzen
+369	2015-11-05	2015-11-05	18/133	stored	Änderung agrarmarktrechtlicher Bestimmungen
+370	2015-11-06	2015-11-06	18/134	stored	Anwendung des Stimmzettelverfahrens
+371	2015-11-06	2015-11-06	18/134	stored	Strafbarkeit der geschäftsmäßigen Förderung der Selbsttötung
+372	2015-11-12	2015-11-12	18/136	stored	Bundeswehreinsatz in Südsudan (UNMISS)
+373	2015-11-12	2015-11-12	18/136	stored	Bundeswehreinsatz in Darfur (UNAMID)
+374	2015-11-25	2015-11-25	18/139	stored	Etat Bundeskanzlerin und Bundeskanzleramt
+375	2015-11-27	2015-11-27	18/141	stored	Etat Verkehr und digitale Infrastruktur
+376	2015-11-27	2015-11-27	18/141	stored	Haushaltsgesetz 2016
+377	2015-12-03	2015-12-03	18/143	stored	Umsetzung des Aktionsprogramms Klimaschutz 2020
+378	2015-12-04	2015-12-04	18/144	stored	Bundeswehreinsatz gegen Terrororganisation IS
+379	2015-12-04	2015-12-04	18/144	stored	Entschließungsantrag der Fraktion Die Linke: Bundeswehreinsatz gegen...
+380	2015-12-17	2015-12-17	18/146	stored	Bundeswehreinsatz in Afghanistan (Resolute Support)
+381	2015-12-17	2015-12-17	18/146	stored	Bundeswehreinsatz im Mittelmeer (Operation ACTIVE ENDEAVOUR)
+382	2016-01-28	2016-01-28	18/152	stored	Bundeswehreinsatz in Mali
+383	2016-01-28	2016-01-28	18/152	stored	Bundeswehreinsatz Kurdistan-Irak
+384	2016-02-17	2016-02-17	18/154	stored	Regierungserklärung zum Europäischen Rat - Entschließungsantrag
+385	2016-02-18	2016-02-18	18/155	stored	Rüstungsexportkontrollgesetz
+386	2016-02-25	2016-02-25	18/158	stored	Einführung beschleunigter Asylverfahren - Gesetzentwurf
+387	2016-02-25	2016-02-25	18/158	stored	Einführung beschleunigter Asylverfahren hier: Artikel 2 Nummer 4
+388	2016-02-25	2016-02-25	18/158	stored	Voreilige Neuzulassung von Glyphosat stoppen
+389	2016-03-16	2016-03-16	18/160	stored	Regierungserklärung zum Europäischen Rat am 17./18. März 2016 - Entschließu...
+390	2016-03-17	2016-03-17	18/161	stored	Ausbildungs- und Beratungsmissionen EUTM Somalia
+391	2016-04-14	2016-04-14	18/164	stored	Bekämpfung von Korruption im Gesundheitswesen
+392	2016-04-28	2016-04-28	18/167	stored	Änderung des Bundesberggesetzes zur Untersagung der Fracking-Technik
+393	2016-04-28	2016-04-28	18/167	stored	Verbot von Fracking in Deutschland
+394	2016-05-12	2016-05-12	18/170	stored	Behindertengleichstellungsrecht - Änderungsantrag
+395	2016-05-12	2016-05-12	18/170	stored	Behindertengleichstellungsrecht - Entschließungsantrag
+396	2016-05-12	2016-05-12	18/170	stored	Bahnstreckenstilllegungen - Beschlussempfehlung
+397	2016-05-12	2016-05-12	18/170	stored	Bundeswehreinsatz in Mali (EUTM Mali)
+398	2016-05-12	2016-05-12	18/170	stored	Bundeswehreinsatz vor Somalia (EU NAVFOR Atalanta)
+399	2016-05-13	2016-05-13	18/171	stored	Einstufung von Algerien, Marokko und Tunesien
+400	2016-06-23	2016-06-23	18/179	stored	Bundeswehreinsatz in Kosovo (KFOR)
+401	2016-06-23	2016-06-23	18/179	stored	Bundeswehreinsatz im Libanon (UNIFIL)
+402	2016-06-23	2016-06-23	18/179	stored	Änderung des SGB II - Rechtsvereinfachung
+403	2016-06-24	2016-06-24	18/180	stored	Anpassung des Erbschaftssteuer- und Schenkungssteuergesetzes
+404	2016-06-24	2016-06-24	18/180	stored	Fracking
+405				id_not_on_list	
+406				id_not_on_list	
+407				id_not_on_list	
+408				id_not_on_list	
+409				id_not_on_list	
+410				id_not_on_list	
+411	2016-07-08	2016-07-08	18/184	stored	Erneuerbare-Energie-Gesetz
+412	2016-07-07	2016-07-07	18/183	stored	Bundeswehreinsatz EUNAVFOR MED Operation SOPHIA
+413	2016-07-07	2016-07-07	18/183	stored	Schutz der sexuellen Selbstbestimmung: Artikel 1 Nummern 6 bis 8,...
+414	2016-07-07	2016-07-07	18/183	stored	Schutz der sexuellen Selbstbestimmung: Artikel 1 Nummer 9 - Einfügung...
+415	2016-07-07	2016-07-07	18/183	stored	Schutz der sexuellen Selbstbestimmung: Artikel 2 Absatz 3
+416	2016-09-22	2016-09-22	18/190	stored	CETA, Antrag Die Linke 18/9665
+417	2016-09-22	2016-09-22	18/190	stored	CETA, Antrag Bündnis 90/Die Grünen 18/9621
+418	2016-09-22	2016-09-22	18/190	stored	CETA, Antrag CDU/CSU, SPD 18/9663
+419	2016-09-29	2016-09-29	18/193	stored	Mieterinnen und Mieter besser schützen
+420	2016-09-29	2016-09-29	18/193	stored	Privatisierung von Bundesliegenschaften stoppen
+421	2016-09-29	2016-09-29	18/193	stored	Bundeswehreinsatz SEA GUARDIAN im Mittelmeer
+422				id_not_on_list	
+423				id_not_on_list	
+424				id_not_on_list	
+425				id_not_on_list	
+426				id_not_on_list	
+427				id_not_on_list	
+428				id_not_on_list	
+429				id_not_on_list	
+430				id_not_on_list	
+431				id_not_on_list	
+432	2016-12-01	2016-12-01	18/206	stored	Seefischereigesetz
+433	2016-12-01	2016-12-01	18/206	stored	Ermittlung von Regelbedarfen
+434	2016-11-25	2016-11-25	18/204	stored	Haushaltsgesetz 2017
+435	2016-11-23	2016-11-23	18/202	stored	Beschlussempfehlung zum Etat der Bundeskanzlerin und des Bundeskanzleramtes
+436	2016-11-11	2016-11-11	18/200	stored	Gesetzentwurf zur 4. Änderung arzneimittelrechtlicher und anderer...
+437	2016-11-10	2016-11-10	18/199	stored	Bundeswehreinsatz gegen die Terrororganisation IS
+438	2016-11-10	2016-11-10	18/199	stored	Beschlussempfehlung zu Brennelementesteuer
+439	2016-11-09	2016-11-09	18/198	stored	Änderungsantrag der Abgeordneten Dr. Georg Nüßlein, Dr. Karl Lauterbach,...
+440	2016-11-09	2016-11-09	18/198	stored	Änderungsantrag der Abgeordneten Hilde Mattheis und Sabine Dittmar...
+441	2016-11-09	2016-11-09	18/198	stored	Änderungsantrag der Abgeordneten Uwe Schummer, Ulla Schmidt, Kathrin...
+442	2016-12-15	2016-12-15	18/209	stored	Verantwortung in der kerntechnischen Entsorgung
+443	2016-12-15	2016-12-15	18/209	stored	Beschlussempfehlung zu Bundeswehreinsatz in Südsudan (UNMISS)
+444				id_not_on_list	
+445	2016-12-15	2016-12-15	18/209	stored	Beschlussempfehlung Bundeswehreinsatz in Darfur (UNAMID)
+446	2016-12-15	2016-12-15	18/209	stored	Beschlussempfehlung Bundeswehreinsatz in Afghanistan
+447	2016-12-15	2016-12-15	18/209	stored	Bekämpfung der Schwarzarbeit
+448	2017-01-19	2017-01-19	18/212	stored	Rentenansprüche aus DDR-Beschäftigungszeiten (Bergleute)
+449				id_not_on_list	
+450	2017-01-19	2017-01-19	18/212	stored	Dragoner-Areal dem Land Berlin zum Kauf anbieten
+451	2017-01-19	2017-01-19	18/212	stored	Rentenansprüche aus DDR-Beschäftigungszeiten (Krankenschwestern)
+452	2017-01-26	2017-01-26	18/215	stored	Bundeswehreinsatz in Mali (MINUSMA)
+453	2017-01-26	2017-01-26	18/215	stored	Ausbildungsunterstützung der Bundeswehr im Irak
+454	2017-03-09	2017-03-09	18/221	stored	Entschließungsantrag zum Europäischen Rat
+455	2017-03-09	2017-03-09	18/221	stored	Beschlussempfehlung zu
+456	2017-03-09	2017-03-09	18/221	stored	Gesetzentwurf Dämpfung des Mietanstiegs (umfassende Modernisierungen)
+457	2017-03-09	2017-03-09	18/221	stored	Gesetzentwurf Dämpfung des Mietanstiegs (Streichung Rügepflicht /...
+458	2017-03-24	2017-03-24	18/226	stored	Erstes Gesetz zur Änderung des Infrastrukturabgabengesetzes
+459	2017-03-24	2017-03-24	18/226	stored	Änderung des Zweiten Verkehrsteueränderungsgesetzes
+460	2017-03-30	2017-03-30	18/228	stored	Transparenz von Entgeltstrukturen
+461	2017-03-30	2017-03-30	18/228	stored	Transparenz von Entgeltstrukturen 2
+462	2017-03-30	2017-03-30	18/228	stored	Bundeswehreinsatz EUTM Somalia
+463	2017-05-18	2017-05-18	18/234	stored	Bundeswehreinsatz EUTM Mali
+464	2017-05-18	2017-05-18	18/234	stored	Bundeswehreinsatz EU NAFVOR Operation Atalanta
+465	2017-06-01	2017-06-01	18/237	stored	Änderung von Artikel 91 b und Artikel 104c des Grundgesetzes
+466	2017-06-01	2017-06-01	18/237	stored	Artikel 1 Nummer 9 des Gesetzentwurfs in der Ausschussfassung betrifft...
+467	2017-06-01	2017-06-01	18/237	stored	Änderung von Artikel 90 und Artikel 143e des Grundgesetzes
+468	2017-06-01	2017-06-01	18/237	stored	Änderung von Artikel 90 des Grundgesetzes
+469	2017-06-01	2017-06-01	18/237	stored	Änderungsantrag der Fraktion Die Linke zur Neuregelung des bundesstaatliche...
+470				id_not_on_list	
+471	2017-06-01	2017-06-01	18/237	stored	Artikel 1 Nummer 5 des Gesetzentwurfs in der Ausschussfassung betrifft...
+472	2017-06-01	2017-06-01	18/237	stored	Entwurf eines Gesetzes zur Änderung des Grundgesetzes (Artikel 90,...
+473	2017-06-01	2017-06-01	18/237	stored	Artikel 1 Nummer 11 des Gesetzentwurfs in der Ausschussfassung betrifft...
+474	2017-06-01	2017-06-01	18/237	stored	Abschluss der Rentenüberleitung
+475	2017-06-01	2017-06-01	18/237	stored	Abschiebung nach Afghanistan, Beschlussempfehlung zum Antrag Bündnis...
+476	2017-06-01	2017-06-01	18/237	stored	Sofortiger Abschiebestopp nach Afghanistan, Antrag Die Linke.
+477	2017-06-01	2017-06-01	18/237	stored	Neue Lagebeurteilung für Afghanistan, Antrag CDU/CSU, SPD
+478	2017-06-01	2017-06-01	18/237	stored	Artikel 1 Nummer 1 des Gesetzentwurfs in der Ausschussfassung betrifft...
+479	2017-06-21	2017-06-21	18/239	stored	Beschlussempfehlung zum Abzug der Bundeswehr aus Incirlik
+480	2017-06-21	2017-06-21	18/239	stored	Antrag zur Verlegung des Bundeswehrkontingents von Incirlik nach Al Azraq
+481	2017-06-22	2017-06-22	18/240	stored	Änderung von Artikel 21 des Grundgesetzes (Parteienfinanzierung)
+482	2017-06-22	2017-06-22	18/240	stored	Bundeswehreinsatz in Kosovo (KFOR)
+483	2017-06-23	2017-06-23	18/241	stored	Abschaffung der sachgrundlosen Befristung
+484	2017-06-29	2017-06-29	18/243	stored	Bundeswehreinsatz EUNAVFOR MED Operation SOPHIA
+485	2017-06-29	2017-06-29	18/243	stored	Bundeswehreinsatz "United Nations Interim Force in Lebanon" (UNIFIL)
+486	2017-06-30	2017-06-30	18/244	stored	Eheschließung für Personen gleichen Geschlechts
+487	2017-12-12	2017-12-12	19/4	stored	Bundeswehreinsatz im Mittelmeer (SEA GUARDIAN)
+488				id_not_on_list	
+489	2017-12-12	2017-12-12	19/4	stored	Bundeswehreinsatz gegen die Terrororganisation IS
+490	2017-12-12	2017-12-12	19/4	stored	Bundeswehreinsatz im Irak
+491	2017-12-12	2017-12-12	19/4	stored	Bundeswehreinsatz in Afghanistan (Resolute Support)
+492	2017-12-12	2017-12-12	19/4	stored	Bundeswehreinsatz in Mali (MINUSMA)
+493	2017-12-13	2017-12-13	19/5	stored	Bundeswehreinsatz in Darfur (UNAMID)
+494	2017-12-13	2017-12-13	19/5	stored	Bundeswehreinsatz in Südsudan (UNMISS)
+495	2017-12-13	2017-12-13	19/5	stored	Anpassungsverfahren § 11 des Abgeordnetengesetzes
+496				id_not_on_list	
+497				id_not_on_list	
+498				id_not_on_list	
+499				id_not_on_list	
+500	2018-02-01	2018-02-01	19/11	stored	Familiennachzug, Fraktion CDU/CSU
+501	2018-02-01	2018-02-01	19/11	stored	Familiennachzug, Fraktion AfD
+502	2018-02-01	2018-02-01	19/11	stored	Familiennachzug, Fraktionen Bündnis 90/Die Grünen und Die Linke.
+503	2018-02-22	2018-02-22	19/14	stored	Verhalten der Bundesregierung im Fall Deniz Yücel
+504	2018-03-16	2018-03-16	19/21	stored	Einführung umfassender Grenzkontrollen
+505	2018-03-22	2018-03-22	19/23	stored	Bundeswehreinsatz zur Stabilisierung Iraks
+506	2018-03-22	2018-03-22	19/23	stored	Bundeswehreinsatz in Afghanistan (Resolute Support)
+507	2018-03-22	2018-03-22	19/23	stored	Bundeswehreinsatz im Mittelmeer (SEA GUARDIAN)
+508	2018-03-22	2018-03-22	19/23	stored	Bundeswehreinsatz in Südsudan (UNMISS)
+509	2018-03-22	2018-03-22	19/23	stored	Bundeswehreinsatz in Darfur (UNAMID)
+510	2018-04-26	2018-04-26	19/29	stored	Bundeswehreinsatz in Mali (MINUSMA)
+511	2018-04-26	2018-04-26	19/29	stored	Bundeswehreinsatz vor Somalia (EU NAVFOR)
+512	2018-04-26	2018-04-26	19/29	stored	Bundeswehreinsatz in Mali (EUTM Mali)
+513	2018-04-26	2018-04-26	19/29	stored	Ausschluss der NPD von der Parteienfinanzierung
+514	2018-05-17	2018-05-17	19/33	stored	Einspruch gemäß § 39 GO-BT
+515	2018-06-07	2018-06-07	19/36	stored	Mietpreispolitik
+516				id_not_on_list	
+517	2018-06-14	2018-06-14	19/39	stored	Bundeswehreinsatz im Mittelmeer (EUNAVFOR MED)
+518	2018-06-14	2018-06-14	19/39	stored	Handelsabkommen mit Kanada und Japan
+519	2018-06-14	2018-06-14	19/39	stored	Bundeswehreinsatz im Libanon (UNIFIL)
+520	2018-06-14	2018-06-14	19/39	stored	Bundeswehreinsatz in Kosovo (KFOR)
+521				id_not_on_list	
+522	2018-06-15	2018-06-15	19/40	stored	Familiennachzug zu subsidiär Schutzberechtigten (Entschließungsantrag...
+523	2018-06-15	2018-06-15	19/40	stored	Familiennachzug zu subsidiär Schutzberechtigten (Gesetzentwurf der...
+524	2018-06-15	2018-06-15	19/40	stored	Familiennachzug zu subsidiär Schutzberechtigten (Entschließungsantrag...
+525	2018-06-15	2018-06-15	19/40	stored	Änderung des Parteiengesetzes
+526	2018-06-28	2018-06-28	19/42	stored	Sanktionen bei Hartz IV und Sozialhilfe (Antrag der Fraktion Die Linke)
+527	2018-06-28	2018-06-28	19/42	stored	Sanktionen bei Hartz IV und Sozialhilfe (Antrag der Fraktion Bündnis...
+528	2018-06-28	2018-06-28	19/42	stored	Bundesweit abgestimmtes Wolfsmanagement
+529	2018-06-29	2018-06-29	19/43	stored	Finanzhilfen zugunsten Griechenlands
+530				id_not_on_list	
+531	2018-07-04	2018-07-04	19/45	stored	Geschäftsbereich der Bundeskanzlerin und des Bundeskanzleramtes
+532	2018-07-04	2018-07-04	19/45	stored	Geschäftsbereich des Bundesministeriums der Verteidigung (Änderungsantrag...
+533	2018-07-04	2018-07-04	19/45	stored	Geschäftsbereich des Bundesministeriums der Verteidigung (Änderungsantrag...
+534	2018-07-05	2018-07-05	19/46	stored	Haushaltsgesetz 2018
+535	2018-10-18	2018-10-18	19/58	stored	Änderung des Asylgesetzes - Änderungsantrag FDP
+536	2018-10-18	2018-10-18	19/58	stored	Änderung des Asylgesetzes - Gesetzentwurf FDP
+537	2018-10-18	2018-10-18	19/58	stored	Brückenteilzeit - Änderungsantrag Bündnis 90/Die Grünen
+538				id_not_on_list	
+539	2018-10-18	2018-10-18	19/58	stored	Bundeswehreinsatz zur Bekämpfung des IS-Terrors (Beschlussempfehlung...
+540	2018-10-18	2018-10-18	19/58	stored	Bundeswehreinsatz zur Bekämpfung des IS-Terrors (Antrag der Bundesregierung...
+541	2018-10-18	2018-10-18	19/58	stored	Kindergeld für im Ausland lebende Kinder
+542	2018-10-19	2018-10-19	19/59	stored	Menschenrecht auf Religionsfreiheit - Antrag CDU/CSU und SPD
+543	2018-10-19	2018-10-19	19/59	stored	Menschenrecht auf Religionsfreiheit - Antrag Bündnis 90/Die Grünen
+544				id_not_on_list	
+545				id_not_on_list	
+546	2018-10-19	2018-10-19	19/59	stored	Menschenrecht auf Religionsfreiheit - Beschlussempfehlung zu Antrag AfD
+547				id_not_on_list	
+548	2018-10-19	2018-10-19	19/59	stored	Jahresmittelgrenzwert für Stickoxid
+549	2018-11-08	2018-11-08	19/61	stored	Gesetzliche Rentenversicherung
+550				id_not_on_list	
+551	2018-11-08	2018-11-08	19/61	stored	Familienentlastungsgesetz - Änderungsantrag der Fraktion der AfD
+552	2018-11-08	2018-11-08	19/61	stored	Familienentlastungsgesetz - Änderungsantrag der Fraktion der FDP
+553	2018-11-08	2018-11-08	19/61	stored	Umsatzsteuerausfälle - Änderungsantrag der Fraktion der FDP
+554	2018-11-08	2018-11-08	19/61	stored	Umsatzsteuerausfälle - Änderungsantrag der Fraktion der FDP
+555	2018-11-08	2018-11-08	19/61	stored	Zwei-Prozent-Rüstungsziel der NATO
+556	2018-11-21	2018-11-21	19/64	stored	Beschlussempfehlungen zu Haushaltsgesetz 2019 - Einzelplan 04
+557	2018-11-23	2018-11-23	19/66	stored	Änderungsantrag FDP zu Haushaltsgesetz 2019 - Einzelplan 60
+558	2018-11-23	2018-11-23	19/66	stored	Haushaltsgesetz 2019
+559	2018-11-23	2018-11-23	19/66	stored	Entschließungsantrag FDP zu Haushaltsgesetz 2019
+560	2018-11-29	2018-11-29	19/68	stored	Änderung des Grundgesetzes - Bildung, Bau, Verkehr
+561				id_not_on_list	
+562	2018-11-29	2018-11-29	19/68	stored	Steuerlichen Förderung des Mietwohnungsneubaus - Änderungsantrag Bündnis...
+563	2018-11-29	2018-11-29	19/68	stored	Mietrechtsanpassung - Änderungsantrag Die Linke.
+564	2018-11-29	2018-11-29	19/68	stored	Mietrechtsanpassung - Änderungsantrag Bündnis 90/Die Grünen
+565				id_not_on_list	
+566				id_not_on_list	
+567	2018-11-30	2018-11-30	19/69	stored	Globaler Pakt für Migration
+568	2018-11-29	2018-11-29	19/68	stored	Globaler Pakt für Migration
+569	2018-11-29	2018-11-29	19/68	stored	Änderung des Tierschutzgesetzes
+570				id_not_on_list	
+571	2018-12-13	2018-12-13	19/71	stored	Solidaritätszuschlag
+572	2019-01-18	2019-01-18	19/75	stored	Änderung des Asylgesetzes (Gesetzentwurf der BReg)
+573	2019-01-18	2019-01-18	19/75	stored	Änderung des Asylgesetzes (Entschließungsantrag der FDP-Fraktion)
+574	2019-02-21	2019-02-21	19/83	stored	Beschlussempfehlung des Vermittlungsausschusses (Änderung des Grundgesetzes...
+575	2019-02-21	2019-02-21	19/83	stored	Gefahr Wolf - Unkontrollierte Population stoppen
+576				id_not_on_list	
+577				id_not_on_list	
+578				id_not_on_list	
+579	2019-02-21	2019-02-21	19/83	stored	Selbstbestimmte Familienplanung ermöglichen - Kostenloser Zugang zu...
+580	2019-02-21	2019-02-21	19/83	stored	Verbesserung der Information über einen Schwangerschaftsabbruch (Gesetzentw...
+581	2019-02-21	2019-02-21	19/83	stored	Aufhebung des Werbeverbots für Schwangerschaftsabbrüche (Gesetzentwurf...
+582	2019-02-21	2019-02-21	19/83	stored	Entwurf eines Gesetzes zur Änderung des Strafgesetzbuches - Aufhebung...
+583	2019-03-14	2019-03-14	19/86	stored	Änderung des Bundes-Immissionsschutzgesetzes (Gesetzentwurf von CDU/CSU...
+584	2019-03-14	2019-03-14	19/86	stored	Einheitliche Messverfahren für Stickoxide durchsetzen - Fahrverbote...
+585	2019-03-14	2019-03-14	19/86	stored	Deutsche und europäische Israelpolitik
+586	2019-03-15	2019-03-15	19/87	stored	Entwurf eines Gesetzes für mehr Teilhabe im Wahlrecht
+587	2019-03-15	2019-03-15	19/87	stored	Entwurf eines Gesetzes zur Umsetzung der UN-Behindertenrechtskonvention...
+588	2019-03-15	2019-03-15	19/87	stored	Für die Einführung eines inklusiven Wahlrechts
+589	2019-03-20	2019-03-20	19/88	stored	Deutsch-französisches Parlamentsabkommen
+590	2019-03-21	2019-03-21	19/89	stored	Bundeswehreinsatz in Afghanistan (Resolute Support)
+591	2019-03-21	2019-03-21	19/89	stored	Entschließungsantrag FDP Bundeswehreinsatz in Afghanistan (Resolute...
+592	2019-03-21	2019-03-21	19/89	stored	Bundeswehreinsatz Republik Südsudan (UNMISS)
+593	2019-03-21	2019-03-21	19/89	stored	Bundeswehreinsatz in Darfur (UNAMID)
+594	2019-03-21	2019-03-21	19/89	stored	Bundeswehreinsatz im Mittelmeer (SEA GUARDIAN)
+595	2019-03-21	2019-03-21	19/89	stored	Änderung des Marktorganisationsgesetzes
+596	2019-04-11	2019-04-11	19/95	stored	Sozialschutz für Arbeitnehmer und Selbständige
+597	2019-05-09	2019-05-09	19/98	stored	Bundeswehreinsatz in Mali (MINUSMA)
+598	2019-05-09	2019-05-09	19/98	stored	Bundeswehreinsatz (EUTM Mali)
+599	2019-05-09	2019-05-09	19/98	stored	Bundeswehreinsatz EU NAVFOR Somalia-Atalanta
+600	2019-05-09	2019-05-09	19/98	stored	Konzerntransparenz gegen Steuerflucht
+601	2019-05-16	2019-05-16	19/101	stored	Änderung des Bundesausbildungsförderungsgesetzes (26. BAFöGÄndG) (Änderungs...
+602	2019-05-16	2019-05-16	19/101	stored	Änderung des Bundesausbildungsförderungsgesetzes (26. BAFöGÄndG) (Änderungs...
+603	2019-05-16	2019-05-16	19/101	stored	Änderung des Bundesausbildungsförderungsgesetzes (26. BAFöGÄndG) (Gesetzent...
+604	2019-05-17	2019-05-17	19/102	stored	BDS-Bewegung verurteilen - Existenz des Staates Israel schützen
+605	2019-06-06	2019-06-06	19/104	stored	Bekämpfung illegaler Beschäftigung
+606	2019-06-06	2019-06-06	19/104	stored	Erreichung der Klimaziele
+607	2019-06-07	2019-06-07	19/105	stored	Entwurf eines Zweiten Gesetzes zur besseren Durchsetzung der Ausreisepflich...
+608	2019-06-07	2019-06-07	19/105	stored	Entwurf eines Fachkräfteeinwanderungsgesetzes
+609	2019-06-07	2019-06-07	19/105	stored	Änderung des Asylbewerberleistungsgesetzes
+610	2019-06-28	2019-06-28	19/108	stored	Bundeswehreinsatz in Kosovo (KFOR)
+611	2019-06-28	2019-06-28	19/108	stored	Bundeswehreinsatz in Libanon (UNIFIL)
+612	2019-06-28	2019-06-28	19/108	stored	Gesetzentwurf Bündnis 90/Die Grünen: Kohlekraftwerk-Sofortmaßnahme-Gesetz
+613	2019-06-28	2019-06-28	19/108	stored	Antrag Die Linke: Klimanotstand anerkennen
+614				id_not_on_list	
+615	2019-09-26	2019-09-26	19/115	stored	Beschlussempfehlung zu Antrag FDP "Weltweit mehr Wald für den Klimaschutz"
+616	2019-09-26	2019-09-26	19/115	stored	Änderungsantrag der AfD - Stasi-Unterlagen-Gesetz
+617	2019-09-26	2019-09-26	19/115	stored	Gesetzentwurf deutsch-französische Zusammenarbeit und Integration
+618	2019-09-26	2019-09-26	19/115	stored	Entschließungsantrag der AfD zu Gesetzentwurf deutsch-französische...
+619	2019-09-26	2019-09-26	19/115	stored	Antrag CDU/CSU, SPD - EU-Beitrittsantrag Nordmazedoniens
+620	2019-09-26	2019-09-26	19/115	stored	Antrag CDU/CSU, SPD - EU-Beitrittsantrag Albaniens
+621	2019-10-17	2019-10-17	19/118	stored	Entschließungsantrag Die Linke zur Regierungserklärung
+622	2019-10-17	2019-10-17	19/118	stored	Verkehrspolitik
+623	2019-10-18	2019-10-18	19/119	stored	Gesetzentwurf der CDU/CSU und SPD zur Änderung des Grundgesetzes -...
+624	2019-10-18	2019-10-18	19/119	stored	Beschlussempfehlung zum Antrag Die Linke - Grundsteuer
+625	2019-10-24	2019-10-24	19/121	stored	Beschlussempfehlung zu Bundeswehreinsatz zur Bekämpfung des IS-Terrors
+626	2019-10-24	2019-10-24	19/121	stored	Russlandpolitik
+627	2019-10-24	2019-10-24	19/121	stored	Wettbewerbsfähige Landwirtschaft
+628	2019-11-07	2019-11-07	19/124	stored	Änderungsantrag der FDP (19/14882)
+629	2019-11-07	2019-11-07	19/124	stored	Änderungsantrag der FDP (19/14883)
+630	2019-11-13	2019-11-13	19/126	stored	Änderungsantrag zu Direktzahlungen-Durchführungsgesetz
+631	2019-11-13	2019-11-13	19/126	stored	Gesetzentwurf Direktzahlungen-Durchführungsgesetz
+632	2019-11-14	2019-11-14	19/127	stored	Gesetzentwurf der Bundesregierung: Solidaritätszuschlag
+633	2019-11-14	2019-11-14	19/127	stored	Gesetzentwurf der FDP: Abschaffung des Solidaritätszuschlags
+634	2019-11-14	2019-11-14	19/127	stored	Beschlussempfehlung des Finanzausschusses zum Antrag 19/4898
+635	2019-11-14	2019-11-14	19/127	stored	Wettbewerbsfähigkeit der deutschen Wirtschaft
+636	2019-11-14	2019-11-14	19/127	stored	Stärkung der Impfprävention (Masernschutz)
+637	2019-11-14	2019-11-14	19/127	stored	Beschlussempfehlung zu Einsatz chemischer Pflanzenschutzmittel
+638	2019-11-14	2019-11-14	19/127	stored	Beschlussempfehlung zu Verbot von Tierexporten
+639	2019-11-15	2019-11-15	19/128	stored	Änderung des Luftverkehrsteuergesetzes
+640	2019-11-26	2019-11-26	19/129	stored	Änderungsantrag zu Einzelplan 16 (Umweltministerium)
+641	2019-11-27	2019-11-27	19/130	stored	Einzelplan 04 - Geschäftsbereich der Bundeskanzlerin und des Bundeskanzlera...
+642	2019-11-29	2019-11-29	19/132	stored	Haushaltsjahr 2020
+643	2019-11-29	2019-11-29	19/132	stored	Einzelplan 14 (Verteidigung) - Entschließungsantrag AfD
+644	2019-11-29	2019-11-29	19/132	stored	Einzelplan 60 (Allgemeine Finanzverwaltung) - Entschließungsantrag AfD
+645	2019-12-19	2019-12-19	19/137	stored	Föderale Sicherheitsarchitektur
+646	2019-12-19	2019-12-19	19/137	stored	Vorgehen gegen die Hisbollah
+647	2019-12-19	2019-12-19	19/137	stored	Gesetz zur Umsetzung des Klimaschutzprogramms 2030 im Steuerrecht
+648	2019-12-19	2019-12-19	19/137	stored	Gesetzentwurf Bundesregierung: Änderung Bundesnaturschutzgesetzes
+649	2019-12-19	2019-12-19	19/137	stored	Entschließungsantrag Die Linke: Änderung des Bundesnaturschutzgesetzes
+650	2019-12-19	2019-12-19	19/137	stored	Gesetzentwurf der Fraktion der FDP zum Wolfsmanagement
+651	2019-12-20	2019-12-20	19/138	stored	Beschlussempfehlung des Verteidigungsausschusses zum Antrag der FDP
+652	2019-12-20	2019-12-20	19/138	stored	Antrag DIE LINKE: Keine Anschaffung, sondern Ächtung bewaffneter Drohnen
+653				id_not_on_list	
+654				id_not_on_list	
+655	2020-01-15	2020-01-15	19/139	stored	Einsatz der Bundeswehr im Irak
+656	2020-01-16	2020-01-16	19/140	stored	Organspende - Doppelte Widerspruchslösung (Lauterbach, Spahn)
+657	2020-01-16	2020-01-16	19/140	stored	Entscheidungsbereitschaft bei Organspende (2. Lesung)
+658	2020-01-16	2020-01-16	19/140	stored	Entscheidungsbereitschaft bei Organspende (3. Lesung)
+659	2020-01-17	2020-01-17	19/141	stored	Freisetzungsrichtlinie auch für neue Gentechnik (Beschlussempfehlung)
+660	2020-01-30	2020-01-30	19/143	stored	Deutsche Stiftung für Engagement und Ehrenamt (Gesetzentwurf)
+661	2020-01-30	2020-01-30	19/143	stored	Engagement- und Ehrenamts-Check (Antrag)
+662	2020-01-30	2020-01-30	19/143	stored	Antrag der Fraktion der AfD: Schutz von Hinweisgebern auf EU-Ebene
+663	2020-03-04	2020-03-04	19/148	stored	Schutzbedürftige Asylsuchende aus Griechenland (Beschlussempfehlung)
+664	2020-03-13	2020-03-13	19/153	stored	Bundeswehreinsatz in Afghanistan
+665	2020-03-13	2020-03-13	19/153	stored	Bundeswehreinsatz SEA GUARDIAN
+666	2020-03-25	2020-03-25	19/154	stored	Beschluss gemäß Artikel 115 Absatz 2 Satz 6 und 7 GG (Beschlussempfehlung)
+667	2020-05-07	2020-05-07	19/158	stored	Bundeswehreinsatz EUNAVFOR MED IRINI
+668	2020-05-14	2020-05-14	19/160	stored	Änderungsantrag 19/19221 zu Schutz der Bevölkerung bei einer epidemischen...
+669	2020-05-14	2020-05-14	19/160	stored	Beschlussempfehlung 19/19204 zu Corona-Aufschlag in der Grundsicherung...
+670	2020-05-14	2020-05-14	19/160	stored	Schutz der Bevölkerung bei einer epidemischen Lage von nationaler...
+671	2020-05-14	2020-05-14	19/160	stored	Bereitstellung des ESM-Instruments ECCL Pandemic Crisis Support
+672	2020-05-27	2020-05-27	19/162	stored	Bundeswehreinsatz Operation ATALANTA (Beschlussempfehlung)
+673	2020-05-29	2020-05-29	19/164	stored	Bundeswehreinsatzes EUTM Mali (Beschlussempfehlung)
+674	2020-05-29	2020-05-29	19/164	stored	Bundeswehreinsatzes in Mali (MINUSMA) (Beschlussempfehlung)
+675	2020-06-17	2020-06-17	19/165	stored	Bundeswehr im Kosovo (KFOR) (Beschlussempfehlung)
+676	2020-06-17	2020-06-17	19/165	stored	Bundeswehreinsatz Libanon (UNIFIL) (Beschlussempfehlung)
+677	2020-06-18	2020-06-18	19/166	stored	Europäische Arbeitnehmerentsendung
+678	2020-06-19	2020-06-19	19/167	stored	Verbot der Antifa (Beschlussempfehlung)
+679	2020-07-02	2020-07-02	19/170	stored	Corona-Konjunkturpaket (Beschlussempfehlung 19/20716)
+680	2020-07-02	2020-07-02	19/170	stored	Corona-Konjunkturpaket (Entschließungsantrag 19/20739)
+681	2020-07-03	2020-07-03	19/171	stored	Kohleausstiegsgesetz (Änderungsantrag 19/20730)
+682	2020-07-03	2020-07-03	19/171	stored	Bundeswahlgesetz (Geschäftsordnungsantrag)
+683	2020-09-10	2020-09-10	19/173	stored	Abstrakte Normenkontrolle - Düngeverordnung (Beschlussempfehlung)
+684	2020-09-16	2020-09-16	19/175	stored	Mobilität der Zukunft (Beschlussempfehlung)
+685	2020-09-17	2020-09-17	19/176	stored	Finanzielle Entlastung der Kommunen
+686	2020-09-18	2020-09-18	19/177	stored	Konsequenzen aus dem Brand in Moria ziehen - Beschlussempfehlung zum...
+687	2020-09-18	2020-09-18	19/177	stored	Konsequenzen aus dem Brand in Moria ziehen - Antrag 19/22279
+688	2020-10-08	2020-10-08	19/183	stored	Bundeswahlgesetz (Größe des Bundestages)
+689	2020-10-09	2020-10-09	19/184	stored	Bundeswahlgesetz (Wahlversammlungen)
+690				id_not_on_list	
+691	2020-10-09	2020-10-09	19/184	stored	Finanzielle Lasten der Migrationspolitik umfassend offenlegen
+692	2020-10-09	2020-10-09	19/184	stored	Einführungsgesetz zur Abgabenordnung
+693	2020-10-29	2020-10-29	19/186	stored	Bundeswehreinsatz im Irak (Beschlussempfehlung)
+694	2020-10-30	2020-10-30	19/187	stored	Untersuchungsausschuss Infektionsschutz - Abstrakte Normenkontrolle
+695	2020-10-30	2020-10-30	19/187	stored	Einsetzung Untersuchungsausschuss Infektionsschutz
+696	2020-11-18	2020-11-18	19/191	stored	Corona-Maßnahmen (epidemische Lage), Änderungsantrag FDP
+697	2020-11-18	2020-11-18	19/191	stored	Corona-Maßnahmen (epidemische Lage), Änderungsantrag Bündnis 90/Die Grünen
+698	2020-11-18	2020-11-18	19/191	stored	Corona-Maßnahmen (epidemische Lage), Gesetzentwurf CDU/CSU, SPD
+699	2020-11-18	2020-11-18	19/191	stored	Corona-Maßnahmen (epidemische Lage), Antrag CDU/CSU, SPD
+700	2020-11-19	2020-11-19	19/192	stored	Energiesicherheit gewährleisten - Nord Stream 2 unterstützen (Beschlussempf...
+701	2020-11-26	2020-11-26	19/195	stored	Europäische Bank für nachhaltige Entwicklung (Beschlussempfehlung)
+702	2020-11-26	2020-11-26	19/195	stored	Übereinkommen über ein Europäisches Patentgericht
+703	2020-12-08	2020-12-08	19/197	stored	Antrag 19/24969 der FDP (Beschluss gemäß Artikel 115 Absatz 2 des...
+704	2020-12-08	2020-12-08	19/197	stored	Beschluss gemäß Artikel 115 Absatz 2 des Grundgesetzes (Beschlussempfehlung...
+705	2020-12-09	2020-12-09	19/198	stored	Geschäftsbereich Bundeskanzlerin und Bundeskanzleramt (Beschlussempfehlung...
+706	2020-12-11	2020-12-11	19/200	stored	Haushaltsgesetz 2021
+707	2020-12-16	2020-12-16	19/201	stored	Arbeitsschutzkontrollgesetz
+708	2020-12-17	2020-12-17	19/202	stored	Erneuerbare-Energien-Gesetz
+709				id_not_on_list	
+710	2021-01-14	2021-01-14	19/204	stored	Bundeswahlgesetz (Antrag zu Feststellung gemäß § 52 Absatz 4 Satz 1)
+711	2021-01-28	2021-01-28	19/206	stored	Covid-19-Wahlbewerber-Aufstellungsverordnung (Beschlussempfehlung)
+712	2021-01-29	2021-01-29	19/207	stored	Normenkontrolle Bevölkerungsschutzgesetz (Antrag)
+713	2021-02-25	2021-02-25	19/212	stored	Verein Indymedia verbieten (Beschlussempfehlung)
+714	2021-03-03	2021-03-03	19/214	stored	Bundeswehreinsatz in Südsudan (UNMISS) - Beschlussempfehlung
+715	2021-03-03	2021-03-03	19/214	stored	Bundeswehreinsatz im Mittelmeer (SEA GUARDIAN) - Beschlussempfehlung
+716	2021-03-04	2021-03-04	19/215	stored	Epidemische Lage von nationaler Tragweite
+717	2021-03-25	2021-03-25	19/218	stored	Eigenmittelsystem der EU
+718	2021-03-25	2021-03-25	19/218	stored	BND-Gesetz, Kontrolle der Nachrichtendienste
+719	2021-03-25	2021-03-25	19/218	stored	Bundeswehreinsatz in Afghanistan
+720	2021-03-26	2021-03-26	19/219	stored	Transparenzregelungen für Abgeordnete
+721	2021-04-14	2021-04-14	19/220	stored	Energieversorgung in Deutschland
+722	2021-04-21	2021-04-21	19/223	stored	Bevölkerungsschutzgesetz - Änderungsantrag (19/28752)
+723	2021-04-21	2021-04-21	19/223	stored	Bevölkerungsschutzgesetz - Änderungsantrag (19/28753)
+724	2021-04-21	2021-04-21	19/223	stored	Bevölkerungsschutzgesetz - Änderungsantrag (19/28756)
+725	2021-04-21	2021-04-21	19/223	stored	Bevölkerungsschutzgesetz - Änderungsantrag (19/28755)
+726	2021-04-21	2021-04-21	19/223	stored	Bevölkerungsschutzgesetz (Gesetzentwurf)
+727	2021-04-21	2021-04-21	19/223	stored	Bevölkerungsschutzgesetz - Änderungsantrag (19/28760)
+728	2021-04-21	2021-04-21	19/223	stored	EU NAVFOR Somalia Operation Atalanta
+729	2021-04-21	2021-04-21	19/223	stored	Operation EUNAVFOR MED IRINI
+730	2021-04-23	2021-04-23	19/225	stored	Nachtragshaushalt (Beschlussempfehlung)
+731	2021-05-06	2021-05-06	19/227	stored	Bevölkerungsschutzgesetz – Normenkontrolle
+732	2021-05-06	2021-05-06	19/227	stored	COVID-19-Schutzmaßnahmen- Ausnahmenverordnung
+733	2021-05-06	2021-05-06	19/227	stored	Ablösung der Staatsleistungen
+734	2021-05-06	2021-05-06	19/227	stored	Patente für Impfstoffe freigeben (Beschlussempfehlung)
+735	2021-05-07	2021-05-07	19/228	stored	Mobilisierung von Bauland
+736	2021-05-19	2021-05-19	19/229	stored	Mali (MINUSMA) (Beschlussempfehlung)
+737	2021-05-19	2021-05-19	19/229	stored	Geschlechtliche Selbstbestimmung (Gesetzentwurf FDP)
+738	2021-05-19	2021-05-19	19/229	stored	Aufhebung des Transsexuellengesetzes und Einführung des Selbstbestimmungsge...
+739	2021-05-19	2021-05-19	19/229	stored	Fremdbestimmte Operationen an trans- und intergeschlechtlichen Menschen...
+740	2021-05-19	2021-05-19	19/229	stored	EUTM Mali (Beschlussempfehlung)
+741	2021-05-20	2021-05-20	19/230	stored	Einspruch des Abg. Lucassen gegen Ordnungsruf
+742	2021-06-10	2021-06-10	19/233	stored	Anpassung des Verfassungsschutzrechts
+743	2021-06-10	2021-06-10	19/233	stored	Änderung des Atomgesetzes
+744	2021-06-10	2021-06-10	19/233	stored	Änderung des Vermögensteuergesetzes (VStG)
+745	2021-06-11	2021-06-11	19/234	stored	Lieferketten
+746	2021-06-11	2021-06-11	19/234	stored	Fortbestehen der epidemischen Lage
+747	2021-06-24	2021-06-24	19/236	stored	Klimaschutz
+748	2021-06-24	2021-06-24	19/236	stored	Bundesnaturschutzgesetz, Insektenschutz
+749	2021-06-24	2021-06-24	19/236	stored	Änderung des Infektionsschutzgesetzes; Einschränkung von Grundrechten
+750	2021-06-24	2021-06-24	19/236	stored	Verwendung geschlechtergerechter Sprache
+751	2021-06-24	2021-06-24	19/236	stored	Beschlussempfehlung: Bundeswehreinsatz in Kosovo KFOR
+752	2021-06-24	2021-06-24	19/236	stored	Bundeswehreinsatz in Lebanon UNIFIL
+753	2021-08-25	2021-08-25	19/238	stored	Bundeswehreinsatz zur Evakuierung aus Afghanistan
+754	2021-08-25	2021-08-25	19/238	stored	Epidemische Lage von nationaler Tragweite
+755	2021-09-07	2021-09-07	19/239	stored	Änderung des Infektionsschutzgesetzes; Einschränkung von Grundrechten
+756	2021-11-18	2021-11-18	20/3	stored	Änderung des Infektionsschutzgesetzes
+757	2021-11-18	2021-11-18	20/3	stored	Änderung des Infektionsschutzgesetzes (Entschließungsantrag CDU/CSU)
+758	2021-12-10	2021-12-10	20/7	stored	Stärkung der Impfprävention gegen COVID-19, Änderungsantrag Die Linke
+759	2021-12-10	2021-12-10	20/7	stored	Stärkung der Impfprävention gegen COVID-19, Gesetzentwurf SPD, Bündnis...
+760	2022-01-27	2022-01-27	20/14	stored	Beschluss gemäß Artikel 115 Absatz 2 Satz 6 und 7 Grundgesetz (Antrag)
+761	2022-01-27	2022-01-27	20/14	stored	Zweites Nachtragshaushaltsgesetz 2021
+762	2022-01-28	2022-01-28	20/15	stored	Bundeswehreinsatz im Irak (Beschlussempfehlung)
+763	2022-03-17	2022-03-17	20/21	stored	Energieversorgung (Antrag CDU/CSU)
+764	2022-03-18	2022-03-18	20/22	stored	Änderung des Infektionsschutzgesetzes
+765	2022-03-18	2022-03-18	20/22	stored	Bundeswehreinsatz SEA GUARDIAN im Mittelmeer
+766	2022-03-18	2022-03-18	20/22	stored	Bundeswehreinsatz in Südsudan (UNMISS)
+767	2022-04-07	2022-04-07	20/28	stored	Impfpflicht gegen SARS-CoV-2 (Gruppe Baehrens/Janecek u.a.)
+768	2022-04-07	2022-04-07	20/28	stored	Impfpflicht gegen SARS-CoV-2 (Antrag der Fraktion der CDU/CSU)
+769	2022-04-07	2022-04-07	20/28	stored	Impfpflicht gegen SARS-CoV-2 (Antrag der Gruppe Kubicki u.a.)
+770	2022-04-07	2022-04-07	20/28	stored	Impfpflicht gegen SARS-CoV-2 (Antrag der Fraktion der AfD)
+771	2022-04-28	2022-04-28	20/31	stored	Umfassende Unterstützung für die Ukraine (Antrag)
+772	2022-04-29	2022-04-29	20/32	stored	Fortsetzung der Beteiligung an EU NAVOR MED IRINI (Beschlussempfehlung)
+773	2022-05-19	2022-05-19	20/37	stored	Ukrainehilfe, Nahrungsmittelversorgung weltweit (Beschlussempfehlung)
+774	2022-05-19	2022-05-19	20/37	stored	Pflegebonusgesetz (Beschlussempfehlung)
+775	2022-05-20	2022-05-20	20/38	stored	Bundeswehreinsatz in Mali (MINUSMA) (Beschlussempfehlung)
+776	2022-05-20	2022-05-20	20/38	stored	Bundeswehreinsatz im Sahel mit Schwerpunkt Niger (EUTM Mali)
+777	2022-05-20	2022-05-20	20/38	stored	Wohneigentumsförderung, Gebäudeeffizienzförderung (Beschlussempfehlung)
+778	2022-06-01	2022-06-01	20/40	stored	Haushalt Bundeskanzler / Bundeskanzleramt (Beschlussempfehlung)
+779	2022-06-03	2022-06-03	20/42	stored	Mindestlohn (Artikel 7 des Gesetzentwurfs der Bundesregierung)
+780	2022-06-03	2022-06-03	20/42	stored	Schuldenregel des Grundgesetzes
+781	2022-06-03	2022-06-03	20/42	stored	Haushaltsgesetz 2022 (3. Beratung)
+782	2022-06-03	2022-06-03	20/42	stored	Gesetz zur Änderung des Grundgesetzes (Art. 87a GG)
+783	2022-06-03	2022-06-03	20/42	stored	Bundeswehrsondervermögensgesetz (Antrag AfD)
+784	2022-06-03	2022-06-03	20/42	stored	Sondervermögen Bundeswehr (Gesetzentwurf )
+785	2022-06-23	2022-06-23	20/44	stored	Beteiligung deutscher Streitkräfte an UNIFIL (Beschlussempfehlung)
+786	2022-07-07	2022-07-07	20/47	stored	Sofortmaßnahmen für einen beschleunigten Ausbau erneuerbarer Energien...
+787	2022-07-07	2022-07-07	20/47	stored	Windenergie auf See (Gesetzentwurf)
+788	2022-07-07	2022-07-07	20/47	stored	Windenergie an Land (Gesetzentwurf)
+789	2022-07-07	2022-07-07	20/47	stored	Bundesnaturschutzgesetz (Gesetzentwurf)
+790	2022-07-07	2022-07-07	20/47	stored	Beschleunigter Ausbau erneuerbarer Energien (Beschlussempfehlung)
+791	2022-07-07	2022-07-07	20/47	stored	Bereithaltung von Ersatzkraftwerken (Änderungsantrag CDU/CSU)
+792	2022-07-07	2022-07-07	20/47	stored	07.07.2022: Bereithaltung von Ersatzkraftwerken (Änderungsantrag CDU/CSU)
+793	2022-07-07	2022-07-07	20/47	stored	07.07.2022: Bereithaltung von Ersatzkraftwerken (Beschlussempfehlung)
+794	2022-07-07	2022-07-07	20/47	stored	Bundeswehrbeschaffungsbeschleunigungsgesetz (Entschließungsantrag CDU/CSU)
+795	2022-07-08	2022-07-08	20/48	stored	Bundeswehreinsatz in Kosovo (KFOR) (Beschlussempfehlung)
+796	2022-07-08	2022-07-08	20/48	stored	Bundeswehreinsatz in Bosnien und Herzegowina (EUFOR ALTHEA) (Beschlussempfe...
+797	2022-09-08	2022-09-08	20/51	stored	Neufassung des Infektionsschutzgesetzes
+798	2022-09-22	2022-09-22	20/54	stored	Krisengewinne von Energiekonzernen
+799	2022-09-22	2022-09-22	20/54	stored	Änderung von Verbrauchsteuergesetzen (Entschließungsantrag)
+800	2022-09-22	2022-09-22	20/54	stored	Änderung des Atomgesetzes (Gesetzentwurf AfD)
+801	2022-09-28	2022-09-28	20/56	stored	Entschließungsantrag zur Regierungserklärung vom 22. Juni 2022 (Beschlussem...
+802	2022-09-30	2022-09-30	20/58	stored	30.09.2022: Fiskalpolitische Disziplin in Europa (Antrag CDU/CSU)
+803	2022-10-13	2022-10-13	20/60	stored	Strom- und Gassperren, Gas- und Strompreisdeckel (Beschlussempfehlung)
+804	2022-10-20	2022-10-20	20/63	stored	GKV-Finanzstabilisierungsgesetz
+805	2022-10-20	2022-10-20	20/63	stored	Bundeszentralregistergesetz
+806	2022-10-21	2022-10-21	20/64	stored	Antrag zu Beschluss gemäß Artikel 115 Absatz 2 Satz 6 und 7 Grundgesetz
+807	2022-10-21	2022-10-21	20/64	stored	Entschließungsantrag CDU/CSU zu Stabilisierungsfondsgesetz und Wirtschaftss...
+808	2022-10-21	2022-10-21	20/64	stored	Einsatz der Bundeswehr im Irak
+809	2022-11-10	2022-11-10	20/66	stored	Bürgergeld-Gesetz (Regelbedarfsstufen)
+810	2022-11-10	2022-11-10	20/66	stored	Bürgergeld-Gesetz (Schlussabstimmung)
+811	2022-11-10	2022-11-10	20/66	stored	Bürgergeld-Gesetz (Beschlussempfehlung)
+812	2022-11-10	2022-11-10	20/66	stored	Inflationsausgleich
+813	2022-11-10	2022-11-10	20/66	stored	Vermögensabgabe für Multimillionäre und Milliardäre
+814	2022-11-10	2022-11-10	20/66	stored	Änderung des Infektionsschutzgesetzes (2.Beratung)
+815	2022-11-10	2022-11-10	20/66	stored	ERP-Wirtschaftsplangesetz 2023 (Änderungsantrag)
+816	2022-11-10	2022-11-10	20/66	stored	Einsprüche anlässlich der Wahl zum 20. Deutschen Bundestag
+817	2022-11-11	2022-11-11	20/67	stored	Änderung des Atomgesetzes - 19. AtGÄndG (Gesetzentwurf)
+818	2022-11-11	2022-11-11	20/67	stored	Änderung des Atomgesetzes - 19. AtGÄndG (Gesetzentwurf CDU/CSU)
+819	2022-11-11	2022-11-11	20/67	stored	Änderung des Atomgesetzes - 19. AtGÄndG (Beschlussempfehlung)
+820	2022-11-23	2022-11-23	20/69	stored	Haushalt - Geschäftsbereich des Bundeskanzlers und des Bundeskanzleramts
+821	2022-11-24	2022-11-24	20/70	stored	Änderung des Energiesicherungsgesetzes
+822	2022-11-25	2022-11-25	20/71	stored	Beschlussempfehlung Vermittlungsausschuss - Bürgergeld
+823	2022-11-25	2022-11-25	20/71	stored	Haushaltsgesetz 2023
+824	2022-12-01	2022-12-01	20/73	stored	Transatlantisches Wirtschafts- und Handelsabkommen (CETA)
+825	2022-12-01	2022-12-01	20/73	stored	Änderung des Grundgesetzes (Artikel 82)
+826	2022-12-01	2022-12-01	20/73	stored	Braunkohleausstieg
+827	2022-12-02	2022-12-02	20/74	stored	Aufenthaltsgesetz
+828	2022-12-02	2022-12-02	20/74	stored	Jahressteuergesetz 2022 (Artikel 29 und 40)
+829	2022-12-15	2022-12-15	20/76	stored	Energiepreisbremse
+830	2022-12-15	2022-12-15	20/76	stored	Energiepreisbremse (Strompreisbremse)
+831	2023-03-17	2023-03-17	20/92	stored	Änderung des Bundeswahlgesetzes
+832	2023-03-29	2023-03-29	20/93	stored	Bundeswehreinsatz SEA GUARDIAN im Mittelmeer
+833	2023-03-30	2023-03-30	20/94	stored	Bundeswehreinsatz in der Republik Südsudan (UNMISS)
+834	2023-03-31	2023-03-31	20/95	stored	Änderungsantrag der Fraktion der CDU/CSU
+835	2023-03-31	2023-03-31	20/95	stored	Entschließungsantrag der Fraktion der CDU/CSU
+836				id_not_on_list	
+837				id_not_on_list	
+838				id_not_on_list	
+839				id_not_on_list	
+840	2023-04-20	2023-04-20	20/97	stored	Gesetzes zur Änderung des Energiesicherungsgesetzes
+841	2023-04-19	2023-04-19	20/96	stored	Einsetzung des 2. Untersuchungsausschusses der 20. Wahlperiode (Bekämpfung...
+842	2023-04-26	2023-04-26	20/99	stored	Evakuierung aus Sudan
+843	2023-04-26	2023-04-26	20/99	stored	Bestandsmanagement Wolf (Beschlussempfehlung)
+844	2023-04-26	2023-04-26	20/99	stored	EUNAVFOR MED IRINI (Beschlussempfehlung)
+845	2023-04-28	2023-04-28	20/101	stored	Asyl- und Flüchtlingspolitik (Antrag)
+846	2023-04-28	2023-04-28	20/101	stored	Beteiligung bewaffneter Streitkräfte an EUMPM Niger (Beschlussempfehlung)
+847	2023-04-28	2023-04-28	20/101	stored	Änderung des Atomgesetzes
+848	2023-05-10	2023-05-10	20/102	stored	Einsetzung eines Bürgerrates - Antrag SPD, Bündnis 90/Die Grünen,...
+849	2023-05-10	2023-05-10	20/102	stored	Einsetzung eines Bürgerrates - Antrag AfD
+850	2023-05-11	2023-05-11	20/103	stored	Beschlussempfehlung zum Antrag CDU/CSU "Abschiebehürden beseitigen"
+851	2023-05-12	2023-05-12	20/104	stored	75 Jahre Weltgesundheitsorganisation
+852	2023-05-26	2023-05-26	20/107	stored	Pflegeunterstützungs- und -entlastungsgesetz - PUEG
+853	2023-05-26	2023-05-26	20/107	stored	Bundeswehreinsatz in Mali (MINUSMA)
+854	2023-05-26	2023-05-26	20/107	stored	Bundeswehreinsatz in Kosovo (KFOR)
+855	2023-06-15	2023-06-15	20/109	stored	Asylrecht in der EU (Beschlussempfehlung)
+856	2023-06-15	2023-06-15	20/109	stored	Wahl zum Europäischen Parlament
+857	2023-06-15	2023-06-15	20/109	stored	Grenzüberschreitende Durchsetzung des Entsenderechts
+858	2023-06-23	2023-06-23	20/113	stored	Fachkräfteeinwanderung
+859	2023-06-23	2023-06-23	20/113	stored	Erdgas-, Wärme- und Strompreisbremsengesetz
+860	2023-06-23	2023-06-23	20/113	stored	Bundeswehreinsatz in Bosnien und Herzegowina (EUFOR ALTHEA)
+861	2023-06-23	2023-06-23	20/113	stored	Bundeswehreinsatz im Libanon (UNIFIL)
+862				id_not_on_list	
+863	2023-07-06	2023-07-06	20/115	stored	Suizidhilfe (GE Helling-Plahr/ Künast u.a )
+864	2023-07-06	2023-07-06	20/115	stored	Suizidhilfe (Antrag Dr. Kappert-Gonther u.a.)
+865	2023-07-06	2023-07-06	20/115	stored	Rasche und geordnete Beendigung des MINUSMA-Einsatzes
+866	2023-07-06	2023-07-06	20/115	stored	Suizidhilfe (GE Dr. Castellucci u.a.)
+867	2023-07-07	2023-07-07	20/116	stored	LNG-Beschleunigungsgesetz
+868	2023-09-08	2023-09-08	20/120	stored	Gesetzentwurf Gebäudeenergiegesetz
+869	2023-09-08	2023-09-08	20/120	stored	Abschaffung Modernisierungsumlage (Beschlussempfehlung)
+870	2023-09-20	2023-09-20	20/121	stored	Rücktritt der Bundesministerin des Innern und für Heimat
+871	2023-09-21	2023-09-21	20/122	stored	Umsatzsteuergesetz
+872	2023-09-21	2023-09-21	20/122	stored	Steigerung der Energieeffizienz (Änderungsantrag)
+873	2023-09-28	2023-09-28	20/125	stored	Bewältigung der Massenmigration
+874	2023-10-18	2023-10-18	20/130	stored	Bundeswehreinsatz in Irak
+875	2023-10-20	2023-10-20	20/132	stored	Änderung des Straßenverkehrsgesetzes
+876	2023-11-10	2023-11-10	20/135	stored	Stiftungsfinanzierungsgesetz
+877	2023-11-10	2023-11-10	20/135	stored	Änderung des Atomgesetzes (Antrag AfD)
+878	2023-11-10	2023-11-10	20/135	stored	Änderung des Atomgesetz (GesEntw AfD)
+879	2023-11-16	2023-11-16	20/137	stored	Georgien und Republik Moldau als sichere Herkunftsstaaten (Entschließungsan...
+880	2023-11-16	2023-11-16	20/137	stored	Reform des Nachrichtendienstrechts (GesEntw BReg)
+881	2023-11-17	2023-11-17	20/138	stored	Videokonferenztechnik in der Zivilgerichtsbarkeit
+882	2023-11-30	2023-11-30	20/141	stored	Erbschaftsteuer (Beschlussempfehlung)
+883	2023-11-30	2023-11-30	20/141	stored	EU-Gebäuderichtlinie (Beschlussempfehlung)
+884	2023-12-01	2023-12-01	20/142	stored	Errichtung der Europäischen Bank für Wiederaufbau und Entwicklung
+885	2023-12-15	2023-12-15	20/145	stored	Artikel 115 II GG
+886	2023-12-15	2023-12-15	20/145	stored	Nachtragshaushaltsgesetz 2023
+887	2023-12-15	2023-12-15	20/145	stored	Nachtragshaushaltsgesetz 2023 (EntschlAntrag AfD)
+888	2023-12-15	2023-12-15	20/145	stored	Änderung des Parteiengesetz
+889	2023-12-15	2023-12-15	20/145	stored	Erneuerbare-Energien-Gesetz (GesEntw BReg)
+890	2024-01-17	2024-01-17	20/146	stored	Jahresbericht 2022 der Wehrbeauftragten (Entschließungsantrag)
+891	2024-01-18	2024-01-18	20/147	stored	Entlastung der Landwirtschaft
+892	2024-01-18	2024-01-18	20/147	stored	Friedensinitiative für die Ukraine und Russland (Beschlussempfehlung)
+893	2024-01-19	2024-01-19	20/148	stored	Modernisierung des Staatsangehörigkeitsrechts (GesEntw BReg)
+894	2024-01-31	2024-01-31	20/150	stored	Einzelplan 04, Bundeskanzler und Bundeskanzleramt
+895	2024-02-01	2024-02-01	20/151	stored	Änderung des Bundeswahlgesetzes
+896				id_not_on_list	
+897	2024-02-02	2024-02-02	20/152	stored	Haushaltsgesetz 2024 (Entschließungsantrag)
+898	2024-02-02	2024-02-02	20/152	stored	Haushaltsgesetz 2024
+899				id_not_on_list	
+900	2024-02-22	2024-02-22	20/154	stored	Zehn Jahre russischer Krieg gegen die Ukraine
+901				id_not_on_list	
+902	2024-02-23	2024-02-23	20/155	stored	Wachstumschancengesetz;Kfz-Haftpflichtversicherung (BeschlEmpf Vermittlungs...
+903	2024-02-22	2024-02-22	20/154	stored	Deutsche Außen- und Sicherheitspolitik (Antrag CDU/CSU)
+904	2024-02-23	2024-02-23	20/155	stored	Cannabisgesetz (GesEntwurf BReg)
+905	2024-02-23	2024-02-23	20/155	stored	Bundeswehreinsatz EUNAVFOR ASPIDES (BeschlEmpf)
+906	2024-03-14	2024-03-14	20/157	stored	Ablehnung von Lieferung des Taurus-Marschflugkörpers (Beschlussempfehlung)
+907	2024-03-20	2024-03-20	20/159	stored	Steuervergünstigung für Agrardiesel (Antrag AfD)
+908	2024-03-21	2024-03-21	20/160	stored	Bundeswehreinsatz SEA GUARDIAN im Mittelmeer (Antrag BReg)
+909	2024-03-21	2024-03-21	20/160	stored	Bundeswehreinsatz in der Republik Südsudan (UNMISS)
+910	2024-04-12	2024-04-12	20/164	stored	Selbstbestimmung in Bezug auf den Geschlechtseintrag
+911	2024-04-12	2024-04-12	20/164	stored	Änderung des Energiewirtschaftsgesetzes
+912	2024-02-02	2024-02-02	20/152	stored	Zweites Haushaltsfinanzierungsgesetz 2024 (Änderungsantrag)
+913	2024-04-25	2024-04-25	20/166	stored	Operation EUNAVFOR MED IRINI (Beschlussempfehlung)
+914	2024-04-26	2024-04-26	20/167	stored	Erneuerbare-Energien-Gesetz (Solarpaket)
+915	2024-05-16	2024-05-16	20/169	stored	Ablehnung eines Antrags gegen den WHO-Pandemievertrag
+916	2024-06-05	2024-06-05	20/171	stored	Ablehnung eines Antrags zur Abschaffung des Solidaritätszuschlags
+917	2024-06-06	2024-06-06	20/172	stored	Ablehnung eines Antrags zur Bekämpfung des politischen Islam
+918	2024-06-06	2024-06-06	20/172	stored	Beschleunigung immissionsschutzrechtlicher Genehmigungsverfahren
+919	2024-06-13	2024-06-13	20/175	stored	Antrag zu Konsequenzen aus dem Terror von Mannheim
+920	2024-06-13	2024-06-13	20/175	stored	Ablehnung eines Antrags zum Verbot des Vereins Muslim Interaktiv
+921	2024-06-13	2024-06-13	20/175	stored	Antrag zum Eintritt in die zweite Beratung zur Aufhebung des Lieferkettenge...
+922	2024-06-27	2024-06-27	20/178	stored	Bundeswehreinsatz EUFOR ALTHEA
+923	2024-06-27	2024-06-27	20/178	stored	Bundeswehreinsatz im Kosovo (KFOR)
+924	2024-06-27	2024-06-27	20/178	stored	Bundeswehreinsatz im Libanon (UNIFIL)
+925	2024-07-05	2024-07-05	20/182	stored	Änderung des Schwangerschaftskonfliktgesetzes
+926	2024-10-17	2024-10-17	20/194	stored	Entwurf zur Aufhebung des Lieferkettengesetzes
+927	2024-10-17	2024-10-17	20/194	stored	Gesetzentwurf zur Krankenhausreform
+928	2024-10-17	2024-10-17	20/194	stored	Bundeswehreinsatz im Irak
+929	2024-10-18	2024-10-18	20/195	stored	Änderungsantrag zur „Verbesserung der inneren Sicherheit“
+930	2024-10-18	2024-10-18	20/195	stored	Artikel 5 des Entwurfs „Verbesserung der inneren Sicherheit“ (2. Beratung)
+931	2024-10-18	2024-10-18	20/195	stored	Gesetzentwurf „Verbesserung der Terrorismusbekämpfung“
+932	2024-10-18	2024-10-18	20/195	stored	Gesetzentwurf „Verbesserung der inneren Sicherheit“
+933	2024-10-18	2024-10-18	20/195	stored	Erster Entschließungsantrag zur „Verbesserung der inneren Sicherheit“
+934	2024-10-18	2024-10-18	20/195	stored	Zweiter Entschließungsantrag zur „Verbesserung der inneren Sicherheit“
+935	2024-10-18	2024-10-18	20/195	stored	Dritter Entschließungsantrag zur „Verbesserung der inneren Sicherheit“
+936	2024-10-18	2024-10-18	20/195	stored	Ablehnung eines Antrags zu Messerangriffen
+937	2024-10-18	2024-10-18	20/195	stored	Ablehnung eines Antrags zu Drittstaatenangehörigen
+938	2024-12-16	2024-12-16	20/205	stored	Antrag gemäß Artikel 68 des Grundgesetzes (Vertrauensfrage)
+939	2024-12-19	2024-12-19	20/207	stored	Gesetzentwurf zur Änderung von Artikel 93 und 94 des Grundgesetzes...
+940	2025-01-29	2025-01-29	20/209	stored	Entschließungsantrag der Fraktion der CDU/CSU
+941	2025-01-29	2025-01-29	20/209	stored	Zweiter Entschließungsantrag der Fraktion der CDU/CSU
+942				id_not_on_list	
+943	2025-01-30	2025-01-30	20/210	stored	Bundeswehreinsatz im Roten Meer „Eunavfor Aspides“
+944	2025-01-30	2025-01-30	20/210	stored	Bundeswehreinsatz im Mittelmeer „Sea Guardian“
+945	2025-01-30	2025-01-30	20/210	stored	Bundeswehreinsatz im Mittelmeer „Eunavfor Med Irini“
+946	2025-01-31	2025-01-31	20/211	stored	„Zustrombegrenzungsgesetz“ der Fraktion der CDU/CSU
+947	2025-01-31	2025-01-31	20/211	stored	Hilfen bei geschlechtsspezifischer und häuslicher Gewalt
+948	2025-01-30	2025-01-30	20/210	stored	Bundeswehreinsatz im Südsudan „Unmiss“
+949	2025-03-18	2025-03-18	20/214	stored	Gesetzentwurf der FDP zur Änderung des Grundgesetzes (Artikel 87a)
+950	2025-03-18	2025-03-18	20/214	stored	Antrag der FDP zur Änderung des Grundgesetzes (Artikel 109, 115 und 143h)
+951	2025-03-18	2025-03-18	20/214	stored	Gesetzentwurf zur Änderung der Artikel 109, 115 und 143h des Grundgesetzes
+952	2025-06-25	2025-06-25	21/13	stored	Ablehnung eines Antrags gegen weitere Nutzung von Nord-Stream-Pipelines
+953	2025-06-25	2025-06-25	21/13	stored	Bundeswehreinsatz in Bosnien und Herzegowina (Eufor Althea)
+954	2025-06-26	2025-06-26	21/14	stored	Bundeswehreinsatz in Kosovo
+955	2025-06-26	2025-06-26	21/14	stored	Bundeswehreinsatz im Libanon (UNIFIL)
+956	2025-06-26	2025-06-26	21/14	stored	Gesetzentwurf zur Umnutzung von Bahngrundstücken
+957	2025-06-27	2025-06-27	21/15	stored	Aussetzung des Familiennachzugs zu subsidiär Schutzberechtigten
+958	2025-07-10	2025-07-10	21/18	stored	Ablehnung eines Antrags zur Einsetzung eines 1. Untersuchungsausschusses
+959	2025-09-11	2025-09-11	21/21	stored	Ablehnung eines Antrags über ein Moratorium zum Rückbau abgeschalteter AKW
+960	2025-09-17	2025-09-17	21/24	stored	Haushalt 2025: Geschäftsbereich des Bundeskanzleramts
+961	2025-09-18	2025-09-18	21/25	stored	Haushaltsgesetz 2025
+962	2025-10-08	2025-10-08	21/30	stored	Änderung des Staatsangehörigkeitsgesetzes
+963	2025-10-16	2025-10-16	21/34	stored	Bundeswehreinsatz im Roten Meer "Eunavfor Aspides"
+964	2025-10-16	2025-10-16	21/34	stored	Ablehnung eines Antrags zur Rücknahme des Verbrenner-Verbots
+965	2025-10-16	2025-10-16	21/34	stored	Bundeswehreinsatz im Südsudan "Unmiss"
+966	2025-11-06	2025-11-06	21/37	stored	Gesetzentwurf zur Bekämpfung überhöhter Mieten
+967	2025-11-06	2025-11-06	21/37	stored	Ablehnung eines Antrags zur medizinischen Versorgung von Asylbewerbern
+968	2025-11-06	2025-11-06	21/37	stored	Ablehnung eines Antrags zur Agrardieselrückerstattung
+969	2025-11-06	2025-11-06	21/37	stored	Änderung der Internationalen Gesundheitsvorschriften
+970	2025-11-13	2025-11-13	21/40	stored	Gesetzentwurf zur Beseitigung der Klimaschutzfolgen
+971	2025-11-13	2025-11-13	21/40	stored	Gesetzentwurf zur Änderung des Artikels 143h des Grundgesetzes
+972				id_not_on_list	
+973	2025-11-13	2025-11-13	21/40	stored	Gesetzentwurf zur Schwarzarbeitsbekämpfung
+974	2025-11-13	2025-11-13	21/40	stored	Bundeswehreinsatz im Mittelmeer "Eunavfor Med Irini"
+975	2025-11-13	2025-11-13	21/40	stored	Bundeswehreinsatz im Mittelmeer "Sea Guardian"
+976	2025-11-13	2025-11-13	21/40	stored	Änderungsantrag zum Energiesteuer- und Stromsteuergesetz
+977	2025-11-13	2025-11-13	21/40	stored	Zuschuss zu den Übertragungsnetzkosten für das Jahr 2026
+978	2025-11-13	2025-11-13	21/40	stored	Änderung des Tierarzneimittel- und des Apothekengesetzes
+979	2025-11-26	2025-11-26	21/43	stored	Haushalt 2026: Geschäftsbereich des Bundeskanzleramts
+980	2025-11-28	2025-11-28	21/45	stored	Haushaltsgesetz 2026
+981	2025-12-03	2025-12-03	21/46	stored	Antrag für Visa für Afghanen mit Aufnahmezusage
+982	2025-12-04	2025-12-04	21/47	stored	Antrag zur Besteuerung von Luxusflügen
+983	2025-12-04	2025-12-04	21/47	stored	Ablehnung eines Antrags zur Abschaffung der CO2-Bepreisung
+984	2025-12-05	2025-12-05	21/48	stored	Gesetzentwurf zur Modernisierung des Wehrdienstes
+985	2025-12-05	2025-12-05	21/48	stored	Gesetzentwurf zum Rentenniveau und zu Kindererziehungszeiten
+986	2025-12-05	2025-12-05	21/48	stored	Gesetzentwurf zur Bestimmung sicherer Herkunftsstaaten
+987	2025-12-05	2025-12-05	21/48	stored	Ablehnung eines Antrags zu eingefrorenem russischem Staatsvermögen
+988	2025-12-05	2025-12-05	21/48	stored	Ablehnung eines Antrags zu russischen Atomgeschäften
+989	2025-12-18	2025-12-18	21/50	stored	Zurückweisung von Einsprüchen gegen die Bundestagswahl
+990	2025-12-19	2025-12-19	21/51	stored	Ablehnung der Streichung von Erbschaftsteuer-Privilegien
+991	2025-12-19	2025-12-19	21/51	stored	Gesetzentwurf zum Verbrauchervertrags- und Versicherungsvertragsrecht
+992	2026-01-29	2026-01-29	21/56	stored	Bundeswehreinsatz gegen den „Islamischen Staat“
+993	2026-01-29	2026-01-29	21/56	stored	Streichung des Straftatbestandes der Politikerbeleidigung
+994	2026-02-27	2026-02-27	21/60	stored	GEAS-Anpassungsgesetz
+995	2026-03-05	2026-03-05	21/62	stored	Umgestaltung des Bürgergelds zu neuer Grundsicherung
+996	2026-03-25	2026-03-25	21/67	stored	Ablehnung eines Antrags zur Reform der Einbürgerungspolitik
+997	2026-03-26	2026-03-26	21/68	stored	Ablehnung eines Antrags zu Energiepreisschocks durch den Irankrieg
+998	2026-03-26	2026-03-26	21/68	stored	Änderung des Siebten Buches Sozialgesetzbuch (Sicherheitsbeauftragte)
+999	2026-04-24	2026-04-24	21/75	stored	Gesetzentwurf zur temporären Absenkung der Energiesteuer für Kraftstoffe
+1000	2026-04-24	2026-04-24	21/75	stored	Gesetzentwurf der Grünen zur Änderung der Stromsteuer
+1001	2026-04-24	2026-04-24	21/75	stored	Ablehnung eines Antrags zur Entlastung berufstätiger Pendler
+1002	2026-04-24	2026-04-24	21/75	stored	Ablehnung eines Antrags zur Übergewinnsteuer
+1003	2026-05-08	2026-05-08	21/78	stored	Ablehnung eines Antrags zum Mehrjährigen Finanzrahmen der EU
+1004	2026-05-22	2026-05-22	21/81	stored	Ablehnung eines Antrags zur Arzneimittelversorgung
+1005	2026-06-11	2026-06-11	21/83	stored	Ablehnung eines Antrags zur BAföG-Reform
+1006	2026-06-11	2026-06-11	21/83	stored	Bundeswehreinsatz in Bosnien und Herzegowina (Eufor Althea)
+1007	2026-06-11	2026-06-11	21/83	stored	Bundeswehreinsatz in Kosovo (KFOR)
+1008	2026-06-11	2026-06-11	21/83	stored	Jahresemissionsgesamtmengen-Verordnung 2031-2040
+1009	2026-06-12	2026-06-12	21/84	stored	Gesetzentwurf zur Verhinderung missbräuchlicher Anerkennungen der...
+1010	2026-06-25	2026-06-25	21/86	stored	Bundeswehreinsatz im Libanon (UNIFIL)
+1011	2026-07-08	2026-07-08	21/88	stored	Zusätzliche militärische und humanitäre Stärkung der Ukraine
+1012	2026-07-09	2026-07-09	21/89	stored	Einführung eines allgemeinen Straßen-Tempolimits von 130 km/h
+1013	2026-07-10	2026-07-10	21/90	stored	Finanzreform der Gesetzlichen Krankenversicherung
+1014	2026-07-10	2026-07-10	21/90	stored	Erster Entschließungsantrag der Linken zur GKV-Finanzreform
+1015	2026-07-10	2026-07-10	21/90	stored	Zweiter Entschließungsantrag der Linken zur GKV-Finanzreform
+1016	2026-07-10	2026-07-10	21/90	stored	Dritter Entschließungsantrag der Linken zur GKV-Finanzreform
+1017	2026-07-10	2026-07-10	21/90	stored	Vierter Entschließungsantrag der Linken zur GKV-Finanzreform
+1018	2026-07-10	2026-07-10	21/90	stored	Änderung des Gebäudeenergiegesetzes
+1019	2026-07-10	2026-07-10	21/90	stored	Ablehnung des Antrags der Linken 'Krankenversicherte entlasten, nicht...
+1020	2026-07-10	2026-07-10	21/90	stored	Sportfördergesetz der Bundesregierung
+1021	2026-09-24	2026-09-24	21/96	stored	Klimaanpassung und Naturschutz im Grundgesetz verankern
+1022	2026-09-25	2026-09-25	21/97	stored	Modernisierung des Bundespolizeigesetzes
+1023	2026-09-25	2026-09-25	21/97	stored	Tankrabatt (Art. 11, 12 und 13 Abs. 4 Energiesteuergesetz)
+1024	2026-09-25	2026-09-25	21/97	stored	Entschließungsantrag der Grünen zur Übergewinnsteuer
+1025	2026-10-08	2026-10-08	21/99	stored	Ablehnung eines Antrags zur Besteuerung von Immobilienkonzernen
+1026	2026-10-08	2026-10-08	21/99	stored	Ablehnung eines Antrags zur Erbschaft- und Schenkungsteuer
+1027	2026-10-08	2026-10-08	21/99	stored	Ablehnung eines Antrags zur Bekämpfung von Cum-Cum und Cum-Ex
+1028	2026-10-08	2026-10-08	21/99	stored	Ablehnung eines Antrags zur 300-Wohneinheiten-Regelung in der Erbschaftsteu...
+1029	2026-10-08	2026-10-08	21/99	stored	Gesetzentwurf zur Immobilienbesteuerung
+1030	2026-10-08	2026-10-08	21/99	stored	Gesetzentwurf zur Besteuerung von Immobilienverkäufen
+1031	2026-10-08	2026-10-08	21/99	stored	Gesetzentwurf zur Besteuerung von Kryptowerten
+1032	2026-10-08	2026-10-08	21/99	stored	Änderungsantrag zur Kassenzulassung des nicht-invasiven Pränataltests
+1033	2026-10-08	2026-10-08	21/99	stored	Antrag zur Kassenzulassung des nicht-invasiven Pränataltests
+1034	2026-10-08	2026-10-08	21/99	stored	Entschließung zur Schienenausbaustrecke Hannover - Hamburg
+1035	2026-10-15	2026-10-15	21/102	stored	Bundeswehreinsatz im Roten Meer (Eunavfor Aspides)
+1036	2026-10-15	2026-10-15	21/102	stored	Bundeswehreinsatz im Südsudan (Unmiss)
+1037	2026-10-15	2026-10-15	21/102	stored	Änderung des Brennstoffemissionshandelsgesetzes
+1038	2026-11-12			list_only_newer_than_store_21/108	Startchancen- und Qualitätsentwicklungsgesetz
+1039	2026-11-12			list_only_newer_than_store_21/108	Entschließungsantrag der Linken zum Startchancengesetz
+1040	2026-11-12			list_only_newer_than_store_21/108	Reform des Erneuerbare-Energien-Gesetzes
+1041	2026-11-12			list_only_newer_than_store_21/108	Bundeswehreinsatz im Mittelmeer (Eunavfor Med Irini)
+1042	2026-11-12			list_only_newer_than_store_21/108	Antrag der Linken zur Ausgestaltung des Unterhaltsvorschusses
+1043	2026-11-13			list_only_newer_than_store_21/109	Erster Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts
+1044	2026-11-13			list_only_newer_than_store_21/109	Zweiter Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts
+1045	2026-11-13			list_only_newer_than_store_21/109	Gesetzentwurf zur Reform des Nachrichtendienstrechts
+1046	2026-11-13			list_only_newer_than_store_21/109	Bundeswehreinsatz im Mittelmeer (Sea Guardian)

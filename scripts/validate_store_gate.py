@@ -16,7 +16,8 @@ checks, in order:
 2. Order independence: a fresh store from all cached reports, and a store built
    from every other report and then replayed with all of them, must group the
    person bindings into persons identically (``grouping_fingerprint``). All three
-   run database-only on clones of ``data/`` under SCRATCH, each as an online build
+   run database-only on clones of ``data/`` under SCRATCH (with the cached
+   MdB-Stammdaten copied to each clone's private directory), each as an online build
    with ``--enrich mp-roster`` would, the DIP roster answered from
    ``data/dip-person-cache.json`` (``CachedRoster``). The fresh store must list the
    input store's roster records, and the replayed store must group the fresh
@@ -63,6 +64,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from dip_cache import PERSON_FILENAME  # noqa: E402
+from sqlite_open import open_readonly  # noqa: E402
 from stable_ids import key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
 STORE = Path("data") / "bundestag-pulse.sqlite"
@@ -74,12 +76,8 @@ _LINK = re.compile(r'\b(?:href|src)\s*=\s*"([^"]*)"')
 _ID = re.compile(r'\bid\s*=\s*"([^"]*)"')
 
 
-def _open_readonly(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True)
-
-
 def binding_ids(database_path: Path) -> set[str]:
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return {row[0] for row in conn.execute("SELECT id FROM person_bindings")}
     finally:
@@ -92,7 +90,7 @@ def grouping_fingerprint(database_path: Path, *, only: set[str] | None = None) -
     ids, and the sorted list of those groups is hashed. ``only`` restricts it to
     those bindings (a replayed store also keeps the bindings of retired
     occurrences, which a fresh store cannot have)."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         groups: dict[str, list[str]] = {}
         for binding_id, person_id in conn.execute("SELECT id, person_id FROM person_bindings"):
@@ -115,7 +113,7 @@ def dip_person_occurrences(database_path: Path) -> set[tuple[str, int]]:
     DIP persons the build saw and which of them the roster listed as MdBs. A
     record of this build has an ``mps`` row; a retired one keeps only its binding."""
     prefix = key_prefix("roster")
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return {(row[0], int(row[1])) for row in conn.execute(
             "SELECT b.id, m.is_mdb FROM person_bindings b JOIN mps m ON m.id = b.record_id WHERE substr(b.id, 1, ?) = ?",
@@ -136,7 +134,7 @@ def person_pages(database_path: Path, *, only: set[str] | None = None) -> dict[s
     restricts them); a person holding none of them keys on all of its own."""
     import build_dip_pulse_site as site
 
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     conn.row_factory = sqlite3.Row
     try:
         bindings: dict[str, list[str]] = {}
@@ -241,7 +239,7 @@ def check_export(output_dir: Path) -> dict[str, Any]:
             problems.append(f"{entry['name']}: listed in the manifest, missing in {generation.name}")
         elif path.stat().st_size != entry["bytes"] or _sha256(path) != entry["sha256"]:
             problems.append(f"{entry['name']}: size or sha256 differs from the manifest")
-    conn = _open_readonly(Path(output_dir) / "data" / "bundestag-pulse.sqlite")
+    conn = open_readonly(Path(output_dir) / "data" / "bundestag-pulse.sqlite")
     try:
         store = {
             "protocols": conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0],
@@ -265,7 +263,7 @@ def store_counts(database_path: Path) -> dict[str, Any]:
     """The row counts the receipt records, plus Beiträge per kind. The withheld
     tables (schema 12, ADR 0005) read as None in a store from before them: the
     gate counts the owner's store before the replay that upgrades it."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         counts = {
             table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -295,7 +293,7 @@ def store_counts(database_path: Path) -> dict[str, Any]:
 
 
 def integrity(database_path: Path) -> dict[str, Any]:
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         check = [row[0] for row in conn.execute("PRAGMA integrity_check")]
         violations = conn.execute("PRAGMA foreign_key_check").fetchall()
@@ -313,7 +311,7 @@ def withheld_also_counted(database_path: Path) -> list[str]:
     names the Rede it answers, and it stays counted when that Rede is withheld.
     The parent is compared exactly: when only a split part ``R:n`` is withheld,
     the outer ``R`` stays stored (D4) and may have Beiträge."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
             "SELECT w.protocol_id, w.rede_id FROM withheld_units w WHERE EXISTS (SELECT 1 FROM speeches s "
@@ -328,7 +326,7 @@ def withheld_without_redner_id(database_path: Path) -> list[str]:
     """Up to five withheld Reden with no Redner-ID. erste-reden binds a withheld
     Rede to its speaker by Redner-ID (ADR 0005 "Facts"); one without binds no
     one, so the owner reads it before the gate passes."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return [f"{protocol_id} {rede_id}" for protocol_id, rede_id in conn.execute(
             "SELECT protocol_id, rede_id FROM withheld_units WHERE xml_redner_id IS NULL OR TRIM(xml_redner_id) = '' "
@@ -342,7 +340,7 @@ def abweichler_count_mismatches(database_path: Path) -> list[str]:
     members' persisted Abweichungen. Persist writes both from one derive call,
     so a difference is a registry merge folding two listed members into one
     row, or a writer that skipped one of the columns."""
-    conn = _open_readonly(database_path)
+    conn = open_readonly(database_path)
     try:
         return [f"{vote_id} abweichler_count {count}, SUM(abweichung) {total}" for vote_id, count, total in conn.execute(
             "SELECT v.id, v.abweichler_count, COALESCE(SUM(vm.abweichung), 0) FROM votes v "
@@ -398,20 +396,27 @@ class CachedRoster:
 def _wahlperioden(record: dict[str, Any]) -> set[int]:
     value = record.get("wahlperiode")
     values = value if isinstance(value, list) else [value]
-    return {int(number) for number in values if isinstance(number, int) or (isinstance(number, str) and number.isdigit())}
+    # bool is an int subclass: true is no Wahlperiode 1.
+    return {int(number) for number in values
+            if (isinstance(number, int) and not isinstance(number, bool)) or (isinstance(number, str) and number.isdigit())}
+
+
+class CachedRosterError(ValueError):
+    """The person cache the gate's fresh build reads its roster from is missing
+    or is not a person cache: bad input, reported without a traceback."""
 
 
 def cached_roster(output_dir: Path) -> CachedRoster:
     """Every /person record ``data/dip-person-cache.json`` holds, whatever its age
-    (the gate rebuilds a store from them, it fetches nothing). Raises ValueError
-    when the file is missing or not a person cache."""
+    (the gate rebuilds a store from them, it fetches nothing). Raises
+    CachedRosterError when the file is missing or not a person cache."""
     path = output_dir / "data" / PERSON_FILENAME
     try:
         persons = json.loads(path.read_text(encoding="utf-8")).get("persons")
     except (OSError, ValueError, AttributeError) as exc:
-        raise ValueError(f"no readable DIP person cache at {path}: {exc}") from None
+        raise CachedRosterError(f"no readable DIP person cache at {path}: {exc}") from None
     if not isinstance(persons, dict):
-        raise ValueError(f"{path} holds no persons object")
+        raise CachedRosterError(f"{path} holds no persons object")
     return CachedRoster([entry["record"] for _key, entry in sorted(persons.items())
                          if isinstance(entry, dict) and isinstance(entry.get("record"), dict)])
 
@@ -453,7 +458,14 @@ def _require_disjoint_paths(source: Path, target: Path) -> None:
 
 def _data_clone(source: Path, target: Path) -> Path:
     """A copy of ``source/data`` under ``target`` without its store: an APFS clone
-    where the file system offers one."""
+    where the file system offers one. The source's cached MdB-Stammdaten
+    (``mdb-stammdaten.*`` in its private directory) go to the clone's private
+    directory, so the clone's rebuild re-files the Stimmen as the input store
+    does; a stale copy there from an earlier run is removed first. Raises
+    ValueError when the source caches the file and the clone ends up without it."""
+    import person_registry as registry
+    import stammdaten
+
     _require_disjoint_paths(source, target)
     if target.exists():
         shutil.rmtree(target)
@@ -463,6 +475,21 @@ def _data_clone(source: Path, target: Path) -> Path:
     for path in (target / "data").glob("bundestag-pulse.sqlite*"):
         path.unlink()
     shutil.rmtree(target / "data" / "exports", ignore_errors=True)
+    source_private = registry.private_dir(source / STORE)
+    target_private = registry.private_dir(target / STORE)
+    _require_disjoint_paths(source_private, target_private)
+    cached = sorted(source_private.glob("mdb-stammdaten.*")) if source_private.is_dir() else []
+    if target_private.is_dir():
+        for stale in target_private.glob("mdb-stammdaten.*"):
+            stale.unlink()
+    if cached:
+        registry.ensure_private_dir(target_private)
+        for path in cached:
+            shutil.copy2(path, target_private / path.name)
+    if (source_private / stammdaten.CACHE_NAME).is_file() and not (target_private / stammdaten.CACHE_NAME).is_file():
+        raise ValueError(f"the source caches the MdB-Stammdaten ({source_private / stammdaten.CACHE_NAME}), but the clone's "
+                         f"private directory {target_private} holds no copy, so the clone's rebuild would leave every "
+                         "Stimme under the group its roll-call page lists")
     return target
 
 
@@ -491,6 +518,20 @@ def order_independence(output_dir: Path, scratch: Path, today: str) -> dict[str,
     return result
 
 
+def input_snapshot(database_path: Path) -> dict[str, Any]:
+    """The input store as the replay finds it: its bindings, their grouping, its
+    Personenseiten and its DIP person occurrences, which an unchanged replay must
+    reproduce. The snapshot runs the current code on a store the replay has not
+    upgraded yet, so a store whose schema lacks what that code reads (or that is
+    no SQLite file) gives ``{"unavailable": cause}``, which fails
+    ``replay_vs_input`` with that cause instead of ending the gate unreceipted."""
+    try:
+        return {"bindings": binding_ids(database_path), "grouping": grouping_fingerprint(database_path),
+                "pages": person_pages(database_path), "roster": dip_person_occurrences(database_path)}
+    except sqlite3.DatabaseError as exc:  # OperationalError: a missing table or column
+        return {"unavailable": f"{type(exc).__name__}: {exc}"}
+
+
 def replay_vs_input(input_store: dict[str, Any] | None, database_path: Path) -> dict[str, Any]:
     """The replayed store against the input store it replayed: the same grouping of
     the input's bindings into persons, and the same Personenseiten with the same
@@ -499,6 +540,8 @@ def replay_vs_input(input_store: dict[str, Any] | None, database_path: Path) -> 
     that moves persons on purpose shows its moves here."""
     if input_store is None:
         return {"equal": False, "reason": "no input store to compare the replay with"}
+    if "unavailable" in input_store:
+        return {"equal": False, "reason": f"the input store's snapshot is unavailable: {input_store['unavailable']}"}
     grouping = grouping_fingerprint(database_path, only=input_store["bindings"])
     pages = compare_pages(input_store["pages"], person_pages(database_path, only=input_store["bindings"]))
     return {"equal": grouping == input_store["grouping"] and pages["equal"],
@@ -546,13 +589,17 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
     database_path = output_dir / STORE
     input_store: dict[str, Any] | None = None
     if database_path.exists():
-        receipt["counts_before"] = store_counts(database_path)
+        try:
+            receipt["counts_before"] = store_counts(database_path)
+        except sqlite3.DatabaseError as exc:
+            receipt["counts_before"] = {"unavailable": f"{type(exc).__name__}: {exc}"}
         # The input store as the replay finds it: an unchanged replay must
         # reproduce its grouping and every page's counts.
         started_snapshot = time.monotonic()
-        input_store = {"bindings": binding_ids(database_path), "grouping": grouping_fingerprint(database_path),
-                       "pages": person_pages(database_path), "roster": dip_person_occurrences(database_path)}
+        input_store = input_snapshot(database_path)
         receipt["input_snapshot_seconds"] = round(time.monotonic() - started_snapshot, 1)
+        if "unavailable" in input_store:
+            receipt["input_snapshot_unavailable"] = input_store["unavailable"]
     checks: dict[str, bool] = {}
 
     receipt["replay"] = replay(output_dir, today, scratch / "replay.log")
@@ -585,7 +632,7 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         # this compares with a fresh build of the same reports and roster.
         if "grouping" in receipt["order_independence"]["fresh"]:
             receipt["replay_vs_fresh"] = replay_vs_fresh(
-                scratch / "fresh" / STORE, database_path, input_store["roster"] if input_store else None)
+                scratch / "fresh" / STORE, database_path, input_store.get("roster") if input_store else None)
         else:
             receipt["replay_vs_fresh"] = {"equal": False, "roster": {"equal": False},
                                           "reason": "the fresh build failed (order_independence.fresh)"}
@@ -642,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.persist_only:
         try:
             persist_only(output_dir, args.today)
-        except ValueError as exc:
+        except CachedRosterError as exc:
             print(f"ERROR [gate]: {exc}", file=sys.stderr)
             return 2
         return 0

@@ -22,8 +22,11 @@ if __name__ == "__main__":
 
     require_supported_python()
 
+import http.client
 import json
+import os
 import re
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -44,16 +47,33 @@ BIO_VERSION = 2
 # The API page's fair-use rule (read 2026-11-12): at most 30 requests a minute
 # per IP address and at most one a second; on HTTP 429, slow down and retry
 # after a short wait, "z.B. 60 Sekunden". A steady 2 s interval keeps to 30 a
-# minute; a 429 waits 60 s before the retry.
+# minute; each 429 waits 60 s before the retry, up to MAX_RETRIES retries.
 DEFAULT_MIN_INTERVAL = 2.0
 MAX_RETRIES = 4
-BACKOFF_BASE_SECONDS = 60.0
-MAX_BACKOFF_SECONDS = 60.0
+HTTP_429_WAIT_SECONDS = 60.0
 
-# Give up entirely after this many consecutive connection failures or error
-# replies, so a real outage, or an API that answers every query with an error,
-# does not stall the build. HTTP 429 and other HTTP errors do not count.
+# Give up entirely after this many consecutive connection failures (a refused or
+# dropped connection, a timeout, a reply cut short) or error replies, so a real
+# outage, or an API that answers every query with an error, does not stall the
+# build. HTTP 429 and other HTTP errors do not count.
 MAX_CONSECUTIVE_FAILURES = 8
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write ``text`` beside ``path`` under a temporary name of its own and rename
+    it over ``path``: a run stopped mid-write leaves the previous file, never a
+    truncated one, and two writers never share a temporary file (the last rename
+    wins). The file is world-readable, as ``write_text`` made it under umask 022."""
+    handle, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            os.fchmod(out.fileno(), 0o644)  # mkstemp makes it 0600
+            out.write(text)
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 class AbgeordnetenwatchError(Exception):
@@ -260,14 +280,9 @@ class AbgeordnetenwatchResolver:
             "by_name": self._by_name,
             "by_bio": self._by_bio,
         }
-        # Written beside the cache and renamed over it: a run stopped mid-write
-        # leaves the previous cache, never a truncated one that loads as empty.
-        temporary = self.cache_path.with_name(self.cache_path.name + ".tmp")
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(self.cache_path)
+        # A run stopped mid-write leaves the previous cache, never a truncated one
+        # that loads as empty.
+        write_text_atomic(self.cache_path, json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
         self._dirty = False
 
     # -- API -----------------------------------------------------------------
@@ -304,7 +319,8 @@ class AbgeordnetenwatchResolver:
             self._call_failed = True
             self.last_error = f"not asked: stopped after {MAX_CONSECUTIVE_FAILURES} failures in a row"
             return None
-        for attempt in range(MAX_RETRIES + 1):
+        retries = 0
+        while True:
             self._throttle()
             req = urllib.request.Request(
                 url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
@@ -314,12 +330,17 @@ class AbgeordnetenwatchResolver:
                 with urllib.request.urlopen(req, timeout=self.timeout) as res:
                     payload = json.loads(res.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 and attempt < MAX_RETRIES:
+                # The last 429 lands here too and is recorded as "HTTP 429".
+                if exc.code == 429 and retries < MAX_RETRIES:
+                    retries += 1
                     self.stats["throttled"] += 1
-                    time.sleep(min(BACKOFF_BASE_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS))
+                    time.sleep(HTTP_429_WAIT_SECONDS)
                     continue
                 return self._note_failure(f"HTTP {exc.code}", counts=False)
-            except (urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            except (OSError, http.client.HTTPException, ValueError) as exc:
+                # URLError, a timeout, a refused or reset connection
+                # (OSError); a reply cut short or a connection closed without
+                # one (HTTPException); a body that is no JSON (ValueError).
                 return self._note_failure(f"{type(exc).__name__}: {exc}", counts=True)
             meta = payload.get("meta") if isinstance(payload, dict) else None
             if not isinstance(meta, dict) or meta.get("status") != "ok":
@@ -331,7 +352,6 @@ class AbgeordnetenwatchResolver:
             self._consecutive_failures = 0
             data = payload.get("data")
             return data if isinstance(data, list) else []
-        return self._note_failure("HTTP 429 after every retry", counts=False)
 
     def _resolve_by_name(
         self, first_name: str | None, last_name: str | None, fraktion: Any
@@ -366,7 +386,8 @@ class AbgeordnetenwatchResolver:
         answer taken from the cache. A cached answer is used unless ``refresh``,
         which asks again; ``cached_state`` and ``cached_profile`` report what the
         cache held before the call either way. Only an answer is cached, never a
-        failure, so a failure leaves the cached answer in place."""
+        failure, so a failure leaves the cached answer in place. A disabled
+        resolver answers as with ``network=False``."""
         key = str(ext_id).strip() if ext_id is not None else ""
         if not key:
             raise ValueError("lookup_ext_id needs a nonblank id")
@@ -375,7 +396,7 @@ class AbgeordnetenwatchResolver:
             cached_state = "miss" if cached_profile is None else "hit"
         else:
             cached_profile, cached_state = None, "not_cached"
-        if not network or (cached_state != "not_cached" and not refresh):
+        if not network or not self.enabled or (cached_state != "not_cached" and not refresh):
             return ExtIdLookup(cached_state, cached_profile, None, cached_state, cached_profile)
         data = self._get({"ext_id_bundestagsverwaltung": key})
         if data is None:

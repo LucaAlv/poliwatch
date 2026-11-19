@@ -49,6 +49,16 @@ def _another_group(path: Path) -> int | None:
     return None
 
 
+def _with_field(result: os.stat_result, index: int, value: int) -> os.stat_result:
+    """``result`` with one of its ten positional fields replaced; the named
+    extras (float times, st_blksize, ...) are kept."""
+    fields = list(result)
+    fields[index] = value
+    positional = {"st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size"}
+    extras = {name: getattr(result, name) for name in dir(result) if name.startswith("st_") and name not in positional}
+    return os.stat_result(fields, extras)
+
+
 class PrivateStagingTests(RegistryFixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
@@ -285,6 +295,113 @@ class PrivateStagingTests(RegistryFixture, unittest.TestCase):
         self.assertTrue(any(p.name.endswith("-local.csv.gz") for p in files))
         for path in files:
             self.assertEqual(path.stat().st_mode & 0o044, 0o044, f"{path.relative_to(exports_dir)} is {oct(path.stat().st_mode)}")
+
+    def export(self, db, exports_dir):
+        with mock.patch.object(build.build_revision, "authored_inputs_problem", return_value=None):
+            return build.export_distribution_data(db, exports_dir, mp_lookup={}, readiness=READINESS, catalog_count=2,
+                                                  dossier_count=2, license_text="", commit="abc123")
+
+    # Value: protects=ensure_private_dir repairs group and other read bits too, so file names in a private directory created under umask 022 (or found at 0755) are not listed to other users; fails_when=the repair tests only 0o022, leaving a 0755 directory as it is; why_new=the repair covered write bits only; seam=none
+    def test_a_world_readable_private_dir_is_repaired(self):
+        own = self.root / "own"
+        own.mkdir()
+        for mode in (0o755, 0o750, 0o701):
+            with self.subTest(mode=oct(mode)):
+                own.chmod(mode)
+                self.assertEqual(registry.ensure_private_dir(own), own)
+                self.assertEqual(stat.S_IMODE(own.stat().st_mode), 0o700)
+
+    # Value: protects=an export run before any writer lock, under the usual umask 022, leaves the private directory and exports/ at 0700; fails_when=export_distribution_data mkdirs the work directory with parents=True (the parent takes the umask, 0755) and nothing repairs read bits; why_new=a standalone export left .OUTPUT.private at 0755; seam=none
+    def test_an_export_under_umask_022_leaves_a_private_dir_others_cannot_read(self):
+        db = self.root / "pulse.sqlite"
+        _daten_fixture.seed_store(db)
+        old = os.umask(0o022)
+        self.addCleanup(os.umask, old)
+        self.assertFalse(self.private.exists())
+        self.export(db, self.output / "data" / "exports")
+        for directory in (self.private, self.private / "exports"):
+            self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700, directory)
+
+    # Value: protects=a symlinked private directory stops an export before anything is created in the link's target; fails_when=the work directory is made with mkdir(parents=True, exist_ok=True) first, so the decoy gets an empty exports/ before the refusal; why_new=only the symlinked exports/ case was tested; seam=none
+    def test_a_symlinked_private_dir_gets_no_exports_dir_before_the_refusal(self):
+        db = self.root / "pulse.sqlite"
+        _daten_fixture.seed_store(db)
+        decoy = self.root / "decoy"
+        decoy.mkdir()
+        self.private.symlink_to(decoy)
+        with self.assertRaisesRegex(PermissionError, "symbolic link"):
+            self.export(db, self.output / "data" / "exports")
+        self.assertEqual(list(decoy.iterdir()), [])
+
+    # Value: protects=a dangling exports symlink in the private directory is refused with the symlink reason; fails_when=mkdir(exist_ok=True) meets the link first and reports a bare "File exists"; why_new=the work directory was not created through ensure_private_dir; seam=none
+    def test_a_dangling_exports_symlink_names_the_symlink(self):
+        db = self.root / "pulse.sqlite"
+        _daten_fixture.seed_store(db)
+        exports_dir = self.output / "data" / "exports"
+        self.private.mkdir(mode=0o700)
+        work = build.export_work_dir(exports_dir)
+        work.symlink_to(self.root / "nowhere")
+        with self.assertRaisesRegex(PermissionError, "symbolic link"):
+            self.export(db, exports_dir)
+        self.assertFalse((self.root / "nowhere").exists())
+
+    # Value: protects=a failing chmod of a table CSV's temp file closes the fd and removes the temp file; fails_when=os.fchmod runs before the try that unlinks it, so the 0600 temp file and its fd leak into the export scratch directory; why_new=the fchmod sat outside the cleanup; seam=build.os.fchmod raises
+    def test_a_failing_csv_chmod_leaves_no_temp_file(self):
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO t VALUES (1, 'a')")
+        target = self.root / "out"
+        target.mkdir()
+        with mock.patch.object(build.os, "fchmod", side_effect=OSError(1, "Operation not permitted")) as fchmod:
+            with self.assertRaisesRegex(OSError, "Operation not permitted"):
+                build._write_csv(conn, "t", [{"name": "id", "pk": 1}, {"name": "v", "pk": 0}], target / "t.csv.gz")
+        self.assertEqual(list(target.iterdir()), [])
+        fd = fchmod.call_args.args[0]
+        with self.assertRaises(OSError):  # the fd is closed, not leaked
+            os.fstat(fd)
+
+    # Value: protects=a private directory on another file system than the store stops the rebuild before staging, with the reason, and leaves the store as it was; fails_when=the st_dev check is dropped, so the staged copy is written across file systems and the final rename fails (EXDEV) after a full rebuild, or is not atomic; why_new=the refusal had no test; seam=Path.stat reports another st_dev for the private directory
+    def test_a_private_dir_on_another_file_system_is_refused(self):
+        self.rebuild([report()])
+        before = self.db.read_bytes()
+        real_stat = Path.stat
+        private = self.private
+
+        def stat_(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if path == private:
+                return _with_field(result, stat.ST_DEV, result.st_dev + 1)
+            return result
+
+        with mock.patch.object(build.pulse_store, "persist_report") as persist, mock.patch.object(Path, "stat", stat_):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "another file system"):
+                self.rebuild([report(), report(pid="s2")])
+        persist.assert_not_called()
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertEqual(self.staged_leftovers(), [])
+
+    # Value: protects=the staged copy is given the store's group at staging and again at the swap, also on a user with one group (single-group CI, where the real-chown tests skip); fails_when=_keep_store_group's chown is dropped or not called for the staged copy, so a store chgrp'ed to the web server's group loses that group; why_new=both group-keeping tests skip without a second group; seam=Path.stat gives the store another gid, build.os.chown records instead of changing the group
+    def test_the_staged_copy_is_chowned_to_the_store_group_without_a_second_group(self):
+        self.rebuild([report()])
+        real_stat = Path.stat
+        db = self.db
+        gid = db.stat().st_gid + 1
+
+        def stat_(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if path == db:
+                return _with_field(result, stat.ST_GID, gid)
+            return result
+
+        for write in (lambda: self.rebuild([report(), report(pid="s2")]),
+                      lambda: build._write_facts_staged(self.db, self.EMPTY_SNAPSHOT)):
+            with self.subTest(write=write), mock.patch.object(Path, "stat", stat_), \
+                    mock.patch.object(build.os, "chown") as chown:
+                write()
+            staged = [call.args for call in chown.call_args_list if build._is_staged_copy(self.db.name, Path(call.args[0]).name)]
+            self.assertGreaterEqual(len(staged), 2, chown.call_args_list)  # at staging and at the swap
+            self.assertEqual({(args[1], args[2]) for args in staged}, {(-1, gid)})
 
 
 if __name__ == "__main__":

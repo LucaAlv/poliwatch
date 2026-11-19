@@ -1,0 +1,544 @@
+{
+  "_about": "Findings of tests/test_code_rules.py that the rules allow. or_zero is frozen at the rule's introduction (2026-11-18): entries are only lowered or removed, never added. nullable_comparisons lists each audited comparison with why it is right, or the TODO that fixes it.",
+  "or_zero": {
+    "reason": "Predate the rule and are not audited yet: TODOS.md \"Audit the or-0 baseline\".",
+    "entries": [
+      {
+        "file": "scripts/abgeordnetenwatch.py",
+        "function": "_bio_from_mandates.period_id",
+        "expression": "_int_or_none(period.get('id')) or _int_or_none(mandate.get('id')) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "_fraction_position",
+        "expression": "counts.get(key) or 0",
+        "count": 2
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "annotate_report_acquisition",
+        "expression": "(report.get('summary_generation') or {}).get('invalid_cache_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "annotate_report_acquisition",
+        "expression": "prior_votes.get('records') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "annotate_report_acquisition",
+        "expression": "prior_votes.get('rejected') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "build_publication_manifest.aggregate_report_domain",
+        "expression": "fact.get('records') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "build_publication_manifest.aggregate_report_domain",
+        "expression": "fact.get('rejected') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "build_publication_manifest.aggregate_report_domain",
+        "expression": "fact.get('reused') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "build_publication_manifest.aggregate_report_domain",
+        "expression": "fact.get(key) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "collect_abgeordnete",
+        "expression": "mp['speech_count'] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "collect_abgeordnete",
+        "expression": "row['char_count'] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "collect_bill_pages",
+        "expression": "item.get('xml_speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "collect_bill_pages",
+        "expression": "speaker.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "collect_bill_pages",
+        "expression": "speaker.get('speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "collect_bill_pages",
+        "expression": "speech.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "has_abgeordnete_page",
+        "expression": "mp.get('contribution_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "has_abgeordnete_page",
+        "expression": "mp.get('speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "has_spoken",
+        "expression": "mp.get('contribution_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "has_spoken",
+        "expression": "mp.get('speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "keep_cached_dossier_when_votes_failed",
+        "expression": "fresh.get('records') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "reconcile_generated_and_cached_summaries",
+        "expression": "raw.get('eligible') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "reconcile_generated_and_cached_summaries",
+        "expression": "raw.get('failed') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "reconcile_generated_and_cached_summaries",
+        "expression": "raw.get('generated') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_abgeordnete_detail",
+        "expression": "mp.get('speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_abgeordnete_index",
+        "expression": "mp.get('speech_count') or 0",
+        "count": 6
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_bill_detail",
+        "expression": "speaker.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_bill_detail",
+        "expression": "speaker.get('speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_daten_datenstand",
+        "expression": "_share(held_words, stored_words) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_overview",
+        "expression": "i.get('xml_speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_votes_card",
+        "expression": "stats.get('vote_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "render_votes_card",
+        "expression": "stats.get('vote_top_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "resolve_fact_citation",
+        "expression": "fact_row.get('denominator') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "resolve_fact_citation",
+        "expression": "resolved['no_count'] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/build_dip_pulse_site.py",
+        "function": "resolve_fact_citation",
+        "expression": "resolved['yes_count'] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/compare_store_values.py",
+        "function": "_compare_maps",
+        "expression": "row[1] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/compare_store_values.py",
+        "function": "_compare_maps",
+        "expression": "row[2] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/compare_store_values.py",
+        "function": "_vote_figure_rows",
+        "expression": "count or 0",
+        "count": 2
+      },
+      {
+        "file": "scripts/compare_store_values.py",
+        "function": "measure",
+        "expression": "chars or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/compare_store_values.py",
+        "function": "measure",
+        "expression": "mdb or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/derive.py",
+        "function": "fraction_position",
+        "expression": "(counts or {}).get(key) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/derive.py",
+        "function": "majority_vote",
+        "expression": "(counts or {}).get(key) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/derive.py",
+        "function": "merge_fractions",
+        "expression": "counts.get(key) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/derive.py",
+        "function": "merge_fractions",
+        "expression": "fraction.get('total') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/extract_demo_fixture.py",
+        "function": "extract_report",
+        "expression": "speech.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "_citation",
+        "expression": "row.get('denominator') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "_citation",
+        "expression": "row.get('no_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "_citation",
+        "expression": "row.get('yes_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "_observe_grouped_extreme",
+        "expression": "row.get('tie_value') or 0.0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "baseline_comparison_line",
+        "expression": "row.get('baseline_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "card_lead",
+        "expression": "citation.get('speech_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/facts.py",
+        "function": "completeness_from_reports",
+        "expression": "summary.get('unmatched_roll_call_vote_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/measure_aw_match_share.py",
+        "function": "measure",
+        "expression": "answer.get('candidates') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "_repoint_party",
+        "expression": "duplicate[name] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "_repoint_party",
+        "expression": "existing[name] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_contributions",
+        "expression": "contribution.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_speeches",
+        "expression": "speech.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_speeches",
+        "expression": "speech.get('paragraph_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_withheld",
+        "expression": "turn.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_withheld",
+        "expression": "turn.get('word_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_withheld",
+        "expression": "unit.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_withheld",
+        "expression": "unit.get('nested_word_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/persist_dip_pulse_store.py",
+        "function": "persist_withheld",
+        "expression": "unit.get('word_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/prefetch_dip_bulk.py",
+        "function": "prefetch_drucksachen",
+        "expression": "s.get('numFound') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/render_dip_pulse_html.py",
+        "function": "item_stats",
+        "expression": "s.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/render_dip_pulse_html.py",
+        "function": "render_sparkline",
+        "expression": "point.get('value') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/render_dip_pulse_html.py",
+        "function": "render_vote_pills",
+        "expression": "counts.get(key) or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/render_dip_pulse_html.py",
+        "function": "render_vote_stack",
+        "expression": "counts.get(key) or 0",
+        "count": 2
+      },
+      {
+        "file": "scripts/render_dip_pulse_html.py",
+        "function": "week_topic_rows",
+        "expression": "row['index'] or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "_read_contradicted_official_result",
+        "expression": "counts.get('no') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "_read_contradicted_official_result",
+        "expression": "counts.get('yes') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "build_report",
+        "expression": "(enrichment.get('api_totals') or {}).get('matched_roll_call_vote_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "fetch_roll_call_vote_detail",
+        "expression": "total.get('no') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "fetch_roll_call_vote_detail",
+        "expression": "total.get('yes') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "interpret_vote",
+        "expression": "counts.get('no') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "interpret_vote",
+        "expression": "counts.get('yes') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "page_sort_key",
+        "expression": "page.get('page') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "summary_source_chunks",
+        "expression": "speech.get('char_count') or 0",
+        "count": 1
+      },
+      {
+        "file": "scripts/validate_dip_protocol.py",
+        "function": "vote_total",
+        "expression": "counts.get(key) or 0",
+        "count": 1
+      }
+    ]
+  },
+  "nullable_comparisons": [
+    {
+      "file": "scripts/build_dip_pulse_site.py",
+      "function": "_fact_speech_citation",
+      "comparison": "speeches.rede_id = ?",
+      "reason": "Runs only behind `if rede_id:`, so the bound value is never None; a speech without a rede id is cited by its page instead."
+    },
+    {
+      "file": "scripts/build_dip_pulse_site.py",
+      "function": "_fact_speech_citation",
+      "comparison": "speeches.page = ?",
+      "reason": "Not intended, latent: only a speech with a synthetic rede id is cited by its page, and none of those has a NULL page in the 2026-11-17 reference store (no receipt resolves by page today). One that did would never resolve. TODOS.md \"Resolve fact citations by id\"."
+    },
+    {
+      "file": "scripts/build_dip_pulse_site.py",
+      "function": "_fact_agenda_item_citation",
+      "comparison": "agenda_items.page_start = ?",
+      "reason": "Not intended: an agenda item with no printed page has a NULL page_start (1,810 items, 106 of them with speeches, in the 2026-11-17 reference store), so its citation never resolves and the fact is dropped. Only two withheld laengste-debatte facts cite such an item today, so no page changes. TODOS.md \"Resolve fact citations by id\"."
+    },
+    {
+      "file": "scripts/build_dip_pulse_site.py",
+      "function": "_fact_proceeding_citation",
+      "comparison": "agenda_items.page_start = ?",
+      "reason": "Not intended: an agenda item with no printed page has a NULL page_start (1,810 items, 106 of them with speeches, in the 2026-11-17 reference store), so its citation never resolves and the fact is dropped. Only two withheld laengste-debatte facts cite such an item today, so no page changes. TODOS.md \"Resolve fact citations by id\"."
+    },
+    {
+      "file": "scripts/build_dip_pulse_site.py",
+      "function": "_fact_vote_citation",
+      "comparison": "votes.detail_url = ?",
+      "reason": "official_url is checked non-empty just above, so the bound value is never None; a vote without a detail_url cannot be the one a URL cites."
+    },
+    {
+      "file": "scripts/persist_dip_pulse_store.py",
+      "function": "require_current_speech_rules",
+      "comparison": "speech_rule_inputs.version != ?",
+      "reason": "Binds the constant speech_kinds.VERSION; a NULL version is caught by the `r.version IS NULL OR` branch of the same WHERE."
+    },
+    {
+      "file": "scripts/persist_dip_pulse_store.py",
+      "function": "_repoint_party",
+      "comparison": "mps.party_id = ?",
+      "reason": "Binds old_id, the id of an existing parties row being merged away, never None; a row without a party (NULL) must not be repointed."
+    },
+    {
+      "file": "scripts/persist_dip_pulse_store.py",
+      "function": "_repoint_party",
+      "comparison": "vote_members.party_id = ?",
+      "reason": "Binds old_id, the id of an existing parties row being merged away, never None; a row without a party (NULL) must not be repointed."
+    },
+    {
+      "file": "scripts/persist_dip_pulse_store.py",
+      "function": "_repoint_party",
+      "comparison": "vote_members.listed_party_id = ?",
+      "reason": "Binds old_id, the id of an existing parties row being merged away, never None; a row without a party (NULL) must not be repointed."
+    },
+    {
+      "file": "scripts/persist_dip_pulse_store.py",
+      "function": "persist_report",
+      "comparison": "votes.protocol_id = ?",
+      "reason": "Binds protocol_id, which persist_report refuses when empty; a vote without a protocol is not this report's."
+    },
+    {
+      "file": "scripts/stammdaten.py",
+      "function": "crosscheck",
+      "comparison": "mdb_zugehoerigkeiten.valid_until = ?",
+      "reason": "Binds the vote's date, already compared with stand_day above, so never None; an open membership (NULL valid_until) has no change on that day, so leaving it out is intended."
+    }
+  ]
+}

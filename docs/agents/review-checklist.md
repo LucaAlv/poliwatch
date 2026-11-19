@@ -11,11 +11,13 @@ The bug classes `/gstack-ship` kept finding between v0.6 and v0.26 after earlier
 
 Done means every class below is either answered for this diff, with the file and line that answers it, or marked not touched by the diff. A class answered "probably fine" is not answered.
 
+`tests/test_code_rules.py` enforces parts of classes 1 and 5, and the import layers, on every test run. A class it covers is answered by a green run for those parts. Review a diff that changes the file's `SQLITE_OPENERS`, `GROUPS`, `LAYERS` or `KNOWN_CYCLES`, or adds to `tests/code_rules_baseline.json`, as an architecture change: check each new `nullable_comparisons` reason against the code. The `or_zero` baseline only shrinks.
+
 **Small diffs** (under 200 changed lines in `git diff --shortstat`, red team's own threshold) answer only the classes whose trigger the diff hits, with no list of untouched ones, and skip the adversarial lenses below. A diff that changes only documentation answers class 11 alone. Ship's small-fix runs have logged no findings, so the full pass there costs more than it finds.
 
 ## Diff classes
 
-1. **Sibling path.** A new guard, refusal or invariant was added to one entry point. Grep every other caller and write path that reaches the same state, and state why each is covered: online, `--offline`, `--repersist`, facts engine, release script. _Example: `run_facts_engine` skipped the distribution-copy refusal that `persist_dip_pulse_store.connect` applies (PR #91)._
+1. **Sibling path.** A new guard, refusal or invariant was added to one entry point. Grep every other caller and write path that reaches the same state, and state why each is covered: online, `--offline`, `--repersist`, facts engine, release script. _Example: `run_facts_engine` skipped the distribution-copy refusal that `persist_dip_pulse_store.connect` applies (PR #91)._ Enforced for SQLite opens: only the openers in `SQLITE_OPENERS` may call `sqlite3.connect`, and only `persist_dip_pulse_store.connect` writes to an existing database. Every other guard still needs the grep.
 
 2. **Stale beats fresh.** A carry-forward, cache or merge can restore an old value over a freshly computed one, or a refetch replaces a record whole and drops fields the old one had. When the fresh value is absent or different, decide whether that means missing data or a changed truth. _Example: `carry_forward_vote_provenance` reverted parser fixes (PR #73). Still open: `cache["vorgaenge"].update(records)` drops cached titel (TODOS.md "B4 review findings: lower-priority edges", item 9)._
 
@@ -23,7 +25,7 @@ Done means every class below is either answered for this diff, with the file and
 
 4. **One key, one function.** Every identity key (vote id, person id, document number, profile URL) is defined by exactly one function that parser, persist, SQL and renderer all use. Try blank, `None`, duplicate and URL-shaped values. _Example: `derive.vote_identity` used the raw id, persist the cleaned one, and `None` became `"None"`; an Abstimmung-page link stored as profile URL folded 63 rows in 11 votes into one person per vote._
 
-5. **Absent vs zero.** For every new query or aggregate, work through NULL, zero rows, a real zero and a missing source. SQL `= ?` never matches NULL (`IS ?`); `x or 0` turns unknown into zero. _Example: NULL `page_quadrant` silently broke citations, and a zero-debut week was dropped from the baseline (9edb6a5)._
+5. **Absent vs zero.** For every new query or aggregate, work through NULL, zero rows, a real zero and a missing source. SQL `= ?` never matches NULL (`IS ?`); `x or 0` turns unknown into zero. _Example: NULL `page_quadrant` silently broke citations, and a zero-debut week was dropped from the baseline (9edb6a5)._ Enforced: no new `or 0`, and no `= ?` / `!= ?` on a store column that can be NULL without a listed reason. Zero rows, aggregates and a missing source still need review.
 
 6. **Derived columns.** When a merge or migration touches stored counts, list every column and page rule derived from them and recompute each. Page logic and SQL logic must count the same way. _Example: `_repoint_party` merged `vote_fractions` but left `leading_vote` stale (9edb6a5)._
 
