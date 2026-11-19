@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.22.0] - 2026-11-19
+
+When an MdB's Mandat appears in the MdB-Stammdaten before their Fraktion does, a roll-call vote on those first days keeps the group the Bundestag page gives instead of being moved to fraktionslos. No figure moves on today's file. An offline replay of the reference store against main gives the same 157 re-filed Stimmen in 87 roll-calls, and no group count, member Fraktion or stored fact changes.
+
+### Fixed
+
+- **A Mandat the Stammdaten list before any Fraktion or Gruppe record no longer proves fraktionslos.** The correction of misfiled roll-call members moved a member to fraktionslos on any Mandat day no membership covered, including the days before the file entered their Fraktion. It now moves nobody before an MdB's first Fraktion or Gruppe record in that Wahlperiode, an explicit "Fraktionslos" record included. Leaving a Fraktion still proves fraktionslos, as for the six MdBs corrected so far.
+- **An MdB with two Mandate in one Wahlperiode keeps the proof of the first one.**
+
 ## [0.46.20.0] - 2026-11-18
 
 An online build that asks DIP again for a Vorgang no longer loses the title and summary it had cached, and the private directory beside a published site is no longer listable by other users. No stored figure moves, because offline replays do not ask DIP. An offline build of the reference store whose private directory was left world-readable still exports and ends with that directory closed to others.
