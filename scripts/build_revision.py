@@ -23,6 +23,9 @@ _RELEASE_REVISION_RE = re.compile(rf"[0-9a-f]{{{REVISION_LENGTH}}}")
 
 # Settings that change the bytes of a patch, pinned on the command line so a
 # user's gitconfig cannot move the hash (command-line -c beats every config file).
+# core.fileMode and core.autocrlf stay unpinned: they decide whether a file
+# counts as changed at all, and git sets them for the checkout's file system, so
+# pinning them would mark a clean checkout on exFAT or with CRLF files dirty.
 _PINNED_CONFIG = (
     "core.abbrev=40",
     "core.quotepath=true",
@@ -39,8 +42,6 @@ _PINNED_CONFIG = (
     "diff.srcPrefix=a/",
     "diff.dstPrefix=b/",
     "diff.ignoreSubmodules=none",
-    "core.autocrlf=false",
-    "core.fileMode=true",
 )
 _DIFF_FLAGS = (
     "diff-index",

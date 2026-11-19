@@ -437,7 +437,7 @@ def build_release_directory(
         problem = staging_problem(staging, manifest, manifest_sha256)
         if problem:
             raise ReleaseError(problem)
-        (staging / "changes.json").write_text(json.dumps(changes, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (staging / "changes.json").write_text(json.dumps(changes, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         (staging / "CHANGES.md").write_text(release_changes.render_markdown(changes), encoding="utf-8")
         _write_checksums(staging)
         if release_dir.exists() or release_dir.is_symlink():

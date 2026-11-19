@@ -14,6 +14,7 @@ Format: docs/data-changelog.md.
 from __future__ import annotations
 
 import json
+import math
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -38,13 +39,22 @@ def _refuse_constant(name: str) -> Any:
     raise ValueError(f"{name} is not a JSON value")
 
 
+def _finite_float(text: str) -> float:
+    """A JSON number as float; an exponent past the float range (``1e999``)
+    would read as infinity, which no strict JSON reader accepts."""
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"{text} is outside the float range")
+    return value
+
+
 def load_authored(path: Path) -> dict[str, Any]:
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise ChangesError(f"cannot read the changes file {path}: {exc}") from exc
     try:
-        return json.loads(text, parse_constant=_refuse_constant)
+        return json.loads(text, parse_constant=_refuse_constant, parse_float=_finite_float)
     # ValueError covers JSONDecodeError and an integer past the 4300-digit
     # limit; RecursionError a nesting deeper than the parser's stack.
     except (ValueError, RecursionError) as exc:

@@ -158,7 +158,7 @@ class ResolveCommitTests(unittest.TestCase):
                 self.assertFalse(rev.is_release_revision(bad))
         self.assertEqual(rev._RELEASE_REVISION_RE.pattern, "[0-9a-f]{%d}" % rev.REVISION_LENGTH)
 
-    # Value: protects=a dirty revision does not move with the reader's blank-line, prefix, line-ending, file-mode or submodule diff settings; fails_when=one of those settings is left unpinned and changes the patch bytes; why_new=_PINNED_CONFIG lacked them (release item 8); seam=resolve_commit; no_claim=release revisions (bare commits, never hashed)
+    # Value: protects=a dirty revision does not move with the reader's blank-line, prefix or submodule diff settings; fails_when=one of those settings is left unpinned and changes the patch bytes; why_new=_PINNED_CONFIG lacked them (release item 8); seam=resolve_commit; no_claim=release revisions (bare commits, never hashed)
     def test_same_edit_same_revision_under_more_diff_settings(self) -> None:
         repo = make_repo({"a.txt": "one\n\ntwo\n\nthree\n", "run.sh": "echo\n"})
         self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
@@ -170,14 +170,21 @@ class ResolveCommitTests(unittest.TestCase):
             ("diff.suppressBlankEmpty", "true"),
             ("diff.srcPrefix", "x/"),
             ("diff.dstPrefix", "y/"),
-            ("core.fileMode", "false"),
-            ("core.autocrlf", "true"),
             ("diff.ignoreSubmodules", "all"),
         ):
             with self.subTest(key=key):
                 git(repo, "config", key, value)
                 self.assertEqual(rev.resolve_commit(repo), baseline)
                 git(repo, "config", "--unset", key)
+
+    # Value: protects=a checkout git itself calls clean resolves to the bare commit, so a release export is possible from it; fails_when=core.fileMode is pinned over the checkout's own fileMode=false (exFAT, SMB, WSL /mnt/c) and every exec-bit file reads as a mode change; why_new=a pin added for hash portability marked such checkouts dirty (ship review); seam=resolve_commit; no_claim=core.autocrlf=true checkouts (same mechanism, needs CRLF files)
+    def test_a_checkout_that_ignores_exec_bits_stays_clean(self) -> None:
+        repo = make_repo({"a.txt": "one\n", "run.sh": "echo\n"})
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        git(repo, "config", "core.fileMode", "false")
+        os.chmod(repo / "a.txt", 0o755)
+        os.chmod(repo / "run.sh", 0o755)
+        self.assertEqual(rev.resolve_commit(repo), git(repo, "rev-parse", "HEAD")[:12])
 
 
 class CommitLookupTests(unittest.TestCase):
