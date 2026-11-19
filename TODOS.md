@@ -37,7 +37,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 
    Slice 11 dissolves into the per-page moves and a closing PR. All of it comes before going public. Slice details are in `docs/plans/a4-site-from-release.md`. Main is at schema 12 and export format 18 (v0.41.0.0), so the next slice takes the numbers after those. Decided: D8 no summaries, D9 no new third-party data, D10 both dumps dropped.
 2. ~~"Persist or prove the vote outcome and Abweichler count", before slice 2.~~ **Done in #160 (v0.44.0.0):** schema 13, export format 19.
-3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 60.7% (1,445 of 2,381 items, stored tables of the 801-sitting store, measured 2026-11-18; 59.7% was measured before T4): check it before calling the analysis good enough.
+3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 60.7% (1,445 of 2,381 items, the tagging replayed over the reports of the 801-sitting store on 2026-11-18; its stored tables read 1,443 until the next repersist; 59.7% was measured before T4): check it before calling the analysis good enough.
 4. Abstimmungen: "B4 extractive fallback: finish validation locally" and the rest of "Abstimmungen for the daily view".
 5. "Site hosting plan": a German host with SSH, provider to pick; `generation_file_href` changes; `data/` is not deployed wholesale; the deploy gate. Then the Impressum inputs and Datenschutz values.
 6. Automatic main releases: "Scheduled data-release workflow", with an alert when an update fails.
