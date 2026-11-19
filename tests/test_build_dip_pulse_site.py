@@ -3992,7 +3992,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             code = build_dip_pulse_site.main()
         return code, stderr.getvalue()
 
-    # Value: protects=an exported distribution SQLite (user_version or datenstand table) given as the store is refused by the offline render and by the read-only helper every read path uses, with the existing "distribution copy" message and no page written; fails_when=a read-only path checks the schema only and renders a downloaded release as if it were the build store; why_new=A.2 follow-up (1): only the rebuild paths called require_build_store; seam=open_checked_store
+    # Value: protects=an exported distribution SQLite (user_version or datenstand table) given as the store is refused by the offline render and by the read-only helper every read path uses, with the existing "distribution copy" message and no page written, and the helper closes the connection it opened when it refuses; fails_when=a read-only path checks the schema only and renders a downloaded release as if it were the build store, or the refusal leaks its read-only connection; why_new=A.2 follow-up (1): only the rebuild paths called require_build_store; seam=open_checked_store
     def test_offline_render_refuses_a_distribution_copy(self) -> None:
         for marker in ("PRAGMA user_version = 1", "CREATE TABLE datenstand (tag TEXT)"):
             with self.subTest(marker=marker), tempfile.TemporaryDirectory() as tmp:
@@ -4009,8 +4009,22 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
                 self.assertNotIn("facts: wrote", stderr)
                 self.assertNotIn("politikfelder:", stderr)
                 self.assertFalse((output_dir / "puls.html").exists())
-                with self.assertRaisesRegex(RuntimeError, "distribution copy"):
-                    build_dip_pulse_site.open_checked_store(store).close()
+                # A refusal closes the connection it opened: main()'s finally holds none yet.
+                opened: list[sqlite3.Connection] = []
+                real_open = build_dip_pulse_site.facts.open_readonly
+
+                def capture(path: Path) -> sqlite3.Connection:
+                    opened.append(real_open(path))
+                    return opened[-1]
+
+                with (
+                    mock.patch.object(build_dip_pulse_site.facts, "open_readonly", side_effect=capture),
+                    self.assertRaisesRegex(RuntimeError, "distribution copy"),
+                ):
+                    build_dip_pulse_site.open_checked_store(store)
+                self.assertEqual(len(opened), 1)
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    opened[0].execute("SELECT 1")
 
     def test_offline_rebuild_with_pinned_flags_is_byte_identical(self) -> None:
         # Two offline rebuilds with the same --week/--today produce the same
