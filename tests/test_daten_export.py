@@ -647,7 +647,7 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_codebook_names_the_mdb_stammdaten_as_an_open_redistribution_question(self) -> None:
         manifest = self.export()
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
-        self.assertIn("keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten und der MdB-Stammdaten bleibt eine offene Frage nach ADR 0003.", codebook)
+        self.assertIn("keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten (ADR 0003) und der MdB-Stammdaten bleibt eine offene Frage.", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
     def test_cached_manifest_with_invalid_inventory_is_regenerated(self) -> None:
