@@ -1744,7 +1744,8 @@ def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        return f"the store {database_path} cannot be read ({exc}); it is left as it is"
+        return (f"the store {database_path} cannot be read ({exc}); it is left as it is. "
+                "Fix: run --offline --repersist to rebuild the store from the cached reports")
     rebuild = "Fix: run --offline --repersist to rebuild the store from the cached reports"
     if row is None and cached is None:
         return None
