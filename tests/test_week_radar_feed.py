@@ -267,6 +267,25 @@ class RssTests(unittest.TestCase):
         self.assertEqual(feed._cut("a\x01b", 90), "ab")
         self.assertTrue(root.find("channel/item/title").text.startswith(week["label"] + ": Titelmit"))
 
+    # Value: protects=a separator control character (\x0b, \x0c, \x1c-\x1f) between words keeps the words apart in a cut title; fails_when=_cut deletes it before split() so two words fuse; why_new=TODOS Puls outward batch 7 item 7; seam=_cut; no_claim=other characters
+    def test_cut_separates_words_at_separator_controls(self) -> None:
+        for sep in ("\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x1f"):
+            with self.subTest(sep=repr(sep)):
+                self.assertEqual(feed._cut(f"Titel{sep}mit", 90), "Titel mit")
+        self.assertEqual(feed._cut("a\x01b", 90), "ab")
+
+    # Value: protects=a lone surrogate or U+FFFE/U+FFFF in feed text is dropped, so the UTF-8 feed write cannot raise; fails_when=_XML_ILLEGAL covers C0 only and encode("utf-8") raises on a surrogate; why_new=TODOS Puls outward batch 7 item 7; seam=_xml_text, render_rss; no_claim=other noncharacters
+    def test_surrogates_and_noncharacters_are_stripped(self) -> None:
+        entries = long_archive(3)
+        payload = build(entries, today=date(2026, 3, 30))
+        week = payload["weeks"][0]
+        week["rows"][0]["lead_title"] = "Titel\ud800mit\udfff\ufffe\uffffende"
+        week["rows"][0]["equal_weight"] = False
+        text, root = self.rss(payload)
+        text.encode("utf-8")
+        self.assertTrue(root.find("channel/item/title").text.startswith(week["label"] + ": Titelmitende"))
+        self.assertEqual(feed._xml_text("a\u00e4\U0001f600b"), "a\u00e4\U0001f600b")
+
     # Value: protects=the description's date range tolerates a datum carrying a time; fails_when=date.fromisoformat on the whole string drops the Sondersitzung weekend extension; why_new=TODOS Puls outward batch 7 item 6 (RSS date); seam=_item_description; no_claim=none
     def test_description_range_parses_the_date_part_of_datum(self) -> None:
         payload = build(long_archive(3), today=date(2026, 3, 30))
@@ -416,6 +435,24 @@ class WriteTests(unittest.TestCase):
                 self.assertFalse((self.out / "feeds" / "week-radar.xml").exists())
                 self.assertEqual(log.count("warning: [week-radar]"), 1, log)
                 self.assertNotIn(secret, log)
+
+    # Value: protects=the invalid-URL warning shows scheme and host only, with userinfo masked, and never a query, fragment or path secret; fails_when=the warning echoes repr(configured); why_new=TODOS Puls outward batch 7 item 7; seam=write; no_claim=other log sinks
+    def test_refused_url_warning_shows_scheme_and_host_only(self) -> None:
+        secret = "s3cr" + "etq"
+        cases = {
+            "https://pulse.example.org/?token=" + secret: "https://pulse.example.org/",
+            "https://pulse.example.org/x#" + secret: "https://pulse.example.org/",
+            "http://pulse.example.org/": "http://pulse.example.org/",
+            "https://user:" + secret + "@pulse.example.org/": "https://***@pulse.example.org/",
+            "https://user:" + secret + "/x@pulse.example.org/": "https://***/",
+            "https://[" + secret: "ungueltig",
+            secret: "ungueltig",
+        }
+        for bad, shown in cases.items():
+            with self.subTest(url=bad):
+                log = self.write({feed.SITE_URL_ENV: bad})
+                self.assertNotIn(secret, log)
+                self.assertIn(f"war {shown};", log)
 
     # Value: protects=a malformed BUNDESTAG_PULSE_SITE_URL (an unclosed IPv6 bracket, an impossible port) takes the documented invalid-URL path: the JSON is written, no RSS exists, a stale RSS is removed, one warning, and the build does not raise; fails_when=urlparse's ValueError (or the port check) escapes write() and aborts the build; why_new=Codex review found valid_site_url crashing on "https://[example.org/"; seam=valid_site_url, write; no_claim=that every possible malformed string is listed
     def test_malformed_site_url_does_not_abort_the_build(self) -> None:
