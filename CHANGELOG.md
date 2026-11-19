@@ -11,6 +11,15 @@ When an MdB's Mandat appears in the MdB-Stammdaten before their Fraktion does, a
 - **A Mandat the Stammdaten list before any Fraktion or Gruppe record no longer proves fraktionslos.** The correction of misfiled roll-call members moved a member to fraktionslos on any Mandat day no membership covered, including the days before the file entered their Fraktion. It now moves nobody before an MdB's first Fraktion or Gruppe record in that Wahlperiode, an explicit "Fraktionslos" record included. Leaving a Fraktion still proves fraktionslos, as for the six MdBs corrected so far.
 - **An MdB with two Mandate in one Wahlperiode keeps the proof of the first one.**
 
+## [0.46.21.0] - 2026-11-19
+
+Two budget debates of Wahlperiode 18 on the data protection commissioner's Einzelplan now carry the Politikfeld Digitales, as the same debates do in Wahlperiode 19 to 21. On the 801-sitting reference store, the agenda items of Wahlperiode 18 with a Politikfeld go from 1,443 to 1,445 of 2,381 (60.60% to 60.69%). The schema and the export format stay as they are.
+
+### Fixed
+
+- **Einzelplan 21 of Wahlperiode 18 is tagged Digitales.** The items "b) Einzelplan 21 Bundesbeauftragte für den Datenschutz …" of the sittings 18/138 and 18/201 had no Politikfeld (stored as `untagged` with source `einzelplan_unknown`), because the budget table had no entry for that Einzelplan in Wahlperiode 18. They now read `Digitales` with source `einzelplan`. The two sitting pages show the tag on the next render; the stored table `agenda_item_politikfelder` and its CSV export show it after the next `--offline --repersist`. The two items hold 25 Reden with 192,790 characters.
+- **No other tag moves.** A replay of the tagging over all 801 sittings changes these two rows and nothing else: no vote tag, and Wahlperiode 19, 20 and 21 stay at 2,045 of 2,629, 1,750 of 2,109 and 903 of 1,070 agenda items with a Politikfeld.
+
 ## [0.46.20.0] - 2026-11-18
 
 An online build that asks DIP again for a Vorgang no longer loses the title and summary it had cached, and the private directory beside a published site is no longer listable by other users. No stored figure moves, because offline replays do not ask DIP. An offline build of the reference store whose private directory was left world-readable still exports and ends with that directory closed to others.
