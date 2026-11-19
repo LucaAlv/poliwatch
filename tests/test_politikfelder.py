@@ -220,7 +220,7 @@ class AgendaItemTests(unittest.TestCase):
         self.assertEqual(self.tags(top, cache, "21"), (["Verkehr"], "einzelplan"))
 
     def test_the_data_protection_commissioner_is_an_einzelplan_in_wp_18_as_in_wp_19(self) -> None:
-        # 18/138 and 18/201: "b) Einzelplan 21 Bundesbeauftragte für den Datenschutz und die Informationsfreiheit".
+        # The heading of 18/138; 18/201 prints it without the second "die".
         top = item(heading="b) Einzelplan 21 Bundesbeauftragte für den Datenschutz und die Informationsfreiheit")
         for wahlperiode in ("18", "19"):
             self.assertEqual(self.tags(top, cache_of(), wahlperiode), (["Digitales"], "einzelplan"))
