@@ -253,6 +253,14 @@ class TallyTests(unittest.TestCase):
         text = "über Drucksache 21/5 ... Mit Ja haben gestimmt 380, mit Nein haben gestimmt 270, Enthaltungen 2."
         self.assertEqual(review.find_tally(text, 380, 270), ("unique", ["21/5"]))
         self.assertEqual(review.find_tally(text + " davon ja: 380, nein: 270", 380, 270)[0], "several")
+        # The result table printed after the announcement is no second tally,
+        # also under a misprinted heading; two announcements stay several, and
+        # a tally found only in the table is still found.
+        table = " Die Beschlussempfehlung ist angenommen. Endgültiges Ergebnis Abgegebene Stimmen: 652; davon ja: 380 nein: 270 enthalten: 2"
+        self.assertEqual(review.find_tally(text + table, 380, 270), ("unique", ["21/5"]))
+        self.assertEqual(review.find_tally(text + table.replace("Endgültiges", "En dgültiges"), 380, 270)[0], "unique")
+        self.assertEqual(review.find_tally(text + table + " " + text + table, 380, 270)[0], "several")
+        self.assertEqual(review.find_tally("Drucksache 21/7." + table, 380, 270), ("unique", ["21/7"]))
         # A tally inside a longer number is no tally.
         self.assertEqual(review.find_tally(text, 38, 27), ("none", []))
         self.assertEqual(review.find_tally(text, None, 270), ("none", []))
@@ -263,6 +271,8 @@ class TallyTests(unittest.TestCase):
         hostile = "ja " + "9" * 200_000 + " nein " + "x" * 200_000 + " ja " * 20_000
         started = time.monotonic()
         self.assertEqual(review.find_tally(hostile, 380, 270), ("none", []))
+        tables = "Ergebnis Abgegebene Stimmen: 1; davon ja: 380 nein: 270 " * 20_000
+        self.assertEqual(review.find_tally(tables, 380, 270)[0], "several")
         self.assertLess(time.monotonic() - started, 2.0)  # gstack-timing-ok: checklist class 8 times hostile text; the linear scan of 600 kB takes milliseconds, a backtracking one far longer
 
 

@@ -99,15 +99,27 @@ def tally_pattern(yes: int, no: int) -> re.Pattern[str]:
     )
 
 
+#: The head of the result table the protocol prints after the chair's
+#: announcement ("Endgültiges Ergebnis Abgegebene Stimmen: 577; davon ja: 421
+#: nein: 66"), up to where the tally starts. "Endgültiges" is not required:
+#: 18/133 prints "En dgültiges" and 20/194 "Entgültiges".
+_RESULT_TABLE_RE = re.compile(r"Ergebnis\W{0,5}Abgegebene Stimmen\D{0,5}[0-9]{1,6}\W{0,5}davon\W{0,3}\Z", re.I)
+_RESULT_TABLE_CHARS = 80
+
+
 def find_tally(text: str, yes: Any, no: Any) -> tuple[str, list[str]]:
     """``(unique|several|none, Drucksachen announced)`` for one vote: whether its
     exact tally occurs once in the sitting's text, and for a unique one the
-    Drucksache numbers in the ``ANNOUNCEMENT_CHARS`` before it and in it."""
+    Drucksache numbers in the ``ANNOUNCEMENT_CHARS`` before it and in it. The
+    tally inside the printed result table does not count beside another match,
+    so the chair's announcement followed by its table is ``unique``."""
     if not isinstance(yes, int) or not isinstance(no, int) or isinstance(yes, bool) or isinstance(no, bool):
         return "none", []
     matches = list(tally_pattern(yes, no).finditer(text))
     if not matches:
         return "none", []
+    matches = [match for match in matches
+               if not _RESULT_TABLE_RE.search(text, max(0, match.start() - _RESULT_TABLE_CHARS), match.start())] or matches
     if len(matches) > 1:
         return "several", []
     match = matches[0]
