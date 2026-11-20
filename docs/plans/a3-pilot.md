@@ -124,7 +124,7 @@ What it shows:
   - WP 18: Bau sits in Einzelplan 16 (Umwelt, Naturschutz, Bau und Reaktorsicherheit);
   - WP 19: Bau sits in 06 (Innern, für Bau und Heimat);
   - both WPs: 12 is Verkehr und digitale Infrastruktur.
-- WP 18 Einzelplan 21 (BfDI, its own plan from 2016) is not in the Nov 2014 evidence and stays `einzelplan_unknown`.
+- WP 18 Einzelplan 21 (BfDI, its own plan from 2016) is not in the Nov 2014 evidence. The real-store test found it in 18/138 and 18/201 (2026-11-18); it maps to Digitales as in WP 19 to 21.
 - A3 Phase 4 checks the full store against the table (the real-store test now reads every WP).
 
 **Roll-call votes:**

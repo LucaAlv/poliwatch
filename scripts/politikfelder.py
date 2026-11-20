@@ -100,7 +100,8 @@ _WIRTSCHAFT = ("Wirtschaft & Finanzen",)
 #: does not say what an Einzelplan is about. Checked against the Einzelplan
 #: headings of the WP 20 and 21 sittings in the cache (2026-10-04) and, for WP
 #: 18 and 19, of the budget weeks 18/68-71 (Nov 2014) and 19/63-66 (Nov 2018)
-#: (A3 pilot census, 2026-10-20); a pair not listed here is stored as
+#: (A3 pilot census, 2026-10-20), plus WP 18 Einzelplan 21 from the sittings 18/138
+#: and 18/201 (2026-11-18); a pair not listed here is stored as
 #: ``einzelplan_unknown``. Bau sat with Umwelt in WP 18 and with Inneres in WP 19
 #: and counts for Soziales, as the DIP Sachgebiet does.
 EINZELPLAN_TO_POLITIKFELDER: dict[tuple[str, str], tuple[str, ...]] = {
@@ -123,6 +124,7 @@ EINZELPLAN_TO_POLITIKFELDER: dict[tuple[str, str], tuple[str, ...]] = {
     ("18", "17"): ("Soziales",),  # Familie, Senioren, Frauen und Jugend
     ("18", "19"): _STAAT,  # Bundesverfassungsgericht
     ("18", "20"): _STAAT,  # Bundesrechnungshof
+    ("18", "21"): ("Digitales",),  # Bundesbeauftragte für den Datenschutz und die Informationsfreiheit
     ("18", "23"): ("Außenpolitik",),  # wirtschaftliche Zusammenarbeit und Entwicklung
     ("18", "30"): ("Bildung",),  # Bildung und Forschung
     ("18", "32"): _WIRTSCHAFT,  # Bundesschuld

@@ -66,6 +66,8 @@ EINZELPLAENE_IN_THE_CACHE = (
     # The Einzelplan headings of the budget weeks 18/68-71 (Nov 2014) and 19/63-66
     # (Nov 2018), A3 pilot census (docs/plans/a3-pilot.md).
     + [("18", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 23 30 32 60".split()]
+    # 18/138 and 18/201 debate Einzelplan 21 (found in the real-store test, 2026-11-18).
+    + [("18", "21")]
     + [("19", n) for n in "01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 19 20 21 23 30 32 60".split()]
 )
 
@@ -216,6 +218,12 @@ class AgendaItemTests(unittest.TestCase):
         top = item(heading="Einzelplan 12 Bundesministerium für Verkehr")
         self.assertEqual(self.tags(top, cache_of(), "20"), (["Verkehr", "Digitales"], "einzelplan"))
         self.assertEqual(self.tags(top, cache, "21"), (["Verkehr"], "einzelplan"))
+
+    def test_the_data_protection_commissioner_is_an_einzelplan_in_wp_18_as_in_wp_19(self) -> None:
+        # The heading of 18/138; 18/201 prints it without the second "die".
+        top = item(heading="b) Einzelplan 21 Bundesbeauftragte für den Datenschutz und die Informationsfreiheit")
+        for wahlperiode in ("18", "19"):
+            self.assertEqual(self.tags(top, cache_of(), wahlperiode), (["Digitales"], "einzelplan"))
 
     def test_the_einzelplan_may_be_only_in_the_top_id(self) -> None:
         top = dict(item(heading=""), top_id="Einzelplan 04")
@@ -771,6 +779,43 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(saved["vorgaenge"]["c"]["sachgebiet"], ["Kultur"])
         self.assertEqual(saved["vorgaenge"]["c"]["deskriptor_sachbegriffe"], ["Wolf"])
         self.assertEqual(saved["vorgaenge"]["c"]["abstract"], "A")
+
+    # Value: protects=a refetched Vorgang (one cached without Sachgebiet) whose DIP answer lacks titel or abstract keeps the cached ones, while every field DIP does send replaces the cached value; fails_when=fetch_ids replaces the cached record whole (cache["vorgaenge"].update(records)), so a vote's "Worum es geht" loses its title and description; why_new=the refetch dropped them; seam=FakeClient answers /vorgang
+    def test_a_refetched_vorgang_keeps_cached_fields_the_answer_lacks(self) -> None:
+        cached = {"titel": "Alter Titel", "abstract": "Alte Beschreibung", "vorgangstyp": "Antrag",
+                  "aktualisiert": "2025-01-01", "sachgebiet": [], "deskriptor_sachbegriffe": ["Alt"]}
+        cache = cache_of(
+            {"a": dict(cached), "b": dict(cached)} | {n: dip.vorgang_cache_record(raw("Recht")) for n in "cd"},
+            {"21/7": ["c"], "21/8": ["d"]},
+        )
+        answer_a = {"sachgebiet": ["Gesundheit"], "aktualisiert": "2026-02-02",
+                    "deskriptor": [{"name": "Neu", "typ": "Sachbegriffe"}]}  # no titel, abstract or vorgangstyp
+        answer_b = {"sachgebiet": ["Recht"], "titel": "Neuer Titel", "abstract": "Neue Beschreibung", "vorgangstyp": "Gesetzgebung"}
+        client = FakeClient({"a": answer_a, "b": answer_b})
+        stats, saved, _ = self.run_refresh(client, cache)
+        self.assertEqual([p["f.id"] for _, p in client.calls], [["a", "b"]])
+        self.assertEqual(stats["vorgaenge"], 2)
+        expected_a = {"titel": "Alter Titel", "abstract": "Alte Beschreibung", "vorgangstyp": "Antrag",
+                      "aktualisiert": "2026-02-02", "sachgebiet": ["Gesundheit"], "deskriptor_sachbegriffe": ["Neu"]}
+        expected_b = {"titel": "Neuer Titel", "abstract": "Neue Beschreibung", "vorgangstyp": "Gesetzgebung",
+                      "aktualisiert": "2025-01-01", "sachgebiet": ["Recht"], "deskriptor_sachbegriffe": []}
+        for record in (cache["vorgaenge"], saved["vorgaenge"]):
+            self.assertEqual(record["a"], expected_a)
+            self.assertEqual(record["b"], expected_b)
+
+    # Value: protects=a refetched Vorgang whose cached record predates titel/abstract keeps those keys (stored as None) so the cache has one shape, and a Vorgang not yet cached is stored as the answer; fails_when=the merge keeps only non-None answer fields (drops the `or key not in merged` clause) or indexes the cache without .get, so the keys go missing or an uncached id raises KeyError; why_new=the first merge test only covers records cached with every key; seam=FakeClient answers /vorgang
+    def test_a_refetch_stores_a_none_for_a_key_the_old_record_lacks_and_an_uncached_id_whole(self) -> None:
+        cache = cache_of(
+            {"a": {"sachgebiet": [], "deskriptor_sachbegriffe": []}, "c": dip.vorgang_cache_record(raw("Recht"))},
+            {"21/7": ["a", "c", "e"]},
+        )
+        client = FakeClient({"a": {"sachgebiet": ["Gesundheit"]}, "e": raw("Recht")})
+        _, saved, _ = self.run_refresh(client, cache)
+        self.assertEqual([p["f.id"] for _, p in client.calls if "f.id" in p], [["a", "b", "e"]])  # b: from the fixture entries, uncached
+        for record in (cache["vorgaenge"], saved["vorgaenge"]):
+            self.assertEqual(record["a"], dip.vorgang_cache_record({"sachgebiet": ["Gesundheit"]}))
+            self.assertEqual(record["a"]["titel"], None)
+            self.assertEqual(record["e"], dip.vorgang_cache_record(raw("Recht")))
 
     def test_a_cached_vorgang_without_sachgebiet_is_refetched_and_a_second_run_fetches_nothing(self) -> None:
         records = {"a": raw("Gesundheit"), "b": raw("Recht")}

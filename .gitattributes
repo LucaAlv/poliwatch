@@ -1,0 +1,6 @@
+# The authored codebook inputs are exported with LF (docs/data-methods.md,
+# LICENSE-DATA.md); keep them LF in every checkout so the shipped bytes equal
+# the committed ones.
+LICENSE-DATA.md text eol=lf
+docs/data-methods.md text eol=lf
+scripts/data_dictionary.json text eol=lf
