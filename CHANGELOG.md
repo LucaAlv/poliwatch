@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.29.0] - 2026-11-20
+
+The check that stops two people printed under one Redner-ID from being filed as one person now catches cases it skipped, and a reviewed speaker is honoured wherever the build attaches an abgeordnetenwatch profile. No figure, page or export changes. On the 801-sitting reference store the check still compares 53 of 1,591 Redner-ID records and refuses none, and no stored speaker name is read differently.
+
+### Fixed
+
+- **A name printed as an office alone is compared with the other names under its Redner-ID.** "Bürgermeister" or "Senatorin" used to be skipped, so it could never show that a Redner-ID covers two people; the build now stops and asks for a review when such a name shares no word with the others.
+- **More offices count as offices, not as names.** Vizekanzler(in), Staatsrat and Staatsrätin, and titles ending in -beauftragte(r) or -bevollmächtigte(r) ("Wehrbeauftragter", "Landesbevollmächtigte") no longer make two different people look like one because both hold the office. Bundeskanzler(in) stays a whole word, since Kanzler is a real surname.
+- **An office-like surname still links a person's own spellings, but never two different people.** "Karl Bürgermeister" and "K. Bürgermeister" are one person; "Sieling Bürgermeister" and "Bovenschulte Bürgermeister", or "Karl Bürgermeister" and "Anna Bürgermeister", stop the build for review.
+- **A reviewed speaker is found by the same Rede id the store uses.** When an abgeordnetenwatch profile is found under a Redner-ID two people share, the build looks up who spoke by the Rede id as stored (spaces tidied, or the generated id of a Rede printed without one), including in the list of an agenda item's first five speeches, so a profile the review gives to someone else is no longer attached.
+
 ## [0.46.28.0] - 2026-11-20
 
 A build that is handed the wrong sitting's XML now refuses it as a source error every time, and an unknown `<fraktion>` spelling points to the spelling list instead of telling the operator to delete or re-fetch a good file. These are refusal paths and messages; no stored figure, page or export changes. Parsing all 801 cached sittings of the reference store with the old and the new agenda rule gives the same agenda items in every sitting.

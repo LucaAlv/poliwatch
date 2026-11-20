@@ -19,6 +19,7 @@ import derive
 import persist_dip_pulse_store as store
 import person_registry as registry
 import reviewed_units
+import stable_ids
 import validate_dip_protocol as dip
 from _registry_fixture import RegistryFixture
 
@@ -360,6 +361,36 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             with self.subTest(left):
                 self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
 
+    # Value: protects=a name that is only an office is still compared, the compound offices
+    #   Wehrbeauftragte, Vizekanzler, Staatsrätin and Bevollmächtigte prove nothing, and a surname
+    #   that ends like an office ("Karl Bürgermeister") still joins its own initial; fails_when=an
+    #   office-only name empties and is skipped (fail-open), a compound office counts as a shared
+    #   word, a shared office-like word links two different surnames (fail-open, Codex
+    #   2026-11-20), or a given name plus an office-like surname loses the surname (fail-closed);
+    #   why_new=TODOS "Redner-ID name check" items 2, 3 and 4; seam=none
+    def test_an_office_only_name_and_compound_offices_are_compared(self):
+        for left, right in (("Bürgermeister", "Anna Beispiel"), ("Senatorin", "Dr. Lena Kreck"),
+                            ("Dr. Hans-Peter Bartels, Wehrbeauftragter", "Reinhold Robbe, Wehrbeauftragter"),
+                            ("Olaf Scholz, Vizekanzler", "Robert Habeck, Vizekanzler"),
+                            ("Anna Muster, Staatsrätin", "Bea Probe, Staatsrätin"), ("Max Muster, Staatsrat", "Erik Probe, Staatsrat"),
+                            ("Max Muster, Landesbevollmächtigter", "Erik Probe, Landesbevollmächtigter"),
+                            ("Anna Muster, Bevollmächtigte", "Bea Probe, Bevollmächtigte"),
+                            # An office in brackets after a lone surname is still an office.
+                            ("Sieling (Bürgermeister)", "Bovenschulte (Bürgermeister)"),
+                            ("Karl (Bürgermeister)", "Anna (Bürgermeister)"),
+                            # An office printed before the surname is dropped; it is not that surname.
+                            ("Bürgermeister Sieling", "Bürgermeister Bovenschulte"),
+                            # Two surnames sharing an office-like word, or two given names with
+                            # one, are two people; only a given name and its initial agree.
+                            ("Sieling Bürgermeister", "Bovenschulte Bürgermeister"),
+                            ("Karl Bürgermeister", "Anna Bürgermeister"), ("Karl Bürgermeister", "B. Bürgermeister")):
+            with self.subTest(left), self.assertRaisesRegex(registry.RegistryError, "11009999"):
+                self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
+        for left, right in (("Karl Bürgermeister", "K. Bürgermeister"), ("Dr. Karl Bürgermeister", "Bürgermeister, Karl"),
+                            ("Bürgermeister", "Bürgermeister")):
+            with self.subTest(left):
+                self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
+
     # Value: protects=the name check reads only records that hold a Redner-ID: a record keyed by a DIP id that two printed names reach is not refused; fails_when=the guard compares names on every record, so a reviewed own dip: id or a DIP-only speaker printed under two names stops the build; why_new=TODOS "Shared Redner-IDs" item 14; seam=none
     def test_a_record_with_no_redner_id_and_two_unrelated_names_is_not_refused(self):
         conn = self.build(speakers=[(None, "Erika Mustermann", None, None), (None, "Max Beispiel", None, None)],
@@ -586,6 +617,50 @@ class ReparseProfileTests(unittest.TestCase):
         ):
             with self.subTest(source=source, target=target):
                 self.assertEqual(self.reparsed_profile("11005304", source, target, foehr, **sides), foehr)
+
+    # Value: protects=the profile check finds a reviewed occurrence by the rede id persist and the
+    #   protocol page key it by (whitespace collapsed; no rede_id: a Rede's synthetic id, a Beitrag none), on both the taking and the copying side;
+    #   fails_when=attach_speaker_profiles or redner_id_profiles passes the raw rede_id again, so a
+    #   reviewed occurrence printed with stray whitespace is read by its garbled printed name;
+    #   why_new=TODOS "Shared Redner-IDs" item 20; seam=none
+    def test_the_profile_check_reads_the_rede_id_persist_reads(self):
+        foehr = {"id": 177000, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/alexander-foehr"}
+
+        def garbled(**extra):
+            return {"rede_id": " ID2010305900\xa0", "sequence": 1,
+                    "speaker": speaker("11005304", "Dirk-UlrichAlexander Mende Föhr", **extra)}
+
+        for key in ("xml_speakers", "xml_contributions"):
+            with self.subTest(key=key):
+                source = {"protocol": {"id": "5570"}, "agenda_items": [{"index": 1, key: [garbled(abgeordnetenwatch=foehr)]}]}
+                self.assertEqual(build.redner_id_profiles([{"report": source}]), {"11005304": foehr})
+                target = {"index": 1, key: [garbled()]}
+                build.attach_speaker_profiles(target, {}, {"11005304": foehr}, "5570")
+                self.assertEqual(target[key][0]["speaker"].get("abgeordnetenwatch"), foehr)
+
+        # With no rede_id a Rede is keyed by its synthetic id and a Beitrag by none: persist
+        # keys a Beitrag by its own (absent) id, never a synthetic one.
+        for key, expected in (("xml_speakers", stable_ids.synthetic_rede_id("5570", 1, 1)), ("xml_contributions", None)):
+            with self.subTest(key=key, rede_id="absent"):
+                target = {"index": 1, key: [{"speaker": speaker("11005304", "Alexander Föhr")}]}
+                with mock.patch.object(registry, "redner_id_profile_reaches", return_value=True) as reaches:
+                    build.attach_speaker_profiles(target, {}, {"11005304": foehr}, "5570")
+                self.assertEqual(reaches.call_args.args[2], expected)
+
+        # The first-five list carries no sequence: a Rede printed with a blank id after a
+        # withheld Rede is keyed by its xml_speakers sequence (2), as persist keys it, not
+        # by its list position (1), on both the taking and the copying side.
+        def blank_after_withheld():
+            return {"rede_id": " ", "sequence": 2, "speaker": speaker("11005304", "Alexander Föhr")}
+
+        item = {"index": 1, "xml_speakers": [blank_after_withheld()],
+                "xml_speakers_first": [{k: v for k, v in blank_after_withheld().items() if k != "sequence"}]}
+        with mock.patch.object(registry, "redner_id_profile_reaches", return_value=False) as reaches:
+            build.attach_speaker_profiles(item, {}, {"11005304": foehr}, "5570")
+            build.redner_id_profiles([{"report": {"protocol": {"id": "5570"}, "agenda_items": [
+                {**item, "xml_speakers_first": [{**item["xml_speakers_first"][0], "speaker": speaker(
+                    "11005304", "Alexander Föhr", abgeordnetenwatch=foehr)}]}]}}])
+        self.assertEqual({call.args[2] for call in reaches.call_args_list}, {stable_ids.synthetic_rede_id("5570", 1, 2)})
 
 
 if __name__ == "__main__":
