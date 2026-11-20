@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.27.0] - 2026-11-20
+
+The operator tools refuse bad input with a message instead of a traceback or a quietly wrong report, and the MdB-Stammdaten download can no longer be redirected off bundestag.de and has a total time limit. These are scripts run by hand around a build; no stored figure, page or export changes.
+
+### Fixed
+
+- **The MdB-Stammdaten download stays on bundestag.de and gives up after five minutes.** A redirect is followed only to `https://www.bundestag.de/`; plain http or another host is refused and the cached file kept. A body of declared length must arrive within five minutes, also when the server sends one byte per read just inside the 60-second socket timeout; a chunked body or a slow header phase can still run past the limit. A cached zip larger than the 32 MiB download cap is refused before it is read.
+- **The store gate, the demo site builder and the abgeordnetenwatch match-share script stop at startup when `scripts/reviewed_units.json` is missing or malformed,** naming the file to repair, instead of failing halfway through a replay. A failed clone in the store gate ends with `ERROR [gate]` and exit 2 instead of a traceback.
+- **The CPP-BT comparison refuses a known-differences file that would hide real differences.** An `only_theirs` row without a `rede_id` would have marked every Rede only CPP-BT holds as known; it is now refused. A known-differences file that is not UTF-8 and an export whose deflate stream is corrupt also stop with exit 2.
+- **The store value comparison reports a missing side honestly.** Its vote groups section shows a store as unavailable when it lacks the vote figures as well as when it lacks the group counts, and a disk error while unpacking a recipe copy is no longer read as "no copy".
+- **The abgeordnetenwatch match-share script measures what an online run would do.** The offline estimate counts only the Redner-IDs without an answer in the answers file. A store whose Mandat table holds no Wahlperiode 18 and 19 rows (built with a narrower `--roster-wahlperiode`) falls back to the MdB-Stammdaten zip, or stops when there is none, instead of moving every WP 18/19 MdB out of the first match tier. A hand-edited answers entry without the fields a rerun reuses is refused. Its cache files follow the umask instead of being world-readable.
+- **An unreadable store now says how to rebuild it:** run `--offline --repersist`.
+
 ## [0.46.26.0] - 2026-11-20
 
 The rule that links a roll-call vote to its agenda item now reads the Drucksachen printed under an agenda item the same way the store and the dossier do, and the store refuses a report that would silently lose a vote. No link, page or stored figure moves. Over the 801 cached reports of the reference store, 0 of 8,189 agenda items get a different set of printed Drucksachen and 0 reports fail the new check.

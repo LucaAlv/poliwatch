@@ -63,12 +63,14 @@ def write_text_atomic(path: Path, text: str) -> None:
     """Write ``text`` beside ``path`` under a temporary name of its own and rename
     it over ``path``: a run stopped mid-write leaves the previous file, never a
     truncated one, and two writers never share a temporary file (the last rename
-    wins). The file is world-readable, as ``write_text`` made it under umask 022."""
+    wins). The file gets the mode ``write_text`` would give it, 0666 minus the umask."""
     handle, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temporary = Path(name)
+    umask = os.umask(0)
+    os.umask(umask)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
-            os.fchmod(out.fileno(), 0o644)  # mkstemp makes it 0600
+            os.fchmod(out.fileno(), 0o666 & ~umask)  # mkstemp makes it 0600
             out.write(text)
         temporary.replace(path)
     except BaseException:

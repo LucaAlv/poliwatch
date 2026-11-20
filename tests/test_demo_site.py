@@ -18,6 +18,7 @@ import _site_store_fixture
 import build_demo_site as demo
 import build_dip_pulse_site as site
 import publication_state as publication
+import reviewed_units
 import render_dip_pulse_html as pulse_html
 import speech_kinds
 from features import EnrichmentSelection
@@ -298,6 +299,20 @@ class DemoSiteTests(unittest.TestCase):
                     contextlib.redirect_stderr(stderr):
                 self.assertEqual(demo.main(), 1)
             self.assertIn("extract_demo_fixture.py", stderr.getvalue())
+
+    # Value: protects=a missing scripts/reviewed_units.json stops the demo build with a message and exit 1
+    #   before the store is touched, not a traceback from the stale-report check; fails_when=main does not
+    #   call reviewed_units.load() first; why_new=TODOS "Withheld-Reden PRs A and B" B robustness; seam=reviewed_units.load patched
+    def test_a_missing_reviewed_list_is_a_clean_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "site"
+            stderr = io.StringIO()
+            with mock.patch.object(reviewed_units, "load", side_effect=reviewed_units.ReviewedUnitsError("list is missing")), \
+                    mock.patch("sys.argv", ["build_demo_site.py", "--output-dir", str(output)]), \
+                    contextlib.redirect_stderr(stderr):
+                self.assertEqual(demo.main(), 1)
+            self.assertIn("ERROR [reviewed-units]: list is missing", stderr.getvalue())
+            self.assertFalse((output / "data").exists())
 
     # Value: protects=a demo fixture parsed under other reviewed entries is refused and the message blames the reviewed list, not the speech rule (P3a/P3b); fails_when=build_demo_store names the rule for every stale fixture, or reads an absent reviewed_digest as current; why_new=test_a_fixture_under_an_old_speech_rule_is_refused covers only the rule cause; seam=none; no_claim=the production require_parsed_reports wording
     def test_a_fixture_under_other_reviewed_entries_is_refused_by_cause(self) -> None:
