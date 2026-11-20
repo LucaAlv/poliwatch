@@ -61,6 +61,14 @@ class TopLinksTests(unittest.TestCase):
     def test_a_printed_number_is_drucksache_xml_and_wins_over_a_dip_number_of_the_same_top(self) -> None:
         self.assertEqual(self.links(vote("1", "Rente", "21/10", "21/11")), {"1": {0: "drucksache_xml"}})
 
+    def test_a_number_read_off_a_news_site_url_is_not_a_printed_number(self) -> None:
+        # A report cached before the host check keeps "21/10" read off a quoted URL
+        # (derive.xml_drucksachen drops it, as persist and the dossier do).
+        items = copy.deepcopy(ITEMS)
+        items[3]["xml_drucksachen"] = [{"dokumentnummer": "21/10", "url": "https://euronews.com/2025/21/10"}]
+        items[0]["xml_drucksachen"] = [{"dokumentnummer": "21/10", "url": "https://www.bundestag.de/dokument/21/10"}]
+        self.assertEqual(vote_links.top_links(items, [vote("1", "Rente", "21/10")]), {"1": {0: "drucksache_xml"}})
+
     def test_a_number_only_a_dip_vorgang_holds_is_drucksache_vorgang(self) -> None:
         self.assertEqual(self.links(vote("1", "Rente", "21/11")), {"1": {0: "drucksache_vorgang"}})
         # A mitberaten Vorgang's Drucksachen sit in linked_drucksachen like any other.
@@ -117,6 +125,12 @@ class AttributeVotesTests(unittest.TestCase):
         self.assertIs(stale["agenda_items"][0]["votes"][0], kept)
         self.assertEqual([v["id"] for v in stale["agenda_items"][0]["votes"]], ["1"])
         self.assertIs(stale["agenda_items"][2]["votes"][0], wrong)
+
+    def test_a_fetched_vote_in_no_top_and_not_in_the_sitting_votes_is_named(self) -> None:
+        lost = report(copy.deepcopy(ITEMS), [vote("c", "Geschäftsordnungsantrag")])
+        self.assertEqual(vote_links.placement_errors(lost),
+                         ["vote c is linked to no TOP and missing from sitting_votes"])
+        self.assertEqual(vote_links.placement_errors(vote_links.attribute_votes(lost)), [])
 
     def test_a_report_without_a_list_keeps_the_order_it_holds(self) -> None:
         carried = report(copy.deepcopy(ITEMS), [])
