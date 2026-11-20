@@ -2201,6 +2201,11 @@ def reparse_cached_xml(
         try:
             parsed = dip.parse_protocol_xml(path.read_text(encoding="utf-8"))
             dip.reparse_report_xml(report, parsed)
+        except derive.UnknownFraktionError as exc:
+            # Not a corrupt file either: a valid XML prints a <fraktion> the spelling list lacks.
+            # A re-fetch returns the same XML, so the default re-fetch fix must not print.
+            raise CachedReportError(f"{path} of {document_number}: {exc}", [document_number],
+                                    fix=f"Fix: {derive.UNKNOWN_FRAKTION_FIX}") from exc
         except dip.ReconciliationError as exc:
             # Not a corrupt file: the <rede> elements of a valid XML do not reconcile with the parse.
             raise CachedReportError(
