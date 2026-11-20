@@ -15,7 +15,7 @@ refuses a report whose placement disagrees with it.
    number is printed under the TOP, else ``drucksache_vorgang``.
 2. **Title.** A vote that shares no number with any TOP of its sitting links to
    the one TOP whose heading, or one of whose DIP position titles,
-   ``validate_dip_protocol.title_matches`` the vote's title (basis ``title``).
+   ``title_matches`` the vote's title (basis ``title``).
    With no such TOP, or several, it links to none.
 
 A vote linked to no TOP is a sitting vote (``report["sitting_votes"]``). A link
@@ -26,13 +26,36 @@ Tagesordnungspunkte"; owner decision 1 in docs/plans/vote-links-and-figures.md).
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable, Mapping
 
 import derive
-import validate_dip_protocol as dip
 
 #: Every value ``agenda_item_votes.basis`` takes.
 BASES = ("drucksache_xml", "drucksache_vorgang", "title")
+
+
+def norm_title(value: str | None) -> str:
+    value = derive._clean(value).lower()
+    value = re.sub(r"[^a-zäöüß0-9]+", " ", value)
+    return derive._clean(value)
+
+
+def title_matches(heading: str | None, title: str | None) -> bool:
+    """Whether a TOP heading or position title and a vote title name the same
+    matter: one contains the other, or at least 65% of the vote title's words
+    longer than four letters are in the heading."""
+    heading_norm = norm_title(heading)
+    title_norm = norm_title(title)
+    if not heading_norm or not title_norm:
+        return False
+    if title_norm in heading_norm or heading_norm in title_norm:
+        return True
+    title_tokens = {token for token in title_norm.split() if len(token) > 4}
+    heading_tokens = {token for token in heading_norm.split() if len(token) > 4}
+    if not title_tokens:
+        return False
+    return len(title_tokens & heading_tokens) / len(title_tokens) >= 0.65
 
 
 def _numbers(documents: Iterable[Mapping[str, Any]] | None) -> set[str]:
@@ -55,7 +78,7 @@ def top_links(items: list[Mapping[str, Any]], votes: Iterable[Mapping[str, Any]]
     page candidate or a fetched vote). A vote id given twice is decided by its
     last entry. The result depends on the votes and the TOPs alone, not on
     their order or on where a report placed a vote."""
-    printed = [_numbers(item.get("xml_drucksachen")) for item in items]
+    printed = [_numbers(derive.xml_drucksachen(item)) for item in items]
     linked = [_numbers((item.get("api") or {}).get("linked_drucksachen")) for item in items]
     titles = [[item.get("heading"), *_position_titles(item)] for item in items]
     result: dict[str, dict[int, str]] = {}
@@ -70,7 +93,7 @@ def top_links(items: list[Mapping[str, Any]], votes: Iterable[Mapping[str, Any]]
         if not matched:
             titled = [
                 position for position, candidates in enumerate(titles)
-                if any(dip.title_matches(title, vote.get("title")) for title in candidates)
+                if any(title_matches(title, vote.get("title")) for title in candidates)
             ]
             if len(titled) == 1:
                 matched[titled[0]] = "title"
@@ -139,9 +162,14 @@ def attribute_votes(report: dict[str, Any]) -> dict[str, Any]:
 def placement_errors(report: Mapping[str, Any]) -> list[str]:
     """Where ``report`` places a vote other than ``links`` does: a vote under a
     TOP the rule does not link it to, or missing under one it does. Empty for a
-    report ``attribute_votes`` placed. Persist refuses a report with any."""
+    report ``attribute_votes`` placed. Also a vote the rule links to no TOP that
+    ``report["sitting_votes"]`` lacks, which persist would drop. Persist refuses
+    a report with any."""
     placed = links(report)
     errors = []
+    sitting = {derive.vote_identity(vote) for vote in report.get("sitting_votes") or []}
+    errors += [f"vote {vote_id} is linked to no TOP and missing from sitting_votes"
+               for vote_id, tops in sorted(placed.items()) if not tops and vote_id not in sitting]
     for position, item in enumerate(report.get("agenda_items") or []):
         held = {derive.vote_identity(vote) for vote in derive.item_votes(item)}
         should = {vote_id for vote_id, tops in placed.items() if position in tops}

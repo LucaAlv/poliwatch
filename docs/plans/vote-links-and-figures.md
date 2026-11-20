@@ -223,7 +223,7 @@ A link feeds more than the dossier (class 6). Replay with the README recipe "Val
 | The recipe's person joins (`mp_canonical`, `representative`) drop rows | 0 |
 | The dossier path (report JSON votes) against the store path, outcome and count | equal on 619 |
 
-Outcome mix: 423 `accepted`, 176 `rejected`, 20 NULL; `inverted = 1` on 95 votes, 94 of them with scope `proposition` (outcome reversed) and 1 with `application`.
+`result_raw` mix: 423 `accepted`, 176 `rejected`, 20 NULL. `inverted = 1` on 95 votes, 94 of them with scope `proposition` (outcome reversed) and 1 with `application`. The persisted outcome (`application_result`) mix is 330 `accepted`, 269 `rejected`, 20 NULL: 93 of the 94 `proposition` inversions flip, and the 94th has no `result_raw` (it stays NULL).
 
 **No figure moves**, whichever way this is settled.
 

@@ -10,6 +10,7 @@ from unittest import mock
 import _support  # noqa: F401
 import derive
 import speech_kinds
+import vote_links
 import validate_dip_protocol as dip
 from _support import FIXTURES
 
@@ -275,15 +276,15 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         self.assertEqual(dip.clamp_text("  eins   zwei drei  ", 9), "eins zwe" + "\u2026")
 
     def test_title_and_position_matching_helpers(self) -> None:
-        self.assertEqual(dip.norm_title("Test: Gesetz 20/123!"), "test gesetz 20 123")
-        self.assertTrue(dip.title_matches("TOP 1 Beratung Testgesetz", "Beratung Testgesetz"))
+        self.assertEqual(vote_links.norm_title("Test: Gesetz 20/123!"), "test gesetz 20 123")
+        self.assertTrue(vote_links.title_matches("TOP 1 Beratung Testgesetz", "Beratung Testgesetz"))
         self.assertTrue(
-            dip.title_matches(
+            vote_links.title_matches(
                 "Gesetz zur Modernisierung der digitalen Verwaltung und Infrastruktur",
                 "Modernisierung digitale Verwaltung Infrastruktur",
             )
         )
-        self.assertFalse(dip.title_matches("Haushalt", "Verkehr Infrastruktur"))
+        self.assertFalse(vote_links.title_matches("Haushalt", "Verkehr Infrastruktur"))
 
         top = {"page_range": {"start": {"page": 5}, "end": {"page": 7}}}
         self.assertTrue(dip.overlaps(top, {"fundstelle": {"anfangsseite": "7", "endseite": "8"}}))

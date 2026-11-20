@@ -18,7 +18,7 @@ from datetime import date
 from typing import Iterable
 
 TAG_PREFIX = "data-"
-_VERSION_RE = re.compile(r"(\d{4})\.(\d{2})\.(\d{2})(?:\.([2-9]|[1-9]\d+))?")
+_VERSION_RE = re.compile(r"(\d{4})\.(\d{2})\.(\d{2})(?:\.([2-9]|[1-9]\d+))?", re.ASCII)
 
 
 def tag_for(version: str) -> str:
