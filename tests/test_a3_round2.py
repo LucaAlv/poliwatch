@@ -374,5 +374,120 @@ class PresidiumFraktionsredeTests(unittest.TestCase):
                 with assert_withheld(self, 'presidium Rede at R has no reviewed kind', reason='unreviewed_presidium'):
                     parse('<rede id="R">' + presidium('L', 'Lammert', role, 'CDU/CSU') + '<p>Ansprache.</p></rede>')
 
+
+def fragestunde(body):
+    """One Fragestunde TOP of sitting 18/1, as a report the persist role check reads."""
+    xml = ('<dbtplenarprotokoll wahlperiode="18" sitzung-nr="1"><sitzungsverlauf>'
+           f'<tagesordnungspunkt top-id="T1"><p klasse="T_fett">Fragestunde</p>{body}</tagesordnungspunkt>'
+           '</sitzungsverlauf></dbtplenarprotokoll>')
+    parsed = dip.parse_protocol_xml(xml)
+    report = {'protocol': {'dokumentnummer': '18/1'}, 'agenda_items': [dip.xml_top_fields(top) for top in parsed['agenda_items']]}
+    return parsed['agenda_items'][0]['contributions'], report
+
+
+def official(rid, last, role):
+    return (f'<p klasse="redner"><redner id="{rid}"><name><nachname>{last}</nachname>'
+            f'<rolle><rolle_lang>{role}</rolle_lang></rolle></name></redner></p>')
+
+
+def vize(rid, first, last, role, fraktion=None):
+    fr = f'<fraktion>{fraktion}</fraktion>' if fraktion else ''
+    return (f'<p klasse="redner"><redner id="{rid}"><name><vorname>{first}</vorname><nachname>{last}</nachname>{fr}'
+            f'<rolle><rolle_lang>{role}</rolle_lang></rolle></name></redner></p>')
+
+
+STAATSSEKRETAER = 'Parl. Staatssekretär beim Bundesminister des Innern'
+
+
+class PresidiumFragestundeTests(unittest.TestCase):
+    """ADR 0004, amendment for 18/62 and 18/90: a Vizepräsident(in) printed with a
+    Fraktion at a Fragestunde marker outside any <rede> asks for that Fraktion,
+    unless the last chair <name> names them: then the turn is Sitzungsleitung."""
+
+    def test_a_vizepraesidentin_who_is_not_chairing_asks_a_nachfrage_for_her_fraktion(self):
+        # 18/90: Lammert chairs, Pau asks. 18/62: Hintze chairs.
+        for role in ('Vizepräsidentin', 'Vizepräsident in'):
+            with self.subTest(role=role):
+                contributions, report = fragestunde(
+                    '<name>Präsident Dr. Norbert Lammert:</name><p>Frau Pau.</p>'
+                    + vize('P', 'Petra', 'Pau', role, 'DIE LINKE') + '<p>Haben Sie Kenntnis davon?</p>'
+                    + official('L', 'Lange', STAATSSEKRETAER) + '<p>Dazu nehmen wir nicht Stellung.</p>')
+                self.assertEqual([(c['kind'], c['speaker']['last_name'], c['text']) for c in contributions],
+                                 [('fragestunde_frage', 'Pau', 'Haben Sie Kenntnis davon?'),
+                                  ('fragestunde_antwort', 'Lange', 'Dazu nehmen wir nicht Stellung.')])
+                self.assertEqual(contributions[0]['speaker']['fraktion'], 'DIE LINKE')
+                self.assertIsNone(contributions[0]['speaker']['role'])
+                derive.check_sprechrollen([report])
+
+    def test_the_vizepraesident_the_last_chair_name_names_is_sitzungsleitung(self):
+        # 18/62: Singhammer chairs (his <name> stands before), and one of his chair
+        # turns is printed as a marker "Johannes Singhammer (CDU/CSU):".
+        contributions, report = fragestunde(
+            '<name>Vizepräsident Johannes Singhammer:</name><p>Das Wort hat der Staatssekretär Dr. Krings.</p>'
+            + official('K', 'Krings', STAATSSEKRETAER) + '<p>Wir bleiben bei unserer Bewertung.</p>'
+            + vize('S', 'Johannes', 'Singhammer', 'Vizepräsident', 'CDU/CSU') + '<p>Sie, Frau Kollegin, haben mit Sicherheit eine Nachfrage.</p>'
+            + vize('P', 'Petra', 'Pau', 'Vizepräsidentin', 'DIE LINKE') + '<p>Ja, ich habe Nachfragen.</p>')
+        self.assertEqual([(c['kind'], c['speaker']['last_name'], c['text']) for c in contributions],
+                         [('fragestunde_antwort', 'Krings', 'Wir bleiben bei unserer Bewertung.'),
+                          ('fragestunde_frage', 'Pau', 'Ja, ich habe Nachfragen.')])
+        derive.check_sprechrollen([report])
+
+    def test_the_chair_marker_ends_the_turn_before_it_like_a_name_element(self):
+        # The chair's words go to no one: not to the answer before, and a question
+        # the chair reads out after its own marker is still a read-out question.
+        contributions, _ = fragestunde(
+            '<name>Vizepräsident Johannes Singhammer:</name><p>Herr Staatssekretär.</p>'
+            + official('K', 'Krings', STAATSSEKRETAER) + '<p>Antwort.</p>'
+            + vize('S', 'Johannes', 'Singhammer', 'Vizepräsident', 'CDU/CSU')
+            + '<p>Ich rufe die Frage 9 der Abgeordneten Petra Pau auf:</p><p klasse="P">Wie viele Fälle gab es?</p>'
+            + official('K', 'Krings', STAATSSEKRETAER) + '<p>Zwei.</p>'
+            + vize('P', 'Petra', 'Pau', 'Vizepräsidentin', 'DIE LINKE') + '<p>Nachfrage.</p>')
+        self.assertEqual([(c['kind'], (c['speaker'] or {}).get('last_name'), c['text']) for c in contributions],
+                         [('fragestunde_antwort', 'Krings', 'Antwort.'),
+                          ('fragestunde_frage', 'Pau', 'Wie viele Fälle gab es?'),
+                          ('fragestunde_antwort', 'Krings', 'Zwei.'),
+                          ('fragestunde_frage', 'Pau', 'Nachfrage.')])
+
+    def test_who_chairs_is_the_last_chair_name_not_any_chair_of_the_sitting(self):
+        # Singhammer chaired earlier; once Hintze's <name> stands, he asks as an MdB.
+        contributions, report = fragestunde(
+            '<name>Vizepräsident Johannes Singhammer:</name><p>Ich übergebe.</p>'
+            '<name>Vizepräsident Peter Hintze:</name><p>Zusatzfrage des Abgeordneten Singhammer.</p>'
+            + vize('S', 'Johannes', 'Singhammer', 'Vizepräsident', 'CDU/CSU') + '<p>Wie viele sind im Einsatz?</p>')
+        self.assertEqual([(c['kind'], c['speaker']['fraktion'], c['speaker']['role']) for c in contributions],
+                         [('fragestunde_frage', 'CDU/CSU', None)])
+        derive.check_sprechrollen([report])
+
+    def test_a_namesake_of_the_chair_is_not_the_chair(self):
+        # The chair <name> must end with first and last name: "Petra Pau" is not "Anna Pau".
+        contributions, _ = fragestunde(
+            '<name>Vizepräsidentin Petra Pau:</name><p>Bitte.</p>'
+            + vize('A', 'Anna', 'Pau', 'Vizepräsidentin', 'SPD') + '<p>Meine Nachfrage.</p>')
+        self.assertEqual([(c['kind'], c['text']) for c in contributions], [('fragestunde_frage', 'Meine Nachfrage.')])
+
+    def test_other_presidium_markers_keep_their_role_and_fail_the_role_check(self):
+        # Only the reviewed form is read: a Vizepräsident(in) with a Fraktion. A
+        # Präsident, or a marker with no Fraktion, is never counted unread.
+        for marker in (vize('L', 'Norbert', 'Lammert', 'Präsident', 'CDU/CSU'),
+                       vize('L', 'Norbert', 'Lammert', 'Alterspräsident', 'CDU/CSU'),
+                       vize('B', 'Edelgard', 'Bulmahn', 'Vizepräsidentin')):
+            with self.subTest(marker=marker):
+                contributions, report = fragestunde(
+                    '<name>Vizepräsident Peter Hintze:</name><p>Bitte.</p>' + marker + '<p>Eine Frage.</p>')
+                self.assertTrue(contributions[0]['speaker']['role'])
+                with self.assertRaises(derive.SprechrolleError):
+                    derive.check_sprechrollen([report])
+
+    def test_a_marker_inside_a_rede_is_left_to_the_rede_rules(self):
+        # The rule reads markers outside any <rede> only: inside one, a presidium
+        # marker stays Sitzungsleitung (round 2), also when another chair's <name> stands before.
+        top, contributions = parse(
+            '<name>Vizepräsident Peter Hintze:</name><p>Das Wort hat Herr Haupt.</p>'
+            '<rede id="R">' + redner('A', 'Haupt', 'CDU/CSU') + '<p>Rede.</p>'
+            + presidium('P', 'Pau', 'Vizepräsidentin', 'DIE LINKE') + '<p>Herr Kollege, Ihre Redezeit.</p>'
+            + redner('A', 'Haupt', 'CDU/CSU') + '<p>Letzter Satz.</p></rede>')
+        self.assertEqual(len(top['speeches']), 1)
+        self.assertEqual(contributions, [])
+
 if __name__ == '__main__':
     unittest.main()
