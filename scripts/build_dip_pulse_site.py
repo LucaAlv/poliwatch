@@ -1121,10 +1121,18 @@ def speaker_profiles(item: dict[str, Any]) -> dict[tuple[str, str, str], Any]:
 def profile_rede_id(protocol_id: Any, item: dict[str, Any], key: str, speech: dict[str, Any], position: int) -> str | None:
     """The rede id persist keys this occurrence's reviewed speaker by, so the
     profile check reads the review persist and the protocol page read: a Rede's
-    whitespace-collapsed id or its synthetic one, a Beitrag's collapsed id or none."""
+    whitespace-collapsed id or its synthetic one, a Beitrag's collapsed id or none.
+    An ``xml_speakers_first`` entry carries no sequence: it is the ``xml_speakers``
+    entry at the same position (the parser takes the first five Reden), whose
+    sequence persist reads, so a withheld Rede before it cannot shift the id."""
     if key == "xml_contributions":
         return " ".join(str(speech.get("rede_id") or "").replace("\xa0", " ").split()) or None
-    return speech_rede_id(protocol_id, source_index(item.get("index")), speech.get("sequence") or position, speech.get("rede_id"))
+    sequence = speech.get("sequence")
+    if key == "xml_speakers_first":
+        full = item.get("xml_speakers") or []
+        if position <= len(full) and full[position - 1].get("rede_id") == speech.get("rede_id"):
+            sequence = full[position - 1].get("sequence")
+    return speech_rede_id(protocol_id, source_index(item.get("index")), int(sequence or position), speech.get("rede_id"))
 
 
 def attach_speaker_profiles(

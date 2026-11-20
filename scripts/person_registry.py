@@ -975,19 +975,43 @@ def _role_word(word: str) -> bool:
     return word in _ROLE_WORDS or word.endswith(_ROLE_ENDINGS)
 
 
+def _name_word_list(name: Any) -> list[tuple[str, bool]]:
+    """A name's words in order, each with whether it was printed in brackets,
+    without titles and particles."""
+    words = [(word.strip(".,()"), word.startswith("(")) for word in _normalized_mp_name(name).split()]
+    return [(word, bracketed) for word, bracketed in words
+            if word and word not in _MP_TITLE_WORDS and word not in _NAME_PARTICLES and word != "unbekannt"]
+
+
 def _name_words(name: Any) -> frozenset[str]:
     """The words of a name that can tell two people apart: no title, particle or
-    office. Two exceptions keep an office word, so the name is still compared: a
-    given name or initial and one unbracketed word read as an office is that
-    person's surname ("Karl Bürgermeister", "K. Bürgermeister"), and a name that
-    is only offices ("Bürgermeister") keeps them rather than emptying."""
-    words = [(word.strip(".,()"), word.startswith("(")) for word in _normalized_mp_name(name).split()]
-    words = [(word, bracketed) for word, bracketed in words
-             if word and word not in _MP_TITLE_WORDS and word not in _NAME_PARTICLES and word != "unbekannt"]
-    kept = {word for word, _ in words if not _role_word(word)}
+    office. A name that is only offices ("Bürgermeister") keeps them rather than
+    emptying, so it is still compared."""
+    words = {word for word, _ in _name_word_list(name)}
+    return frozenset({word for word in words if not _role_word(word)} or words)
+
+
+def _office_surname(name: Any) -> tuple[str, str] | None:
+    """(given name or initial, surname) for a name of exactly one given name and
+    one unbracketed word that reads as an office ("Karl Bürgermeister"), which may
+    be that person's surname; None for any other name."""
+    words = _name_word_list(name)
     if len(words) == 2 and not _role_word(words[0][0]) and _role_word(words[1][0]) and not words[1][1]:
-        kept.add(words[1][0])
-    return frozenset(kept or {word for word, _ in words})
+        return words[0][0], words[1][0]
+    return None
+
+
+def _same_office_surname(left: Any, right: Any) -> bool:
+    """Two names that share no word apart from an office-like word are one person
+    only when both read as a given name plus that word as surname and the given
+    names agree, one being the other or its initial ("Karl Bürgermeister",
+    "K. Bürgermeister"). Two surnames that share an office ("Sieling
+    Bürgermeister", "Bovenschulte Bürgermeister") stay two people."""
+    a, b = _office_surname(left), _office_surname(right)
+    if a is None or b is None or a[1] != b[1]:
+        return False
+    short, long = sorted((a[0], b[0]), key=len)
+    return short == long or (len(short) == 1 and long.startswith(short))
 
 
 def require_reviewed_redner_ids(rows: list[dict[str, Any]]) -> None:
@@ -1002,7 +1026,8 @@ def require_reviewed_redner_ids(rows: list[dict[str, Any]]) -> None:
         if not row["live"] or row.get("partition") or not _redner_ids(row):
             continue
         names = {name: words for name, _ in _name_party_pairs(row) if (words := _name_words(name))}
-        if any(not left & right for left, right in itertools.combinations(names.values(), 2)):
+        if any(not names[left] & names[right] and not _same_office_surname(left, right)
+               for left, right in itertools.combinations(names, 2)):
             clashes.append(f"{min(_redner_ids(row))} ({', '.join(sorted(names))})")
     if clashes:
         raise RegistryError(
