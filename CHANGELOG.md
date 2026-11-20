@@ -12,6 +12,16 @@ The source cited under a Fakt der Woche is now found by the id stored with the f
 - **A gap note handed no count of withheld Reden says "Sitzung N: Reden zurückgehalten"** instead of "None Reden zurückgehalten". No build reaches this today: every withheld-Reden gap carries its count.
 - **The vote panel's note on a re-filed member reads "dort Unbekannt"** instead of "dort None" when the linked Bundestag page gives that member no group.
 
+## [0.46.30.0] - 2026-11-20
+
+The parser now refuses two source shapes it used to read by guess, and it places Reden printed outside any agenda item by one rule. No figure, page or export changes. Parsing all 801 cached sittings of the reference store with the old and the new parser gives identical output, and neither refuses any of them.
+
+### Fixed
+
+- **A source Rede id containing a colon stops the sitting.** The parser names the parts of a split Rede "id:1", "id:2", so a source id already shaped like that could hide an unread Rede from the check that every Rede in the XML is accounted for. Such a sitting is now refused as a source error with its number in the message.
+- **A Rede that two Inhaltsverzeichnis blocks list at different pages stops the sitting.** The later page used to win silently, so a Rede's page citation could depend on block order. Now the sitting is refused, and the message names both pages.
+- **Reden printed outside any agenda item are grouped by their Inhaltsverzeichnis title.** In 18/44, 18/49 and 18/89 the source prints Reden directly in the Sitzungsverlauf. Consecutive Reden listed under one title now share one agenda item even when the title appears in two blocks, and an untitled block beside a titled one no longer counts as a second title and refuses the sitting.
+
 ## [0.46.29.0] - 2026-11-20
 
 The check that stops two people printed under one Redner-ID from being filed as one person now catches cases it skipped, and a reviewed speaker is honoured wherever the build attaches an abgeordnetenwatch profile. No figure, page or export changes. On the 801-sitting reference store the check still compares 53 of 1,591 Redner-ID records and refuses none, and no stored speaker name is read differently.
