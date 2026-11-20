@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.31.0] - 2026-11-20
+
+The source cited under a Fakt der Woche is now found by the id stored with the fact, so an agenda item or speech the protocol prints without a page number is cited like any other. Two notes that could print the word "None" now say what they mean. No published figure, page or export changes. On the 801-sitting reference store, 316 of 317 agenda-item citations resolved before and all 317 resolve now; every one that resolved before resolves to the same agenda item. The one that changes belongs to a fact held back below its floor (20/97, week 2023-W16), so no page shows it. All 1,555 speech citations resolve as before.
+
+### Fixed
+
+- **A fact citing an agenda item or speech without a printed page keeps its source.** The citation used to be looked up by page, and a page the protocol does not print never matched, so the card was left out with "Quelle nicht mehr auffindbar". It is now looked up by the cited row's own id, still checked against the sitting.
+- **A gap note handed no count of withheld Reden says "Sitzung N: Reden zurückgehalten"** instead of "None Reden zurückgehalten". No build reaches this today: every withheld-Reden gap carries its count.
+- **The vote panel's note on a re-filed member reads "dort Unbekannt"** instead of "dort None" when the linked Bundestag page gives that member no group.
+
 ## [0.46.30.0] - 2026-11-20
 
 The parser now refuses two source shapes it used to read by guess, and it places Reden printed outside any agenda item by one rule. No figure, page or export changes. Parsing all 801 cached sittings of the reference store with the old and the new parser gives identical output, and neither refuses any of them.
