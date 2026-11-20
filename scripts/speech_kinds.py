@@ -639,8 +639,11 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
     can place (a guest, say): its paragraphs are no turn, and the caller reports
     how many markers lost text this way so the omission is counted, not silent.
 
-    ``counts``, when given, receives ``markers``, the turns opened by a marker, so
-    the caller can account for every marker of the source. A turn with no paragraph
+    A marker the caller marked ``sitzungsleitung="1"`` is the chair printed as a
+    marker (ADR 0004, 18/62): it opens no turn and is read as a ``<name>`` is.
+
+    ``counts``, when given, receives ``markers``, the turns opened by a marker plus
+    the chair's markers, so the caller can account for every marker of the source. A turn with no paragraph
     is left out: the source printed a marker with no words.
     """
     items: list[dict[str, Any]] = []  # question blocks and turns, in order
@@ -649,6 +652,7 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
     question: dict[str, Any] | None = None
     announcement = ""
     unplaced = 0
+    chair_markers = 0  # markers the caller marked as Sitzungsleitung: no turn
     unplaced_open = False  # the last unplaced marker has not yet lost a paragraph
     for child in top:
         if child.tag == "name":
@@ -656,6 +660,12 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
             announcement = ""
         elif child.tag == "p" and child.attrib.get("klasse") == "redner":
             redner = child.find("redner")
+            if redner is not None and redner.get("sitzungsleitung") == "1":
+                # The chair printed as a marker (18/62): it speaks as a <name> does.
+                speaker, turn, question = "leadership", None, None
+                announcement = ""
+                chair_markers += 1
+                continue
             who = speaker_class(redner)
             question = None
             if who is None:
@@ -711,5 +721,5 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
                     item["redner"] = next(iter(matches.values()))
         turns.append(Turn(item["kind"], item["redner"], item.get("announced"), item["paragraphs"]))
     if counts is not None:
-        counts["markers"] = sum("announcement" not in item for item in items)
+        counts["markers"] = sum("announcement" not in item for item in items) + chair_markers
     return [turn for turn in turns if turn.paragraphs], unplaced
