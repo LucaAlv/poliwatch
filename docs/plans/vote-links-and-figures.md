@@ -75,6 +75,8 @@ Under this meaning the 17 pattern-A links of the pilot are wrong. Under the loos
 - **S3:** all 15 title-fallback links (8 plain, 7 already in S2). They come from a second rule, so a random draw is not enough.
 - **S4:** 50 random plain links from the 311 that rest on a Drucksache, stratified by basis (34 of 212 Vorgang-only, 16 of 99 XML-printed), drawn with a fixed seed recorded in the file.
 
+**On the 801-sitting store (2026-11-20, after T4):** S1 17 votes (61 links), S2 105 TOPs (292 links), S3 20, S4 60 (the same 50 plus 10 of the restored sittings' 51 plain links): 399 links in 195 units. The sheet is written; the reviewer's notes and the counts are in [`vote-links-review-summary.md`](vote-links-review-summary.md).
+
 In all: 329 links in about 155 units. If S4 finds no error, the plain-link error rate is below 6% at 95% confidence (rule of three). S4 is an estimate, not a proof, and DATA.md says so.
 
 **Evidence per link, in this order:**
@@ -87,6 +89,7 @@ In all: 329 links in about 155 units. If S4 finds no error, the plain-link error
 | Column | Content |
 | --- | --- |
 | `stratum` | S1 to S4, or several |
+| `batch` | `t4` for a sitting T4 restored (`--batch-protocols`), else `-` |
 | `protocol`, `date`, `vote_id`, `vote_title` | the vote |
 | `item_index`, `top_id`, `top_occurrence`, `top_heading` | the TOP; first 120 characters of the heading |
 | `basis` | `drucksache_xml`, `drucksache_vorgang`, `title` |
