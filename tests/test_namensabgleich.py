@@ -291,9 +291,9 @@ class PersonMetricsTests(unittest.TestCase):
                             "index": 1, "top_id": "T1", "heading": "TOP",
                             "xml_speakers": [
                                 {"rede_id": "R1", "speaker": {"xml_redner_id": "999990119", "display_name": "Nancy Faeser", "role": "Bundesministerin des Innern und für Heimat"},
-                                 "char_count": 5, "text": "Hallo", "snippet": "Hallo"},
+                                 "paragraph_count": 1, "char_count": 5, "text": "Hallo", "snippet": "Hallo"},
                                 {"rede_id": "R2", "speaker": {"xml_redner_id": "11005452", "display_name": "Nancy Faeser", "fraktion": "SPD"},
-                                 "char_count": 5, "text": "Hallo", "snippet": "Hallo"},
+                                 "paragraph_count": 1, "char_count": 5, "text": "Hallo", "snippet": "Hallo"},
                             ],
                         }
                     ],
@@ -320,7 +320,7 @@ class DebutOrderTests(unittest.TestCase):
 
         def speech(rede_id, name="Ada Example"):
             return {"rede_id": rede_id, "speaker": {"xml_redner_id": "1" if name == "Ada Example" else "2", "display_name": name, "fraktion": "SPD"},
-                    "char_count": 5, "text": "Hallo", "snippet": "Hallo"}
+                    "paragraph_count": 1, "char_count": 5, "text": "Hallo", "snippet": "Hallo"}
 
         with tempfile.TemporaryDirectory() as tmp:
             conn = pulse_store.connect(Path(tmp) / "store.sqlite")

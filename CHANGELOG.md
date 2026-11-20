@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.32.0] - 2026-11-20
+
+The store no longer records an unknown length as zero. When a Rede, a Beitrag, a withheld Rede or one of its turns reaches the store without its paragraph, character or word count, the sitting now stops with an error, and the store stays as it was. Before, the store wrote 0, which reads as a real empty text. No figure, page or export changes. The parser sets every one of these counts, and re-persisting all 801 sittings of the reference store with the old and the new rule gives the same rows: 61,284 Reden, 45,389 Beiträge, 102 withheld Reden and 170 of their turns. Every count column is equal by id, and 0 of 1,944 fact values moved.
+
+### Fixed
+
+- **A missing Rede, Beitrag or withheld count stops the sitting instead of being stored as 0.** This covers `paragraph_count` and `char_count` of a Rede, `char_count` of a Beitrag, `char_count`, `word_count` and `nested_word_count` of a withheld Rede, and `char_count` and `word_count` of its turns. A count of 0 that the parser really measured is still stored as 0.
+
 ## [0.46.31.0] - 2026-11-20
 
 The source cited under a Fakt der Woche is now found by the id stored with the fact, so an agenda item or speech the protocol prints without a page number is cited like any other. Two notes that could print the word "None" now say what they mean. No published figure, page or export changes. On the 801-sitting reference store, 316 of 317 agenda-item citations resolved before and all 317 resolve now; every one that resolved before resolves to the same agenda item. The one that changes belongs to a fact held back below its floor (20/97, week 2023-W16), so no page shows it. All 1,555 speech citations resolve as before.

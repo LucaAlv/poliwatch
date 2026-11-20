@@ -26,7 +26,7 @@ def report(pid='s1', names=('Ada Example',)):
             'validation_summary':{'speech_kinds_version':speech_kinds.VERSION},
             'agenda_items':[{'index':1,'heading':'Debatte','xml_speakers':[
                 {'rede_id':f'{pid}-r{index}', 'speaker':{'display_name':name,'xml_redner_id':str(index+1),'fraktion':'SPD'},
-                 'char_count':20,'text':'Ein geprüfter Text.'} for index,name in enumerate(names)]}]}
+                 'paragraph_count':1,'char_count':19,'text':'Ein geprüfter Text.'} for index,name in enumerate(names)]}]}
 
 class StableIDsTests(unittest.TestCase):
     def setUp(self):

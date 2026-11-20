@@ -1693,7 +1693,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
     @staticmethod
     def _speaker(fraktion: str | None, chars: int, role: str | None = None) -> dict[str, Any]:
         return {
-            "char_count": chars,
+            "paragraph_count": 1, "char_count": chars,
             "speaker": {"fraktion": fraktion, "role": role, "display_name": "Test Person"},
         }
 
