@@ -643,6 +643,12 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("Lizenzhinweis (der Kurzstring aus `LICENSE-DATA.md`, sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
+    # Value: protects=DATA.md names the MdB-Stammdaten, as well as the roll-call data, as redistribution terms still open; fails_when=_codebook_sources_and_citation drops "der MdB-Stammdaten" from the open-question sentence; why_new=only the roll-call data was named although the seat tables and Stammdaten-derived rows ship; seam=none; no_claim=the wording of the rest of the paragraph
+    def test_codebook_names_the_mdb_stammdaten_as_an_open_redistribution_question(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertIn("keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten (ADR 0003) und der MdB-Stammdaten bleibt eine offene Frage.", codebook)
+
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
     def test_cached_manifest_with_invalid_inventory_is_regenerated(self) -> None:
         manifest = self.export()

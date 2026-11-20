@@ -1184,6 +1184,8 @@ Synthesized from this review's findings. Each task derives from a specific findi
 
 # /plan-eng-review: A4 re-scope for a new frontend (2026-11-02)
 
+> **Status (2026-11-18): superseded, not applied.** The "Approval readiness: PASS" in this part and the scope record and R10 to R16 ledger entries predate the 2026-11-04 no-go (`docs/plans/frontend-go-no-go.md`). They are NOT applied: A4 continues in Python (see the Status lines at the top of this file). Only R17 (hold) and R18 (the go/no-go, now done) took effect. The earlier "Approval readiness: PASS" for R1 to R9 (before this part) is unaffected and stays in force.
+
 Review started 2026-11-02 on `main` at 511ae75 (v0.30.0.0). **Target:** the re-scope proposal below, drafted in conversation on 2026-11-02, applied to this plan. Nothing in it is approved until the ledger below says so. Question numbers in this part restart at D1; they are not the plan's own D1–D10 above. Ledger entries continue at R10. Design-doc lookup returned `docs/designs/daten-page.md` and the `expand-database` CEO plan; both unrelated, not used.
 
 ## Re-scope proposal (original, unchanged)
