@@ -16,6 +16,20 @@ The week radar's RSS titles keep their words apart and drop characters that make
 
 - **DATA.md names the MdB-Stammdaten as an open redistribution question.** Its sources paragraph named only the roll-call data. It now names both, and cites ADR 0003 for the roll-call data only, since the ADR does not cover the MdB-Stammdaten yet.
 
+## [0.46.24.0] - 2026-11-20
+
+The data release script is stricter before its first real publication. A release now carries exactly the licence string its commit's `LICENSE-DATA.md` states, and a few inputs that could slip through are refused. No stored figure, page or export value changes, and no release has been made yet.
+
+### Changed
+
+- **A release refuses any licence string other than the committed one.** The dry run and `--publish` compare the export's licence string with the short string under "## Short string" in `LICENSE-DATA.md` at the export's commit, and refuse a mismatch. This includes a deliberate `--data-license` override and a leftover `$BUNDESTAG_PULSE_DATA_LICENSE`. Builds and exports still accept the override; only a release refuses it. The older "the export carries no licence string" refusal and its dry-run notice are gone, because the new check covers them.
+
+### Fixed
+
+- **A release version written with non-ASCII digits is refused.** Arabic-Indic or full-width digits no longer pass as a calendar version.
+- **The changes file of a release refuses numbers JSON cannot hold.** `NaN`, `Infinity` and a number past the float range such as `1e999` are refused when the file is read. `changes.json` is written with no non-finite value.
+- **The Daten page explains every revision that is not a bare 12-digit commit.** It used to add the "local changes" note only when the revision held a hyphen. A short or upper-case revision from a hand-given manifest now gets the note too. A revision that is not text no longer crashes the page.
+- **The `-dirty-` revision no longer depends on four more of the reader's git diff settings** (blank-line, prefix and submodule settings). The settings that decide whether a file counts as changed at all (`core.fileMode`, `core.autocrlf`) are left to the checkout. A clean checkout on a file system without exec bits therefore keeps its bare commit.
 ## [0.46.23.0] - 2026-11-19
 
 The check that keeps local file paths out of a published site now catches paths under a mount point, a downloaded release given as the build store is refused before anything is read from it, and a stale cached report of an excluded sitting no longer stops every build. No stored figure, page or export changes. The path check flags 0 lines of the 10,639 files of the reference site, before and after.

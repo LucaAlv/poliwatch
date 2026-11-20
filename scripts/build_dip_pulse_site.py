@@ -5463,7 +5463,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     provenance_bits = [f"Exportformat {manifest['export_format']}"]
     if manifest.get("commit"):
         provenance_bits.append(f"Commit {manifest['commit']}")
-        if "-" in manifest["commit"]:
+        if not build_revision.is_release_revision(manifest["commit"]):
             provenance_bits.append(REVISION_SUFFIX_NOTE.replace("`", ""))
     provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
     source = manifest.get("stammdaten")
@@ -14540,11 +14540,20 @@ def default_license_text() -> str:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise RuntimeError(f"default licence string: cannot read {path}: {exc}") from exc
+    try:
+        return license_short_string(text, str(path))
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc}; pass --data-license") from exc
+
+
+def license_short_string(text: str, source: str = CODEBOOK_INPUT_FILES["license"]) -> str:
+    """The blockquote under "## Short string" of a LICENSE-DATA.md text; raises
+    RuntimeError naming ``source`` when there is none."""
     section = re.search(r"^## Short string[ \t]*\n(.*?)(?=^## |\Z)", text, flags=re.MULTILINE | re.DOTALL)
     quoted = [line[1:].strip() for line in section.group(1).splitlines() if line.startswith(">")] if section else []
     short = " ".join(part for part in quoted if part)
     if not short:
-        raise RuntimeError(f'default licence string: {path} has no blockquote under "## Short string"; pass --data-license')
+        raise RuntimeError(f'default licence string: {source} has no blockquote under "## Short string"')
     return short
 
 

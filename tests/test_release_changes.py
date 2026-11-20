@@ -228,6 +228,18 @@ class WithheldListTests(unittest.TestCase):
 
 
 class LoadAuthoredTests(unittest.TestCase):
+    def test_load_authored_refuses_nan_and_infinity(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for literal in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
+                with self.subTest(literal=literal):
+                    path = Path(tmp) / "changes-source.json"
+                    path.write_text('{"summary": "s", "notes": [%s]}' % literal, encoding="utf-8")
+                    with self.assertRaisesRegex(rc.ChangesError, "not valid JSON"):
+                        rc.load_authored(path)
+
     def test_load_authored_reports_unreadable_or_invalid_json(self) -> None:
         import tempfile
         from pathlib import Path
