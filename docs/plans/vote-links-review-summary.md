@@ -8,8 +8,8 @@ Read these before the first row.
 
 - **What "right" means.** The roll call was taken on a Vorlage this TOP dealt with (the Vorlage, its Beschlussempfehlung, or an Änderungs- or Entschließungsantrag to it). Where the protocol splits a debate into sub-items, only the most specific one is right: the Einzelplan TOP for a vote on an Einzelplan, the third-reading TOP for a Schlussabstimmung. A link need not say that the vote alone settled the TOP.
 - **`tally`** says how often the vote's exact Ja/Nein tally occurs in the sitting's protocol text.
-  - `unique` (209 rows): once. `announced` then lists the Drucksache numbers in the 800 characters before it, the chair's announcement. 92 of these rows still show `-`, because the chair named none.
-  - `several` (179 rows): more than once, so the sheet does not pick one and `announced` is always `-`. This says nothing against the link. In 177 rows one match is the chair's announcement and every other one is the table "Endgültiges Ergebnis" the protocol prints right after it. The other 2 rows are votes 1029 and 1030 of 21/99, which ended with the same tally (131 Ja, 446 Nein). For a `several` row, search the protocol for the tally ("Mit Ja haben gestimmt N") and read the announcement yourself.
+  - `unique` (379 rows): once, not counting the table "Endgültiges Ergebnis" the protocol prints right after the chair's announcement. `announced` then lists the Drucksache numbers in the 800 characters before the tally, the chair's announcement. 178 of these rows still show `-`, because no number stands there.
+  - `several` (9 rows): the sheet cannot tell whose announcement a match is, so `announced` is always `-`. This says nothing against the link. All 9 are votes that ended with the same tally as another vote of their sitting: 270 and 274 (18/37), 303 and 306 (18/61), 1026, 1027 and 1028 (21/99), 1029 and 1030 (21/99). Search the protocol for the tally ("Mit Ja haben gestimmt N") and tell the announcements apart by the Vorlage they name.
   - `none` (11 rows): the text holds no match for the tally. Find the vote by its title or Drucksache.
 - **`shared`** lists the vote's Drucksachen that the TOP holds, separated by commas. An entry has one of two formats, told apart by the number of fields:
   - three fields, `number:type:Vorgang id`: DIP links the Drucksache to a Vorgang of this TOP. Example: `19/4949:Gesetzentwurf:239426`. One special case: `number:xml:-` (29 entries) has `xml` in the type slot and means only the protocol prints the number under the TOP; DIP links it to no Vorgang there.
@@ -31,7 +31,7 @@ Read these before the first row.
 | S4: random plain links | 50 (34 Vorgang-only, 16 printed) | 60 (44, 16) | 10 (all Vorgang-only) |
 | Rows (a link in two strata counts once) | 329 | 399 | 70 |
 | Units | 155 | 195 | 40 |
-| Rows with `tally = several` | 138 | 179 | 41 |
+| Rows with `tally = several` | 9 | 9 | 0 |
 
 - New in S1: vote 280 in 18/42 (2 TOPs) and votes 562, 563 and 564 in 19/68 (4 TOPs each).
 - New in S3: votes 251 (18/11), 279 (18/42), 388 (18/158), 390 (18/161) and 732 (19/227).
@@ -49,7 +49,7 @@ Not verdicts; places to look first.
 
 - **19/68, votes 562, 563 and 564 (12 links).** Each links to TOPs 6, 8, 17 and 19. All four TOPs hold the Unterrichtung 19/5647 through their own Vorgang, and each vote lists it. 562 (Mietwohnungsneubau) belongs to TOP 6, 563 and 564 (Mietrechtsanpassung) to TOP 8; the other 9 links rest on 19/5647 alone. This looks like pattern A outside the Haushalt.
 - **18/42, vote 280 (Mali, MINUSMA).** Linked to TOP III (MINUSMA) and TOP IV (UNIFIL). DIP's MINUSMA position is assigned to both TOPs; this looks like pattern C.
-- **Announcement names other Drucksachen.** In 8 Drucksache rows with a unique tally, the announcement names numbers of which none is in `shared`: votes 299 and 300 (18/54, each shows the other's Entschließungsantrag), 494 (19/5), 642 (19/132), 691 (19/184), 784 (20/42), 886 (20/145) and 1024 (21/97). The announcement may name an Änderungsantrag the TOP does not list, so each needs reading.
+- **Announcement names other Drucksachen.** In 14 Drucksache rows with a unique tally, the announcement names numbers of which none is in `shared`: votes 299 and 300 (18/54, each shows the other's Entschließungsantrag), 367 (18/130), 376 (18/141), 445 (18/209), 494 (19/5), 558 (19/66), 642 (19/132), 676 (19/165), 691 (19/184), 784 (20/42), 886 (20/145), 928 (20/194) and 1024 (21/97). The 800 characters before a tally can also hold the previous vote's numbers or an Änderungsantrag the TOP does not list, so each needs reading.
 - **Known from the pilot:** the ten Haushalt votes in S1 (pattern A) and vote 493 (pattern C).
 
 ## How to run the review
