@@ -317,6 +317,19 @@ class RefusalPathTests(unittest.TestCase):
         self.assertNotIn("not of ", str(raised.exception))
         enrich.assert_not_called()
 
+    # Value: protects=a fetched body that is not well-formed XML is a source refusal, not a raw ParseError, now that the sitting
+    #   check parses the root first; fails_when=build_report's ET.fromstring is no longer wrapped in DipError(source_rejected);
+    #   why_new=the ParseError catch moved from parse_protocol_xml's call to the root parse and no test feeds malformed XML;
+    #   seam=none
+    def test_malformed_xml_is_a_source_refusal_before_enrichment(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/7", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18007.xml"}}
+        with patch.object(dip, "fetch_text", return_value="<dbtplenarprotokoll wahlperiode="), \
+                patch.object(dip, "enrich_with_api") as enrich, self.assertRaises(dip.DipError) as raised:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(raised.exception.source_rejected)
+        self.assertIn("protocol source rejected", str(raised.exception))
+        enrich.assert_not_called()
+
     # Value: protects=offline, a reconciliation failure names itself, not a corrupt file; fails_when=the generic "is not the Plenarprotokoll XML" message returns;
     #   why_new=the offline message would send the operator to refetch good XML; seam=none
     def test_offline_reparse_says_reconciliation_not_corrupt_xml(self):
