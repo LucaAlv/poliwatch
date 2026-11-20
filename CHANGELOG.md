@@ -12,6 +12,15 @@ The check that stops two people printed under one Redner-ID from being filed as 
 - **More offices count as offices, not as names.** Vizekanzler(in), Staatsrat and Staatsrätin, and titles ending in -beauftragte(r) or -bevollmächtigte(r) ("Wehrbeauftragter", "Landesbevollmächtigte") no longer make two different people look like one because both hold the office. Bundeskanzler(in) stays a whole word, since Kanzler is a real surname.
 - **An office-like surname still links a person's own spellings, but never two different people.** "Karl Bürgermeister" and "K. Bürgermeister" are one person; "Sieling Bürgermeister" and "Bovenschulte Bürgermeister", or "Karl Bürgermeister" and "Anna Bürgermeister", stop the build for review.
 - **A reviewed speaker is found by the same Rede id the store uses.** When an abgeordnetenwatch profile is found under a Redner-ID two people share, the build looks up who spoke by the Rede id as stored (spaces tidied, or the generated id of a Rede printed without one), including in the list of an agenda item's first five speeches, so a profile the review gives to someone else is no longer attached.
+## [0.46.28.0] - 2026-11-20
+
+A build that is handed the wrong sitting's XML now refuses it as a source error every time, and an unknown `<fraktion>` spelling points to the spelling list instead of telling the operator to delete or re-fetch a good file. These are refusal paths and messages; no stored figure, page or export changes. Parsing all 801 cached sittings of the reference store with the old and the new agenda rule gives the same agenda items in every sitting.
+
+### Fixed
+
+- **An online build checks which sitting an XML belongs to before it parses it.** A file whose root names another Wahlperiode or Sitzung is refused as a rejected source naming both sittings, even where the parser would have stopped first on the reviewed list or the Rede reconciliation of the wrong sitting. A DIP record without a dokumentnummer is refused by name instead of with a half-empty sentence, and a body that is not well-formed XML is still a source refusal.
+- **An unknown `<fraktion>` spelling names its fix,** online and on an offline replay: add the spelling to `derive._SPELLINGS` if it names a known Zusammenschluss, and record the source error in `docs/source-errors.md`. Before, a replay called the file corrupt and said to delete it and run `--fetch-xml`, and the replay's fix line said to re-fetch the sitting; both bring back the same XML.
+- **The rule that moves annex Reden out of the Sitzungsverlauf removes only the agenda items it emptied.** An agenda item the protocol prints without content stays, as in 21/18, 21/28, 21/42, 21/45 and 21/93; only 18/158 triggers the rule, and its agenda is unchanged.
 
 ## [0.46.27.0] - 2026-11-20
 
