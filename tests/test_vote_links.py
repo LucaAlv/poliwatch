@@ -132,6 +132,22 @@ class AttributeVotesTests(unittest.TestCase):
                          ["vote c is linked to no TOP and missing from sitting_votes"])
         self.assertEqual(vote_links.placement_errors(vote_links.attribute_votes(lost)), [])
 
+    # Value: protects=persist's gate names a vote that sits in sitting_votes although the rule links it to a TOP (a reader of sitting_votes would show it twice); fails_when=placement_errors checks only what sitting_votes lacks; why_new=TODOS.md "Check that vote links are right" item 9; seam=none
+    def test_a_linked_vote_that_also_sits_in_the_sitting_votes_is_named(self) -> None:
+        both = report(copy.deepcopy(ITEMS), [])
+        both["agenda_items"][0]["votes"] = [vote("1", "Rente", "21/10")]
+        both["sitting_votes"] = [vote("1", "Rente", "21/10")]
+        self.assertEqual(vote_links.placement_errors(both),
+                         ["vote 1 is linked to a TOP and also sits in sitting_votes"])
+        self.assertEqual(vote_links.placement_errors(vote_links.attribute_votes(both)), [])
+
+    # Value: protects=one misplaced unlinked vote (held under a TOP, absent from sitting_votes) gives one error, so persist's first three errors cannot hide a third fault; fails_when=placement_errors names it as missing from sitting_votes and as sitting under the TOP; why_new=TODOS.md "Check that vote links are right" item 12; seam=none
+    def test_one_misplaced_unlinked_vote_gives_one_error(self) -> None:
+        misplaced = report(copy.deepcopy(ITEMS), [])
+        misplaced["agenda_items"][0]["votes"] = [vote("c", "Geschäftsordnungsantrag")]
+        self.assertEqual(vote_links.placement_errors(misplaced),
+                         ["vote c sits under TOP 1, which the rule does not link it to"])
+
     def test_a_report_without_a_list_keeps_the_order_it_holds(self) -> None:
         carried = report(copy.deepcopy(ITEMS), [])
         carried["api_records"] = {}
@@ -143,6 +159,14 @@ class AttributeVotesTests(unittest.TestCase):
 def fixture_report() -> dict[str, Any]:
     """The fixture sitting: TOP 1 prints 20/123 and links 20/456; its vote 12345 shares 20/123."""
     return json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+
+
+class TextCleanerTests(unittest.TestCase):
+    # Value: protects=vote_links reads derive's public text cleaner, not a private name; fails_when=vote_links.py mentions derive._clean again; why_new=TODOS.md "Check that vote links are right" item 13; seam=none
+    def test_vote_links_uses_no_private_name_of_derive(self) -> None:
+        source = (Path(vote_links.__file__)).read_text(encoding="utf-8")
+        self.assertNotIn("derive._", source)
+        self.assertEqual(vote_links.norm_title("  Entwurf\xa0eines  Gesetzes! "), "entwurf eines gesetzes")
 
 
 class PathsTests(unittest.TestCase):

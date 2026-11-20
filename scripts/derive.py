@@ -84,16 +84,17 @@ _KNOWN = frozenset(
 )
 
 
-def _clean(value: Any) -> str:
+def clean_text(value: Any) -> str:
+    """Text with non-breaking spaces and runs of whitespace collapsed to single spaces."""
     return " ".join(str(value if value is not None else "").replace("\xa0", " ").split())
 
 
 def vote_member_key(vote_id: Any, member: Mapping[str, Any]) -> str | None:
     """Stable occurrence key for one member row in a roll-call vote."""
-    vote_id_clean = _clean(vote_id) or None
+    vote_id_clean = clean_text(vote_id) or None
     if vote_id_clean is None:
         return None
-    name = _clean(member.get("name")) or None
+    name = clean_text(member.get("name")) or None
     faction = zusammenschluss(member.get("faction")) or "Unbekannt"
     return vote_member_occurrence_id(vote_id_clean, name, faction)
 
@@ -125,7 +126,7 @@ def zusammenschluss(value: Any) -> str | None:
     element). The first is one name, the second cannot be resolved from the
     string alone.
     """
-    text = _clean(value)
+    text = clean_text(value)
     if not text:
         return None
     if text.casefold() in _SPELLINGS:
@@ -158,16 +159,16 @@ def printed_fraktion(value: Any, role: Any = None) -> str | None:
     Land's name beside a Bundesrat member who speaks for it (19/60, "Bremen" for
     "Bürgermeister (Bremen)", E7) is no Fraktion, as the other Bundesrat Reden
     print none. Any other value raises UnknownFraktionError."""
-    text = _clean(value)
+    text = clean_text(value)
     if not text:
         return None
     name = zusammenschluss(text)
     if name is None or name in _KNOWN:
         return text
     head, colon, _ = text.partition(":")
-    if colon and _known(_clean(head)):
-        return _clean(head)
-    role_text_ = _clean(role)
+    if colon and _known(clean_text(head)):
+        return clean_text(head)
+    role_text_ = clean_text(role)
     if re.fullmatch(_LAENDER, text) and side_of_role(role_text_) == "bundesrat" and role_text_.endswith(f"({text})"):
         return None
     raise UnknownFraktionError(f"unknown Fraktion {text!r}")
@@ -373,7 +374,7 @@ def role_without_name(role: str | None, name_parts: Iterable[str | None] = ()) -
     for part in name_parts:
         for token in (part or "").split():
             role = re.sub(rf"(?<![\w.-]){re.escape(token)}(?![\w-])", " ", role)
-    return _clean(role)
+    return clean_text(role)
 
 
 def is_presidium_role(role: str | None, name_parts: Iterable[str | None] = ()) -> bool:
@@ -385,7 +386,7 @@ def is_presidium_role(role: str | None, name_parts: Iterable[str | None] = ()) -
 def role_text(speaker: Mapping[str, Any] | None) -> str:
     """The ``<rolle_lang>`` of a speaker (``role``), else its short form."""
     speaker = speaker or {}
-    return _clean(speaker.get("role") or speaker.get("role_short"))
+    return clean_text(speaker.get("role") or speaker.get("role_short"))
 
 
 def side_of_role(text: str) -> str | None:
@@ -436,7 +437,7 @@ def find_unmapped_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> dict[str
     "protocol Rede-id" for each occurrence."""
     unmapped: dict[str, list[str]] = {}
     for report in reports:
-        number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
+        number = clean_text((report.get("protocol") or {}).get("dokumentnummer")) or "?"
         for item in [report, *(report.get("agenda_items") or [])]:
             contributions = [c for c in item.get("xml_contributions") or [] if c.get("kind") not in SIDELESS_KINDS]
             for speech in [*(item.get("xml_speakers") or []), *contributions]:
@@ -450,7 +451,7 @@ def presidium_reden(reports: Iterable[Mapping[str, Any]]) -> list[str]:
     """"protocol Rede-id" of every Rede whose speaker carries a presidium role."""
     found = []
     for report in reports:
-        number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
+        number = clean_text((report.get("protocol") or {}).get("dokumentnummer")) or "?"
         for item in [report, *(report.get("agenda_items") or [])]:
             for speech in item.get("xml_speakers") or []:
                 speaker = speech.get("speaker") or {}
@@ -559,7 +560,7 @@ def vote_member_identity(member: Mapping[str, Any]) -> str:
     profile_url = member_profile_url(member)
     if profile_url:
         return f"profile:{profile_url}"
-    name = _clean(member.get("name")) or "Unbekannt"
+    name = clean_text(member.get("name")) or "Unbekannt"
     return f"name-party:{name}|{zusammenschluss(member.get('faction')) or 'Unbekannt'}"
 
 
@@ -572,7 +573,7 @@ def require_vote_shape(report: Mapping[str, Any]) -> None:
     """Raise ValueError for a report whose votes a reader would lose: a TOP's
     singular ``"vote"`` (a shape from before ``"votes"``), a ``votes`` or
     ``sitting_votes`` value that is not a list (``{}`` and ``""`` included), or a vote
-    without an id. An absent or null value, an empty list, or an empty ``"vote"`` is
+    without an id (also in ``api_records``' ``sitting_votes`` and ``matched_roll_call_votes``, which the vote links read). An absent or null value, an empty list, or an empty ``"vote"`` is
     no vote. None of these occurs in the current cache (0 of 246 votes); report
     loading, persist and the standalone renderer all refuse them, so a stale report
     fails loudly instead of persisting as a sitting without votes."""
@@ -581,23 +582,25 @@ def require_vote_shape(report: Mapping[str, Any]) -> None:
         if item.get("vote"):
             raise ValueError(f'TOP {item.get("index")} has a singular "vote" (a shape from before "votes")')
     # Each message names the holder, so the reader knows where in the file to look.
-    holders = [*((f'TOP {item.get("index")}', item.get("votes")) for item in items), ("sitting_votes", report.get("sitting_votes"))]
+    records = report.get("api_records") or {}
+    holders = [*((f'TOP {item.get("index")}', item.get("votes")) for item in items), ("sitting_votes", report.get("sitting_votes")),
+               *((f"api_records.{name}", records.get(name)) for name in ("sitting_votes", "matched_roll_call_votes"))]
     for holder, votes in holders:
         if votes is None:
             continue
         if not isinstance(votes, list):
             raise ValueError(f"{holder}: roll-call votes are not a list")
         for vote in votes:
-            if not isinstance(vote, dict) or not _clean(vote.get("id")):
+            if not isinstance(vote, dict) or not clean_text(vote.get("id")):
                 raise ValueError(f"{holder}: a roll-call vote has no id")
 
 
 def vote_identity(vote: Mapping[str, Any]) -> str:
     """A vote's identity within a sitting: its id, cleaned as persist cleans it
-    (``_clean``: whitespace collapsed). The scraper always sets one and
+    (``clean_text``: whitespace collapsed). The scraper always sets one and
     ``require_vote_shape`` refuses a vote without it; a missing or blank id
     raises here too, so ``None`` never becomes the identity ``"None"``."""
-    vote_id = _clean(vote.get("id"))
+    vote_id = clean_text(vote.get("id"))
     if not vote_id:
         raise ValueError("a roll-call vote has no id")
     return vote_id
@@ -694,6 +697,13 @@ def is_bundestag_xml_url(url: Any) -> bool:
     return parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-xml"]
 
 
+def printed_drucksachen(docs: Iterable[Mapping[str, Any]] | None) -> list[Mapping[str, Any]]:
+    """The Drucksache references among ``docs`` that can be Drucksachen: one
+    without a link, or linked to the Bundestag's XML host. The one host test for
+    the parser's ``position_matches_top`` and the vote links."""
+    return [doc for doc in docs or [] if not doc.get("url") or is_bundestag_xml_url(doc["url"])]
+
+
 def xml_drucksachen(item: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     """The agenda item's XML Drucksache references that can be Drucksachen: one
     without a link, or linked to the Bundestag's XML host. A reference whose link
@@ -701,10 +711,7 @@ def xml_drucksachen(item: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     ``validate_dip_protocol.extract_drucksachen`` checked the host (88/739016 from
     a syriahr.com path in 20/206); persist, the Politikfelder, the dossier and the
     vote links all read the references through this one rule."""
-    return [
-        doc for doc in item.get("xml_drucksachen") or []
-        if not doc.get("url") or is_bundestag_xml_url(doc["url"])
-    ]
+    return printed_drucksachen(item.get("xml_drucksachen"))
 
 
 def report_wahlperiode(report: Mapping[str, Any]) -> str:
@@ -877,7 +884,7 @@ def abstimmungsgegenstand(vote: Mapping[str, Any]) -> str | None:
 
 def vote_subject(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
     """Stored wording for this ballot, without assigning a neighboring Vorlage."""
-    labels = list(dict.fromkeys(_clean(vote.get(field)) for field in ("description", "vote_heading", "title") if _clean(vote.get(field))))
+    labels = list(dict.fromkeys(clean_text(vote.get(field)) for field in ("description", "vote_heading", "title") if clean_text(vote.get(field))))
     qualified = [label for label in labels if re.search(r"\b(?:Buchstabe|Artikel|Teile|Geschäftsordnungsantrag)\b|\bhier\s*:", label, re.I)]
     if qualified:
         # A title fallback must not erase a procedural subject or a split ballot's scope.
@@ -887,9 +894,9 @@ def vote_subject(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
     if len(numbers) == 1 and abstimmungsgegenstand(vote) != "beschlussempfehlung":
         number = next(iter(numbers))
         doc = docs.get(number) or {}
-        kind, title = doc.get("drucksachetyp"), _clean(doc.get("titel"))
+        kind, title = doc.get("drucksachetyp"), clean_text(doc.get("titel"))
         variants = {
-            (_clean(other.get("drucksachetyp")), _clean(other.get("titel")))
+            (clean_text(other.get("drucksachetyp")), clean_text(other.get("titel")))
             for item in report.get("agenda_items") or []
             for other in (item.get("api") or {}).get("linked_drucksachen") or []
             if canonical_document_number(other.get("dokumentnummer")) == number
@@ -937,7 +944,7 @@ def vote_committees(vote: Mapping[str, Any], report: Mapping[str, Any]) -> list[
         doc = documents.get(number)
         if not doc or number in seen or not str(doc.get("drucksachetyp") or "").startswith("Beschlussempfehlung"):
             continue
-        urheber = list(dict.fromkeys(_clean(name) for name in doc.get("urheber") or [] if _clean(name)))
+        urheber = list(dict.fromkeys(clean_text(name) for name in doc.get("urheber") or [] if clean_text(name)))
         if not urheber:
             continue
         seen.add(number)
@@ -1005,7 +1012,7 @@ class StammdatenError(Exception):
 def _stammdaten_date(text: Any, where: str, *, required: bool = False) -> date | None:
     """A ``TT.MM.JJJJ`` date of the Stammdaten; StammdatenError naming
     ``where`` when it is malformed, or blank and ``required``."""
-    value = _clean(text)
+    value = clean_text(text)
     if not value and not required:
         return None
     try:
@@ -1023,7 +1030,7 @@ def _stammdaten_name(names: Iterable[Mapping[str, Any]], day: date, where: str) 
     if not dated:
         return ""
     chosen = next((item for (von, _), item in reversed(dated) if von <= day), dated[0][1])
-    return _clean(" ".join(_clean(chosen.get(part)) for part in ("VORNAME", "ADEL", "PRAEFIX", "NACHNAME", "ORTSZUSATZ")))
+    return clean_text(" ".join(clean_text(chosen.get(part)) for part in ("VORNAME", "ADEL", "PRAEFIX", "NACHNAME", "ORTSZUSATZ")))
 
 
 def _mandate_stretches(mdb_id: str, names: list[Mapping[str, Any]], wahlperiode: int, period: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -1036,9 +1043,9 @@ def _mandate_stretches(mdb_id: str, names: list[Mapping[str, Any]], wahlperiode:
     # Rule 0: the Stammdaten repeats a membership once per Fraktion function
     # (FKT_LANG); the same name and dates are one membership.
     records = {
-        (_clean(item.get("INS_LANG")), _clean(item.get("MDBINS_VON")), _clean(item.get("MDBINS_BIS")))
+        (clean_text(item.get("INS_LANG")), clean_text(item.get("MDBINS_VON")), clean_text(item.get("MDBINS_BIS")))
         for item in period.get("INSTITUTIONEN") or []
-        if _clean(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART
+        if clean_text(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART
     }
     # Sorted by start date, then by record: a set has no order, and two
     # memberships starting on one day would otherwise come out in hash order.
@@ -1130,7 +1137,7 @@ def mdb_zugehoerigkeiten(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode
         for period in mdb.get("WAHLPERIODEN") or []:
             wahlperiode = int(period["WP"])
             if wahlperiode >= since_wahlperiode:
-                mandates.append(_mandate_stretches(_clean(mdb["ID"]), list(mdb.get("NAMEN") or []), wahlperiode, period))
+                mandates.append(_mandate_stretches(clean_text(mdb["ID"]), list(mdb.get("NAMEN") or []), wahlperiode, period))
     # A Mandat's MDBWP_BIS is its last day, and a Nachrücker's normally starts
     # the day after. Where a Mandat of the same Zusammenschluss starts on that
     # last day itself (Lambsdorff and Willkomm, 07.08.2023; the Berlin repeat
@@ -1217,7 +1224,7 @@ def first_record_days(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode: i
     Malformed dates raise StammdatenError as in ``mdb_zugehoerigkeiten``."""
     days: dict[tuple[int, str], str] = {}
     for mdb in mdbs:
-        mdb_id = _clean(mdb["ID"])
+        mdb_id = clean_text(mdb["ID"])
         for period in mdb.get("WAHLPERIODEN") or []:
             wahlperiode = int(period["WP"])
             if wahlperiode < since_wahlperiode:
@@ -1225,7 +1232,7 @@ def first_record_days(mdbs: Iterable[Mapping[str, Any]], *, since_wahlperiode: i
             where = f"MdB {mdb_id}, WP {wahlperiode}"
             starts = [_stammdaten_date(item.get("MDBINS_VON"), where, required=True)
                       for item in period.get("INSTITUTIONEN") or []
-                      if _clean(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART]
+                      if clean_text(item.get("INSART_LANG")) == STAMMDATEN_FRAKTION_ART]
             if starts:
                 mandate_from = _stammdaten_date(period.get("MDBWP_VON"), where, required=True)
                 day = max(min(starts), mandate_from).isoformat()

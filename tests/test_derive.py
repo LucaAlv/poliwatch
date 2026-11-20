@@ -27,6 +27,25 @@ def roll_call(members: list[dict[str, str]], fractions: list[dict[str, object]] 
     return {"id": "7", "fractions": fractions_of(members) if fractions is None else fractions, "members": members}
 
 
+class PrintedDrucksachenHostTests(unittest.TestCase):
+    HREFS = (None, "", "https://www.bundestag.de/x.xml", "https://dserver.bundestag.de/btd/21/065/2106561.pdf",
+             "https://syriahr.com/2024/12/06/story", "http://www.bundestag.de/x", "https://www.bundestag.de.evil.com/x")
+
+    # Value: protects=the parser's extract_drucksachen and the vote links (derive.xml_drucksachen) apply one host test, and position_matches_top reads the printed numbers through derive.printed_drucksachen; fails_when=either side gets its own host test again; why_new=TODOS.md "Check that vote links are right" item 10; seam=none
+    def test_parser_and_vote_links_share_one_host_test(self):
+        import validate_dip_protocol as dip
+        docs = [{"dokumentnummer": "21/1", "url": href} for href in self.HREFS]
+        kept = derive.printed_drucksachen(docs)
+        self.assertEqual(derive.xml_drucksachen({"xml_drucksachen": docs}), kept)
+        for href in self.HREFS:
+            with self.subTest(href=href):
+                if href:
+                    self.assertEqual(dip.is_bundestag_document_url(href), derive.is_bundestag_xml_url(href))
+                self.assertEqual(any(doc["url"] == href for doc in kept), (not href) or derive.is_bundestag_xml_url(href))
+        self.assertEqual(derive.printed_drucksachen(None), [])
+        self.assertIn("derive.printed_drucksachen", __import__("inspect").getsource(dip.enrich_with_api))
+
+
 class VoteAbweichlerTests(unittest.TestCase):
     def names(self, result: dict, group: str) -> list[str]:
         return [row["name"] for row in result[group]["members"]]

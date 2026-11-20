@@ -685,11 +685,7 @@ def is_bundestag_document_url(href: str | None) -> bool:
     Drucksache number to the regex below. Only Bundestag-hosted links can be
     Drucksachen, and only those pass the publication allowlist later.
     """
-    if not href:
-        return False
-    parsed = urllib.parse.urlsplit(href)
-    hostname = (parsed.hostname or "").lower().rstrip(".")
-    return parsed.scheme == "https" and hostname in publication.SOURCE_HOSTS["bundestag-xml"]
+    return bool(href) and derive.is_bundestag_xml_url(href)
 
 
 def extract_drucksachen(elem: ET.Element) -> list[dict[str, str | None]]:
@@ -4220,7 +4216,7 @@ def enrich_with_api(
             return False
         xml_numbers = {
             str(doc.get("dokumentnummer"))
-            for doc in top.get("drucksachen", [])
+            for doc in derive.printed_drucksachen(top.get("drucksachen"))
             if doc.get("dokumentnummer")
         }
         if xml_numbers:
