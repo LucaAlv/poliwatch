@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.35.0] - 2026-11-20
+
+The sheet for checking the links between roll-call votes and agenda items by hand is written for the 801-sitting reference store. It lists 399 of the 701 links in 195 review units, with notes for the reviewer beside it. No link, figure, page or export changes. The rule that makes the links is untouched, and the verdict columns of the sheet are still empty. On the 718 sittings held before the restored ones came back, the sheet picks the same 329 links the plan sized; the 83 restored sittings add 70.
+
+### Added
+
+- **The review sheet and its notes.** `docs/plans/vote-links-review.tsv` holds every vote linked to more than one agenda item (17 votes, 61 links), every agenda item with more than one vote (105 items, 292 links), all 20 links made by title, and 60 randomly drawn plain links. `docs/plans/vote-links-review-summary.md` explains each column, lists the rows that look wrong at first sight and says how to run the review.
+- **Rows from the restored sittings are marked and sampled on their own.** `scripts/vote_link_review.py --batch-protocols` takes a list of sittings; their rows carry `t4` in a new `batch` column, and the random draw takes 10 of their 51 plain links after drawing the same 50 as before from the other sittings.
+
+### Changed
+
+- **The sheet settles the tally for 172 more rows.** A protocol prints the result table after the chair reads the result, so the same tally stood twice in the text and the sheet gave up on it. The table no longer counts as a second match: 379 rows now show one place for the tally (209 before), 9 show several and 11 none.
+- **Two votes of one sitting with the same tally show no announcement.** The text cannot say which vote an announcement belongs to, so the sheet marks both as ambiguous instead of showing one vote's numbers on the other's row. This applies to 9 rows.
+
 ## [0.46.32.0] - 2026-11-20
 
 The store no longer records an unknown length as zero. When a Rede, a Beitrag, a withheld Rede or one of its turns reaches the store without its paragraph, character or word count, the sitting now stops with an error, and the store stays as it was. Before, the store wrote 0, which reads as a real empty text. No figure, page or export changes. The parser sets every one of these counts, and re-persisting all 801 sittings of the reference store with the old and the new rule gives the same rows: 61,284 Reden, 45,389 Beiträge, 102 withheld Reden and 170 of their turns. Every count column is equal by id, and 0 of 1,944 fact values moved.
