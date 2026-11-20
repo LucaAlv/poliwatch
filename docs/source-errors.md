@@ -173,6 +173,15 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** in the 803 sittings of WP 18–21 held (the 801 of the reference store, 18/62 and 18/90), five presidium markers stand outside a `<rede>`; this is the only one whose person presides. Counted 2026-11-20.
 - **Our side:** read as Sitzungsleitung by `mark_presidium_markers_outside_reden` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-20). Without the rule it was a `fragestunde_antwort` with a role no Sprechrolle rule maps.
 
+### E12. 20/25: a stage direction is printed in the chair's element inside a speech
+
+- **Status:** verified 2026-11-20, on the XML cached 2026-11-12 in the reference store.
+- **Source:** `https://dserver.bundestag.de/btp/20/20025.xml`, Tagesordnungspunkt 5, `<rede id="ID202506700">` (Lamya Kaddor, BÜNDNIS 90/DIE GRÜNEN): `<name>(Vizepräsident Wolfgang Kubicki räuspert sich)</name>`, followed by her own closing words, "– Sofort, Herr Präsident. – Eines ist aber auch klar: …" and "Ich danke Ihnen für Ihre Aufmerksamkeit."
+- **What is wrong:** `<name>` holds the label of a chair turn ("Vizepräsident Wolfgang Kubicki:"). This one holds a stage direction in parentheses: Kubicki speaks no words, and Kaddor answers him and goes on. Elsewhere the source prints such stage directions as `<kommentar>`.
+- **What it should be:** `<kommentar>(Vizepräsident Wolfgang Kubicki räuspert sich)</kommentar>`.
+- **Scale:** in the 803 sittings of WP 18–21 held (the 801 of the reference store, 18/62 and 18/90), this is the only `<name>` whose whole text stands in parentheses. Counted 2026-11-20.
+- **Our side:** read as a `<kommentar>` by `mark_stage_direction_names` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-20, stage directions). Without the rule her last two paragraphs (52 words) were read as chair text and stored nowhere.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
