@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.34.0] - 2026-11-20
+
+The dataset's codebook now says how this dataset relates to four others and how to join it to one of them. DATA.md gains the section "Vergleich mit anderen Datensätzen und Verknüpfung": a table for this dataset, CPP-BT, GermaParl, ParlLawSpeech and BTVote, read from each project's own pages on 2026-11-20, and the rules for joining by the Bundestag's own Rede and Redner ids. A second document says what main and stable data releases are. No figure, page or stored value changes; this is text only.
+
+### Added
+
+- **A comparison table in DATA.md.** It gives version, coverage, unit, links, identifiers and licence for the five datasets, with the sources and the date read. A cell nobody could check says so: ParlLawSpeech's codebook was not read. The section states that the projects are independent and not affiliated.
+- **Join rules for `rede_id` and `xml_redner_id`.** `rede_id` is the Bundestag's `<rede>` id, and CPP-BT carries the same ids. The section explains the forms that are not Bundestag ids (`ID…:N` for a part the parser split off, `nested:…` for a Zwischenfrage, `annex:…`, and the Fragestunde without an id), the ` (neu)` suffix on five CPP-BT protocol numbers, and why a person is better joined by Rede id and surname than by Redner-ID alone.
+- **What CPP-BT lists as a Rede and this dataset does not.** Measured on the 801-sitting reference store against CPP-BT 2026-09-19: 81,354 ids are on both sides in the 789 shared sittings, none of ours is missing there, and 2,311 are only there. 2,092 of those are declarations under § 31 GO, which this dataset leaves out by rule; the rest are 121 procedural units, 95 withheld Reden, 2 reprints and one motion. The Redner-ID agrees on 81,280 of 81,338 shared ids.
+- **`docs/release-policy.md`.** A main release is every published data release; a stable release is a main release the owner reviewed, marked by a `stable-<version>` tag and a review record. The document lists what a release fixes (a release never changes, every moved figure is recorded, ids keep their meaning, withheld Reden are listed) and holds the text that replaces the pre-release section of `CLAUDE.md` after the first release.
+- **A template for the review record,** `docs/release-reviews/TEMPLATE.md`, with one part per step of the release review checklist.
+
+### Changed
+
+- **Step 5 of the release review checklist checks the new section:** the table when its date is older than six months or CPP-BT has a newer version, and the measured figures against the comparison's own output.
+
 ## [0.46.32.0] - 2026-11-20
 
 The store no longer records an unknown length as zero. When a Rede, a Beitrag, a withheld Rede or one of its turns reaches the store without its paragraph, character or word count, the sitting now stops with an error, and the store stays as it was. Before, the store wrote 0, which reads as a real empty text. No figure, page or export changes. The parser sets every one of these counts, and re-persisting all 801 sittings of the reference store with the old and the new rule gives the same rows: 61,284 Reden, 45,389 Beiträge, 102 withheld Reden and 170 of their turns. Every count column is equal by id, and 0 of 1,944 fact values moved.
