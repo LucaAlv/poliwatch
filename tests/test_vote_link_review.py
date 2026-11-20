@@ -185,6 +185,75 @@ class SheetTests(unittest.TestCase):
         self.assertEqual((code, "not well-formed XML" in err), (2, True))
 
 
+    def test_two_votes_with_one_tally_do_not_share_an_announcement(self) -> None:
+        # v2 gets the tally the XML announces for 12345 (10 Ja, 5 Nein): the
+        # one match could be either vote's, so neither row shows it.
+        built = sitting()
+        tallies = {vote["id"]: vote["total"] for item in built["agenda_items"] for vote in item.get("votes") or []}
+        for item in built["agenda_items"]:
+            for vote in item.get("votes") or []:
+                if vote["id"] == "v2":
+                    vote["total"] = dict(tallies["12345"])
+        shutil.rmtree(self.site)
+        self.make_site(built)
+        rows = {row["vote_id"]: row for row in self.rows(self.run_sheet()[1])}
+        self.assertEqual([(rows[vote]["tally"], rows[vote]["announced"]) for vote in ("12345", "v2")], [("several", "-")] * 2)
+
+    def batch_file(self, text: str) -> str:
+        path = self.site.parent / "batch.tsv"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_a_batch_sitting_is_marked_and_sampled_apart(self) -> None:
+        # The fixture sitting is the batch: the first draw has no pool left, and
+        # the batch draw takes both plain links (fewer than BATCH_MIN).
+        code, text, _ = self.run_sheet("--batch-protocols", self.batch_file("sitting\tdate\n20/999\t2024-01-01\n"),
+                                       vorgang="0", xml="0")
+        self.assertEqual(code, 0)
+        rows = self.rows(text)
+        self.assertEqual({row["batch"] for row in rows}, {"t4"})
+        self.assertEqual(sorted(row["vote_id"] for row in rows if row["stratum"] == "S4"), ["v5", "v6"])
+        self.assertIn("# batch t4: 1 sittings of ", text)
+        self.assertIn("7 links in store, 7 rows: S1 2, S2 2, S3 1, S4 2", text)
+        code, _, err = self.run_sheet("--batch-protocols", self.batch_file("sitting\n20/999\n"))
+        self.assertEqual((code, "exceeds the 0 plain drucksache_vorgang links" in err), (2, True))
+
+    def test_without_a_batch_every_row_reads_a_dash(self) -> None:
+        self.assertEqual({row["batch"] for row in self.rows(self.run_sheet()[1])}, {"-"})
+
+    def test_bad_batch_inputs_are_refused_with_a_message(self) -> None:
+        for content, message in (("protocol\n20/999\n", "has no sitting column"), ("sitting\n\n", "names no sitting"),
+                                 ("sitting\n20/999\n20/998\n", "1 sittings the store does not hold: 20/998"),
+                                 ("", "has no sitting column")):
+            code, _, err = self.run_sheet("--batch-protocols", self.batch_file(content))
+            self.assertEqual((code, message in err), (2, True), err)
+        code, _, err = self.run_sheet("--batch-protocols", str(self.site.parent / "nowhere.tsv"))
+        self.assertEqual((code, "cannot be read" in err), (2, True))
+        (self.site.parent / "latin.tsv").write_bytes(b"sitting\n\xff\n")
+        code, _, err = self.run_sheet("--batch-protocols", str(self.site.parent / "latin.tsv"))
+        self.assertEqual((code, "cannot be read" in err), (2, True))
+        code, _, err = self.run_sheet("--batch-protocols", self.batch_file("sitting\n20/999\n"), "--batch-name", "T 4")
+        self.assertEqual((code, "--batch-name takes" in err), (2, True))
+
+
+class BatchDrawTests(unittest.TestCase):
+    def links(self, protocols: list[str]) -> list[dict[str, Any]]:
+        return [{"vote_id": f"{protocol}-{n}", "agenda_item_id": f"{protocol}-{n}", "document_number": protocol,
+                 "basis": "drucksache_vorgang" if n % 3 else "drucksache_xml"}
+                for protocol in protocols for n in range(20)]
+
+    def test_a_batch_leaves_the_first_draw_as_it_was(self) -> None:
+        before = review.strata(self.links(["20/1", "20/2"]), 7, 5, 3)
+        after = review.strata(self.links(["20/1", "20/2", "18/1", "18/2", "18/3", "18/4"]), 7, 5, 3,
+                              frozenset({"18/1", "18/2", "18/3", "18/4"}))
+        self.assertEqual({position for position in after if position < 40}, set(before))
+        # 80 plain batch links: 16% is 12.8, drawn as 13.
+        self.assertEqual(len([position for position in after if position >= 40]), 13)
+
+    def test_the_batch_sample_size(self) -> None:
+        self.assertEqual([review.batch_sample_size(pool) for pool in (0, 3, 51, 62, 63, 100)], [0, 3, 10, 10, 11, 16])
+
+
 class SharedDocumentsTests(unittest.TestCase):
     def test_a_number_read_off_a_news_site_url_is_not_printed(self) -> None:
         top = {"xml_drucksachen": [{"dokumentnummer": "21/5", "url": "https://euronews.com/x/21/5"}],
@@ -198,6 +267,14 @@ class TallyTests(unittest.TestCase):
         text = "über Drucksache 21/5 ... Mit Ja haben gestimmt 380, mit Nein haben gestimmt 270, Enthaltungen 2."
         self.assertEqual(review.find_tally(text, 380, 270), ("unique", ["21/5"]))
         self.assertEqual(review.find_tally(text + " davon ja: 380, nein: 270", 380, 270)[0], "several")
+        # The result table printed after the announcement is no second tally,
+        # also under a misprinted heading; two announcements stay several, and
+        # a tally found only in the table is still found.
+        table = " Die Beschlussempfehlung ist angenommen. Endgültiges Ergebnis Abgegebene Stimmen: 652; davon ja: 380 nein: 270 enthalten: 2"
+        self.assertEqual(review.find_tally(text + table, 380, 270), ("unique", ["21/5"]))
+        self.assertEqual(review.find_tally(text + table.replace("Endgültiges", "En dgültiges"), 380, 270)[0], "unique")
+        self.assertEqual(review.find_tally(text + table + " " + text + table, 380, 270)[0], "several")
+        self.assertEqual(review.find_tally("Drucksache 21/7." + table, 380, 270), ("unique", ["21/7"]))
         # A tally inside a longer number is no tally.
         self.assertEqual(review.find_tally(text, 38, 27), ("none", []))
         self.assertEqual(review.find_tally(text, None, 270), ("none", []))
@@ -208,6 +285,8 @@ class TallyTests(unittest.TestCase):
         hostile = "ja " + "9" * 200_000 + " nein " + "x" * 200_000 + " ja " * 20_000
         started = time.monotonic()
         self.assertEqual(review.find_tally(hostile, 380, 270), ("none", []))
+        tables = "Ergebnis Abgegebene Stimmen: 1; davon ja: 380 nein: 270 " * 20_000
+        self.assertEqual(review.find_tally(tables, 380, 270)[0], "several")
         self.assertLess(time.monotonic() - started, 2.0)  # gstack-timing-ok: checklist class 8 times hostile text; the linear scan of 600 kB takes milliseconds, a backtracking one far longer
 
 
