@@ -124,6 +124,22 @@ class CitationByIdTests(StoreCase):
             "SELECT ai.id FROM agenda_items ai JOIN protocols p ON p.id = ai.protocol_id WHERE p.document_number = '21/1'"
         ).fetchone()[0]
         self.assertIsNone(build._fact_agenda_item_citation(self.conn, "21/2", item_id))
+        self.assertIsNone(build._fact_proceeding_citation(self.conn, "21/2", item_id))
+        speech_id = self.conn.execute(
+            "SELECT s.id FROM speeches s JOIN protocols p ON p.id = s.protocol_id WHERE p.document_number = '21/1' LIMIT 1"
+        ).fetchone()[0]
+        self.assertIsNone(build._fact_speech_citation(self.conn, "21/2", None, speech_id))
+
+    # Value: protects=a receipt with a Rede-ID resolves by it and the speech id is not consulted; fails_when=the rede_id branch is dropped or a wrong speech id overrides the Rede-ID; why_new=only the speech_id branch had a direct test; seam=none; no_claim=does not cover a Rede-ID that matches no row
+    def test_a_rede_id_receipt_resolves_by_the_rede_id_not_the_speech_id(self) -> None:
+        self.seed(week_specs(1))
+        build._ensure_lead_position_tables(self.conn)
+        row = self.conn.execute(
+            "SELECT s.id, s.rede_id FROM speeches s JOIN protocols p ON p.id = s.protocol_id "
+            "WHERE p.document_number = '21/1' AND s.rede_id IS NOT NULL LIMIT 1"
+        ).fetchone()
+        cited = build._fact_speech_citation(self.conn, "21/1", row["rede_id"], -1)
+        self.assertEqual(cited["id"], row["id"])
 
 
 if __name__ == "__main__":
