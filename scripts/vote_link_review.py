@@ -289,6 +289,11 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
         pulse_store.require_current_schema(conn)
         links = sorted(stored_links(conn), key=_sort_key)
         unknown = batch - {row[0] for row in conn.execute("SELECT document_number FROM protocols")}
+        # Votes of one sitting that ended with the same tally: the text cannot
+        # say whose announcement a match is.
+        twins = {tuple(row) for row in conn.execute(
+            "SELECT p.document_number, v.yes_count, v.no_count FROM votes v JOIN protocols p ON p.id = v.protocol_id "
+            "WHERE v.yes_count IS NOT NULL AND v.no_count IS NOT NULL GROUP BY 1, 2, 3 HAVING COUNT(*) > 1")}
     finally:
         conn.close()
     if unknown:
@@ -314,6 +319,8 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
                 raise ReviewInputError(f"the cached report {path} cannot be read: {exc}") from exc
             texts[number] = protocol_text(output_dir / "data" / "xml" / f"plenarprotokoll-{slug(number)}.xml")
         tally, announced = find_tally(texts[number], link["yes_count"], link["no_count"])
+        if tally == "unique" and (number, link["yes_count"], link["no_count"]) in twins:
+            tally, announced = "several", []
         own = f"{link['top_id']}#{link['top_occurrence']}"
         rows.append({
             "stratum": "+".join(chosen[position]),

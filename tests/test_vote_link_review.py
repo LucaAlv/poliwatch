@@ -185,6 +185,20 @@ class SheetTests(unittest.TestCase):
         self.assertEqual((code, "not well-formed XML" in err), (2, True))
 
 
+    def test_two_votes_with_one_tally_do_not_share_an_announcement(self) -> None:
+        # v2 gets the tally the XML announces for 12345 (10 Ja, 5 Nein): the
+        # one match could be either vote's, so neither row shows it.
+        built = sitting()
+        tallies = {vote["id"]: vote["total"] for item in built["agenda_items"] for vote in item.get("votes") or []}
+        for item in built["agenda_items"]:
+            for vote in item.get("votes") or []:
+                if vote["id"] == "v2":
+                    vote["total"] = dict(tallies["12345"])
+        shutil.rmtree(self.site)
+        self.make_site(built)
+        rows = {row["vote_id"]: row for row in self.rows(self.run_sheet()[1])}
+        self.assertEqual([(rows[vote]["tally"], rows[vote]["announced"]) for vote in ("12345", "v2")], [("several", "-")] * 2)
+
     def batch_file(self, text: str) -> str:
         path = self.site.parent / "batch.tsv"
         path.write_text(text, encoding="utf-8")
