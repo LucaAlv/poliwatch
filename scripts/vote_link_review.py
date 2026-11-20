@@ -49,6 +49,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+import derive
 import persist_dip_pulse_store as pulse_store
 import sqlite_open
 from stable_ids import source_index
@@ -182,7 +183,7 @@ def shared_documents(link: Mapping[str, Any], item: Mapping[str, Any] | None) ->
     linked = {}
     for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
         linked.setdefault(str(doc.get("dokumentnummer")), doc)
-    printed = {str(doc.get("dokumentnummer")) for doc in item.get("xml_drucksachen") or []}
+    printed = {str(doc.get("dokumentnummer")) for doc in derive.xml_drucksachen(item)}
     parts = []
     for number in link["vote_numbers"]:
         if number in linked:

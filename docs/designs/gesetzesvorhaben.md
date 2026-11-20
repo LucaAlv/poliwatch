@@ -297,7 +297,7 @@ No definite hard rejection is established by the proposed plan. Evaluate the sco
 
 ## NOT in scope
 
-1. Global visual identity, typeface or DESIGN.md replacement: preserve the incumbent site; the existing `TODOS.md` item “DESIGN.md, tokens and a typeface decision via /design-consultation” already tracks broader design-system work.
+1. Global visual identity, typeface or DESIGN.md replacement: preserve the incumbent site; the existing `TODOS.md` item “Apply DESIGN.md to the site” already tracks broader design-system work.
 2. A framework, search backend or document/speech full-text search: metadata lookup over the existing collection covers the defined visitor task.
 3. Legislative acquisition/SQLite migration or changes to `bills.json` identities/counting: this refinement fixes presentation and accurate labels, not the pipeline contracts.
 4. Speculative policy-topic tags, authoritative lifecycle filters or progress bars: the current bill fields do not establish these meanings; do not manufacture them for the UI.

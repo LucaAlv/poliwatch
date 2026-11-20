@@ -119,7 +119,7 @@ class ReleaseTestCase(unittest.TestCase):
         cls.exports = cls.root / "exports"
         with mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None):
             cls.manifest = b.export_distribution_data(
-                db_path, cls.exports, mp_lookup=lookup, readiness=READINESS, catalog_count=2, dossier_count=2, tag=VERSION, commit=cls.head[:12], license_text="Quelldaten: DIP; eigene Auswertungen: CC BY 4.0"
+                db_path, cls.exports, mp_lookup=lookup, readiness=READINESS, catalog_count=2, dossier_count=2, tag=VERSION, commit=cls.head[:12], license_text=b.default_license_text()
             )
         (protocols,) = [entry["name"] for entry in cls.manifest["files"] if entry["name"].startswith("protocols-")]
         cls.stored = sorted((row["document_number"], row["date"]) for row in publish._csv_rows(cls.exports / cls.manifest["generation"] / protocols))
@@ -517,8 +517,8 @@ class PublishTests(ReleaseTestCase):
 
         cases = [
             ("not listed", drop_entry, "license needs exactly one typed LICENSE-DATA.md"),
-            ("empty", lambda: rewrite(b""), "is empty or not the LICENSE-DATA.md of commit"),
-            ("not the commit's", lambda: rewrite(b"# Andere Lizenz\n\n## Short string\n\n> frei\n"), "is empty or not the LICENSE-DATA.md of commit"),
+            ("empty", lambda: rewrite(b""), "is not the LICENSE-DATA.md of commit"),
+            ("not the commit's", lambda: rewrite(b"# Andere Lizenz\n\n## Short string\n\n> frei\n"), "is not the LICENSE-DATA.md of commit"),
         ]
         for label, tamper, fragment in cases:
             with self.subTest(label):
@@ -675,6 +675,23 @@ class PublishTests(ReleaseTestCase):
         self.assertEqual(code, 1, stderr)
         self.assertIn("not a directory", stderr)
         self.assertEqual(release.read_text(encoding="utf-8"), "not a directory")
+
+    # Value: protects=a release refuses an export whose licence string (manifest field license) is not the short string of the LICENSE-DATA.md its commit holds, in a dry run and under --publish; fails_when=a leftover $BUNDESTAG_PULSE_DATA_LICENSE or a deliberate --data-license override ships another string in datenstand.json, the Daten page and DATA.md than the licence file states; why_new=the gate tied the file to the commit but not the string to the file (Impressum/licence items 3 and 16); seam=verify_export via main; no_claim=string content
+    def test_a_release_refuses_a_licence_string_that_is_not_the_commits_short_string(self) -> None:
+        for label, string in (("another string", "Quelldaten: frei verwendbar."), ("padded", self.manifest_license() + " "), ("empty", "")):
+            with self.subTest(label):
+                self.edit_manifest(license=string)
+                for args in (("--initial",), ("--initial", "--publish")):
+                    runner = Runner()
+                    code, _, stderr = self.run_script(*args, runner=runner)
+                    self.assert_refused(code, stderr, "licence string", "short string of LICENSE-DATA.md at commit")
+                    self.assertEqual(runner.gh("release", "create"), [])
+        self.edit_manifest(license=self.manifest_license())
+        code, _, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+
+    def manifest_license(self) -> str:
+        return b.license_short_string((b.REPO_ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8"))
 
     # Value: protects=--publish refuses an export built without a licence string even though it carries LICENSE-DATA.md; fails_when=an empty manifest licence passes; why_new=the project documentation promises the publish step refuses on an empty string; seam=main; no_claim=string content
     def test_publish_refuses_an_export_without_a_licence_string(self) -> None:

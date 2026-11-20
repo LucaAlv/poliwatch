@@ -128,8 +128,12 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
             ):
                 with self.subTest(label):
                     (root / "LICENSE-DATA.md").write_text(content, encoding="utf-8")
-                    with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string"):
+                    with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "Short string.*pass --data-license"):
                         b.default_license_text()
+                    # The release gate reuses the helper, where a --data-license override is refused: no advice to pass one.
+                    with self.assertRaises(RuntimeError) as caught:
+                        b.license_short_string(content, "LICENSE-DATA.md at commit x")
+                    self.assertNotIn("--data-license", str(caught.exception))
             (root / "LICENSE-DATA.md").unlink()
             with mock.patch.object(b, "REPO_ROOT", root), self.assertRaisesRegex(RuntimeError, "cannot read"):
                 b.default_license_text()
@@ -173,6 +177,13 @@ class OperatorFileTests(unittest.TestCase):
             ("bidi control", {"name": "Erika\u202eMuster"}, "name contains a control character"),
             ("bad e-mail", {"email": "kein-at-zeichen"}, "is not an e-mail address"),
             ("e-mail with markup", {"email": "a<b>@example.org"}, "is not an e-mail address"),
+            # A mailto: link takes header parameters after "?" and "&": "to?cc=x", "to&bcc=x"; "%" and "=" escape or assign.
+            ("e-mail local part with ?", {"email": "impressum?cc=x@example.org"}, "is not an e-mail address"),
+            ("e-mail local part with &", {"email": "impressum&bcc=x@example.org"}, "is not an e-mail address"),
+            ("e-mail local part with %", {"email": "impressum%0Abcc@example.org"}, "is not an e-mail address"),
+            ("e-mail local part with =", {"email": "impressum=x@example.org"}, "is not an e-mail address"),
+            ("URL with a space", {"hosting": {"privacy_url": "https://hosting.example.org/daten schutz"}}, "hosting.privacy_url must be an https:// URL"),
+            ("URL with a space in the host", {"supervisory_authority": {"url": "https://lfd example.org/"}}, "supervisory_authority.url must be an https:// URL"),
             ("javascript: URL", {"hosting": {"privacy_url": "javascript:alert(1)"}}, "hosting.privacy_url must be an https:// URL"),
             ("http URL", {"supervisory_authority": {"url": "http://lfd.example.org/"}}, "supervisory_authority.url must be an https:// URL"),
             # Split so the pre-push credential scanner does not flag this fake value.

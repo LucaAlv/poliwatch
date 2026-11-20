@@ -21,7 +21,9 @@ from pathlib import Path
 import _support  # noqa: F401
 import _facts_fixture
 import build_dip_pulse_site as build
+import derive
 import facts
+import persist_dip_pulse_store as pulse_store
 
 
 REAL_STORE = _support.ROOT / ".context" / "dip-pulse-site" / "data" / "bundestag-pulse.sqlite"
@@ -402,16 +404,25 @@ class KnappsteAbstimmungTests(StoreCase):
 
 
 class MeisteAbweichlerTests(StoreCase):
+    # The member lists stand for whole groups and the totals are their sums
+    # (the fixture derives each group's counts from them), so
+    # derive.vote_abweichler_count has a number: SPD 2 no, 1 yes; CDU/CSU 2 yes,
+    # 1 no; a Mehrheitsvotum in both, one counter-vote each.
     VOTE = {
-        "yes": 3,
+        "yes": 4,
         "no": 3,
+        "abstain": 1,
+        "absent": 1,
         "title": "Gewissensfrage",
         "leading": {"SPD": "no", "CDU/CSU": "yes", "fraktionslos": "no"},
         "members": [
             ("Treue Sozialdemokratin", "SPD", "no"),
+            ("Zweite Treue Sozialdemokratin", "SPD", "no"),
             ("Abweichender Sozialdemokrat", "SPD", "yes"),
             ("Enthaltende Sozialdemokratin", "SPD", "abstain"),
             ("Fehlender Sozialdemokrat", "SPD", "absent"),
+            ("Christdemokratin", "CDU/CSU", "yes"),
+            ("Zweiter Christdemokrat", "CDU/CSU", "yes"),
             ("Abweichende Christdemokratin", "CDU/CSU", "no"),
             ("Fraktionslose Abgeordnete", "fraktionslos", "yes"),
         ],
@@ -426,13 +437,32 @@ class MeisteAbweichlerTests(StoreCase):
         # counter-vote, and "fraktionslos" has no Fraktionslinie to break.
         self.assertEqual(row["value"], 2)
         # Denominator: the members who cast a yes or a no.
-        self.assertEqual(row["denominator"], 4)
+        self.assertEqual(row["denominator"], 7)
         self.assertEqual(row["citation"]["title"], "Gewissensfrage")
         self.assertEqual(
             [(r["entity_kind"], r["document_number"], r["position"]) for r in row["receipts"]],
             [("vote", "21/1", 0)],
         )
         self.assertEqual(seeded["vote_ids"]["21/1"], [row["citation"]["id"]])
+
+    def test_the_fixture_count_is_derives_count_over_the_stored_rows(self) -> None:
+        # A member of a group without a fraction row (CDU/CSU here) leaves the
+        # vote with no countable Abweichler: derive gives NULL, where summing
+        # the members' flags gave the SPD's one.
+        vote = {
+            "yes": 1, "no": 2, "title": "Teilweise",
+            "leading": {"SPD": "no"},
+            "members": [
+                ("Treue Sozialdemokratin", "SPD", "no"),
+                ("Zweite Treue", "SPD", "no"),
+                ("Abweichender Sozialdemokrat", "SPD", "yes"),
+                ("Christdemokrat", "CDU/CSU", "yes"),
+            ],
+        }
+        self.seed([{"document_number": "21/1", "date": "2025-03-25", "votes": [vote]}])
+        stored = pulse_store.stored_vote_groups(self.conn, self.seeded["vote_ids"]["21/1"][0])
+        self.assertIsNone(derive.vote_abweichler_count(stored))
+        self.assertIsNone(self.one(ABWEICHLER)["value"])
 
     def test_vote_without_member_rows_yields_no_observation(self) -> None:
         self.seed([{"document_number": "21/1", "date": "2025-03-25", "closest": (300, 200)}])
@@ -1301,7 +1331,7 @@ class PublishableTests(StoreCase):
     def test_a_thin_count_is_withheld_by_min_value(self) -> None:
         # meiste-abweichler is zero-inflated, so one Abweichlerin beats two
         # thirds of the weeks. A floor of three keeps that off a card.
-        loyal = [("Treue Sozialdemokratin", "SPD", "no")]
+        loyal = [("Treue Sozialdemokratin", "SPD", "no"), ("Zweite Treue", "SPD", "no")]
         specs = []
         for index in range(10):
             day = facts.date.fromisocalendar(2025, 3 + index, 3)
@@ -1315,8 +1345,10 @@ class PublishableTests(StoreCase):
                     "date": day.isoformat(),
                     "votes": [
                         {
-                            "yes": 1,
-                            "no": 1,
+                            # The totals are the members' Stimmen, as
+                            # derive.vote_abweichler_count requires.
+                            "yes": 1 if index == 9 else 0,
+                            "no": 2,
                             "title": f"Abstimmung {index}",
                             "leading": {"SPD": "no"},
                             "members": members,

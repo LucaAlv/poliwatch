@@ -54,7 +54,7 @@ class DatenPageTests(unittest.TestCase):
             features=all_selection(),
         )
 
-    # Value: protects=a reader who sees a suffixed revision is told what it means, and a bare one carries no such note; fails_when=-dirty-/-unverified revisions render without an explanation or a clean one gets one; why_new=the suffix was explained only in DATA.md; seam=render_database_page; no_claim=wording
+    # Value: protects=a reader who sees a suffixed revision is told what it means, and a bare one carries no such note; fails_when=-dirty-/-unverified revisions render without an explanation or a clean one gets one, or a short or upper-case id without a hyphen is taken for a release; why_new=the suffix was explained only in DATA.md; seam=render_database_page; no_claim=wording
     def test_a_suffixed_revision_is_explained_next_to_the_commit(self) -> None:
         def provenance(commit: str) -> str:
             html = b.render_database_page(
@@ -70,6 +70,9 @@ class DatenPageTests(unittest.TestCase):
         self.assertNotIn("Änderungen", provenance("abc123def456"))
         self.assertRegex(provenance("abc123def456-dirty-0123abcd"), r"Commit abc123def456-dirty-0123abcd.*Änderungen")
         self.assertRegex(provenance("abc123def456-unverified-0123abcd"), r"Commit abc123def456-unverified-0123abcd.*nicht prüfen")
+        for odd in ("abc123", "ABC123DEF456"):  # not a bare 12-digit id, with no hyphen: still no release revision
+            with self.subTest(odd=odd):
+                self.assertRegex(provenance(odd), rf"Commit {odd}.*Änderungen")
 
     # Value: protects=the download panel shows the manifest's licence string with its "LICENSE-DATA.md" mention linked to this generation's copy and keeps the sources.html#lizenz link, and a manifest without a licence shows only the placeholder pointer; fails_when=the string is dropped, the file link points at the repository or another generation, or the placeholder shows beside a real string; why_new=step 4 of the Impressum/licence plan; seam=render_daten_downloads; no_claim=the string's content
     def test_the_licence_line_links_the_generation_licence_file(self) -> None:
@@ -381,8 +384,29 @@ class DatenPageTests(unittest.TestCase):
             with self.subTest(url=url):
                 manifest = dict(self.manifest, issues_url=url)
                 html = b.render_database_page(manifest, mp_lookup=self.lookup, features=all_selection())
-                self.assertEqual("Datenfehler melden (GitHub)" in html, expected)
+                self.assertEqual(">Datenfehler melden" in html, expected)
                 self.assertNotIn("javascript:", html)
+
+    # Value: protects=the footer link says "(GitHub)" only where it goes to github.com, so a mailto: or site-relative --data-issues-url is not labelled as GitHub; fails_when=the label is fixed again or a look-alike host (github.com.evil.example, notgithub.com, an http:// or userinfo URL) is labelled GitHub; why_new=--data-issues-url accepts mailto: and a leading /, but the link always read "(GitHub)"; seam=none
+    def test_footer_issues_link_says_github_only_for_github(self) -> None:
+        github = "https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml"
+        for url, expected in (
+            (github, True),
+            ("https://GitHub.com/LucaAlv/poliwatch/issues", True),
+            ("mailto:daten@example.org", False),
+            ("/kontakt.html", False),
+            ("https://example.org/issues", False),
+            ("https://github.com.evil.example/issues", False),
+            ("https://notgithub.com/issues", False),
+            ("https://github.com@evil.example/issues", False),
+            ("http://github.com/LucaAlv/poliwatch/issues", False),
+            ("https://[::1/issues", False),  # urlsplit raises ValueError on the open bracket
+        ):
+            with self.subTest(url=url):
+                manifest = dict(self.manifest, issues_url=url)
+                html = b.render_database_page(manifest, mp_lookup=self.lookup, features=all_selection())
+                self.assertIn(">Datenfehler melden", html)
+                self.assertEqual(">Datenfehler melden (GitHub)</a>" in html, expected)
 
     # Value: protects=the documented GitHub form URL (template and seite query) reaches the Daten footer as one href with the & escaped, so the report link opens the Datenfehler form with the page filled in; fails_when=safe_issues_url drops the query string or the href is not escaped; why_new=the footer test only used query-free URLs; seam=none
     def test_footer_issues_link_keeps_the_prefill_query(self) -> None:

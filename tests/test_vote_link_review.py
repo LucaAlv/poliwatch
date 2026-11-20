@@ -185,6 +185,14 @@ class SheetTests(unittest.TestCase):
         self.assertEqual((code, "not well-formed XML" in err), (2, True))
 
 
+class SharedDocumentsTests(unittest.TestCase):
+    def test_a_number_read_off_a_news_site_url_is_not_printed(self) -> None:
+        top = {"xml_drucksachen": [{"dokumentnummer": "21/5", "url": "https://euronews.com/x/21/5"}],
+               "api": {"linked_drucksachen": [{"dokumentnummer": "21/6", "drucksachetyp": "Antrag", "vorgang_id": "7"}]}}
+        link = {"vote_numbers": ["21/5", "21/6"]}
+        self.assertEqual(review.shared_documents(link, top), "21/6:Antrag:7")
+
+
 class TallyTests(unittest.TestCase):
     def test_unique_several_and_none(self) -> None:
         text = "über Drucksache 21/5 ... Mit Ja haben gestimmt 380, mit Nein haben gestimmt 270, Enthaltungen 2."

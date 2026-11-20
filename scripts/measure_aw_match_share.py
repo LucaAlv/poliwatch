@@ -58,6 +58,7 @@ import abgeordnetenwatch as aw
 import build_dip_pulse_site as build
 import derive
 import person_registry as registry
+import reviewed_units
 import sqlite_open
 import stammdaten
 
@@ -249,6 +250,13 @@ def mdb_sources(conn: sqlite3.Connection, database_path: Path, zip_arg: Path | N
             surname |= registry._name_words(name.get("NACHNAME"))
             spelled.append(" ".join(part for part in (name.get("VORNAME"), name.get("PRAEFIX"), name.get("ADEL"), name.get("NACHNAME")) if part))
         names[record["ID"]] = {"given": given, "surname": surname, "spelled": sorted(set(spelled))}
+    # A table without a WP 18 and a WP 19 row (a store built with one
+    # --roster-wahlperiode) would move every WP 18/19 MdB out of M1.
+    if table and not set(WAHLPERIODEN) <= {wp for periods in table.values() for wp in periods}:
+        if not data:
+            raise UsageError("the store's mdb_zugehoerigkeiten table holds no Wahlperiode 18 and 19 rows (built with a narrower "
+                             "--roster-wahlperiode?) and there is no MdB-Stammdaten zip to use instead")
+        table = {}
     if table:
         source, mandates = "mdb_zugehoerigkeiten", table
     elif data:
@@ -302,6 +310,12 @@ def _load_answers(cache: Path) -> dict[str, Any]:
         # lookup_all writes only answers (hit, miss) and failures, never not_cached.
         if not isinstance(entry, dict) or entry.get("state") not in ANSWER_STATES:
             raise UsageError(f"{path}: the entry for {key!r} is not an answer ({entry!r}); delete the file to ask every id again")
+        # measure reads cached_id and candidates of every entry it reuses.
+        if "cached_id" not in entry or not all(
+                value is None or (isinstance(value, int) and not isinstance(value, bool))
+                for value in (entry["cached_id"], entry.get("candidates"))):
+            raise UsageError(f"{path}: the entry for {key!r} lacks cached_id or holds a candidates count that is no integer "
+                             f"({entry!r}); delete the file to ask every id again")
     return data
 
 
@@ -675,7 +689,9 @@ def run(args: argparse.Namespace) -> int:
     apply_verdicts(result, verdicts)
     print_table(result, offline=args.offline)
     if args.offline:
-        print(f"an online run sends {len(keys)} ext_id requests, one per Redner-ID, "
+        answered = _load_answers(cache)["answers"] if _answers_path(cache).exists() else {}
+        unanswered = sum(1 for key in keys if answered.get(key, {}).get("state", "failed") == "failed")
+        print(f"an online run sends {unanswered} ext_id requests, one per Redner-ID without an answer in the answers file, "
               "plus one name search per MdB-Stammdaten miss with --name-fallback")
 
     if args.json:
@@ -708,6 +724,11 @@ def run(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        reviewed_units.load()
+    except reviewed_units.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 2
     try:
         return run(args)
     except UsageError as exc:
