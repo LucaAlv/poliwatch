@@ -300,8 +300,8 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 ### Vergleich section in DATA.md: what it leaves open
 
 **What:** `docs/data-methods.md`, "Vergleich mit anderen Datensätzen und Verknüpfung" (decision N4), was written on 2026-11-20 from each dataset's own pages and from `scripts/compare_cpp_bt.py` on the 801-sitting store against CPP-BT 2026-09-19. Left:
-1. **Three codebooks were not read,** because each is a download that needs the owner's OK: CPP-BT's (`CPP-BT_2026-09-19_Codebook.pdf` on the Zenodo record), ParlLawSpeech's (GESIS, DOI 10.7802/2824; the GESIS page answers 403 to a script) and BTVote's (`Codebook_V2.0_Dataverse.pdf`, doi:10.7910/DVN/RESB5L). The section says so. With them, fill BTVote's "Kennungen" cell (now „nicht gelesen“), check whether BTVote names a Drucksache per vote, and check whether ParlLawSpeech's German file (12 variables, 7 of them core) has a speaker id.
-2. **Not claimed, because not verified:** what CPP-BT does with another speaker's text inside a `<rede>` (Zwischenfragen, our `nested:` ids). The first run found that adding our nested turns to our words made the token fit worse (`docs/release-reviews/cpp-bt-first-run-2026-11-14.md`), which suggests its token count leaves them out, but only its text or codebook can settle it. The plan's draft sentence "in CPP-BT steht dieser Text in der umgebenden Rede" was dropped for this reason.
+1. **ParlLawSpeech's codebook was not read.** It sits in the GESIS data archive (DOI 10.7802/2824), whose page answers 403 to a script; the owner can fetch it in a browser. The section says so and gives only the core variables of the project page. With it, check whether the German file (12 variables, 7 of them core) has a speaker id or a Drucksache number. CPP-BT's and BTVote's codebooks were read on 2026-11-20 with the owner's OK, and their cells are filled.
+2. **Not claimed, because not verified:** what CPP-BT does with another speaker's text inside a `<rede>` (Zwischenfragen, our `nested:` ids). Its codebook says the text comes from the element's `<p>` paragraphs without the speaker's introduction, comments, quotes and presidium remarks, and is silent on Zwischenfragen; the section says exactly that. The first run found that adding our nested turns to our words made the token fit worse (`docs/release-reviews/cpp-bt-first-run-2026-11-14.md`). Only CPP-BT's text file (124 MB) can settle it. Also unverified: whether BTVote's `id_de_parliament` is the id of the MdB-Stammdaten; the section only quotes the codebook's name for it.
 3. **The figures are a dated measurement** (2026-11-20, 801 sittings). They move when 18/62, 18/90 or 21/107 to 21/109 enter the store, and with each CPP-BT version. `docs/release-review.md` step 5 says when and how to replace them; do it once before the first `--publish` if the store changed. The Redner-ID agreement (81,280 of 81,338) is not in the script's output; add a `redner_id` comparison to `scripts/compare_cpp_bt.py` so the review does not count it by hand.
 4. **The `PLATZHALTER` refusal of plan PR C** (`docs/plans/release-readiness.md`, 3b) was not built: the section landed with real figures and has no placeholder. Build it only if a placeholder is ever written into `docs/data-methods.md`.
 5. **Found while measuring, both older than this change:**
@@ -312,7 +312,7 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 **Effort:** S
 **Priority:** P2 (item 3 before the first `--publish`)
-**Depends on:** The owner's OK for the three downloads (item 1)
+**Depends on:** The owner fetching the GESIS codebook (item 1)
 
 ### Main and stable releases
 
