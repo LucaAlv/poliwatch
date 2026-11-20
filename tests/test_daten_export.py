@@ -643,6 +643,12 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("Lizenzhinweis (der Kurzstring aus `LICENSE-DATA.md`, sofern `--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE` keinen anderen setzt): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
+    # Value: protects=DATA.md names the MdB-Stammdaten, as well as the roll-call data, as redistribution terms still open; fails_when=_codebook_sources_and_citation drops "der MdB-Stammdaten" from the open-question sentence; why_new=only the roll-call data was named although the seat tables and Stammdaten-derived rows ship; seam=none; no_claim=the wording of the rest of the paragraph
+    def test_codebook_names_the_mdb_stammdaten_as_an_open_redistribution_question(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertIn("keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten (ADR 0003) und der MdB-Stammdaten bleibt eine offene Frage.", codebook)
+
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
     def test_cached_manifest_with_invalid_inventory_is_regenerated(self) -> None:
         manifest = self.export()
@@ -1451,6 +1457,23 @@ class ExportDistributionDataTests(unittest.TestCase):
                 compute.assert_not_called()
                 self.assertEqual(copy.read_bytes(), before)
                 self.assertEqual([p.name for p in self.tmp.iterdir() if p.name.startswith(copy.name + "-")], [])
+                copy.unlink()
+
+    # Value: protects=the export refuses an exported distribution SQLite as its source up front, so an export of an export never starts; fails_when=export_distribution_data checks the schema only; why_new=A.2 follow-up (1): only the write paths called require_build_store; seam=export_distribution_data
+    def test_export_refuses_a_distribution_copy_as_its_source(self) -> None:
+        for marker in ("PRAGMA user_version = 1", "CREATE TABLE datenstand (tag TEXT)"):
+            with self.subTest(marker=marker):
+                copy = self.tmp / "distribution.sqlite"
+                shutil.copyfile(self.db_path, copy)
+                conn = sqlite3.connect(copy)
+                conn.execute(marker)
+                conn.commit()
+                conn.close()
+                with self.assertRaisesRegex(RuntimeError, "distribution copy"):
+                    b.export_distribution_data(
+                        copy, self.tmp / "exports-of-copy", mp_lookup={}, readiness=READINESS,
+                        catalog_count=2, dossier_count=2, license_text="", commit="abc123",
+                    )
                 copy.unlink()
 
     # Value: protects=a rebuild (online build or --offline --repersist) given an exported distribution SQLite as --database-path refuses before staging and leaves the file byte for byte as it was; fails_when=the rebuild probe checks only that the store reads and replaces the downloaded release with a fresh build store; why_new=/ship QA probes 004/005 (2026-10-31): user_version 1 became 0 with a new inode; seam=none

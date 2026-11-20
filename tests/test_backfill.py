@@ -660,6 +660,7 @@ class BackfillSelectionTests(unittest.TestCase):
                     mock.patch.object(build, "collect_abgeordnete", return_value=([], {})),
                     mock.patch.object(build.facts, "open_readonly"),
                     mock.patch.object(build.pulse_store, "require_current_schema"),
+                    mock.patch.object(build.pulse_store, "require_build_store"),
                     mock.patch.object(build, "store_coverage_gap", return_value=None),  # the store is mocked out
                     mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
                     mock.patch.object(sys, "stdout", new_callable=io.StringIO),
@@ -746,6 +747,7 @@ class BackfillSelectionTests(unittest.TestCase):
             mock.patch.object(build, "collect_abgeordnete", return_value=([], {})),
             mock.patch.object(build.facts, "open_readonly"),
             mock.patch.object(build.pulse_store, "require_current_schema"),
+            mock.patch.object(build.pulse_store, "require_build_store"),
             mock.patch.object(build, "store_coverage_gap", return_value=None),  # the store is mocked out
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
             mock.patch.object(sys, "stdout", new_callable=io.StringIO),
