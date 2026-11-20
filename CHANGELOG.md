@@ -15,6 +15,19 @@ The operator tools refuse bad input with a message instead of a traceback or a q
 - **The abgeordnetenwatch match-share script measures what an online run would do.** The offline estimate counts only the Redner-IDs without an answer in the answers file. A store whose Mandat table holds no Wahlperiode 18 and 19 rows (built with a narrower `--roster-wahlperiode`) falls back to the MdB-Stammdaten zip, or stops when there is none, instead of moving every WP 18/19 MdB out of the first match tier. A hand-edited answers entry without the fields a rerun reuses is refused. Its cache files follow the umask instead of being world-readable.
 - **An unreadable store now says how to rebuild it:** run `--offline --repersist`.
 
+## [0.46.26.0] - 2026-11-20
+
+The rule that links a roll-call vote to its agenda item now reads the Drucksachen printed under an agenda item the same way the store and the dossier do, and the store refuses a report that would silently lose a vote. No link, page or stored figure moves. Over the 801 cached reports of the reference store, 0 of 8,189 agenda items get a different set of printed Drucksachen and 0 reports fail the new check.
+
+### Fixed
+
+- **A number read off a quoted news-site link no longer counts as a Drucksache printed under an agenda item.** A report cached before the parser checked the link's host can still hold such a number. The vote-link rule and the vote-link review sheet now skip it, as persist and the dossier already did, so it can neither link a vote nor show in the sheet's shared column.
+- **A report that would drop a vote is refused.** A fetched vote that belongs to no agenda item has to be listed among the sitting's other votes, because those two places are all the store keeps. A report that holds it in neither is now refused with the vote's id, instead of being stored without it. An `--offline --repersist` places the vote correctly.
+
+### Changed
+
+- **The title comparison behind the vote-link rule lives in the vote-link module.** It matches exactly the same titles as before. The vote linker no longer imports the protocol parser, which removes the last import cycle in `scripts/`.
+
 ## [0.46.25.0] - 2026-11-20
 
 The week radar's RSS titles keep their words apart and drop characters that make a feed unreadable, the build warning about a refused site address no longer prints any part of a password, and an Antrag passage that the advance-copy watermark interrupts mid-line is quoted instead of refused. The Antrag extractor moves from version 9 to 10, so a store persisted with version 9 is refused until `--offline --repersist`; on the saved corpus of 112 Antrag texts no quote changes. DATA.md now names the MdB-Stammdaten beside the roll-call data as data whose redistribution is still an open question: the DATA.md bytes of every export change, no figure does.
