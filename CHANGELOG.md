@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.33.0] - 2026-11-20
+
+The parser can now read sittings 18/62 and 18/90, the last two that waited for a parser rule. In both, Vizepräsidentin Petra Pau asks follow-up questions in the Fragestunde and the protocol prints her with her office, which no counting rule covers, so each sitting stopped at the role check. Her questions now count as questions of her Fraktion. No stored figure, page or export changes. Parsing all 801 cached sittings of the reference store with the old and the new parser gives identical output. The two sittings are not in the store yet; they still need one online run to acquire their agenda and document links.
+
+### Added
+
+- **A Vizepräsidentin or Vizepräsident printed with a Fraktion at a Fragestunde speaker line asks for that Fraktion.** The turn is stored as a `fragestunde_frage` without a Sprechrolle. This is Petra Pau's three follow-up questions in 18/62 and one in 18/90. A Präsident, an Alterspräsident and a presidium member printed without a Fraktion are still not read there, and such a sitting still stops.
+- **The same line is Sitzungsleitung when that person presides.** If the last chair line before it names the same first and last name, the words are the chair's and are not stored. This is one line in 18/62, where the protocol prints a turn of Vizepräsident Johannes Singhammer as "Johannes Singhammer (CDU/CSU):" between two of his chair lines. It is listed as source error E11 in `docs/source-errors.md`.
+- **Measured on the two sittings' XML, without any online request:** 18/62 gives 11 Reden and 160 Beiträge (Fragestunde: 65 questions and 65 answers, where the old reading gave 62 and 69), 18/90 gives 13 Reden and 120 Beiträge (40 and 38, before 39 and 39). Neither has a withheld Rede, and neither day has a roll-call vote.
+
 ## [0.46.32.0] - 2026-11-20
 
 The store no longer records an unknown length as zero. When a Rede, a Beitrag, a withheld Rede or one of its turns reaches the store without its paragraph, character or word count, the sitting now stops with an error, and the store stays as it was. Before, the store wrote 0, which reads as a real empty text. No figure, page or export changes. The parser sets every one of these counts, and re-persisting all 801 sittings of the reference store with the old and the new rule gives the same rows: 61,284 Reden, 45,389 Beiträge, 102 withheld Reden and 170 of their turns. Every count column is equal by id, and 0 of 1,944 fact values moved.
