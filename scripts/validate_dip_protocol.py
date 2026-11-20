@@ -995,6 +995,39 @@ def mark_presidium_fraktionsreden(root: ET.Element) -> None:
                 name.remove(name.find("rolle"))
 
 
+def mark_presidium_markers_outside_reden(root: ET.Element) -> None:
+    """ADR 0004 (18/62, 18/90): a Vizepräsident(in) printed with a ``<fraktion>``
+    at a marker outside any ``<rede>``, which only a Fragestunde reads. When the
+    last chair ``<name>`` before the marker ends with their first and last name,
+    they chair and the marker is Sitzungsleitung: it is marked
+    ``sitzungsleitung="1"`` (18/62 Singhammer). Otherwise they ask as an MdB, and
+    the presidium ``<rolle>`` is removed so the turn reads as their Fraktion's
+    (Pau's Nachfragen). The Präsident, the Alterspräsident and a marker without a
+    Fraktion keep their role, which no Sprechrolle rule maps.
+    """
+    verlauf = root.find("sitzungsverlauf")
+    if verlauf is None:
+        return
+    outside = {id(marker) for top in verlauf.iter("tagesordnungspunkt") for marker in top.findall("p[@klasse='redner']")}
+    chair = ""
+    for elem in verlauf.iter():
+        if elem.tag == "name" and elem.find("nachname") is None:
+            chair = elem_text(elem)
+        if id(elem) not in outside:
+            continue
+        redner = elem.find("redner")
+        name = redner.find("name") if redner is not None else None
+        role = name.find("rolle") if name is not None else None
+        if (role is None or not child_text(name, "fraktion")
+                or not VIZEPRAESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", child_text(role, "rolle_lang")))):
+            continue
+        full = clean_text(f"{child_text(name, 'vorname') or ''} {child_text(name, 'nachname') or ''}")
+        if full and re.search(rf"(?<![\w-]){re.escape(full)}\s*:?$", chair):
+            redner.set("sitzungsleitung", "1")
+        else:
+            name.remove(role)
+
+
 def adopt_reden_outside_tops(root: ET.Element) -> None:
     """18/49 and 18/44 print Reden directly under ``<sitzungsverlauf>``: the source
     lost the ``<tagesordnungspunkt>`` around them. The Inhaltsverzeichnis still names
@@ -1760,6 +1793,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     seen_formats: dict[str, frozenset[str]] = {}
     mark_reviewed_units(root, presidium_entries)
     mark_presidium_fraktionsreden(root)
+    mark_presidium_markers_outside_reden(root)
     try:
         asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
     except ValueError as exc:

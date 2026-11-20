@@ -16,6 +16,31 @@ The sheet for checking the links between roll-call votes and agenda items by han
 - **The sheet settles the tally for 172 more rows.** A protocol prints the result table after the chair reads the result, so the same tally stood twice in the text and the sheet gave up on it. The table no longer counts as a second match: 379 rows now show one place for the tally (209 before), 9 show several and 11 none.
 - **Two votes of one sitting with the same tally show no announcement.** The text cannot say which vote an announcement belongs to, so the sheet marks both as ambiguous instead of showing one vote's numbers on the other's row. This applies to 9 rows.
 
+## [0.46.34.0] - 2026-11-20
+
+The dataset's codebook now says how this dataset relates to four others and how to join it to one of them. DATA.md gains the section "Vergleich mit anderen Datensätzen und Verknüpfung": a table for this dataset, CPP-BT, GermaParl, ParlLawSpeech and BTVote, read from each project's own pages on 2026-11-20, and the rules for joining by the Bundestag's own Rede and Redner ids. A second document says what main and stable data releases are. No figure, page or stored value changes; this is text only.
+
+### Added
+
+- **A comparison table in DATA.md.** It gives version, coverage, unit, links, identifiers and licence for the five datasets, with the sources and the date read. A cell nobody could check says so: ParlLawSpeech's codebook was not read. The section states that the projects are independent and not affiliated.
+- **Join rules for `rede_id` and `xml_redner_id`.** `rede_id` is the Bundestag's `<rede>` id, and CPP-BT carries the same ids. The section explains the forms that are not Bundestag ids (`ID…:N` for a part the parser split off, `nested:…` for a Zwischenfrage, `annex:…`, and the Fragestunde without an id), the ` (neu)` suffix on five CPP-BT protocol numbers, and why a person is better joined by Rede id and surname than by Redner-ID alone.
+- **What CPP-BT lists as a Rede and this dataset does not.** Measured on the 801-sitting reference store against CPP-BT 2026-09-19: 81,354 ids are on both sides in the 789 shared sittings, none of ours is missing there, and 2,311 are only there. 2,092 of those are declarations under § 31 GO, which this dataset leaves out by rule; the rest are 121 procedural units, 95 withheld Reden, 2 reprints and one motion. The Redner-ID agrees on 81,280 of 81,338 shared ids.
+- **`docs/release-policy.md`.** A main release is every published data release; a stable release is a main release the owner reviewed, marked by a `stable-<version>` tag and a review record. The document lists what a release fixes (a release never changes, every moved figure is recorded, ids keep their meaning, withheld Reden are listed) and holds the text that replaces the pre-release section of `CLAUDE.md` after the first release.
+- **A template for the review record,** `docs/release-reviews/TEMPLATE.md`, with one part per step of the release review checklist.
+
+### Changed
+
+- **Step 5 of the release review checklist checks the new section:** the table when its date is older than six months or CPP-BT has a newer version, and the measured figures against the comparison's own output.
+## [0.46.33.0] - 2026-11-20
+
+The parser can now read sittings 18/62 and 18/90, the last two that waited for a parser rule. In both, Vizepräsidentin Petra Pau asks follow-up questions in the Fragestunde and the protocol prints her with her office, which no counting rule covers, so each sitting stopped at the role check. Her questions now count as questions of her Fraktion. No stored figure, page or export changes. Parsing all 801 cached sittings of the reference store with the old and the new parser gives identical output. The two sittings are not in the store yet; they still need one online run to acquire their agenda and document links.
+
+### Added
+
+- **A Vizepräsidentin or Vizepräsident printed with a Fraktion at a Fragestunde speaker line asks for that Fraktion.** The turn is stored as a `fragestunde_frage` without a Sprechrolle. This is Petra Pau's three follow-up questions in 18/62 and one in 18/90. A Präsident, an Alterspräsident and a presidium member printed without a Fraktion are still not read there, and such a sitting still stops.
+- **The same line is Sitzungsleitung when that person presides.** If the last chair line before it names the same first and last name, the words are the chair's and are not stored. This is one line in 18/62, where the protocol prints a turn of Vizepräsident Johannes Singhammer as "Johannes Singhammer (CDU/CSU):" between two of his chair lines. It is listed as source error E11 in `docs/source-errors.md`.
+- **Measured on the two sittings' XML, without any online request:** 18/62 gives 11 Reden and 160 Beiträge (Fragestunde: 65 questions and 65 answers, where the old reading gave 62 and 69), 18/90 gives 13 Reden and 120 Beiträge (40 and 38, before 39 and 39). Neither has a withheld Rede, and neither day has a roll-call vote.
+
 ## [0.46.32.0] - 2026-11-20
 
 The store no longer records an unknown length as zero. When a Rede, a Beitrag, a withheld Rede or one of its turns reaches the store without its paragraph, character or word count, the sitting now stops with an error, and the store stays as it was. Before, the store wrote 0, which reads as a real empty text. No figure, page or export changes. The parser sets every one of these counts, and re-persisting all 801 sittings of the reference store with the old and the new rule gives the same rows: 61,284 Reden, 45,389 Beiträge, 102 withheld Reden and 170 of their turns. Every count column is equal by id, and 0 of 1,944 fact values moved.

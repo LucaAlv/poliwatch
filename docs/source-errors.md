@@ -164,6 +164,15 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** in the 802 sittings of WP 18–21 held, no other heading that names a Befragung or a Fragestunde is broken this way. A scan for a word split by a space (both halves rare, the joined word common in the corpus) finds eight other headings in seven sittings, none of them in a word that decides what a turn counts as: 19/37 "Drucksach e 19/2509", 19/63 "h ier" (twice), 19/67 "Ver einbarte Debatte", 19/69 "Bun desregierung", 19/74 and 19/86 "Immissionsschutzgesetze s", 19/101 "Sammelübersich t 247". Counted 2026-11-15.
 - **Our side:** fixed 2026-11-15, before the sitting is stored. `speech_kinds.heading_formats` compares a heading with all whitespace removed, so TOP 1 is a Befragung: the minister's report stays the one Rede and the 60 other `<rede>`s are Fragen and Antworten. Without the fix, 57 of them were Reden and 3 (`ID191304800`, `ID191305000`, `ID191306000`) were withheld as refused Zwischenfragen. The eight other split headings keep their spelling on the pages.
 
+### E11. 18/62: one turn of the chair in the Fragestunde is filed as a speaker with a Fraktion
+
+- **Status:** verified 2026-11-20, on the XML fetched 2026-11-12 (`~/agent-runs/w1/xml`).
+- **Source:** `https://dserver.bundestag.de/btp/18/18062.xml`, `<tagesordnungspunkt top-id="Tagesordnungspunkt 2">` (Fragestunde), after the answer of Dr. Günter Krings to Petra Pau's Frage: `<p klasse="redner">` with `<redner id="11002800">`, `<fraktion>CDU/CSU</fraktion>` and `<rolle_lang>Vizepräsident</rolle_lang>`, printed "Johannes Singhammer (CDU/CSU):", followed by "Sie, Frau Kollegin, haben mit Sicherheit eine Nachfrage."
+- **What is wrong:** Singhammer presides at this point. His turns before and after it are `<name>Vizepräsident Johannes Singhammer:</name>` ("Frau Kollegin, Sie haben eine weitere Nachfrage."). This one turn is marked as a speaker of the CDU/CSU.
+- **What it should be:** `<name>Vizepräsident Johannes Singhammer:</name>`, as the chair's other turns in the Fragestunde.
+- **Scale:** in the 803 sittings of WP 18–21 held (the 801 of the reference store, 18/62 and 18/90), five presidium markers stand outside a `<rede>`; this is the only one whose person presides. Counted 2026-11-20.
+- **Our side:** read as Sitzungsleitung by `mark_presidium_markers_outside_reden` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-20). Without the rule it was a `fragestunde_antwort` with a role no Sprechrolle rule maps.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
