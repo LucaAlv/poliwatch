@@ -19,6 +19,7 @@ import derive
 import persist_dip_pulse_store as store
 import person_registry as registry
 import reviewed_units
+import stable_ids
 import validate_dip_protocol as dip
 from _registry_fixture import RegistryFixture
 
@@ -374,7 +375,10 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
                             ("Max Muster, Landesbevollmächtigter", "Erik Probe, Landesbevollmächtigter"),
                             ("Anna Muster, Bevollmächtigte", "Bea Probe, Bevollmächtigte"),
                             # An office in brackets after a lone surname is still an office.
-                            ("Sieling (Bürgermeister)", "Bovenschulte (Bürgermeister)")):
+                            ("Sieling (Bürgermeister)", "Bovenschulte (Bürgermeister)"),
+                            ("Karl (Bürgermeister)", "Anna (Bürgermeister)"),
+                            # An office printed before the surname is dropped; it is not that surname.
+                            ("Bürgermeister Sieling", "Bürgermeister Bovenschulte")):
             with self.subTest(left), self.assertRaisesRegex(registry.RegistryError, "11009999"):
                 self.build(speakers=[("11009999", left, None, None), ("11009999", right, None, None)])
         for left, right in (("Karl Bürgermeister", "K. Bürgermeister"), ("Dr. Karl Bürgermeister", "Bürgermeister, Karl"),
@@ -610,7 +614,7 @@ class ReparseProfileTests(unittest.TestCase):
                 self.assertEqual(self.reparsed_profile("11005304", source, target, foehr, **sides), foehr)
 
     # Value: protects=the profile check finds a reviewed occurrence by the rede id persist and the
-    #   protocol page key it by (whitespace collapsed), on both the taking and the copying side;
+    #   protocol page key it by (whitespace collapsed; no rede_id: a Rede's synthetic id, a Beitrag none), on both the taking and the copying side;
     #   fails_when=attach_speaker_profiles or redner_id_profiles passes the raw rede_id again, so a
     #   reviewed occurrence printed with stray whitespace is read by its garbled printed name;
     #   why_new=TODOS "Shared Redner-IDs" item 20; seam=none
@@ -628,6 +632,15 @@ class ReparseProfileTests(unittest.TestCase):
                 target = {"index": 1, key: [garbled()]}
                 build.attach_speaker_profiles(target, {}, {"11005304": foehr}, "5570")
                 self.assertEqual(target[key][0]["speaker"].get("abgeordnetenwatch"), foehr)
+
+        # With no rede_id a Rede is keyed by its synthetic id and a Beitrag by none: persist
+        # keys a Beitrag by its own (absent) id, never a synthetic one.
+        for key, expected in (("xml_speakers", stable_ids.synthetic_rede_id("5570", 1, 1)), ("xml_contributions", None)):
+            with self.subTest(key=key, rede_id="absent"):
+                target = {"index": 1, key: [{"speaker": speaker("11005304", "Alexander Föhr")}]}
+                with mock.patch.object(registry, "redner_id_profile_reaches", return_value=True) as reaches:
+                    build.attach_speaker_profiles(target, {}, {"11005304": foehr}, "5570")
+                self.assertEqual(reaches.call_args.args[2], expected)
 
 
 if __name__ == "__main__":
