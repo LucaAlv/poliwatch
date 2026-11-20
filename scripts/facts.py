@@ -1187,8 +1187,12 @@ def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) 
             parts.append(f"Sitzung {number}: Datum laut DIP geändert")
         elif reason == WITHHELD_REDEN:
             count = gap.get("withheld_reden")
-            noun = "Rede" if count == "1" else "Reden"
-            parts.append(f"Sitzung {number}: {count} {noun} zurückgehalten")
+            if count is None or count == "":
+                # No count recorded: say that Reden are held back, not how many.
+                parts.append(f"Sitzung {number}: Reden zurückgehalten")
+            else:
+                noun = "Rede" if count == "1" else "Reden"
+                parts.append(f"Sitzung {number}: {count} {noun} zurückgehalten")
         else:
             parts.append(f"Sitzung {number}: {_GAP_DOMAIN_TEXT[domain]}")
     if len(gaps) > shown:

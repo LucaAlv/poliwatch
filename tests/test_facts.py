@@ -1136,7 +1136,7 @@ class MeistdiskutierterVorgangTests(StoreCase):
         # The page resolves the receipt by the same rule, with no proceedings row for the twin.
         build._ensure_lead_position_tables(self.conn)
         receipt = row["receipts"][0]
-        cited = build._fact_proceeding_citation(self.conn, receipt["document_number"], receipt.get("page"), receipt.get("page_quadrant"))
+        cited = build._fact_proceeding_citation(self.conn, receipt["document_number"], receipt["source_entity_id"])
         self.assertEqual((cited["proceeding_id"], cited["title"]), ("4711", "Gesetz T"))
 
     # Value: protects=the SQL single-Vorgang rule equals derive.debated_vorgang (agenda_procedures' set, Entschließungsanträge only when alone), item by item and Vorgang by Vorgang; fails_when=either side changes what counts as an item's Vorgang (twins, a repeated Vorgang, an int twin id, an Entschließungsantrag) without the other; why_new=the facts SQL and topic_identity disagreed on the lead rule (TODOS 2026-10-03); seam=persist_report to SQL
@@ -1588,6 +1588,14 @@ class CompletenessTests(StoreCase):
             facts.gap_note([{"document_number": "18/3", "date": "2014-01-01", "reason": "XML speeches not parsed"}], "speeches"),
             "Sitzung 18/3: Reden nicht erfasst",
         )
+
+    # Value: protects=a withheld_reden gap with no count never prints the word None; fails_when=the note interpolates a missing count; why_new=gap.get returned None and the note read "None Reden zurückgehalten"; seam=gap_note
+    def test_the_gap_note_without_a_withheld_count_prints_no_number(self) -> None:
+        for gap in (
+            {"document_number": "18/3", "date": "2014-01-01", "reason": "withheld_reden"},
+            {"document_number": "18/3", "date": "2014-01-01", "reason": "withheld_reden", "withheld_reden": None},
+        ):
+            self.assertEqual(facts.gap_note([gap], "speeches"), "Sitzung 18/3: Reden zurückgehalten")
 
     # Value: protects=every speeches Fakt of the week and month that holds the sitting is incomplete, votes untouched; fails_when=withheld Reden reach a published Fakt; why_new=end to end through compute; seam=compute
     def test_a_withheld_rede_keeps_its_week_and_month_incomplete_for_speeches_only(self) -> None:
