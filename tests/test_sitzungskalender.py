@@ -563,6 +563,7 @@ class MainWiringTests(unittest.TestCase):
                     mock.patch.object(build_dip_pulse_site, "rebuild_database_from_entries", return_value=SimpleNamespace(facts_report={})),
                     mock.patch.object(build_dip_pulse_site.facts, "open_readonly"),
                     mock.patch.object(build_dip_pulse_site.pulse_store, "require_current_schema"),
+                    mock.patch.object(build_dip_pulse_site.pulse_store, "require_build_store"),
                     mock.patch.object(build_dip_pulse_site, "store_coverage_gap", return_value=None),
                     mock.patch.object(build_dip_pulse_site, "collect_abgeordnete", return_value=([], {})),
                     mock.patch.object(build_dip_pulse_site, "write_report_files", return_value=entry),

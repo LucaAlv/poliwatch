@@ -13,9 +13,10 @@ Two modes, chosen with ``--cohort``:
 
 * ``shared`` (default), the fixed cohort: quantities that come from parsed
   protocols (speech characters, Redeanteil, votes, Mehrheitsvotum, each vote's
-  outcome and Abweichler figures) are compared on the protocols present in
-  both stores, so a newly acquired sitting cannot blur the delta of a value
-  fix.
+  outcome and Abweichler figures, and the vote groups: per group the
+  vote_fractions counts, per member the counted and the listed group) are
+  compared on the protocols present in both stores, so a newly acquired
+  sitting cannot blur the delta of a value fix.
 * ``all``, whole-store coverage: the same quantities over every protocol of
   each store, which is what shows what a rebuild added or lost.
 
@@ -449,8 +450,8 @@ def _recipe_rows(store: Store, recipe_id: str) -> int | None:
         try:
             with gzip.open(copy, "rb") as source, unpacked.open("wb") as target:
                 shutil.copyfileobj(source, target)
-        except (OSError, EOFError, zlib.error):
-            return None  # a truncated or corrupt copy is no evidence, as a missing one
+        except (gzip.BadGzipFile, EOFError, zlib.error):
+            return None  # a truncated or corrupt copy is no evidence, as a missing one; a disk error is not caught
         conn = sqlite_open.open_readonly(unpacked)
         try:
             return len(conn.execute(sql).fetchall())
@@ -855,8 +856,9 @@ def _flag_text(flag: int | None | str) -> str:
 def _vote_figure_rows(report: Report, old: Measured, new: Measured, scope: set[str] | None) -> None:
     """The persisted outcome and Abweichler figures: their distribution, then
     every vote both stores hold whose outcome, Abweichler count or member
-    Abweichungen moved, with old and new values (a member on one side only
-    reads as "no row")."""
+    Abweichungen moved, with old and new values. A member whose row one side lacks
+    is no flag move: those rows are listed apart, under "member rows on one side
+    only", and a vote one store lacks under "votes only in old/new"."""
     old_figures, old_members = _figures_in_scope(old, scope)
     new_figures, new_members = _figures_in_scope(new, scope)
 
@@ -954,10 +956,11 @@ def _vote_group_rows(report: Report, old: Measured, new: Measured, scope: set[st
     for every vote both stores hold. A re-filing that flips no Mehrheitsvotum and
     no Abweichler shows here."""
     if old.vote_group_counts is None or new.vote_group_counts is None or old.vote_figures is None or new.vote_figures is None:
+        # a side is present only when it holds both the group counts and the vote figures
         report.row(
             "(all)",
-            None if old.vote_group_counts is None else "present",
-            None if new.vote_group_counts is None else "present",
+            None if old.vote_group_counts is None or old.vote_figures is None else "present",
+            None if new.vote_group_counts is None or new.vote_figures is None else "present",
         )
         return
 

@@ -21,3 +21,7 @@ docs/agents/skill-guidance.md
 graphify-out/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+
+# The operator file for --operator-file (name and postal address of the Impressum): never committed
+operator.json
+operator.local.json

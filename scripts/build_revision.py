@@ -19,10 +19,13 @@ from pathlib import Path
 from typing import Sequence
 
 REVISION_LENGTH = 12
-_RELEASE_REVISION_RE = re.compile(r"[0-9a-f]{12}")
+_RELEASE_REVISION_RE = re.compile(rf"[0-9a-f]{{{REVISION_LENGTH}}}")
 
 # Settings that change the bytes of a patch, pinned on the command line so a
 # user's gitconfig cannot move the hash (command-line -c beats every config file).
+# core.fileMode and core.autocrlf stay unpinned: they decide whether a file
+# counts as changed at all, and git sets them for the checkout's file system, so
+# pinning them would mark a clean checkout on exFAT or with CRLF files dirty.
 _PINNED_CONFIG = (
     "core.abbrev=40",
     "core.quotepath=true",
@@ -35,6 +38,10 @@ _PINNED_CONFIG = (
     "diff.interHunkContext=0",
     "diff.renames=false",
     "diff.orderFile=/dev/null",
+    "diff.suppressBlankEmpty=false",
+    "diff.srcPrefix=a/",
+    "diff.dstPrefix=b/",
+    "diff.ignoreSubmodules=none",
 )
 _DIFF_FLAGS = (
     "diff-index",
@@ -107,7 +114,7 @@ def resolve_commit(repo_root: Path) -> str | None:
 
 def is_release_revision(commit: str | None) -> bool:
     """Only a bare 12-digit commit id: no suffix, no other length."""
-    return bool(commit) and _RELEASE_REVISION_RE.fullmatch(commit) is not None
+    return isinstance(commit, str) and _RELEASE_REVISION_RE.fullmatch(commit) is not None
 
 
 def authored_inputs_problem(repo_root: Path, relative_paths: Sequence[str]) -> str | None:
@@ -154,6 +161,16 @@ def text_sha256(content: bytes) -> str:
     ``core.autocrlf=true`` the working tree holds CRLF while the commit holds
     LF, so the exporter and the release check both hash this form."""
     return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def blob_text(repo_root: Path, commit: str, relative_path: str) -> str | None:
+    """The file as ``commit`` holds it, CRLF read as LF, or None when it holds
+    none or not UTF-8 text."""
+    try:
+        content = _git(repo_root, "show", f"{commit}:{relative_path}", timeout=30)
+        return content.replace(b"\r\n", b"\n").decode("utf-8")
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
 
 
 def blob_sha256(repo_root: Path, commit: str, relative_path: str) -> str | None:

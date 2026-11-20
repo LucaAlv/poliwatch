@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 9
+EXTRACTOR_VERSION = 10
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_NAMESPACE = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -165,9 +165,10 @@ _ADVERB = r"(?:(?:daher|deshalb|darüber[ \t\n]+hinaus|insbesondere|ferner)[ \t\
 # im Sinne von Artikel 72 AEUV auf," (20/13417), and "dazu auf," (20/6708). The clause
 # has no punctuation of its own and ends at "auf" before a comma or colon, so it is part
 # of the one sentence the opening quotes whole.
+_MAX_CLAUSE_WORDS = 30
 _INTERPOSED = (
     r"(?:im[ \t\n]+Rahmen|unter[ \t\n]+Einhaltung|zur|zum)"
-    r"(?:[ \t\n]+[^\s.;:,!?]+){0,30}?[ \t\n]+auf(?=[ \t]*[,:])"
+    r"(?:[ \t\n]+[^\s.;:,!?]+){0," + str(_MAX_CLAUSE_WORDS) + r"}?[ \t\n]+auf(?=[ \t]*[,:])"
 )
 _ANCHOR = re.compile(
     r"(?:^|\n)[ \t]*(?:[IVX]{1,4}\.[ \t]*)?("
@@ -185,13 +186,13 @@ _END = re.compile(
 )
 # A list item at the start of a line: "1.", "12.", "a)", "aa)", "a.", "–", "-", "•".
 _ITEM = re.compile(r"^(?:(\d{1,2})\.|([a-z]{1,2})[.)]|[–•-])[ \t]+\S")
-# A word a line-end hyphen leaves standing ("Bundes- und Landesrecht").
 # The endings that make the text's other forms of a word before a line-end hyphen
 # ("jesidisch-" beside "jesidischen"): the word is then whole, so the hyphen may be its own.
 _WORD_ENDINGS = ("", "e", "en", "er", "es", "em", "s")
 # A shorter part ("an-zuheben", "um-zusetzen") is a verb prefix or a syllable, the seam of
 # a break far more often than half of a compound, and a short word occurs everywhere.
 _WHOLE_WORD_LENGTH = 5
+# A word a line-end hyphen leaves standing ("Bundes- und Landesrecht").
 _KEEPS_HYPHEN = frozenset({"und", "oder", "bzw.", "sowie", "bis", "als", "noch", "wie"})
 # What may close a clause, and what may stand after its full stop.
 _CLAUSE_ENDS = (".", ";", ":", "!", "?")
@@ -244,8 +245,8 @@ def _join(previous: str, line: str, lexicon: frozenset[str] = frozenset()) -> st
     ("NATO-geführten", or "BA-föG", 21/8385): the text's own spelling decides, and
     without one the passage is not quoted (``_Uncertain``). A part that is no word
     ("Leis-tung") or a short one ("an-zuheben") is a break. A number is never hyphenated, so after a digit, and before a
-    capital or a digit, the hyphen is part of the word and the lines join without a
-    space (E-Mobilität, CO2-neutral, 49-Euro-Ticket)."""
+    capital or a digit, the hyphen is part of the word and the lines join without
+    a space (E-Mobilität, CO2-neutral, 49-Euro-Ticket)."""
     # A leading elision hyphen can be stranded after a conjunction (21/224).
     if previous.endswith(" und -") and line[:1].islower():
         return previous + line
@@ -365,8 +366,9 @@ def _spaced(phrase: str) -> str:
 # The advance copy's watermark. DIP's text sets it on every page, letter-spaced over
 # three lines ("V" / "orabfassung – w" / "ird durch die lektorierte Fassung
 # ersetzt."), anywhere, mid-sentence included (21/8314, 21/8551, 21/8568). It is
-# never content, so it goes wherever it stands.
-_WATERMARK = re.compile(_spaced("Vorabfassung") + r"\s*[–-]\s*" + _spaced("wird durch die lektorierte Fassung ersetzt") + r"\.?")
+# never content, so it goes wherever it stands, with the spaces after it: a space left
+# at a line start reads as a dropped bullet marker (``_lines``).
+_WATERMARK = re.compile(_spaced("Vorabfassung") + r"\s*[–-]\s*" + _spaced("wird durch die lektorierte Fassung ersetzt") + r"\.?[ \t]*")
 # A footnote at a page foot: its number, then its text, which cites ("3 Vgl.
 # Bundestagsdrucksache 21/4996, S. 52 …", 21/8385). Inside the operative part it
 # splits a demand, often a word, and its reference digits stick to the words they
@@ -379,9 +381,10 @@ _FOOTNOTE = re.compile(
 
 # DIP's text can drop the hyphen of a truncated compound at a line end and glue the
 # conjunction to it: the PDF's "Über-" + "oder Unterforderung" reads "Überoder
-# Unterforderung" (20/2345). No German word ends in "oder" after a capital and two
-# more letters, so such a token is that defect and the passage is not quoted. ("und"
-# cannot be told apart this way: Bund, Grund, Hintergrund.)
+# Unterforderung" (20/2345). A capital-led token of that shape is treated as that defect
+# and the passage is not quoted. It also refuses the real words Decoder and Encoder, a
+# safe loss. A lowercase truncated part ("kurzoder") is not caught. ("und" cannot be told
+# apart this way: Bund, Grund, Hintergrund.)
 _GLUED_ODER = re.compile(r"\b[A-ZÄÖÜ][a-zäöüß]{2,}oder\b")
 
 

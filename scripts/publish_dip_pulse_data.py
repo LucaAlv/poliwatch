@@ -13,7 +13,7 @@ The default is a dry run: it checks the export, writes the release directory
 would run. A later run reuses an existing release directory only when its files
 are exactly the ones it builds (``--publish`` after a dry run the same day, or
 after a failed ``gh`` call); otherwise it refuses and never overwrites. ``--publish`` creates the release through ``gh`` and refuses unless
-the export carries a licence string (ADR 0003), every exclusion on its record
+the export's licence string is the short string of its commit's LICENSE-DATA.md (ADR 0003), every exclusion on its record
 is final, ``source_defect`` or ``not_narrowable`` (ADR 0005, "Coverage and the
 bar"), and every v1 sitting DIP lists with XML is in the export or on its
 exclusion record (read from the catalog the build left next to the exports
@@ -340,10 +340,21 @@ def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], s
         if build_revision.blob_sha256(repo_root, full, relative) != digest:
             raise ReleaseError(f"the authored input {relative} of the export differs from commit {commit}; rebuild from that commit")
     # validate_manifest admits exactly one licence file; it must be the bytes
-    # the commit holds (hashed as a codebook input), and say something.
+    # the commit holds (hashed as a codebook input), and the manifest's licence
+    # string must be that blob's short string.
     (licence,) = [entry for entry in manifest["files"] if entry["kind"] == "license"]
-    if licence["bytes"] == 0 or licence["sha256"] != inputs.get(site.CODEBOOK_INPUT_FILES["license"]):
-        raise ReleaseError(f"the export's {licence['name']} is empty or not the {site.CODEBOOK_INPUT_FILES['license']} of commit {commit}; rebuild the export")
+    license_file = site.CODEBOOK_INPUT_FILES["license"]
+    if licence["sha256"] != inputs.get(license_file):
+        raise ReleaseError(f"the export's {licence['name']} is not the {license_file} of commit {commit}; rebuild the export")
+    try:
+        short = site.license_short_string(build_revision.blob_text(repo_root, full, license_file) or "", f"{license_file} at commit {commit}")
+    except RuntimeError as exc:
+        raise ReleaseError(str(exc)) from exc
+    if manifest.get("license") != short:
+        raise ReleaseError(
+            f"the export's licence string {manifest.get('license')!r} is not the short string of {license_file} at commit {commit}; "
+            "rebuild the export without --data-license and without $BUNDESTAG_PULSE_DATA_LICENSE"
+        )
     generation = exports_dir / manifest["generation"]
     listed = {entry["name"]: entry for entry in manifest["files"]}
     present = {path.name for path in generation.iterdir()} if generation.is_dir() else set()
@@ -426,7 +437,7 @@ def build_release_directory(
         problem = staging_problem(staging, manifest, manifest_sha256)
         if problem:
             raise ReleaseError(problem)
-        (staging / "changes.json").write_text(json.dumps(changes, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (staging / "changes.json").write_text(json.dumps(changes, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         (staging / "CHANGES.md").write_text(release_changes.render_markdown(changes), encoding="utf-8")
         _write_checksums(staging)
         if release_dir.exists() or release_dir.is_symlink():
@@ -500,11 +511,6 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     unreleased = unreleased_sittings_problem(manifest, args.exports_dir / manifest["generation"], catalog_path)
     if args.publish and unreleased:
         raise ReleaseError(f"--publish refused: {unreleased}")
-    if args.publish and not str(manifest.get("license") or "").strip():
-        raise ReleaseError(
-            "--publish refused: the export carries no licence string (manifest field license). Rebuild it with --data-license "
-            f"(the short string of LICENSE-DATA.md, {ADR}) or $BUNDESTAG_PULSE_DATA_LICENSE."
-        )
     tag = release_version.tag_for(version)
     released = remote_versions(repo_root, run) if args.publish else set()
     known = local_versions(repo_root, run) | released
@@ -578,8 +584,6 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             "a GitHub release URL as --base-url does not resolve until the site's link scheme or the host changes "
             "(TODOS: Site hosting plan). Use a host that keeps the directory layout of the release directory."
         )
-        if not str(manifest.get("license") or "").strip():
-            out("licence string: empty in the export; --publish refuses until the export is rebuilt with --data-license.")
         if waiting:
             out(f"--publish would refuse: {awaiting_text(waiting)}.")
         if unreleased:

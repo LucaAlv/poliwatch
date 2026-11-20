@@ -22,7 +22,7 @@ class VersionSchemeTests(unittest.TestCase):
         for good in ("2026.11.01", "2026.11.01.2", "2026.11.01.10", "2024.02.29"):
             with self.subTest(good=good):
                 self.assertTrue(rv.is_version(good))
-        for bad in ("local", "v1", "2026.13.01", "2026.02.30", "2026.11.1", "2026.11.01.1", "2026.11.01.0", "2026.11.01.", "2026.11.01.2.3", "2026.11.01\n", None, 20261101):
+        for bad in ("local", "v1", "2026.13.01", "2026.02.30", "2026.11.1", "2026.11.01.1", "2026.11.01.0", "2026.11.01.", "2026.11.01.2.3", "2026.11.01\n", "٢٠٢٦.١١.٠١", "２０２６.１１.０１", None, 20261101):
             with self.subTest(bad=bad):
                 self.assertFalse(rv.is_version(bad))
 

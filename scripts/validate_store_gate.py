@@ -64,6 +64,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from dip_cache import PERSON_FILENAME  # noqa: E402
+import reviewed_units  # noqa: E402
 from sqlite_open import open_readonly  # noqa: E402
 from stable_ids import key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
@@ -682,6 +683,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # The order-independence clones run --persist-only, which parses nothing
+    # without the reviewed list: a missing or malformed file stops here, never
+    # halfway through a replay.
+    try:
+        reviewed_units.load()
+    except reviewed_units.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 2
     output_dir = args.output_dir.resolve()
     if not (output_dir / "data").is_dir():
         print(f"ERROR [gate]: {output_dir} has no data/ directory", file=sys.stderr)
@@ -699,7 +708,7 @@ def main(argv: list[str] | None = None) -> int:
     scratch = (args.scratch or output_dir.with_name(f"{output_dir.name}-gate-scratch")).resolve()
     try:
         receipt = run_gate(output_dir, scratch, args.today)
-    except ValueError as exc:
+    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
         print(f"ERROR [gate]: {exc}", file=sys.stderr)
         return 2
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
