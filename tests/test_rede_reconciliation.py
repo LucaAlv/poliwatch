@@ -364,7 +364,10 @@ class RefusalPathTests(unittest.TestCase):
             entries = build.load_existing_detail_entries(output_dir, [{"dokumentnummer": "18/7"}])
             with self.assertRaises(build.CachedReportError) as replay:
                 build.reparse_cached_xml(output_dir, entries)
-        for message in (str(online.exception), str(replay.exception)):
+        # The replay message as the CLI prints it: the error, then its fix.
+        printed_replay = f"{replay.exception}. {build.cached_report_fix(replay.exception)}"
+        self.assertNotIn("re-fetch", printed_replay)
+        for message in (str(online.exception), printed_replay):
             with self.subTest(message=message):
                 self.assertIn("unknown Fraktion 'Piraten'", message)
                 self.assertIn("derive._SPELLINGS", message)
