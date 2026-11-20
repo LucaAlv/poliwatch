@@ -1,6 +1,6 @@
 # Release review checklist
 
-A main release becomes stable when the owner has run every step below on it and the record `docs/release-reviews/<version>.md` says "stable". Run it about every three months (plan decision Q3, `docs/plans/release-readiness.md`). The first release is reviewed in full and is the first stable.
+A main release becomes stable when the owner has run every step below on it and the record `docs/release-reviews/<version>.md` says "stable". Run it about every three months (plan decision Q3, `docs/plans/release-readiness.md`). The first release is reviewed in full and is the first stable. What main and stable releases are, and what may change between releases, is in `docs/release-policy.md`; the record starts from `docs/release-reviews/TEMPLATE.md`.
 
 **Inputs.**
 - The candidate's release directory `data-<version>/`, checked with `shasum -a 256 -c SHA256SUMS`. Its SQLite is the asset `bundestag-pulse-<version>.sqlite.gz`.
@@ -37,7 +37,10 @@ The script uses only the standard library and imports nothing of this project. I
 
 CPP-BT is automatic too and does not check deeply. Agreement is no proof both are right; disagreement is a lead. The comparison covers units that carry a `rede_id`, so Fragestunde turns and the text itself are outside it.
 
-**5. Claims.** Re-check the "Vergleich" table of DATA.md against each dataset's page when its date is more than six months before the candidate, and update the date. Check that the licence section still names the open roll-call question, or its answer. (The table lands with PR C of the release-readiness plan; until then this step has nothing to check.)
+**5. Claims.** DATA.md, "Vergleich mit anderen Datensätzen und Verknüpfung" (authored in `docs/data-methods.md`):
+- Re-check the "Vergleich" table against each dataset's own page when its date is more than six months before the candidate, or when step 4 used a newer CPP-BT version than the table names. Update the cells, the sources list and the date. A cell nobody could verify reads „nicht angegeben“ or „nicht gelesen“, never a guess.
+- The figures under "Verknüpfung über die Kennungen des Bundestages" are a dated measurement. Compare them with step 4's summary block for the candidate. If the candidate holds other sittings or CPP-BT has a newer version, replace the figures and their date in the next main release; the candidate's DATA.md stays as it is, since its date says which state it measured. The Redner-ID agreement is not in the script's output: count, over the shared ids without `:N`, how often `mps.xml_redner_id` equals CPP-BT's `redner_id`.
+- Check that the licence section still names the open roll-call question, or its answer.
 
 **6. Verdict.** Write the record: inputs and their digests, each step's result, findings with their fix release. Then tag `stable-<version>` on the commit of `data-<version>`, and archive the release on Zenodo once that exists.
 
