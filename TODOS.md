@@ -309,6 +309,9 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
    - The comparison now finds 1 Fraktion difference, not 2: 18/222 `ID1822204600` is stored with the Fraktion CDU/CSU on the current store (it read "CDU/CSU: Ich glaube, …" on 2026-11-18). Its row in `scripts/cpp_bt_known_differences.tsv` no longer matches anything, and `docs/release-review.md` step 4 still speaks of "the two Fraktion rows". Remove the row and say one, or keep it as a guard, after checking which change cleaned the label.
 
 6. **From the ship review (2026-11-20), not fixed:** `docs/release-reviews/TEMPLATE.md` has a part "6. Findings" and a separate "Verdict", where step 6 of `docs/release-review.md` is "Verdict" and holds both; rename one so the numbers map one to one.
+7. **From the fix-check (2026-11-20), two notes on the section's wording:**
+   - "die Zeile dazu steht in `speeches` oder … in `contributions`" (the `nested:` bullet) holds on the 801-sitting store (0 of 3,971 nested Beiträge have a parent in neither table), but the parser does not guarantee it: `validate_dip_protocol.py` adds a Rede's nested units before it checks `procedural_reden`, so a resumed procedural Rede that is stored nowhere could leave a nested Beitrag without a parent row. Not constructed. Either refuse that case in the parser or soften the sentence.
+   - The overlap sentence names what the comparison skips but not synthetic ids (Protokollkennung:TOP:Sequenz), which `source_rede_id()` also drops. The store has none.
 
 **Why:** A false statement about another dataset in DATA.md is a correctness defect, so what could not be checked is written here and not in the release.
 
