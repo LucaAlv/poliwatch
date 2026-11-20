@@ -171,7 +171,7 @@ A list of places where an official source file says something wrong or files con
 - **What is wrong:** Singhammer presides at this point. His turns before and after it are `<name>Vizepräsident Johannes Singhammer:</name>` ("Frau Kollegin, Sie haben eine weitere Nachfrage."). This one turn is marked as a speaker of the CDU/CSU.
 - **What it should be:** `<name>Vizepräsident Johannes Singhammer:</name>`, as the chair's other turns in the Fragestunde.
 - **Scale:** in the 803 sittings of WP 18–21 held (the 801 of the reference store, 18/62 and 18/90), five presidium markers stand outside a `<rede>`; this is the only one whose person presides. Counted 2026-11-20.
-- **Our side:** read as Sitzungsleitung by `mark_presidium_markers_outside_reden` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-20, awaiting the owner's approval). Without the rule it was a `fragestunde_antwort` with a role no Sprechrolle rule maps.
+- **Our side:** read as Sitzungsleitung by `mark_presidium_markers_outside_reden` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-20). Without the rule it was a `fragestunde_antwort` with a role no Sprechrolle rule maps.
 
 ## Candidates
 
