@@ -145,7 +145,7 @@ DIP's record of one Person's contribution in a Plenarprotokoll or Drucksache, ty
 _Avoid_: Aktivität as a synonym for Rede, counting Aktivitäten as Reden
 
 **Sitzungsleitung**:
-What the presiding Präsident, Vizepräsident or Alterspräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede, including where the Plenarprotokoll XML of Wahlperiode 18 and 19 prints it inside another speaker's `<rede>` or as a whole `<rede>` of the presiding member; a Präsident who speaks from the lectern gives a Rede like any other Redner, counted for their Zusammenschluss (ADR 0004).
+What the presiding Präsident, Vizepräsident or Alterspräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede, including where the Plenarprotokoll XML of Wahlperiode 18 and 19 prints it inside another speaker's `<rede>`, as a whole `<rede>` of the presiding member, or under a Fragestunde speaker marker of the member who presides (18/62); a Präsident who speaks from the lectern gives a Rede like any other Redner, counted for their Zusammenschluss (ADR 0004).
 _Avoid_: attributing chairing remarks to the Redner or counting them as speeches
 
 **Ansprache**:
