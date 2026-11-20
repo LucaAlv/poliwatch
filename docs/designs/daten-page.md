@@ -6,7 +6,7 @@ Repo: LucaAlv/poliwatch
 Status: APPROVED
 Mode: Builder
 Superseded in part: A4 slice 0 (v0.29.0.0) removed `--no-persist`; the passages that mention it describe the design as approved.
-Builds on: docs/design/bundestag-pulse-design.md (2026-06-15, "a civic radar, not a database")
+Builds on: PRODUCT.md (its predecessor, docs/design/bundestag-pulse-design.md, was deleted; 2026-06-15, "a civic radar, not a database")
 Plan (reviewed): ~/.gstack/projects/LucaAlv-poliwatch/fix-datenbank-plan.md (APPROVED 2026-09-18 at the /autoplan gate; four addenda refine the Steps; aggregated tasks in aggregated-tasks-fix-datenbank.md)
 Wireframe: ~/.gstack/projects/LucaAlv-poliwatch/designs/daten-page-20260915/sketch.png (real numbers from the 2026-09-14 build; current-state screenshots next to it)
 
@@ -332,8 +332,8 @@ server so downloads work on `localhost`.
   §7 hosting paragraph named here has not been written.
   *Status update 2026-11-01:* `LICENSE-DATA.md` now exists at the repository root and is
   carried by every export (export format 12), so `--publish` no longer refuses for a
-  missing file; it refuses an export whose licence string is empty or whose
-  `LICENSE-DATA.md` differs from the one the manifest's commit holds.
+  missing file; it refuses an export whose licence string is not the short string of the
+  commit's `LICENSE-DATA.md` or whose `LICENSE-DATA.md` differs from the one the manifest's commit holds.
 
 ### Copy and links elsewhere
 

@@ -999,11 +999,11 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
     """18/49 and 18/44 print Reden directly under ``<sitzungsverlauf>``: the source
     lost the ``<tagesordnungspunkt>`` around them. The Inhaltsverzeichnis still names
     each one's item ("Einzelplan 06", "Zur Geschäftsordnung"), the labels other sittings
-    use as ``top-id``. Each run in one block is wrapped in place under that label and
-    marked ``top_source``; a TOP the chair called in ``<sitzungsbeginn>`` moves in with
-    the run after it. A Rede with no entry, one listed under two different titles, or
-    one after any other element is a shape no source has shown yet: refused, never
-    placed by guess. ``top_source`` is the parser's mark, so a source element carrying
+    use as ``top-id``. Each run under one Inhaltsverzeichnis label is wrapped in place
+    under that label and marked ``top_source``; a TOP the chair called in
+    ``<sitzungsbeginn>`` moves in with the run after it. A Rede with no entry, one
+    listed under two different titles, or one after any other element is a shape no
+    source has shown yet: refused, never placed by guess. ``top_source`` is the parser's mark, so a source element carrying
     it loses it first.
     """
     verlauf = root.find("sitzungsverlauf")
@@ -1020,29 +1020,28 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
                 blocks[xref.get("rid")].append(block)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     arranged: list[ET.Element] = []
-    adopted: list[ET.Element] = []
-    open_block = None
+    before: ET.Element | None = None  # the first source element other than <sitzungsbeginn>
+    open_label = None
     for child in list(verlauf):
         verlauf.remove(child)
         if child.tag != "rede":
             arranged.append(child)
-            open_block = None
+            if before is None and child.tag != "sitzungsbeginn":
+                before = child
+            open_label = None
             continue
         rid = child.get("id")
-        before = next((c for c in arranged if c.tag != "sitzungsbeginn" and not any(c is a for a in adopted)), None)
         if before is not None:
             what = "a TOP" if before.tag == "tagesordnungspunkt" else f"a <{before.tag}> element"
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, after {what}")
-        listed = blocks.get(rid, [])
-        labels = {toc_block_label(block) for block in listed}
+        labels = {toc_block_label(block) for block in blocks.get(rid, [])} - {""}
         if len(labels) > 1:
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP and two Inhaltsverzeichnis titles list it: "
                              + ", ".join(sorted(labels)))
-        block = listed[0] if listed else None
-        title = toc_block_label(block) if block is not None else ""
+        title = next(iter(labels), "")
         if not title:
             raise ValueError(f"{sitting}: Rede {rid} stands outside any TOP, with no Inhaltsverzeichnis entry")
-        if block is not open_block:
+        if title != open_label:
             top = ET.Element("tagesordnungspunkt", {"top-id": title, "top_source": "inhaltsverzeichnis"})
             if arranged and arranged[-1].tag == "sitzungsbeginn" and title.startswith(("Tagesordnungspunkt", "Zusatzpunkt")):
                 for paragraph in arranged[-1].findall("p"):
@@ -1050,8 +1049,7 @@ def adopt_reden_outside_tops(root: ET.Element) -> None:
                         arranged[-1].remove(paragraph)
                         top.append(paragraph)
             arranged.append(top)
-            adopted.append(top)
-            open_block = block
+            open_label = title
         arranged[-1].append(child)
     verlauf.extend(arranged)
 
@@ -1510,11 +1508,14 @@ def exclude_annex_reden_in_verlauf(root: ET.Element, statuses: dict[str, str]) -
     if not rules or verlauf is None:
         return
     for top in [verlauf, *verlauf.findall("tagesordnungspunkt")]:
+        moved = False
         for rede in top.findall("rede"):
             if rede.get("id") in rules:
                 record_status(statuses, rede.get("id"), f"excluded_annex:{rules[rede.get('id')]}")
                 top.remove(rede)
-        if top is not verlauf and len(top) == 0:
+                moved = True
+        # Only a TOP this rule emptied: one the source prints childless stays.
+        if moved and top is not verlauf and len(top) == 0:
             verlauf.remove(top)
 
 
@@ -1706,6 +1707,9 @@ def raw_rede_inventory(root: ET.Element) -> dict[str, str]:
             location = "in " + "/".join(reversed(path))
         if not key:
             raise ReconciliationError(f"{sitting}: rede reconciliation: a <rede> without id ({location})")
+        if ":" in (rede.get("id") or ""):
+            raise ReconciliationError(f"{sitting}: rede reconciliation: <rede> id {key} ({location}) contains a colon, "
+                                      "which marks a part split_nested_reden made")
         if key in inventory:
             raise ReconciliationError(f"{sitting}: rede reconciliation: <rede> {key} occurs twice ({inventory[key]}; {location})")
         inventory[key] = location
@@ -1746,7 +1750,11 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     toc = parse_toc(root)
     rid_pages: dict[str, dict[str, Any]] = {}
     for block in toc:
-        rid_pages.update(block["rid_pages"])
+        for rid, page_ref in block["rid_pages"].items():
+            listed = rid_pages.setdefault(rid, page_ref)
+            if listed != page_ref:
+                raise ValueError(f"{sitting}: Rede {rid} is listed in the Inhaltsverzeichnis at two pages: "
+                                 + ", ".join(f"{p['page']} {p['quadrant'] or ''}".strip() for p in (listed, page_ref)))
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
@@ -2132,12 +2140,6 @@ def find_protocol(client: ApiClient, protocol_id: str | None, document_number: s
     return documents[0]
 
 
-def norm_title(value: str | None) -> str:
-    value = clean_text(value).lower()
-    value = re.sub(r"[^a-zäöüß0-9]+", " ", value)
-    return clean_text(value)
-
-
 def overlaps(top: dict[str, Any], position: dict[str, Any]) -> bool:
     page_range = top.get("page_range") or {}
     start_ref = page_range.get("start")
@@ -2152,20 +2154,6 @@ def overlaps(top: dict[str, Any], position: dict[str, Any]) -> bool:
     if None in {top_start, top_end, pos_start, pos_end}:
         return False
     return int(pos_start) <= int(top_end) and int(pos_end) >= int(top_start)
-
-
-def title_matches(heading: str | None, title: str | None) -> bool:
-    heading_norm = norm_title(heading)
-    title_norm = norm_title(title)
-    if not heading_norm or not title_norm:
-        return False
-    if title_norm in heading_norm or heading_norm in title_norm:
-        return True
-    title_tokens = {token for token in title_norm.split() if len(token) > 4}
-    heading_tokens = {token for token in heading_norm.split() if len(token) > 4}
-    if not title_tokens:
-        return False
-    return len(title_tokens & heading_tokens) / len(title_tokens) >= 0.65
 
 
 def activity_page(activity: dict[str, Any]) -> int | None:
@@ -3959,9 +3947,18 @@ def xml_sitting_mismatch(document_number: str, parsed_xml: dict[str, Any]) -> st
     wahlperiode, _, sitzung = document_number.partition("/")
     xml_protocol = parsed_xml.get("xml_protocol") or {}
     found = (str(xml_protocol.get("wahlperiode") or ""), str(xml_protocol.get("sitzung_nr") or ""))
+    if not document_number:
+        return f"the DIP record has no dokumentnummer to check the XML of {found[0]}/{found[1]} against"
     if found != (wahlperiode, sitzung):
         return f"it is the XML of {found[0]}/{found[1]}, not of {document_number}"
     return None
+
+
+def xml_root_sitting(root: ET.Element) -> dict[str, Any]:
+    """The sitting a Plenarprotokoll root names, shaped like ``parsed_xml`` for
+    ``xml_sitting_mismatch``, so a caller can check it before the parse."""
+    return {"xml_protocol": {"wahlperiode": root.attrib.get("wahlperiode"),
+                             "sitzung_nr": root.attrib.get("sitzung-nr")}}
 
 
 def check_xml_belongs_to_report(
@@ -4193,10 +4190,10 @@ def enrich_with_api(
             if doc.get("dokumentnummer")
         }
         if xml_numbers:
-            return bool(xml_numbers & position_drucksache_numbers(position, vorgang_drucksache_numbers)) or title_matches(
+            return bool(xml_numbers & position_drucksache_numbers(position, vorgang_drucksache_numbers)) or vote_links.title_matches(
                 top.get("heading"), position.get("titel")
             )
-        return title_matches(top.get("heading"), position.get("titel"))
+        return vote_links.title_matches(top.get("heading"), position.get("titel"))
 
     enriched_tops: list[dict[str, Any]] = []
     agenda_items = parsed_xml["agenda_items"]
@@ -4509,14 +4506,23 @@ def build_report(
     xml_sink = getattr(args, "xml_sink", None)
     if isinstance(xml_sink, dict):
         xml_sink["text"] = xml_text
+    # Before the parse, which applies the reviewed list of the XML's own number and
+    # can refuse a wrong-sitting file with ReviewedUnitsError, and before enrichment,
+    # so no DIP request is spent on the wrong file (P3f).
     try:
-        parsed_xml = parse_protocol_xml(xml_text)
-    except (ET.ParseError, ValueError) as exc:
+        root_sitting = xml_root_sitting(ET.fromstring(xml_text))
+    except ET.ParseError as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
-    # Before enrichment, so no DIP request is spent on the wrong file (P3f).
-    mismatch = xml_sitting_mismatch(str(protocol.get("dokumentnummer") or ""), parsed_xml)
+    mismatch = xml_sitting_mismatch(str(protocol.get("dokumentnummer") or ""), root_sitting)
     if mismatch:
         raise DipError(f"{document_number}: protocol source rejected: {mismatch}", source_rejected=True)
+    try:
+        parsed_xml = parse_protocol_xml(xml_text)
+    except derive.UnknownFraktionError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}; {derive.UNKNOWN_FRAKTION_FIX}",
+                       source_rejected=True) from exc
+    except (ET.ParseError, ValueError) as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
     progress(
         f"Parsed XML: {len(parsed_xml['agenda_items'])} agenda item(s), "

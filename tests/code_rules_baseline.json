@@ -430,25 +430,7 @@
       "file": "scripts/build_dip_pulse_site.py",
       "function": "_fact_speech_citation",
       "comparison": "speeches.rede_id = ?",
-      "reason": "Runs only behind `if rede_id:`, so the bound value is never None; a speech without a rede id is cited by its page instead."
-    },
-    {
-      "file": "scripts/build_dip_pulse_site.py",
-      "function": "_fact_speech_citation",
-      "comparison": "speeches.page = ?",
-      "reason": "Not intended, latent: only a speech with a synthetic rede id is cited by its page, and none of those has a NULL page in the 2026-11-17 reference store (no receipt resolves by page today). One that did would never resolve. TODOS.md \"Resolve fact citations by id\"."
-    },
-    {
-      "file": "scripts/build_dip_pulse_site.py",
-      "function": "_fact_agenda_item_citation",
-      "comparison": "agenda_items.page_start = ?",
-      "reason": "Not intended: an agenda item with no printed page has a NULL page_start (1,810 items, 106 of them with speeches, in the 2026-11-17 reference store), so its citation never resolves and the fact is dropped. Only two withheld laengste-debatte facts cite such an item today, so no page changes. TODOS.md \"Resolve fact citations by id\"."
-    },
-    {
-      "file": "scripts/build_dip_pulse_site.py",
-      "function": "_fact_proceeding_citation",
-      "comparison": "agenda_items.page_start = ?",
-      "reason": "Not intended: an agenda item with no printed page has a NULL page_start (1,810 items, 106 of them with speeches, in the 2026-11-17 reference store), so its citation never resolves and the fact is dropped. Only two withheld laengste-debatte facts cite such an item today, so no page changes. TODOS.md \"Resolve fact citations by id\"."
+      "reason": "Runs only behind `if rede_id:`, so the bound value is never None; a speech without a rede id is cited by its speech id instead."
     },
     {
       "file": "scripts/build_dip_pulse_site.py",

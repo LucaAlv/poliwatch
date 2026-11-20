@@ -16,6 +16,7 @@ import antrag_text
 import build_dip_pulse_site as site
 import persist_dip_pulse_store as pulse_store
 import politikfelder
+import reviewed_units
 import speech_kinds
 import validate_dip_protocol as dip
 import validate_store_gate as gate
@@ -79,6 +80,30 @@ class PersistOnlyRosterTests(unittest.TestCase):
             # The report samples one DIP person of its own (is_mdb 0); the roster adds Bo.
             self.assertEqual(sorted(mdb for _binding, mdb in gate.dip_person_occurrences(database)), [0, 1])
 
+    # Value: protects=the gate's fresh build ingests the roster of a Wahlperiode the sitting catalog lists
+    #   although no sitting of it is cached, as an online build does; fails_when=persist_only takes the
+    #   periods from the cached reports alone; why_new=TODOS "Registry fix review" (i); seam=none
+    def test_persist_only_takes_roster_periods_from_the_catalog_too(self) -> None:
+        from test_registry_contracts import dip_person
+        import facts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "gate"
+            report = antrag_report()
+            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            _support.stamp_reviewed(report)
+            report_path, _, _ = site.report_paths(output, report["protocol"]["dokumentnummer"])
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            (output / "data" / facts.CATALOG_FILENAME).write_text(
+                json.dumps({"protocols": [{"id": "x", "dokumentnummer": "21/1", "datum": "2025-03-25"}]}), encoding="utf-8")
+            _person_cache(output, {**dip_person("7", "Di Neu"), "wahlperiode": 21})
+            with contextlib.redirect_stderr(io.StringIO()):
+                gate.persist_only(output, "2025-05-15")
+            with sqlite3.connect(output / "data" / "bundestag-pulse.sqlite") as conn:
+                mdbs = conn.execute("SELECT dip_person_id FROM mps WHERE is_mdb = 1").fetchall()
+            self.assertEqual(mdbs, [("7",)])
+
     # Value: protects=a clone without a readable person cache is a clear refusal (exit 2), not a
     #   store-less build that passes as the fresh reference; fails_when=cached_roster falls back
     #   to no roster; why_new=persist_only needs the cache now; seam=none
@@ -125,6 +150,36 @@ class PersistOnlyRosterTests(unittest.TestCase):
                     contextlib.redirect_stderr(io.StringIO()) as stderr:
                 self.assertEqual(gate.main([tmp, "--persist-only"]), 2)
             self.assertIn("ERROR [gate]: no person cache", stderr.getvalue())
+
+
+class MainStopsCleanlyTests(unittest.TestCase):
+    # Value: protects=a missing scripts/reviewed_units.json stops the gate (and its --persist-only
+    #   clones) with "ERROR [reviewed-units]" and exit 2, not a traceback from deep in a replay;
+    #   fails_when=main does not call reviewed_units.load() before it starts; why_new=TODOS
+    #   "Withheld-Reden PRs A and B" B robustness; seam=reviewed_units.load patched
+    def test_a_missing_reviewed_list_is_a_clean_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "data").mkdir()
+            for argv in ([tmp, "--persist-only"], [tmp, "--receipt", str(Path(tmp) / "r.json")]):
+                with mock.patch.object(reviewed_units, "load", side_effect=reviewed_units.ReviewedUnitsError("list is missing")), \
+                        contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(gate.main(argv), 2)
+                self.assertIn("ERROR [reviewed-units]: list is missing", stderr.getvalue())
+
+    # Value: protects=a clone that cannot be made (permissions, disk full) ends the gate with
+    #   "ERROR [gate]" and exit 2, not a traceback; fails_when=main catches only ValueError around
+    #   run_gate; why_new=TODOS "C1 seat counts" item 41; seam=_data_clone patched
+    def test_a_clone_that_cannot_be_made_is_bad_input(self) -> None:
+        import subprocess
+
+        for failure in (OSError("No space left on device"), subprocess.CalledProcessError(1, ["cp"])):
+            with self.subTest(type(failure).__name__), tempfile.TemporaryDirectory() as tmp:
+                output = Path(tmp) / "gate"
+                (output / "data").mkdir(parents=True)
+                with mock.patch.object(gate, "run_gate", side_effect=failure), \
+                        contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(gate.main([str(output), "--receipt", str(Path(tmp) / "r.json")]), 2)
+                self.assertIn("ERROR [gate]:", stderr.getvalue())
 
 
 class CachedRosterFileTests(unittest.TestCase):

@@ -111,6 +111,16 @@ class SourceShapeTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(dip.ReconciliationError, message.strip()):
                 dip.parse_protocol_xml(xml)
 
+    # Value: protects=a source id never looks like a split part <id>:<marker>, which shares the status dict;
+    #   fails_when=raw_rede_inventory accepts a colon again; why_new=a <rede id="R1:2"> where the parser does not read
+    #   was covered by the status of R1's second part; seam=none
+    def test_a_source_rede_id_with_a_colon_refuses(self):
+        for xml in [sitting(verlauf=f"<sitzungsende>{rede('R1:2')}</sitzungsende>"),
+                    sitting(verlauf=f'<tagesordnungspunkt top-id="T2">{rede("R:2")}</tagesordnungspunkt>'),
+                    sitting(anlagen=annex("Zu Protokoll gegebene Reden", rede("A:1")))]:
+            with self.subTest(xml=xml), self.assertRaisesRegex(dip.ReconciliationError, r"^18/7: .* id \S+:\S+ .*colon"):
+                dip.parse_protocol_xml(xml)
+
     # Value: protects=annex Reden without id are keyed one way by the reader and the inventory;
     #   fails_when=written_contributions and raw_rede_inventory count blocks or Reden differently; why_new=two keys built in two places; seam=none
     def test_annex_reden_without_id_are_keyed_alike_by_reader_and_inventory(self):
@@ -200,6 +210,19 @@ class AnnexRedenInVerlaufTests(unittest.TestCase):
                 statuses, parsed = parse(listing, annexes)
                 self.assertEqual((statuses["G1"], statuses["G2"]), ("speech", "speech"))
 
+    # Value: protects=the rule removes only the TOPs it emptied; a TOP the source prints childless (21/18, 21/28, ...)
+    #   stays on the agenda; fails_when=every childless TOP is removed once the rule moves anything (TODOS "T4 parser
+    #   rules" item 7); why_new=ship red team 2026-11-16; seam=none
+    def test_a_top_empty_in_the_source_stays_when_the_rule_empties_another(self):
+        go_top = f'<tagesordnungspunkt top-id="Geschaeftsordnung">{rede("G1", "Erst")}</tagesordnungspunkt>'
+        xml = (f'<dbtplenarprotokoll wahlperiode="18" sitzung-nr="7">{listed_in_annex(["G1"])}<sitzungsverlauf>'
+               f'<tagesordnungspunkt top-id="T1"><p klasse="T_NaS">Beratung</p>{rede("R1")}</tagesordnungspunkt>'
+               f'<tagesordnungspunkt top-id="Leer"/>{go_top}</sitzungsverlauf>'
+               f'<anlagen>{numbered_annex("Anlage 7", "Erklärungen nach § 31 GO")}</anlagen></dbtplenarprotokoll>')
+        root = dip.ET.fromstring(xml)
+        dip.exclude_annex_reden_in_verlauf(root, {})
+        self.assertEqual([t.get("top-id") for t in root.iter("tagesordnungspunkt")], ["T1", "Leer"])
+
 
 class ReconcileTests(unittest.TestCase):
     # Value: protects=a part split_nested_reden made needs its own status, and no unit gets a status the source lacks;
@@ -279,6 +302,44 @@ class RefusalPathTests(unittest.TestCase):
             self.assertIn("not of " + number, str(raised.exception))
             enrich.assert_not_called()
 
+    # Value: protects=the sitting check runs before the parse, so a wrong-sitting file the parser refuses with ReviewedUnitsError
+    #   (not a ValueError) is still a source refusal naming the other sitting; fails_when=build_report parses before comparing;
+    #   why_new=TODOS "Withheld-Reden PRs A and B" B latent; seam=fetch_text stubbed, reviewed list patched
+    def test_wrong_sitting_with_a_stale_reviewed_entry_is_a_source_refusal(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/20", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18020.xml"}}
+        entry = {"sitting": "18/7", "rede_id": "ID999", "redner_id": "X", "kind": "withhold", "reason": "test"}
+        with patch.object(dip, "fetch_text", return_value=sitting()), \
+                patch.object(dip.reviewed_units, "for_sitting", return_value=[entry]), \
+                self.assertRaises(dip.DipError) as raised:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(raised.exception.source_rejected)
+        self.assertIn("it is the XML of 18/7, not of 18/20", str(raised.exception))
+
+    # Value: protects=a DIP record without dokumentnummer is refused with a message that says so; fails_when=the refusal
+    #   reads "not of " with nothing after it; why_new=TODOS "Withheld-Reden PRs A and B" B latent; seam=fetch_text stubbed
+    def test_a_record_without_dokumentnummer_is_refused_by_name(self):
+        protocol = {"id": "p1", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18007.xml"}}
+        with patch.object(dip, "fetch_text", return_value=sitting()), \
+                patch.object(dip, "enrich_with_api") as enrich, self.assertRaises(dip.DipError) as raised:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(raised.exception.source_rejected)
+        self.assertIn("the DIP record has no dokumentnummer", str(raised.exception))
+        self.assertNotIn("not of ", str(raised.exception))
+        enrich.assert_not_called()
+
+    # Value: protects=a fetched body that is not well-formed XML is a source refusal, not a raw ParseError, now that the sitting
+    #   check parses the root first; fails_when=build_report's ET.fromstring is no longer wrapped in DipError(source_rejected);
+    #   why_new=the ParseError catch moved from parse_protocol_xml's call to the root parse and no test feeds malformed XML;
+    #   seam=none
+    def test_malformed_xml_is_a_source_refusal_before_enrichment(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/7", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18007.xml"}}
+        with patch.object(dip, "fetch_text", return_value="<dbtplenarprotokoll wahlperiode="), \
+                patch.object(dip, "enrich_with_api") as enrich, self.assertRaises(dip.DipError) as raised:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(raised.exception.source_rejected)
+        self.assertIn("protocol source rejected", str(raised.exception))
+        enrich.assert_not_called()
+
     # Value: protects=offline, a reconciliation failure names itself, not a corrupt file; fails_when=the generic "is not the Plenarprotokoll XML" message returns;
     #   why_new=the offline message would send the operator to refetch good XML; seam=none
     def test_offline_reparse_says_reconciliation_not_corrupt_xml(self):
@@ -293,6 +354,36 @@ class RefusalPathTests(unittest.TestCase):
                 build.reparse_cached_xml(output_dir, entries)
         self.assertIn("rede reconciliation failed for 18/7", str(raised.exception))
         self.assertNotIn("--fetch-xml", str(raised.exception))
+
+    UNKNOWN_FRAKTION = sitting().replace("<fraktion>SPD</fraktion>", "<fraktion>Piraten</fraktion>")
+
+    # Value: protects=an unknown <fraktion> names its fix (derive._SPELLINGS, docs/source-errors.md), online and on replay;
+    #   fails_when=it reads as corrupt XML ("--fetch-xml") or as a source to exclude; why_new=TODOS "Fraktion check and
+    #   vote binding" item 2; seam=fetch_text stubbed
+    def test_an_unknown_fraktion_names_the_spelling_list(self):
+        protocol = {"id": "p1", "dokumentnummer": "18/7", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18007.xml"}}
+        with patch.object(dip, "fetch_text", return_value=self.UNKNOWN_FRAKTION), self.assertRaises(dip.DipError) as online:
+            dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+        self.assertTrue(online.exception.source_rejected)
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "data" / "xml").mkdir(parents=True)
+            (output_dir / "data" / "xml" / "plenarprotokoll-18-7.xml").write_text(self.UNKNOWN_FRAKTION, encoding="utf-8")
+            report = {"protocol": {"id": "p1", "dokumentnummer": "18/7"}, "agenda_items": []}
+            (output_dir / "data" / "plenarprotokoll-18-7.json").write_text(json.dumps(report), encoding="utf-8")
+            entries = build.load_existing_detail_entries(output_dir, [{"dokumentnummer": "18/7"}])
+            with self.assertRaises(build.CachedReportError) as replay:
+                build.reparse_cached_xml(output_dir, entries)
+        # The replay message as the CLI prints it: the error, then its fix.
+        printed_replay = f"{replay.exception}. {build.cached_report_fix(replay.exception)}"
+        self.assertNotIn("re-fetch", printed_replay)
+        for message in (str(online.exception), printed_replay):
+            with self.subTest(message=message):
+                self.assertIn("unknown Fraktion 'Piraten'", message)
+                self.assertIn("derive._SPELLINGS", message)
+                self.assertIn("docs/source-errors.md", message)
+                self.assertNotIn("--fetch-xml", message)
+                self.assertNotIn("--exclude-document-number", message)
 
 
 if __name__ == "__main__":

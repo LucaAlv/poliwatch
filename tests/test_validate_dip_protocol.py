@@ -10,6 +10,7 @@ from unittest import mock
 import _support  # noqa: F401
 import derive
 import speech_kinds
+import vote_links
 import validate_dip_protocol as dip
 from _support import FIXTURES
 
@@ -163,7 +164,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
 
         with (
             mock.patch.object(dip, "find_protocol", return_value=protocol) as find_protocol,
-            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87" />'),
             mock.patch.object(dip, "parse_protocol_xml", return_value=parsed_xml),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
@@ -204,7 +205,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
 
         with (
             mock.patch.object(dip, "find_protocol") as find_protocol,
-            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87" />'),
             mock.patch.object(dip, "parse_protocol_xml", return_value=parsed_xml),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
@@ -252,7 +253,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [],
                       "api_records": {"sitting_votes": [sitting_vote]}, "sitting_votes": [sitting_vote]}
         with (
-            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "fetch_text", return_value='<dbtplenarprotokoll wahlperiode="21" sitzung-nr="87" />'),
             mock.patch.object(dip, "parse_protocol_xml", return_value={"xml_protocol": {"wahlperiode": "21", "sitzung_nr": "87"}, "agenda_items": []}),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
             mock.patch.object(dip, "enrich_with_llm_summaries"),
@@ -275,15 +276,15 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         self.assertEqual(dip.clamp_text("  eins   zwei drei  ", 9), "eins zwe" + "\u2026")
 
     def test_title_and_position_matching_helpers(self) -> None:
-        self.assertEqual(dip.norm_title("Test: Gesetz 20/123!"), "test gesetz 20 123")
-        self.assertTrue(dip.title_matches("TOP 1 Beratung Testgesetz", "Beratung Testgesetz"))
+        self.assertEqual(vote_links.norm_title("Test: Gesetz 20/123!"), "test gesetz 20 123")
+        self.assertTrue(vote_links.title_matches("TOP 1 Beratung Testgesetz", "Beratung Testgesetz"))
         self.assertTrue(
-            dip.title_matches(
+            vote_links.title_matches(
                 "Gesetz zur Modernisierung der digitalen Verwaltung und Infrastruktur",
                 "Modernisierung digitale Verwaltung Infrastruktur",
             )
         )
-        self.assertFalse(dip.title_matches("Haushalt", "Verkehr Infrastruktur"))
+        self.assertFalse(vote_links.title_matches("Haushalt", "Verkehr Infrastruktur"))
 
         top = {"page_range": {"start": {"page": 5}, "end": {"page": 7}}}
         self.assertTrue(dip.overlaps(top, {"fundstelle": {"anfangsseite": "7", "endseite": "8"}}))
