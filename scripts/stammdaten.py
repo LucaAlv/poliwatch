@@ -405,7 +405,8 @@ def _download(etag: str | None) -> tuple[bytes, str | None] | None:
     """GET the file, conditionally on ``etag``: its body and ETag, or None on
     304 Not Modified. Raises StammdatenError for a body over MAX_ZIP_BYTES, a
     redirect off https://www.bundestag.de, or a body not complete within
-    FETCH_DEADLINE_SECONDS."""
+    FETCH_DEADLINE_SECONDS (overrun by at most one socket read of up to
+    FETCH_TIMEOUT_SECONDS)."""
     headers = {"Accept": "application/zip"}
     if etag:
         headers["If-None-Match"] = etag
@@ -418,7 +419,9 @@ def _download(etag: str | None) -> tuple[bytes, str | None] | None:
             while total <= MAX_ZIP_BYTES:
                 if time.monotonic() > deadline:
                     raise StammdatenError(f"the download did not finish within the {FETCH_DEADLINE_SECONDS} s deadline")
-                chunk = response.read(min(READ_CHUNK_BYTES, MAX_ZIP_BYTES + 1 - total))
+                # read1 returns after one socket read; read(n) would wait for n bytes, so a server
+                # dripping a byte per FETCH_TIMEOUT_SECONDS would never reach the deadline check.
+                chunk = response.read1(min(READ_CHUNK_BYTES, MAX_ZIP_BYTES + 1 - total))
                 if not chunk:
                     break
                 chunks.append(chunk)

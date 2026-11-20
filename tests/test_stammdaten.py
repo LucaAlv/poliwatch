@@ -550,6 +550,52 @@ class RefreshTests(unittest.TestCase):
         self.assertIn("deadline", err)
         self.assertEqual(self.cache.read_bytes(), self.good)
 
+    # Value: protects=the deadline holds against a real http.client.HTTPResponse whose server sends one byte
+    #   per socket read, each just inside the socket timeout; fails_when=a body read waits for a whole chunk
+    #   (HTTPResponse.read(n) blocks until n bytes), so the deadline is checked only after 64 KiB of drip;
+    #   why_new=the fake response above returns at once and cannot show a blocking read; seam=none
+    def test_a_one_byte_drip_through_a_real_http_response_stops_near_the_deadline(self) -> None:
+        import http.client
+
+        clock = {"now": 0.0}
+        head = b'HTTP/1.1 200 OK\r\nContent-Length: 200000\r\nETag: "z"\r\n\r\n'
+        wire = head + b"x" * 200000
+
+        class Drip(io.RawIOBase):
+            def __init__(self) -> None:
+                self.position = 0
+
+            def readable(self) -> bool:
+                return True
+
+            def readinto(self, buffer) -> int:
+                if self.position >= len(wire):
+                    return 0
+                buffer[0] = wire[self.position]
+                self.position += 1
+                if self.position > len(head):
+                    clock["now"] += 59  # one body byte per socket read, just inside the 60 s timeout
+                return 1
+
+        class Sock:
+            def makefile(self, mode):
+                return io.BufferedReader(Drip())
+
+        def opener_open(request, timeout=None):
+            response = http.client.HTTPResponse(Sock(), method="GET")
+            response.begin()
+            return response
+
+        self.seed(self.good)
+        err = io.StringIO()
+        with mock.patch.object(stammdaten.time, "monotonic", side_effect=lambda: clock["now"]), \
+                mock.patch("urllib.request.OpenerDirector.open", side_effect=opener_open), contextlib.redirect_stderr(err):
+            stammdaten.refresh(self.database, since_wahlperiode=18)
+        self.assertIn("deadline", err.getvalue())
+        self.assertEqual(self.cache.read_bytes(), self.good)
+        # The body may overshoot the deadline by one socket read, never by a whole chunk of drip.
+        self.assertLessEqual(clock["now"], stammdaten.FETCH_DEADLINE_SECONDS + 59)
+
     def refresh_download(self, body: bytes) -> str:
         """``refresh`` with ``_download`` answering ``body`` under the ETag "n"."""
         err = io.StringIO()
