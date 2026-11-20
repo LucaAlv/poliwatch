@@ -728,6 +728,62 @@ class CompareStoreValuesTests(unittest.TestCase):
             finally:
                 store.close()
 
+    # Value: protects=the "... N more members" and "... N more votes" lines under the member rows found on one side only; fails_when=either tail line of the one-sided block is dropped or counts the wrong rest; why_new=the truncation test has every member on both sides, so only the moved-vote lists were cut; seam=none
+    def test_one_sided_member_rows_are_cut_with_a_count_of_the_rest(self) -> None:
+        old, new = self.stores()
+        conn = sqlite3.connect(old / "data" / "bundestag-pulse.sqlite")
+        try:
+            for vote_id, keys in (("v1", ("mp-R1", "mp-R2", "mp-R3")), ("v2", ("mp-R1",))):
+                for key in keys:
+                    mp_id = conn.execute("SELECT id FROM mps WHERE identity_key = ?", (key,)).fetchone()[0]
+                    conn.execute("INSERT INTO vote_members(vote_id, mp_id, vote, abweichung) VALUES (?, ?, 'yes', 0)", (vote_id, mp_id))
+            conn.commit()
+        finally:
+            conn.close()
+        for root in (old, new):
+            self._sql(root, "UPDATE votes SET application_result = 'accepted', abweichler_count = 0")
+        with mock.patch.object(compare, "MEMBER_LIMIT", 1), mock.patch.object(compare, "LIST_LIMIT", 1):
+            code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        section = "vote outcome and Abweichler"
+        self.assertIn("member rows on one side only", line_of(out, "member rows on one side only", section))
+        self.assertIn("4 rows in 2 votes", out)
+        self.assertEqual(line_of(out, "v1: 3 member rows", section), "v1: 3 member rows on one side only")
+        self.assertEqual(line_of(out, "MdB R1 (mp-R1) only in old", section), "MdB R1 (mp-R1) only in old, abweichung 0")
+        self.assertEqual(line_of(out, "... 2 more members", section), "... 2 more members")
+        self.assertEqual(line_of(out, "... 1 more votes", section), "... 1 more votes")
+
+    # Value: protects=a store lacking votes.abweichler_count reads unavailable in the vote groups section even though both stores hold vote_fractions counts; fails_when=the section prints present for a side whose vote figures are missing; why_new=only the vote_fractions count columns were dropped before; seam=none
+    def test_a_store_without_the_vote_figure_columns_reads_unavailable_in_the_group_section(self) -> None:
+        old, new = self.stores()
+        for root in (old, new):
+            self._figures(root)
+        self._sql(old, "ALTER TABLE votes DROP COLUMN abweichler_count")
+        code, out, _ = run(old, new)
+        self.assertEqual(code, 0)
+        self.assertEqual(line_of(out, "(all)", "vote groups"), "(all) unavailable -> present")
+
+    # Value: protects=only a bad gzip stream reads as an absent copy; a full disk or an unwritable temp directory is not hidden as "unavailable"; fails_when=every OSError is caught again around the unpacking; why_new=the corrupt-copy test covers gzip errors only; seam=build.RECIPES_BY_ID, compare.shutil.copyfileobj
+    def test_a_disk_error_while_unpacking_the_copy_is_not_read_as_unavailable(self) -> None:
+        import gzip
+        import json
+
+        import build_dip_pulse_site as build
+
+        old, _ = self.stores()
+        generation = old / "data" / "exports" / "g-0123456789ab"
+        generation.mkdir(parents=True)
+        (generation / "copy.sqlite.gz").write_bytes(gzip.compress(b"x" * 1000))
+        (old / "data" / "exports" / "datenstand.json").write_text(json.dumps({"generation": generation.name, "files": [{"name": "copy.sqlite.gz"}]}), encoding="utf-8")
+        store = compare.open_store(old)
+        try:
+            with mock.patch.dict(build.RECIPES_BY_ID, {"r3-abweichler": {"sql": "SELECT id FROM votes"}}), \
+                    mock.patch.object(compare.shutil, "copyfileobj", side_effect=OSError(28, "No space left on device")):
+                with self.assertRaises(OSError):
+                    compare._recipe_rows(store, "r3-abweichler")
+        finally:
+            store.close()
+
     # Value: protects=the first store's connection is closed when the second fails to open (exit 2 prints no ResourceWarning); fails_when=compare opens both in one expression again; why_new=the first connection leaked; seam=compare.open_store wrapped
     def test_the_first_store_is_closed_when_the_second_fails_to_open(self) -> None:
         old, _ = self.stores()

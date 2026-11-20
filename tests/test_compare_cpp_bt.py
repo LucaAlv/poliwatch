@@ -366,6 +366,36 @@ class CompareCppBtTests(unittest.TestCase):
         path.write_text("field\trede_id\tours\ttheirs\treason\nsurname\nsurname\tID1\ta\tb\treason\n", encoding="utf-8")
         self.assertEqual(len(cmp.known_differences(path)), 1)
 
+    # Value: protects=a known-differences row for only_theirs with no rede_id is refused, since it would mark every id only CPP-BT holds as known; fails_when=such a row is accepted again; why_new=is_known matches the empty id for every Rede; seam=none; no_claim=that surname and fraktion rows with an empty id (a pair rule) are refused
+    def test_only_theirs_row_without_a_rede_id_is_refused(self) -> None:
+        path = self.dir / "blanket.tsv"
+        path.write_text("field\trede_id\tours\ttheirs\treason\nonly_theirs\t\t\t\tall of them\n", encoding="utf-8")
+        with self.assertRaises(cmp.InputError):
+            cmp.known_differences(path)
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        self.known = path
+        code, message = self.run_main(cpp)
+        self.assertEqual(code, 2)
+        self.assertIn("only_theirs", message)
+
+    # Value: protects=a known-differences file that is not UTF-8 and an export gzip with a bad deflate stream end in exit 2 with a message, not a traceback; fails_when=UnicodeDecodeError or zlib.error escapes main; why_new=neither is an OSError or EOFError, which the readers caught; seam=none; no_claim=that an encrypted zip or an unwritable --out is handled
+    def test_corrupt_gzip_stream_and_non_utf8_known_file_exit_2(self) -> None:
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        packed = gzip.compress(self.export.read_bytes())
+        broken = self.dir / "broken.sqlite.gz"
+        broken.write_bytes(packed[:10] + b"\xff" * 20 + packed[30:])
+        code, message = self.run_main(cpp, export=broken)
+        self.assertEqual(code, 2)
+        self.assertIn("cannot decompress", message)
+        latin = self.dir / "latin.tsv"
+        latin.write_bytes("field\trede_id\tours\ttheirs\treason\nsurname\tID1\tM\xfcller\tb\treason\n".encode("latin-1"))
+        self.known = latin
+        code, message = self.run_main(cpp)
+        self.assertEqual(code, 2)
+        self.assertIn("known-differences", message)
+
     # Value: protects=a Rede whose stored text is empty is listed as a ratio outlier against CPP-BT's tokens, not skipped as unknown; fails_when=an empty speech text drops out of the ratio again; why_new=the worst case, no text at all, was the one silent case; seam=none; no_claim=why the text is empty
     def test_empty_speech_text_is_a_ratio_outlier(self) -> None:
         db = sqlite3.connect(self.export)

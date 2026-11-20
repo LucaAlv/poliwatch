@@ -1440,7 +1440,11 @@ def load_existing_detail_entries(
         try:
             derive.require_vote_shape(report)
         except ValueError as exc:
-            raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
+            # A sitting on the exclusion record keeps its cached report and no caller
+            # reads its shape; the record is read only here, so a malformed record
+            # changes nothing for a load that has no shape error.
+            if document_number not in recorded_exclusions(output_dir):
+                raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -1753,7 +1757,8 @@ def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        return f"the store {database_path} cannot be read ({exc}); it is left as it is"
+        return (f"the store {database_path} cannot be read ({exc}); it is left as it is. "
+                "Fix: run --offline --repersist to rebuild the store from the cached reports")
     rebuild = "Fix: run --offline --repersist to rebuild the store from the cached reports"
     if row is None and cached is None:
         return None
@@ -1777,7 +1782,7 @@ def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammd
     is cached, so the marks a cached report holds are cleared). Raises
     DatabaseRebuildError for records the derivation refuses."""
     try:
-        source = (derive.refiling_source(derive.mdb_zugehoerigkeiten(cached.records, since_wahlperiode=V1_FIRST_WAHLPERIODE), cached.stand)
+        source = (derive.stammdaten_refiling_source(cached.records, cached.stand, since_wahlperiode=V1_FIRST_WAHLPERIODE)
                   if cached else None)
     except derive.StammdatenError as exc:
         raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
@@ -2354,7 +2359,13 @@ def refresh_vorgang_cache(
                 records = dip.fetch_vorgaenge(
                     client, batch, page_pause=NUMBER_LOOKUP_PAUSE, on_shape_error=shape_error
                 )
-                cache["vorgaenge"].update(records)
+                for record_id, record in records.items():
+                    # A refetch (a cached Vorgang still without Sachgebiet) merges into
+                    # the cached record: a field the answer lacks (None) keeps the
+                    # cached value, so a vote's "Worum es geht" keeps its titel and abstract.
+                    merged = dict(cache["vorgaenge"].get(record_id) or {})
+                    merged.update({key: value for key, value in record.items() if value is not None or key not in merged})
+                    cache["vorgaenge"][record_id] = merged
                 stats["vorgaenge"] += len(records)
                 stats["vorgaenge_failed"] += len(set(batch) - records.keys())
                 failures = 0
@@ -4267,11 +4278,11 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-", suffix=".tmp")
     tmp_path = Path(tmp_name)
-    os.fchmod(fd, 0o644)  # published files are world-readable; mkstemp makes them 0600
     row_count = 0
     replacements = 0
     try:
         with os.fdopen(fd, "wb") as raw:
+            os.fchmod(fd, 0o644)  # published files are world-readable; mkstemp makes them 0600
             gz = gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=6, mtime=0)
             try:
                 text = io.TextIOWrapper(gz, encoding="utf-8", errors="replace", newline="")
@@ -4748,7 +4759,7 @@ def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -
     return ["## Quellen, Bedingungen und Transformationen", "",
             f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch. Die vollständige Datei liegt diesem Export als `{LICENSE_FILE_NAME}` bei:", "",
             _license_notice(license_doc), "",
-            "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
+            "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten (ADR 0003) und der MdB-Stammdaten bleibt eine offene Frage.", "",
             "## Diesen Export zitieren", "",
             f"{ATTRIBUTION_NAME} (Arbeitstitel; der Produktname ist nicht festgelegt), {_export_label(manifest)}, Revision {_export_revision(manifest)}, Generation {manifest['generation']}, letzte gespeicherte Sitzung {_latest_sitting(manifest)}. SQLite-Datei und ihren SHA-256 aus der Dateiliste mit angeben.",
             "Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI.", ""]
@@ -4818,9 +4829,8 @@ def export_distribution_data(
         if problem:
             raise RuntimeError(f"export: release {tag} needs its authored inputs committed: {problem}")
 
-    source = facts.open_readonly(database_path)
+    source = open_checked_store(database_path)
     try:
-        pulse_store.require_current_schema(source)
         pulse_store.require_current_speech_rules(source)
         # Without the file the seat tables are empty and every Stimme is back under
         # the group its roll-call page lists (E4), while DATA.md describes the correction.
@@ -4836,7 +4846,10 @@ def export_distribution_data(
 
     exports_dir.mkdir(parents=True, exist_ok=True)
     work_dir = export_work_dir(exports_dir)
-    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Through ensure_private_dir, parent first: a symlinked or foreign private
+    # directory is refused before anything is created in it.
+    registry.ensure_private_dir(work_dir.parent)
+    registry.ensure_private_dir(work_dir)
     if work_dir.stat().st_dev != exports_dir.stat().st_dev:
         raise RuntimeError(f"export: {work_dir} and {exports_dir} must be on one file system (the generation is renamed into place)")
     with _export_lock(work_dir):
@@ -5460,7 +5473,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     provenance_bits = [f"Exportformat {manifest['export_format']}"]
     if manifest.get("commit"):
         provenance_bits.append(f"Commit {manifest['commit']}")
-        if "-" in manifest["commit"]:
+        if not build_revision.is_release_revision(manifest["commit"]):
             provenance_bits.append(REVISION_SUFFIX_NOTE.replace("`", ""))
     provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
     source = manifest.get("stammdaten")
@@ -6008,7 +6021,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
         {relationships_block}
       </section>
       <footer>
-        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''} {pulse_html.render_legal_links(depth=0)}
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">{issues_link_label(safe_issues_url(manifest.get("issues_url")) or "")}</a>' if safe_issues_url(manifest.get("issues_url")) else ''} {pulse_html.render_legal_links(depth=0)}
       </footer>
     </main>
   </div>
@@ -13813,6 +13826,17 @@ def safe_issues_url(value: Any) -> str | None:
     return value if _ISSUES_URL_RE.match(value) else None
 
 
+def issues_link_label(url: str) -> str:
+    """The footer link text: "(GitHub)" only for an https://github.com URL, as
+    --data-issues-url also takes a mailto: address or a site-relative path."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        github = parts.scheme == "https" and parts.hostname == "github.com"
+    except ValueError:
+        github = False
+    return "Datenfehler melden (GitHub)" if github else "Datenfehler melden"
+
+
 # What the page and render_site read from a manifest. A --data-manifest
 # override is operator input, so a wrong-shaped file fails here with one
 # named error instead of a KeyError somewhere inside render_site().
@@ -14405,7 +14429,9 @@ OPERATOR_MAX_LENGTH = 300
 # A real operator file is under 1 KiB; the cap keeps a wrong path (a log, a
 # database, /dev/zero) from filling memory.
 OPERATOR_FILE_MAX_BYTES = 64 * 1024
-_OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
+# "?", "&", "%" and "=" stay out of the local part: the address becomes a mailto:
+# link, where they would add header parameters (?cc=, &bcc=) or escapes.
+_OPERATOR_EMAIL_RE = re.compile(r"[^@\s<>\"'(),;:\\\[\]?&%=]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
 
 
 class OperatorFileError(ValueError):
@@ -14418,7 +14444,10 @@ def _operator_url(value: str) -> bool:
         host = parsed.hostname
     except ValueError:  # "https://[::1" and other malformed hosts
         return False
-    return parsed.scheme == "https" and bool(host) and not parsed.username and not parsed.password
+    return (
+        parsed.scheme == "https" and bool(host) and not parsed.username and not parsed.password
+        and not re.search(r"\s", value)
+    )
 
 
 def load_operator(path: Path) -> dict[str, str]:
@@ -14521,11 +14550,20 @@ def default_license_text() -> str:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise RuntimeError(f"default licence string: cannot read {path}: {exc}") from exc
+    try:
+        return license_short_string(text, str(path))
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc}; pass --data-license") from exc
+
+
+def license_short_string(text: str, source: str = CODEBOOK_INPUT_FILES["license"]) -> str:
+    """The blockquote under "## Short string" of a LICENSE-DATA.md text; raises
+    RuntimeError naming ``source`` when there is none."""
     section = re.search(r"^## Short string[ \t]*\n(.*?)(?=^## |\Z)", text, flags=re.MULTILINE | re.DOTALL)
     quoted = [line[1:].strip() for line in section.group(1).splitlines() if line.startswith(">")] if section else []
     short = " ".join(part for part in quoted if part)
     if not short:
-        raise RuntimeError(f'default licence string: {path} has no blockquote under "## Short string"; pass --data-license')
+        raise RuntimeError(f'default licence string: {source} has no blockquote under "## Short string"')
     return short
 
 
@@ -14724,6 +14762,20 @@ def run_data_pipeline(
 # Two paths through this function:
 #   --offline -> render from the cached JSON in OUTPUT_DIR/data only, no network
 #   default   -> fetch from DIP, build dossiers, persist, then render
+def open_checked_store(database_path: Path) -> sqlite3.Connection:
+    """The build store opened read-only after the refusals every read path shares:
+    a distribution copy (``require_build_store``) and an old schema. The
+    connection is closed again when one raises."""
+    store = facts.open_readonly(database_path)
+    try:
+        pulse_store.require_build_store(store, database_path)
+        pulse_store.require_current_schema(store)
+    except BaseException:
+        store.close()
+        raise
+    return store
+
+
 def main() -> int:
     # Reads .env so DIP_API_KEY and the LLM keys can live outside the shell.
     dip.load_local_env()
@@ -14853,8 +14905,7 @@ def main() -> int:
         try:
             # Opening is inside: a directory or an unreadable file at the store
             # path fails here (or at the first query), not as a traceback.
-            previous = facts.open_readonly(database_path)
-            pulse_store.require_current_schema(previous)
+            previous = open_checked_store(database_path)
             if args.offline:
                 pulse_store.require_current_speech_rules(previous)
                 # The render applies the corrections file to the pages without a
@@ -14975,9 +15026,8 @@ def main() -> int:
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network. Read only: the published
         # store is written by a staged rebuild alone.
-        store = facts.open_readonly(database_path)
+        store = open_checked_store(database_path)
         try:
-            pulse_store.require_current_schema(store)
             coverage_gap = store_coverage_gap(store, cached_entries, excluded=recorded_exclusions(output_dir))
             if coverage_gap:
                 print(f"error: {coverage_gap} {CONCURRENT_UPDATE_NOTE}", file=sys.stderr)
@@ -15319,9 +15369,8 @@ def main() -> int:
                 reason=getattr(args, "exclusion_reason", None), reason_detail=getattr(args, "exclusion_detail", None)
             )
             # Read only: the published store is written by a staged rebuild alone.
-            store = facts.open_readonly(database_path)
+            store = open_checked_store(database_path)
             try:
-                pulse_store.require_current_schema(store)
                 # The rebuild persisted exactly these entries; the check holds
                 # the same invariant the offline render refuses on.
                 coverage_gap = store_coverage_gap(store, entries, excluded=listed)

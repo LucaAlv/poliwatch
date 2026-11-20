@@ -48,8 +48,17 @@ def vote(*members: dict, fractions: list[dict] | None = None, day: str = "2018-0
 KAMANN = [row("Uwe Kamann", "AfD", "2017-10-24", "2019-01-03"), row("Uwe Kamann", "fraktionslos", "2019-01-03", "2021-10-26")]
 
 
+def source(rows: list[dict], stand: str = STAND) -> derive.RefilingSource:
+    """The lookup for hand-written rows, each standing for a recorded Fraktion or Gruppe membership."""
+    recorded_from: dict[tuple[int, str], str] = {}
+    for r in rows:
+        key = (r["wahlperiode"], r["mdb_id"])
+        recorded_from[key] = min(recorded_from.get(key, r["valid_from"]), r["valid_from"])
+    return derive.refiling_source(rows, stand, recorded_from)
+
+
 def filed(the_vote: dict, rows: list[dict], *, wahlperiode: int = 19, stand: str = STAND) -> list[dict]:
-    derive.refile_vote_members(the_vote, wahlperiode, derive.refiling_source(rows, stand))
+    derive.refile_vote_members(the_vote, wahlperiode, source(rows, stand))
     return [m for m in the_vote["members"] if "refiled_to" in m]
 
 
@@ -170,7 +179,7 @@ class RefileRuleTests(unittest.TestCase):
         the_vote = vote(member("Kamann, Uwe", "fraktionslos", "no"), member("Muster, Max", "fraktionslos", "no"),
                         fractions=[fraction("AfD", no=2), fraction("fraktionslos", no=1)])
         two = [*KAMANN, row("Max Muster", "AfD", "2017-10-24", None)]
-        self.assertFalse(derive.refile_vote_members(the_vote, 19, derive.refiling_source(two, STAND)))
+        self.assertFalse(derive.refile_vote_members(the_vote, 19, source(two)))
         self.assertEqual([m.get("refiled_to") for m in the_vote["members"]], [None, None])
         self.assertEqual(derive.filed_fractions(the_vote), derive.merge_fractions(the_vote["fractions"]))
 
@@ -229,7 +238,7 @@ class ReportTests(unittest.TestCase):
                              {"votes": [vote(member("Kamann, Uwe", "fraktionslos"), fractions=fractions)]}],
             "sitting_votes": [vote(member("Kamann, Uwe", "fraktionslos"), fractions=fractions, vote_id="501")],
         }
-        derive.refile_report_votes(report, derive.refiling_source(KAMANN, STAND))
+        derive.refile_report_votes(report, source(KAMANN))
         copies = [*report["agenda_items"][0]["votes"], *report["agenda_items"][1]["votes"], *report["sitting_votes"]]
         self.assertEqual([c["members"][0].get("refiled_to") for c in copies], ["AfD", "AfD", "AfD"])
 
@@ -367,6 +376,65 @@ class CachedStammdatenTests(unittest.TestCase):
         with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
             build.refile_entry_votes([entry], self.database)
         self.assertNotIn("refiled_to", members[0])
+
+    def filed_from(self, records: list[dict], the_vote: dict) -> list[tuple[str, str]]:
+        entry = {"report": {"protocol": {"dokumentnummer": "19/30"}, "agenda_items": [{"votes": [the_vote]}]}}
+        cached = stammdaten.Stammdaten(records=records, stand=STAND, sha256="ab" * 32)
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached):
+            build.refile_entry_votes([entry], self.database)
+        return [(m["name"], m["refiled_to"]) for m in the_vote["members"] if "refiled_to" in m]
+
+    @staticmethod
+    def mdb(institutionen: list[dict], *, von: str = "24.10.2017") -> dict:
+        return {"ID": "11009990", "NAMEN": [{"VORNAME": "Ada", "NACHNAME": "Muster", "HISTORIE_VON": von}],
+                "WAHLPERIODEN": [{"WP": "19", "MDBWP_VON": von, "MDBWP_BIS": "26.10.2021", "INSTITUTIONEN": institutionen}]}
+
+    @staticmethod
+    def record(ins_lang: str, von: str, bis: str | None = None) -> dict:
+        return {"INSART_LANG": "Fraktion/Gruppe", "INS_LANG": ins_lang, "MDBINS_VON": von, "MDBINS_BIS": bis}
+
+    # Value: protects=a Mandat the file lists before any Fraktion or Gruppe record is no proof of fraktionslos: the
+    #   page's SPD row stands (TODOS E4 deferred item 2); fails_when=_proved_group treats an uncovered Mandat
+    #   stretch with no record in the Wahlperiode as fraktionslos; why_new=a refreshed file can enter a Mandat before
+    #   its Fraktion; seam=refile_entry_votes with read_cached_stammdaten patched
+    # Value (extension): protects=the same holds for the days before an MdB's first record when the record comes in
+    #   later (Mandat from 24.10.2017, SPD entered from 01.12.2017); fails_when=only a Wahlperiode with no record at
+    #   all is guarded; why_new=a late entry is the same lag; no_claim=a gap after a record, which stays proof
+    def test_a_mandat_with_no_record_yet_is_no_proof_of_fraktionslos(self) -> None:
+        spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        page = lambda day: vote(member("Muster, Ada", "SPD"), fractions=[fraction("SPD", no=1)], day=day)  # noqa: E731
+        self.assertEqual(self.filed_from([self.mdb([])], page("2018-06-01")), [])
+        self.assertEqual(self.filed_from([self.mdb([self.record(spd, "01.12.2017")])], page("2017-11-21")), [])
+        # The record proves SPD from its first day on.
+        page_fraktionslos = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
+        self.assertEqual(self.filed_from([self.mdb([self.record(spd, "01.12.2017")])], page_fraktionslos), [("Muster, Ada", "SPD")])
+
+    # Value: protects=fraktionslos stays provable: an explicit Fraktionslos record from the Mandat's first day (Petry,
+    #   Mieruch) and the gap after a Fraktion record ends (Kamann's file has no Fraktionslos record) both move a page's
+    #   AfD row; fails_when=the guard drops every fraktionslos row, or every uncovered stretch; why_new=the guard
+    #   must not cost the six real fraktionslos MdBs; seam=refile_entry_votes
+    def test_a_fraktionslos_record_or_a_gap_after_a_record_still_proves_fraktionslos(self) -> None:
+        afd = lambda day: vote(member("Muster, Ada", "AfD"), fractions=[fraction("AfD", no=1)], day=day)  # noqa: E731
+        self.assertEqual(self.filed_from([self.mdb([self.record("Fraktionslos", "24.10.2017")])], afd("2018-06-01")),
+                         [("Muster, Ada", "fraktionslos")])
+        left = [self.record("Fraktion Alternative für Deutschland", "24.10.2017", "02.01.2019")]
+        self.assertEqual(self.filed_from([self.mdb(left)], afd("2019-06-01")), [("Muster, Ada", "fraktionslos")])
+
+    # Value: protects=an MdB with two Mandate in one Wahlperiode (left and came back) keeps the proof of the first
+    #   one: a page row on a day of the first Mandat is still re-filed, in either element order; fails_when=
+    #   first_record_days keeps the last WAHLPERIODE element's day, so the later Mandat's record hides the earlier
+    #   ones; why_new=Codex reproduced it in the ship review; seam=refile_entry_votes
+    def test_a_second_mandat_in_the_wahlperiode_keeps_the_first_mandats_proof(self) -> None:
+        spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        first = {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019",
+                 "INSTITUTIONEN": [self.record(spd, "24.10.2017", "31.12.2019")]}
+        second = {"WP": "19", "MDBWP_VON": "01.06.2020", "MDBWP_BIS": "26.10.2021",
+                  "INSTITUTIONEN": [self.record(spd, "01.06.2020")]}
+        for periods in ([first, second], [second, first]):
+            mdb = self.mdb([])
+            mdb["WAHLPERIODEN"] = periods
+            page = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
+            self.assertEqual(self.filed_from([mdb], page), [("Muster, Ada", "SPD")])
 
     # Value: protects=an unreadable cached file stops a rebuild as DatabaseRebuildError with the store untouched,
     #   as the seat step does; fails_when=StammdatenError escapes the CLI's handler; why_new=this read comes before the

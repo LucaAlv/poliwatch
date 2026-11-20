@@ -239,6 +239,24 @@ def valid_site_url(value: str | None) -> bool:
     return parsed.scheme == "https" and bool(parsed.netloc) and value.endswith("/") and not parsed.query and not parsed.fragment
 
 
+def _shown_url(value: str) -> str:
+    """A refused SITE_URL as scheme://host/ for the build log: userinfo masked, and a value with an
+    "@" outside the netloc masked whole, since its parsed host can be part of a password ("user:a@b/c@host");
+    query, fragment and path never shown."""
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname
+    except ValueError:
+        return "ungueltig"
+    if parsed.scheme not in ("http", "https") or not host or re.search(r"[^\w.:\-]", host):
+        return "ungueltig"
+    if value.count("@") > parsed.netloc.count("@"):
+        host = "***"
+    elif "@" in parsed.netloc:
+        host = "***@" + host
+    return f"{parsed.scheme}://{host}/"
+
+
 def _berlin_midnight(day: date) -> datetime:
     # Resolved here, not at import: a platform without an IANA tz database still
     # builds, with the pubDate at midnight UTC (as format_datenstand_timestamp falls back).
@@ -249,8 +267,11 @@ def _berlin_midnight(day: date) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=zone)
 
 
-#: Control characters XML 1.0 forbids; one stray \x01 makes the whole feed ill-formed.
-_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")
+#: Characters XML 1.0 forbids (C0 controls, U+FFFE/U+FFFF) plus lone surrogates, which a JSON \udXXX
+#: escape can carry and which make the feed's UTF-8 write raise; one stray \x01 makes the feed ill-formed.
+_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+#: Controls that str.split() treats as whitespace: they separate words, so _cut spaces them before stripping.
+_SPLIT_SEPARATORS = re.compile("[\x0b\x0c\x1c-\x1f]")
 
 
 def _xml_text(text: str) -> str:
@@ -258,7 +279,7 @@ def _xml_text(text: str) -> str:
 
 
 def _cut(text: str, limit: int) -> str:
-    text = " ".join(_xml_text(text).split())
+    text = " ".join(_xml_text(_SPLIT_SEPARATORS.sub(" ", text)).split())
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
@@ -378,8 +399,8 @@ def write(
     else:
         rss_path.unlink(missing_ok=True)
         if configured:
-            # A refused value with an "@" may carry a user and password: never echo it into the build log.
-            shown = "eine URL mit @ (nicht angezeigt, kann Zugangsdaten enthalten)" if "@" in configured else repr(configured)
+            # A refused value may carry a user, password or a secret in its query: the log gets scheme and host only.
+            shown = _shown_url(configured)
             print(
                 f"warning: [week-radar] {SITE_URL_ENV} muss eine absolute https-URL ohne Zugangsdaten mit abschließendem / sein, "
                 f"war {shown}; kein RSS",

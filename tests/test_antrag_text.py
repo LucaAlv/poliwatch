@@ -208,6 +208,8 @@ class DipTextTests(unittest.TestCase):
         self.assertEqual(opening("zum Schutz der Kinder auf"), "Der Deutsche Bundestag fordert die Bundesregierung zum Schutz der Kinder auf,")
         self.assertEqual(opening("daher dazu auf"), "Der Deutsche Bundestag fordert die Bundesregierung daher dazu auf,")
         self.assertIsNotNone(opening("zur " + " ".join(["Prüfung"] * 29) + " auf"))
+        # "zur" plus 30 words is the cap: the clause may hold 30 words, not 31.
+        self.assertIsNotNone(opening("zur " + " ".join(["Prüfung"] * 30) + " auf"))
         self.assertIsNone(opening("zur " + " ".join(["Prüfung"] * 31) + " auf"))
         self.assertIsNone(opening("zum Schutz der Kinder, soweit es auf"))
         self.assertIsNone(opening("zur Vorlage eines Berichts. Das hängt davon auf"))
@@ -244,6 +246,14 @@ class DipTextTests(unittest.TestCase):
         forderung = antrag_text.extract_forderung(real_text("dip-2108568.txt"))
         self.assertNotIn("orabfassung", forderung.text())
         self.assertIn("zu schaffen, um gute Rahmenbedingungen", forderung.demands[5])
+
+    # Value: protects=a watermark that follows a finished clause and is followed by a space and more text leaves no leading-space line, so the dropped-bullet refusal does not fire on it; fails_when=_WATERMARK stops at its full stop and the next line starts with the space after it; why_new=TODOS B4 item 8 (fail-closed coverage loss before any WP 21 advance-copy cache); seam=none; no_claim=a real DIP text with this exact spacing (synthetic, letter-spaced like 21/8568)
+    def test_a_watermark_followed_by_a_space_does_not_look_like_a_dropped_bullet(self) -> None:
+        watermark = "V\norabfassung – w\nird durch die lektorierte Fassung ersetzt."
+        forderung = antrag_text.extract_forderung(
+            "\n".join((OPENING, f"1. das Gesetz zu ändern; {watermark} die Mittel zu erhöhen;", "2. zu berichten.", "Berlin, den 9. Januar 2024")))
+        self.assertIsNotNone(forderung)
+        self.assertEqual(forderung.demands, ("1. das Gesetz zu ändern; die Mittel zu erhöhen;", "2. zu berichten."))
 
     # Value: protects=a footnote that a page break put inside the operative part gives no quote; fails_when=the footnote text is quoted inside a demand; why_new=found in DIP text of 21/8385; seam=none
     def test_a_footnote_inside_the_passage_gives_no_quote(self) -> None:

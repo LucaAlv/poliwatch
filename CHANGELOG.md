@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.27.0] - 2026-11-20
+
+The operator tools refuse bad input with a message instead of a traceback or a quietly wrong report, and the MdB-Stammdaten download can no longer be redirected off bundestag.de and has a total time limit. These are scripts run by hand around a build; no stored figure, page or export changes.
+
+### Fixed
+
+- **The MdB-Stammdaten download stays on bundestag.de and gives up after five minutes.** A redirect is followed only to `https://www.bundestag.de/`; plain http or another host is refused and the cached file kept. A body of declared length must arrive within five minutes, also when the server sends one byte per read just inside the 60-second socket timeout; a chunked body or a slow header phase can still run past the limit. A cached zip larger than the 32 MiB download cap is refused before it is read.
+- **The store gate, the demo site builder and the abgeordnetenwatch match-share script stop at startup when `scripts/reviewed_units.json` is missing or malformed,** naming the file to repair, instead of failing halfway through a replay. A failed clone in the store gate ends with `ERROR [gate]` and exit 2 instead of a traceback.
+- **The CPP-BT comparison refuses a known-differences file that would hide real differences.** An `only_theirs` row without a `rede_id` would have marked every Rede only CPP-BT holds as known; it is now refused. A known-differences file that is not UTF-8 and an export whose deflate stream is corrupt also stop with exit 2.
+- **The store value comparison reports a missing side honestly.** Its vote groups section shows a store as unavailable when it lacks the vote figures as well as when it lacks the group counts, and a disk error while unpacking a recipe copy is no longer read as "no copy".
+- **The abgeordnetenwatch match-share script measures what an online run would do.** The offline estimate counts only the Redner-IDs without an answer in the answers file. A store whose Mandat table holds no Wahlperiode 18 and 19 rows (built with a narrower `--roster-wahlperiode`) falls back to the MdB-Stammdaten zip, or stops when there is none, instead of moving every WP 18/19 MdB out of the first match tier. A hand-edited answers entry without the fields a rerun reuses is refused. Its cache files follow the umask instead of being world-readable.
+- **An unreadable store now says how to rebuild it:** run `--offline --repersist`.
+
+## [0.46.26.0] - 2026-11-20
+
+The rule that links a roll-call vote to its agenda item now reads the Drucksachen printed under an agenda item the same way the store and the dossier do, and the store refuses a report that would silently lose a vote. No link, page or stored figure moves. Over the 801 cached reports of the reference store, 0 of 8,189 agenda items get a different set of printed Drucksachen and 0 reports fail the new check.
+
+### Fixed
+
+- **A number read off a quoted news-site link no longer counts as a Drucksache printed under an agenda item.** A report cached before the parser checked the link's host can still hold such a number. The vote-link rule and the vote-link review sheet now skip it, as persist and the dossier already did, so it can neither link a vote nor show in the sheet's shared column.
+- **A report that would drop a vote is refused.** A fetched vote that belongs to no agenda item has to be listed among the sitting's other votes, because those two places are all the store keeps. A report that holds it in neither is now refused with the vote's id, instead of being stored without it. An `--offline --repersist` places the vote correctly.
+
+### Changed
+
+- **The title comparison behind the vote-link rule lives in the vote-link module.** It matches exactly the same titles as before. The vote linker no longer imports the protocol parser, which removes the last import cycle in `scripts/`.
+
+## [0.46.25.0] - 2026-11-20
+
+The week radar's RSS titles keep their words apart and drop characters that make a feed unreadable, the build warning about a refused site address no longer prints any part of a password, and an Antrag passage that the advance-copy watermark interrupts mid-line is quoted instead of refused. The Antrag extractor moves from version 9 to 10, so a store persisted with version 9 is refused until `--offline --repersist`; on the saved corpus of 112 Antrag texts no quote changes. DATA.md now names the MdB-Stammdaten beside the roll-call data as data whose redistribution is still an open question: the DATA.md bytes of every export change, no figure does.
+
+### Fixed
+
+- **RSS item titles keep their words apart.** A vertical tab, a form feed or one of the separator characters U+001C to U+001F between two words of a title was deleted, so the words ran together ("Titelmit"); it now becomes a space. A lone surrogate and U+FFFE or U+FFFF are dropped from the RSS text like the other characters XML forbids.
+- **The warning for a refused site address shows only the scheme and the host.** A `BUNDESTAG_PULSE_SITE_URL` that fails the check was printed whole, or hidden whole when it held an "@". The build log now shows `scheme://host/`, `***@host` when the value carries a user and password, `***` as the host when an "@" sits after the host part (the host read from such a value can be part of the password), and `ungueltig` for a value that cannot be read. The query, fragment and path are never shown.
+- **An advance-copy watermark in the middle of a line no longer stops an Antrag passage from being quoted.** After "Vorabfassung – wird durch die lektorierte Fassung ersetzt." and a space, the next text started with a blank, which reads as a list item whose marker the text lost, and the passage was refused. The watermark now goes together with the blanks after it.
+
+### Changed
+
+- **DATA.md names the MdB-Stammdaten as an open redistribution question.** Its sources paragraph named only the roll-call data. It now names both, and cites ADR 0003 for the roll-call data only, since the ADR does not cover the MdB-Stammdaten yet.
+
+## [0.46.24.0] - 2026-11-20
+
+The data release script is stricter before its first real publication. A release now carries exactly the licence string its commit's `LICENSE-DATA.md` states, and a few inputs that could slip through are refused. No stored figure, page or export value changes, and no release has been made yet.
+
+### Changed
+
+- **A release refuses any licence string other than the committed one.** The dry run and `--publish` compare the export's licence string with the short string under "## Short string" in `LICENSE-DATA.md` at the export's commit, and refuse a mismatch. This includes a deliberate `--data-license` override and a leftover `$BUNDESTAG_PULSE_DATA_LICENSE`. Builds and exports still accept the override; only a release refuses it. The older "the export carries no licence string" refusal and its dry-run notice are gone, because the new check covers them.
+
+### Fixed
+
+- **A release version written with non-ASCII digits is refused.** Arabic-Indic or full-width digits no longer pass as a calendar version.
+- **The changes file of a release refuses numbers JSON cannot hold.** `NaN`, `Infinity` and a number past the float range such as `1e999` are refused when the file is read. `changes.json` is written with no non-finite value.
+- **The Daten page explains every revision that is not a bare 12-digit commit.** It used to add the "local changes" note only when the revision held a hyphen. A short or upper-case revision from a hand-given manifest now gets the note too. A revision that is not text no longer crashes the page.
+- **The `-dirty-` revision no longer depends on four more of the reader's git diff settings** (blank-line, prefix and submodule settings). The settings that decide whether a file counts as changed at all (`core.fileMode`, `core.autocrlf`) are left to the checkout. A clean checkout on a file system without exec bits therefore keeps its bare commit.
+## [0.46.23.0] - 2026-11-19
+
+The check that keeps local file paths out of a published site now catches paths under a mount point, a downloaded release given as the build store is refused before anything is read from it, and a stale cached report of an excluded sitting no longer stops every build. No stored figure, page or export changes. The path check flags 0 lines of the 10,639 files of the reference site, before and after.
+
+### Fixed
+
+- **A local path under a mount point stops publication.** `/Volumes/Data/Users/…`, `/mnt/c/Users/…` and `/System/Volumes/Data/home/…` passed the check before. `/Users/` and `/home/` are now flagged anywhere in a line except inside a web address (`https://` in any case, a protocol-relative `//host.` link or `www.`). The address ends at a space, a quote or an angle bracket, also when the space or quote is written as `&nbsp;` or `&quot;`, so a path after a link is still caught. `www.sr.de/sr/home/…` in a quoted speech stays allowed.
+- **A downloaded release given as `--database-path` is refused up front on every read.** The offline render, the online pre-check, the Abgeordnete pages, the read after a rebuild and the Daten export now refuse an exported distribution SQLite with the "distribution copy" message, as the rebuild already did. An offline render of such a file stops before any page is written, earlier than before.
+- **A stale cached report of a sitting on the exclusion record no longer stops the build.** A report of an excluded sitting with an old vote shape stopped online, backfill and offline runs with "ERROR [cached input]", whose suggested re-fetch could acquire nothing for an excluded sitting. It now loads and is dropped with the exclusion as before. The same report of a sitting not on the record still stops the build.
+
+## [0.46.22.0] - 2026-11-19
+
+When an MdB's Mandat appears in the MdB-Stammdaten before their Fraktion does, a roll-call vote on those first days keeps the group the Bundestag page gives instead of being moved to fraktionslos. No figure moves on today's file. An offline replay of the reference store against main gives the same 157 re-filed Stimmen in 87 roll-calls, and no group count, member Fraktion or stored fact changes.
+
+### Fixed
+
+- **A Mandat the Stammdaten list before any Fraktion or Gruppe record no longer proves fraktionslos.** The correction of misfiled roll-call members moved a member to fraktionslos on any Mandat day no membership covered, including the days before the file entered their Fraktion. It now moves nobody before an MdB's first Fraktion or Gruppe record in that Wahlperiode, an explicit "Fraktionslos" record included. Leaving a Fraktion still proves fraktionslos, as for the six MdBs corrected so far.
+- **An MdB with two Mandate in one Wahlperiode keeps the proof of the first one.**
+
+## [0.46.21.0] - 2026-11-19
+
+Two budget debates of Wahlperiode 18 on the data protection commissioner's Einzelplan now carry the Politikfeld Digitales, as the same debates do in Wahlperiode 19 to 21. On the 801-sitting reference store, the agenda items of Wahlperiode 18 with a Politikfeld go from 1,443 to 1,445 of 2,381 (60.60% to 60.69%). The schema and the export format stay as they are.
+
+### Fixed
+
+- **Einzelplan 21 of Wahlperiode 18 is tagged Digitales.** The items "b) Einzelplan 21 Bundesbeauftragte für den Datenschutz …" of the sittings 18/138 and 18/201 had no Politikfeld (stored as `untagged` with source `einzelplan_unknown`), because the budget table had no entry for that Einzelplan in Wahlperiode 18. They now read `Digitales` with source `einzelplan`. The two sitting pages show the tag on the next render; the stored table `agenda_item_politikfelder` and its CSV export show it after the next `--offline --repersist`. The two items hold 25 Reden with 192,790 characters.
+- **No other tag moves.** A replay of the tagging over all 801 sittings changes these two rows and nothing else: no vote tag, and Wahlperiode 19, 20 and 21 stay at 2,045 of 2,629, 1,750 of 2,109 and 903 of 1,070 agenda items with a Politikfeld.
+
+## [0.46.20.0] - 2026-11-18
+
+An online build that asks DIP again for a Vorgang no longer loses the title and summary it had cached, and the private directory beside a published site is no longer listable by other users. No stored figure moves, because offline replays do not ask DIP. An offline build of the reference store whose private directory was left world-readable still exports and ends with that directory closed to others.
+
+### Fixed
+
+- **A Vorgang asked for again keeps the cached fields DIP's answer leaves empty.** A vote's "Worum es geht" kept losing its title and summary when an online build refetched a Vorgang still without a Sachgebiet and the answer lacked them. The Sachgebiet and Sachbegriff lists are still replaced by the fresh answer.
+- **The private directory beside a published site is closed to other users.** A directory left readable by group or others (an export run under the usual umask made it so) is set back to owner-only, so the names of the staged store copies inside are not listed to others. A symlinked or foreign private directory is refused before the export creates anything in it.
+- **A CSV export that cannot set its file permissions leaves no half-written temporary file behind.**
+
+## [0.46.19.0] - 2026-11-18
+
+The Daten page's report link, the Impressum's contact details and the repository's own checks now say what is true. No stored figure or export changes. An offline render of the reference store with a `mailto:` report address writes the footer link "Datenfehler melden", without "(GitHub)".
+
+### Fixed
+
+- **The Daten page's "Datenfehler melden" link says "(GitHub)" only when it goes to github.com.** A `mailto:` address or a site path given as `--data-issues-url` was labelled GitHub before.
+- **An operator e-mail whose name part holds `?`, `&`, `%` or `=` is refused.** The address becomes a `mailto:` link on the Impressum, where `?cc=` or `&bcc=` would add recipients. The build stops with "email is not an e-mail address" before any page is written.
+- **An operator URL with a space anywhere in it is refused**, like one with a user or password.
+
+### Changed
+
+- **The authored codebook inputs (`LICENSE-DATA.md`, `docs/data-methods.md`, `scripts/data_dictionary.json`) are checked out with LF line endings on every machine**, so the exported copies equal the bytes the release commit holds.
+- **`operator.json` and `operator.local.json` are ignored by git**, so a local operator file with a name and postal address is not committed by accident.
+- **README and the design docs point to `PRODUCT.md` and `DESIGN.md`**, which replaced the deleted product design document.
 ## [0.46.18.0] - 2026-11-18
 
 The test suite now checks three rules in `scripts/` that reviews used to catch by hand. They cover how a script opens a SQLite file, where a missing value could be published as a zero, and which modules may import which. Each failure message says why the rule exists and how to fix the cause. No stored figure, export or page changes in this release; only the way scripts open SQLite files changed, and the store comparison now reads the right store under an unusual path.

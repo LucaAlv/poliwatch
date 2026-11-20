@@ -18,6 +18,7 @@ import _site_store_fixture
 import build_demo_site as demo
 import build_dip_pulse_site as site
 import publication_state as publication
+import reviewed_units
 import render_dip_pulse_html as pulse_html
 import speech_kinds
 from features import EnrichmentSelection
@@ -164,10 +165,18 @@ class LegalPagesTests(unittest.TestCase):
                 with self.assertRaisesRegex(publication.PublicationStateError, f"entry points are missing: {name}"):
                     publication.validate_publication_directory(copy_dir)
 
-    # Value: protects=the Datenschutz page names exactly the localStorage keys the page scripts use and no host is loaded that it does not name (none today); fails_when=a new stored setting or a CDN font/script/style is added without a matching text change; why_new=eng review D4 A, a false privacy statement is a correctness defect; seam=page_scripts and the demo build's HTML; no_claim=outbound links, which load nothing until clicked
+    # Value: protects=the Datenschutz page names exactly the localStorage keys the scripts of every built page use and no host is loaded that it does not name (none today); fails_when=a new stored setting (in the shared head and scripts or in a page-specific inline script such as the dossier runtime or a Fakt page) or a CDN font/script/style is added without a matching text change, or any page script reads sessionStorage, indexedDB or document.cookie; why_new=eng review D4 A, a false privacy statement is a correctness defect; the test read only page_head() and page_scripts(), so a key written by a page-specific script would slip past (TODOS "Impressum/licence build: deferred polish" item 1); seam=the demo build's HTML; no_claim=outbound links, which load nothing until clicked, and pages the demo does not build
     def test_datenschutz_names_every_stored_key_and_every_loaded_host(self) -> None:
-        scripts = pulse_html.page_head() + pulse_html.page_scripts()
+        shared = pulse_html.page_head() + pulse_html.page_scripts()
+        scripts = shared + "\n".join(
+            body
+            for markup in self.pages.values()
+            for body in re.findall(r"<script\b[^>]*>(.*?)</script>", markup, flags=re.S | re.I)
+        )
+        self.assertIn("localStorage", scripts)
         used = set(re.findall(r'const key = "([^"]+)"', scripts))
+        # A key passed as a literal to the storage API, outside the shared "const key" form.
+        used |= set(re.findall(r"(?:getItem|setItem|removeItem)\(\s*[\"']([^\"']+)[\"']", scripts))
         self.assertEqual(scripts.count("localStorage"), scripts.count("window.localStorage"))
         named = {key for key, _ in site.DATENSCHUTZ_STORAGE_KEYS}
         self.assertEqual(used, named)
@@ -290,6 +299,20 @@ class DemoSiteTests(unittest.TestCase):
                     contextlib.redirect_stderr(stderr):
                 self.assertEqual(demo.main(), 1)
             self.assertIn("extract_demo_fixture.py", stderr.getvalue())
+
+    # Value: protects=a missing scripts/reviewed_units.json stops the demo build with a message and exit 1
+    #   before the store is touched, not a traceback from the stale-report check; fails_when=main does not
+    #   call reviewed_units.load() first; why_new=TODOS "Withheld-Reden PRs A and B" B robustness; seam=reviewed_units.load patched
+    def test_a_missing_reviewed_list_is_a_clean_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "site"
+            stderr = io.StringIO()
+            with mock.patch.object(reviewed_units, "load", side_effect=reviewed_units.ReviewedUnitsError("list is missing")), \
+                    mock.patch("sys.argv", ["build_demo_site.py", "--output-dir", str(output)]), \
+                    contextlib.redirect_stderr(stderr):
+                self.assertEqual(demo.main(), 1)
+            self.assertIn("ERROR [reviewed-units]: list is missing", stderr.getvalue())
+            self.assertFalse((output / "data").exists())
 
     # Value: protects=a demo fixture parsed under other reviewed entries is refused and the message blames the reviewed list, not the speech rule (P3a/P3b); fails_when=build_demo_store names the rule for every stale fixture, or reads an absent reviewed_digest as current; why_new=test_a_fixture_under_an_old_speech_rule_is_refused covers only the rule cause; seam=none; no_claim=the production require_parsed_reports wording
     def test_a_fixture_under_other_reviewed_entries_is_refused_by_cause(self) -> None:

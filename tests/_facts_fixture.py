@@ -28,7 +28,11 @@ Each spec is a dict:
   votes            optional explicit list replacing it. An entry is
                    (yes, no, title) or a dict with those keys plus "item",
                    "leading" ({party: "yes"|"no"|"abstain"}) and "members"
-                   ([(name, party, vote), ...]) for the deviation metric
+                   ([(name, party, vote), ...]) for the deviation metric, and
+                   optional "abstain"/"absent" totals (default 0). The member
+                   lists stand for whole groups; votes.abweichler_count is
+                   derive.vote_abweichler_count over the stored rows, so it is
+                   NULL unless the totals equal the members' Stimmen
   unlinked_votes   optional list of (yes, no, title) votes without an agenda
                    link (they must never count for the week)
   sitzung          optional (start, end) as "09:00"/"14:08" strings, written
@@ -93,13 +97,15 @@ def _vote_spec(entry: Any) -> dict[str, Any]:
         return {
             "yes": entry["yes"],
             "no": entry["no"],
+            "abstain": entry.get("abstain", 0),
+            "absent": entry.get("absent", 0),
             "title": entry.get("title", "Abstimmung"),
             "item": int(entry.get("item", 0)),
             "leading": entry.get("leading") or {},
             "members": entry.get("members") or [],
         }
     yes, no, title = entry
-    return {"yes": yes, "no": no, "title": title, "item": 0, "leading": {}, "members": []}
+    return {"yes": yes, "no": no, "abstain": 0, "absent": 0, "title": title, "item": 0, "leading": {}, "members": []}
 
 
 def seed_weeks(
@@ -289,15 +295,28 @@ def seed_weeks(
                 for offset, entry in enumerate(votes or []):
                     vote = _vote_spec(entry)
                     vote_id = f"v{index + 1}{offset}"
-                    _insert_vote(conn, vote_id, spec["date"], vote["title"], vote["yes"], vote["no"], now)
+                    _insert_vote(conn, vote_id, spec["date"], vote["title"], vote["yes"], vote["no"], now,
+                                 abstain=vote["abstain"], absent=vote["absent"])
                     conn.execute(
                         "INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, 'drucksache_xml')",
                         (agenda_item_ids[vote["item"]], vote_id),
                     )
+                    # The seeded member lists stand for whole groups, so each
+                    # group's counts are its members' Stimmen, as the roll-call
+                    # page prints them (a vote without members keeps 0 counts).
+                    group_counts = {
+                        fraction: {key: 0 for key in derive.VOTE_COUNT_KEYS} for fraction in (vote["leading"] or {})
+                    }
+                    for _name, member_party, cast in vote["members"]:
+                        if member_party in group_counts and cast in group_counts[member_party]:
+                            group_counts[member_party][cast] += 1
                     for rank, (fraction, leading) in enumerate((vote["leading"] or {}).items(), start=1):
+                        counts = group_counts[fraction]
                         conn.execute(
-                            "INSERT INTO vote_fractions(vote_id, party_id, leading_vote, rank) VALUES (?, ?, ?, ?)",
-                            (vote_id, party_id(fraction), leading, rank),
+                            "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, abstain_count, absent_count,"
+                            " total_count, leading_vote, rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (vote_id, party_id(fraction), *(counts[key] for key in derive.VOTE_COUNT_KEYS),
+                             sum(counts.values()), leading, rank),
                         )
                     # The Abweichung figures as persist writes them for groups
                     # whose member list is whole (derive.vote_member_abweichungen):
@@ -313,8 +332,11 @@ def seed_weeks(
                             (vote_id, mp_id(name, member_party), party_id(member_party), cast, flag),
                         )
                     if vote["members"]:
+                        # As persist_vote writes it: derive's count, NULL where
+                        # a group is partial or the groups do not cover the total.
+                        stored = pulse_store.stored_vote_groups(conn, vote_id)
                         conn.execute("UPDATE votes SET abweichler_count = ? WHERE id = ?",
-                                     (sum(flag or 0 for flag in flags), vote_id))
+                                     (derive.vote_abweichler_count(stored), vote_id))
                     vote_ids.append(vote_id)
                 for offset, (yes, no, title) in enumerate(spec.get("unlinked_votes") or []):
                     vote_id = f"u{index + 1}{offset}"
@@ -361,13 +383,14 @@ def seed_weeks(
 
 
 def _insert_vote(
-    conn: Any, vote_id: str, date: str, title: str, yes: int, no: int, now: str
+    conn: Any, vote_id: str, date: str, title: str, yes: int, no: int, now: str,
+    *, abstain: int = 0, absent: int = 0,
 ) -> None:
     conn.execute(
         """
         INSERT INTO votes(id, date, topic, title, description, detail_url,
                            yes_count, no_count, abstain_count, absent_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, '', ?, ?, ?, 0, 0, ?, ?)
+        VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             vote_id,
@@ -377,6 +400,8 @@ def _insert_vote(
             f"https://example.test/abstimmung/{vote_id}",
             int(yes),
             int(no),
+            int(abstain),
+            int(absent),
             now,
             now,
         ),

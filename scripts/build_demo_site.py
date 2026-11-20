@@ -28,6 +28,7 @@ import build_dip_pulse_site as site
 import facts
 import persist_dip_pulse_store as pulse_store
 import publication_state as publication
+import reviewed_units
 import speech_kinds
 import validate_dip_protocol as dip
 from features import EnrichmentSelection
@@ -188,6 +189,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    # build_demo_store reads the reviewed list through the stale-report check:
+    # a missing or malformed file stops here, before any store is touched.
+    try:
+        reviewed_units.load()
+    except reviewed_units.ReviewedUnitsError as exc:
+        print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 1
     try:
         index_path = build_demo(
             args.output_dir,
