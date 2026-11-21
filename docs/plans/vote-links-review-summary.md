@@ -116,7 +116,7 @@ Pass 2 agreed with pass 1 on 116 of 119 rows it judged: all 20 random right rows
 | 704 | 19/197 | Einzelplan 8 | wrong, E | right |
 | 317 | 18/69 | Tagesordnungspunkt I (Fortsetzung), occurrence 1 | wrong, A | wrong, F (a title match picks the general section over the Einzelplan section) |
 
-**Decided (owner's go, 2026-11-21, after a third reader, a Sonnet agent who saw both readings and the sources but no recommendation, agreed with the recommendation):**
+**The owner decided both disagreements on 2026-11-21** ("Yes, accept both"): votes 703 and 704 in 19/197 are right, vote 317 in 18/69 is wrong, pattern A. Supporting evidence: an independent third reader, a Sonnet agent given both readings and the sources but no recommendation, reached the same verdicts.
 1. Votes 703 and 704 are **right**. The "Einzelplan 8" section is where the chair calls up TOP I.4, TOP II and Zusatzpunkt 1 together, and it is the only section printing their Drucksachen 19/22887, 19/24940 and 19/24969. The headingless section the XML files under Einzelplan 20 continues that joint item. Vote 704 was taken after the Einzelplan 09 debate only because the chair deferred it. Moving either vote to Einzelplan 20 or 9 would put it on another Vorlage's TOP. No rule change.
 2. Vote 317 stays **wrong, pattern A**. The cause is the umbrella Haushalt section, reached here by the title rather than by a Drucksache; see A above.
 
