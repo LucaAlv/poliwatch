@@ -37,7 +37,7 @@ def add_sitting(conn: sqlite3.Connection, number: str, *agenda_items: str) -> No
 
 def add_vote(conn: sqlite3.Connection, vote_id: str, *agenda_items: str) -> None:
     conn.execute(
-        "INSERT INTO votes (id, date, title, yes_count, no_count, created_at, updated_at) VALUES (?, '2026-01-01', 'V', 5, 4, ?, ?)",
+        "INSERT INTO votes (id, date, title, yes_count, no_count, top_link_step, created_at, updated_at) VALUES (?, '2026-01-01', 'V', 5, 4, 'none', ?, ?)",
         (vote_id, STAMP, STAMP),
     )
     for item_id in agenda_items:

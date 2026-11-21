@@ -35,6 +35,26 @@ order (21/24 has "Tagesordnungspunkt I" twice). ``item_index`` is informative
 only, since a re-parse that adds a TOP renumbers the items; the evidence is read
 from the cached report's TOP with the same key.
 
+The verdict columns are filled in from ``scripts/reviewed_vote_links.json`` by
+row key wherever an entry exists, so a regenerated sheet keeps every verdict
+(``--entries-file`` names another file).
+
+``--entries SHEET SOURCE`` turns filled sheets into that file instead of writing
+a sheet: every row's five verdict columns become one entry, with the TOP's
+heading start and first page read from the store, merged into the file by key.
+It refuses a row without a verdict and a row whose key the file holds with
+another verdict, so no verdict is overwritten silently. ``SOURCE`` is
+``sheet YYYY-MM-DD`` or ``plan vote-pr-c``; the option repeats.
+
+    python3 scripts/vote_link_review.py --output-dir .context/dip-pulse-site \
+        --entries docs/plans/vote-links-review.tsv "sheet 2026-11-21"
+
+``--fixture OUT`` writes the oracle's fixture instead
+(``tests/fixtures/vote_links/reviewed-sittings.json.gz``): every sitting that
+holds an entry, re-read from its cached XML in memory (the cached JSON can
+predate a parse field the rule reads), cut to what ``vote_links`` reads. A
+refresh is a reviewed act: it freezes the rule's inputs again.
+
 Exit codes: 0 written, 2 an input is missing or malformed.
 """
 
@@ -60,8 +80,13 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+import gzip
+
 import derive
 import persist_dip_pulse_store as pulse_store
+import validate_dip_protocol as dip
+import vote_links
+import reviewed_vote_links as reviewed
 import sqlite_open
 from stable_ids import source_index
 
@@ -284,9 +309,18 @@ def _strata_counts(rows: Iterable[Mapping[str, str]]) -> dict[str, int]:
     return dict(sorted(Counter(mark for row in rows for mark in row["stratum"].split("+")).items()))
 
 
+#: The sheet's verdict columns, which the review fills, and the entry field each is kept in.
+VERDICT_COLUMNS = {"verdict": "verdict", "pattern": "pattern", "action": "action", "evidence": "evidence", "reviewer": "reviewer"}
+#: The columns ``--entries`` reads from a filled sheet.
+ENTRY_COLUMNS = ("protocol", "vote_id", "top_id", "top_occurrence", *VERDICT_COLUMNS)
+
+
 def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: int,
-                batches: Mapping[str, frozenset[str]] | None = None) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    """The sheet's rows and its counts. ``batches``: name -> sittings, in draw order."""
+                batches: Mapping[str, frozenset[str]] | None = None,
+                entries: Iterable[reviewed.Entry] = ()) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    """The sheet's rows and its counts. ``batches``: name -> sittings, in draw
+    order. ``entries``: reviewed links whose verdicts fill their rows."""
+    verdicts = {entry.key: entry for entry in entries}
     batches = dict(batches or {})
     batch_name = {sitting: name for name, sittings in batches.items() for sitting in sittings}
     database = output_dir / STORE
@@ -347,7 +381,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
             "announced": ", ".join(announced) or "-",
             "tally": tally,
             "other_tops": "; ".join(top for top in tops_of_vote[link["vote_id"]] if top != own) or "-",
-            "verdict": "", "pattern": "", "action": "", "evidence": "", "reviewer": "",
+            **_verdict_cells(verdicts.get((number, _cell(link["vote_id"]), _cell(link["top_id"]), link["top_occurrence"]))),
         })
     summary = {
         "links": len(links),
@@ -363,6 +397,150 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
         + sum(1 for row in rows if row["stratum"] in {"S3", "S4"}),
     }
     return rows, summary
+
+
+def _verdict_cells(entry: reviewed.Entry | None) -> dict[str, str]:
+    return {column: getattr(entry, name) if entry else "" for column, name in VERDICT_COLUMNS.items()}
+
+
+def read_filled_sheet(path: Path) -> list[dict[str, str]]:
+    """The rows of a filled sheet (``#`` lines skipped), each with the
+    ``ENTRY_COLUMNS``, whitespace collapsed."""
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader((line for line in handle if not line.startswith("#")), delimiter="\t")
+            missing = [column for column in ENTRY_COLUMNS if column not in (reader.fieldnames or [])]
+            if missing:
+                raise ReviewInputError(f"{path} lacks the column(s) {', '.join(missing)}")
+            return [{column: _cell(row[column]) for column in ENTRY_COLUMNS} for row in reader]
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        raise ReviewInputError(f"the sheet {path} cannot be read: {exc}") from exc
+
+
+def sheet_entries(rows: Iterable[Mapping[str, str]], source: str, sittings: Mapping[str, reviewed.Sitting],
+                  where: str) -> list[reviewed.Entry]:
+    """One entry per filled row, its TOP's heading start and first page read
+    from ``sittings`` (the store). Refuses a row without a verdict, and one
+    whose sitting or TOP the store lacks."""
+    raw = []
+    for number, row in enumerate(rows, 1):
+        label = f"{where} row {number} ({row['protocol']} vote {row['vote_id']} {row['top_id']} #{row['top_occurrence']})"
+        if not row["verdict"]:
+            raise ReviewInputError(f"{label} has no verdict; fill it, or leave the row out")
+        sitting = sittings.get(row["protocol"])
+        if not row["top_occurrence"].isdigit() or sitting is None:
+            raise ReviewInputError(f"{label}: the store holds no such sitting, or top_occurrence is not a number")
+        position = sitting.position(row["top_id"], int(row["top_occurrence"]))
+        if position is None:
+            raise ReviewInputError(f"{label}: the store's sitting holds no such TOP")
+        _top_id, heading, page = sitting.tops[position]
+        raw.append({"protocol": row["protocol"], "vote_id": row["vote_id"], "top_id": row["top_id"],
+                    "top_occurrence": int(row["top_occurrence"]), "heading_starts": reviewed.heading_start(heading),
+                    "page_start": page, "verdict": row["verdict"], "pattern": row["pattern"], "action": row["action"],
+                    "note": "", "evidence": row["evidence"], "reviewer": row["reviewer"], "source": source})
+    try:
+        return reviewed.check({"entries": raw}, where)
+    except reviewed.ReviewedVoteLinksError as exc:
+        raise ReviewInputError(str(exc)) from exc
+
+
+def merge_entries(existing: Iterable[reviewed.Entry], new: Iterable[reviewed.Entry]) -> list[reviewed.Entry]:
+    """``existing`` with ``new`` merged in by key. A key both hold with another
+    verdict is refused: a verdict changes only by editing the file itself."""
+    merged = {entry.key: entry for entry in existing}
+    for entry in new:
+        old = merged.get(entry.key)
+        if old is not None and old.verdict != entry.verdict:
+            raise ReviewInputError(f"{entry.label}: the entries file holds verdict {old.verdict}, the sheet {entry.verdict}; "
+                                   "change the file by hand if the verdict really changed")
+        merged[entry.key] = entry
+    return list(merged.values())
+
+
+def write_entries(output_dir: Path, sheets: Sequence[tuple[str, str]], entries_file: Path) -> int:
+    """``--entries``: merge the filled ``sheets`` (path, source) into ``entries_file``. Returns how many entries it holds."""
+    database = output_dir / STORE
+    if not database.is_file():
+        raise ReviewInputError(f"no store at {database}")
+    conn = sqlite_open.open_readonly(database)
+    try:
+        pulse_store.require_current_schema(conn)
+        sittings = reviewed.sittings_of_store(conn)
+    finally:
+        conn.close()
+    try:
+        existing = reviewed.load(entries_file) if entries_file.exists() else []
+    except reviewed.ReviewedVoteLinksError as exc:
+        raise ReviewInputError(str(exc)) from exc
+    new: list[reviewed.Entry] = []
+    for path, source in sheets:
+        new += sheet_entries(read_filled_sheet(Path(path)), source, sittings, Path(path).name)
+    merged = merge_entries(existing, new)
+    try:
+        text = reviewed.dump(reviewed.check(json.loads(reviewed.dump(merged)), entries_file.name))
+    except reviewed.ReviewedVoteLinksError as exc:
+        raise ReviewInputError(str(exc)) from exc
+    partial = entries_file.with_name(entries_file.name + ".partial")
+    partial.write_text(text, encoding="utf-8")
+    partial.replace(entries_file)
+    return len(merged)
+
+
+def fixture_sitting(report: Mapping[str, Any]) -> dict[str, Any]:
+    """What ``vote_links.links`` and ``reviewed_vote_links.sitting_of_report``
+    read of a report, and nothing else; every vote among the sitting votes,
+    since the rule ignores where a report placed a vote."""
+    def position(raw: Mapping[str, Any]) -> dict[str, Any]:
+        source = raw.get("source") or {}
+        return {"vorgang_id": raw.get("vorgang_id"), "vorgangsposition": raw.get("vorgangsposition"), "titel": raw.get("titel"),
+                "source": {key: source.get(key) for key in ("seite", "anfangsseite", "endseite")},
+                "mitberaten": [{"id": other.get("id"), "titel": other.get("titel")} for other in raw.get("mitberaten") or []]}
+
+    items = []
+    for item in report.get("agenda_items") or []:
+        api = item.get("api") or {}
+        items.append({
+            "index": item.get("index"), "top_id": item.get("top_id"), "heading": item.get("heading"),
+            "page_range": item.get("page_range"), "xml_speech_count": item.get("xml_speech_count"),
+            "xml_drucksachen": [{"dokumentnummer": doc.get("dokumentnummer"), "url": doc.get("url")}
+                                for doc in item.get("xml_drucksachen") or []],
+            "called_drucksachen": list(item.get("called_drucksachen") or []),
+            "api": {"positions": [position(raw) for raw in api.get("positions") or []],
+                    "linked_drucksachen": [{key: doc.get(key) for key in ("dokumentnummer", "vorgang_id", "herausgeber", "url")}
+                                           for doc in api.get("linked_drucksachen") or []]},
+            "votes": [],
+        })
+    votes = [{key: vote.get(key) for key in ("id", "title", "description", "document_numbers")}
+             for vote in vote_links.report_votes(report).values()]
+    return {"protocol": {"dokumentnummer": (report.get("protocol") or {}).get("dokumentnummer")},
+            "agenda_items": items, "sitting_votes": votes}
+
+
+def write_fixture(output_dir: Path, entries: Iterable[reviewed.Entry], out: Path) -> int:
+    """``--fixture``: the sittings holding an entry, re-read from their cached
+    XML and cut by ``fixture_sitting``, as one gzipped JSON file whose bytes
+    depend only on its content. Returns how many sittings it holds."""
+    def order(number: str) -> tuple[int, int]:
+        wp, _, sitting = number.partition("/")
+        return (int(wp), int(sitting))
+
+    sittings = []
+    for number in sorted({entry.protocol for entry in entries}, key=order):
+        report_path = output_dir / "data" / f"plenarprotokoll-{slug(number)}.json"
+        xml_path = output_dir / "data" / "xml" / f"plenarprotokoll-{slug(number)}.xml"
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            dip.reparse_report_xml(report, dip.parse_protocol_xml(xml_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, dip.ET.ParseError) as exc:
+            raise ReviewInputError(f"{number}: the cached report or XML cannot be re-read ({exc})") from exc
+        sittings.append(fixture_sitting(report))
+    text = json.dumps({"sittings": sittings}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    partial = out.with_name(out.name + ".partial")
+    with partial.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=9) as handle:
+        handle.write(text.encode("utf-8"))
+    partial.replace(out)
+    return len(sittings)
 
 
 def code_revision() -> str:
@@ -384,7 +562,14 @@ def render_sheet(rows: Iterable[Mapping[str, str]], header: Mapping[str, Any]) -
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--output-dir", type=Path, required=True, help="site directory holding data/bundestag-pulse.sqlite")
-    parser.add_argument("--out", type=Path, required=True, help="the TSV to write")
+    parser.add_argument("--out", type=Path, help="the TSV to write (not with --entries)")
+    parser.add_argument("--entries", nargs=2, action="append", default=[], metavar=("SHEET", "SOURCE"),
+                        help="merge a filled sheet's verdicts into the entries file instead of writing a sheet; "
+                        "SOURCE is 'sheet YYYY-MM-DD' or 'plan vote-pr-c' (repeatable)")
+    parser.add_argument("--fixture", type=Path, metavar="OUT",
+                        help="write the oracle fixture of every sitting the entries file names to OUT instead of a sheet")
+    parser.add_argument("--entries-file", type=Path, default=reviewed.PATH,
+                        help="the reviewed vote links file (default: scripts/reviewed_vote_links.json)")
     parser.add_argument("--seed", type=int, default=20261114, help="seed of the S4 draw (default: 20261114)")
     parser.add_argument("--sample-vorgang", type=int, default=34, help="plain drucksache_vorgang links in S4 (default: 34)")
     parser.add_argument("--sample-xml", type=int, default=16, help="plain drucksache_xml links in S4 (default: 16)")
@@ -399,6 +584,28 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.entries:
+        if args.out:
+            print("error: --entries writes the entries file; leave out --out", file=sys.stderr)
+            return 2
+        try:
+            count = write_entries(args.output_dir, args.entries, args.entries_file)
+        except (ReviewInputError, RuntimeError, sqlite3.Error) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"vote_link_review: {count} entries -> {args.entries_file}", file=sys.stderr)
+        return 0
+    if args.fixture:
+        try:
+            count = write_fixture(args.output_dir, reviewed.load(args.entries_file), args.fixture)
+        except (ReviewInputError, reviewed.ReviewedVoteLinksError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"vote_link_review: {count} sittings -> {args.fixture}", file=sys.stderr)
+        return 0
+    if args.out is None:
+        print("error: give --out (the sheet to write), --entries or --fixture", file=sys.stderr)
+        return 2
     if args.sample_vorgang < 0 or args.sample_xml < 0:
         print("error: a sample size cannot be negative", file=sys.stderr)
         return 2
@@ -419,7 +626,11 @@ def main(argv: list[str] | None = None) -> int:
                 if sittings & held:
                     raise ReviewInputError(f"{sorted(sittings & held)[0]} is in the batches {other} and {name}")
             batches[name] = sittings
-        rows, summary = build_sheet(args.output_dir, args.seed, args.sample_vorgang, args.sample_xml, batches)
+        try:
+            entries = reviewed.load(args.entries_file)
+        except reviewed.ReviewedVoteLinksError as exc:
+            raise ReviewInputError(str(exc)) from exc
+        rows, summary = build_sheet(args.output_dir, args.seed, args.sample_vorgang, args.sample_xml, batches, entries)
     except (ReviewInputError, RuntimeError, sqlite3.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

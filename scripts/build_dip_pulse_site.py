@@ -106,6 +106,7 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import vote_links
+import reviewed_vote_links
 import dip_cache
 import abgeordnetenwatch as aw
 import derive
@@ -162,7 +163,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
-    "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
+    "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten, mit dem Grund jeder Verknüpfung (basis).",
+    "vote_link_reviews": "Geprüfte Verknüpfungen von Abstimmungen und Tagesordnungspunkten, die ein Einzelfalleintrag entfernt oder als unsicher markiert; bisher leer.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
     "vote_passages": "Antrag- und Entschließungsantrag-Drucksachen, die für eine namentliche Abstimmung als Zitatquelle geprüft wurden, mit dem DIP-Vorgang ohne Zusammenfassung, für den sie stehen, und Rang; zitiert wird nur ein Dokument mit documents.forderung_state extracted.",
     "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
@@ -1453,6 +1455,10 @@ def load_existing_detail_entries(
             # changes nothing for a load that has no shape error.
             if document_number not in recorded_exclusions(output_dir):
                 raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
+        else:
+            # The rule's placement, never the one the file kept from an older rule:
+            # a dossier rendered without a persist shows what the store holds.
+            vote_links.attribute_votes(report)
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -1984,6 +1990,10 @@ def _rebuild_database_from_entries(
         roster_rows = _read_roster_rows(database_path) if preserve_roster else []
         for entry in sorted(entries, key=entry_sort_key, reverse=True):
             try:
+                # Every report passes here: online, offline, backfill and kept
+                # ones. A rule change reaches the store without a re-read, and a
+                # kept report never meets persist's placement check stale.
+                vote_links.attribute_votes(entry["report"])
                 pulse_store.persist_report(store, entry["report"], vorgang_cache)
             except Exception as exc:
                 raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
@@ -2117,14 +2127,19 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
     speech_kinds_version is missing or older, "reviewed" when it was parsed under
     other entries of scripts/reviewed_units.json than the file holds now for its
     sitting (R3), or has no reviewed_digest at all (P3b: every parse since rule 8
-    records one, so its absence proves nothing about the list). Empty when current."""
+    records one, so its absence proves nothing about the list), "votes" when it
+    was parsed before the vote-link rule read what it reads now from the XML
+    (``vote_links.INPUTS_VERSION``). Empty when current."""
     causes = []
-    if (report.get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION:
+    summary = report.get("validation_summary") or {}
+    if summary.get("speech_kinds_version") != speech_kinds.VERSION:
         causes.append("rule")
     protocol = report.get("protocol") or {}
     number = normalized_document_number(protocol.get("dokumentnummer")) or ""
     if protocol.get("reviewed_digest") != reviewed_units.sitting_digest(number):
         causes.append("reviewed")
+    if summary.get("vote_inputs_version") != vote_links.INPUTS_VERSION:
+        causes.append("votes")
     return tuple(causes)
 
 
@@ -2144,6 +2159,7 @@ def stale_clauses(stale: list[dict[str, Any]]) -> list[str]:
     for cause, text in (
         ("rule", f"predate the current speech-counting rule ({speech_kinds.VERSION})"),
         ("reviewed", "were parsed under other entries of scripts/reviewed_units.json than it holds now"),
+        ("votes", f"predate the current inputs of the vote-link rule ({vote_links.INPUTS_VERSION})"),
     ):
         numbers = sorted(_report_number(entry) for entry in stale if cause in stale_causes(entry["report"]))
         if numbers:
@@ -3011,7 +3027,13 @@ def reuse_existing_dossier_enrichments(
     Carried votes then go where ``vote_links`` puts them under this run's TOPs,
     never where the cached report had them (review checklist class 2)."""
     carry_forward_vote_provenance(report, existing_report)
-    if votes and not report.get("sitting_votes") and (existing_report or {}).get("sitting_votes"):
+    # A run that fetched no vote carries every cached one, from all cached TOPs
+    # (a repeated top_id included) and the sitting votes alike; vote_links then
+    # places each under this run's TOPs.
+    carry_all = votes and not vote_links.report_votes(report)
+    if carry_all:
+        report["sitting_votes"] = copy.deepcopy(list(vote_links.report_votes(existing_report or {}).values()))
+    elif votes and not report.get("sitting_votes") and (existing_report or {}).get("sitting_votes"):
         report["sitting_votes"] = copy.deepcopy(existing_report["sitting_votes"])
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
@@ -3029,7 +3051,7 @@ def reuse_existing_dossier_enrichments(
         # unambiguously (equal top_id when both have one): an index match alone
         # can be another TOP. Nothing is merged into a TOP that has votes.
         top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
-        if votes and not derive.item_votes(item) and derive.item_votes(previous) and len(top_ids) <= 1:
+        if votes and not carry_all and not derive.item_votes(item) and derive.item_votes(previous) and len(top_ids) <= 1:
             item["votes"] = copy.deepcopy(previous["votes"])
         if not profiles:
             continue
@@ -3534,6 +3556,8 @@ _TABLE_SOURCE_DERIVED = (
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
         "vote_proceedings", "vote_passages",
+        # The project's own review of vote links (scripts/reviewed_vote_links.json).
+        "vote_link_reviews",
         # Counted from mdb_zugehoerigkeiten (derive.party_seats), not read.
         "party_seats",
         # The local store's own schema version counter, not source data.
@@ -3571,6 +3595,9 @@ _COLUMN_SOURCE_DERIVED = {
     ("vote_members", "abweichung"),
     # What a vote's TOP link rests on (vote_links.top_links).
     ("agenda_item_votes", "basis"),
+    ("agenda_item_votes", "review_note"),
+    # Which step of vote_links.top_links decided the vote's TOPs.
+    ("votes", "top_link_step"),
     ("speeches", "sprechrolle"),
     ("speeches", "unattributed_char_count"),
     # The kind is decided by the parser from the sitting's wording and structure.
@@ -3617,7 +3644,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 20
+EXPORT_FORMAT = 21
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3625,6 +3652,9 @@ CODEBOOK_INPUT_FILES = {
     "dictionary": "scripts/data_dictionary.json",
     "methods": "docs/data-methods.md",
     "license": "LICENSE-DATA.md",
+    # The reviewed vote links: DATA.md states the review's figures from it, and
+    # the release gate reads it as the export's commit holds it.
+    "vote_links": "scripts/reviewed_vote_links.json",
 }
 # The data licence file: a codebook input, and a file of every generation.
 LICENSE_FILE_NAME = Path(CODEBOOK_INPUT_FILES["license"]).name
@@ -4330,6 +4360,7 @@ class CodebookInputs:
     dictionary: str
     methods: str
     license: str
+    vote_links: str
     sha256: dict[str, str]  # path below REPO_ROOT -> SHA-256 of the bytes read
 
 
@@ -4778,12 +4809,50 @@ def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -
             "Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI.", ""]
 
 
+#: Where docs/data-methods.md takes the review's figures, generated at export.
+VOTE_LINK_REVIEW_MARKER = "<!-- vote-link-review: generated at export from scripts/reviewed_vote_links.json -->"
+
+
+def vote_link_review_paragraph(entries: list[reviewed_vote_links.Entry]) -> str:
+    """The figures of the vote-link review as DATA.md states them: the sample
+    reviewed from the sheet, its verdicts, the patterns the rule handles, and
+    the links the rule change added, all counted from the entries."""
+    sheet = [entry for entry in entries if entry.source.startswith("sheet ")]
+    right = sum(1 for entry in sheet if entry.verdict == "right")
+    wrong = len(sheet) - right
+    by_pattern = Counter(entry.pattern for entry in sheet if entry.action == "rule")
+    added = sum(1 for entry in entries if entry.source == "plan vote-pr-c")
+    ruled = sum(by_pattern.values())
+    patterns = ", ".join(f"{pattern} {count}" for pattern, count in sorted(by_pattern.items()))
+    text = (f"Vor der Veröffentlichung wurden {len(sheet)} Verknüpfungen einer Stichprobe einzeln gegen Protokoll und DIP "
+            f"geprüft, gelesen von KI-Agenten (Claude Sonnet): {right} richtig, {wrong} falsch.")
+    if ruled:
+        share = "Alle" if ruled == wrong else f"{ruled} der"
+        text += (f" {share} {wrong} falschen gehen auf {len(by_pattern)} Muster zurück, die die Regel seither behandelt "
+                 f"({patterns}; Muster A: eine umfassende Drucksache wie das Haushaltsgesetz, B: ein Geschäftsordnungsantrag, "
+                 "C: eine angrenzende DIP-Vorgangsposition, D: ein eigener Abschnitt für den Aufruf).")
+    if added:
+        text += (f" Die Regeländerung band {added} Verknüpfungen neu, die nicht als Zeile in der Stichprobe standen; "
+                 "jede wurde im Protokoll gelesen und ist als richtig geprüft.")
+    return text
+
+
+def _methods_with_vote_link_review(methods: str, vote_links_text: str) -> str:
+    if methods.count(VOTE_LINK_REVIEW_MARKER) != 1:
+        raise RuntimeError(f"export: {CODEBOOK_INPUT_FILES['methods']} must hold the line {VOTE_LINK_REVIEW_MARKER} once")
+    try:
+        entries = reviewed_vote_links.parse(vote_links_text, CODEBOOK_INPUT_FILES["vote_links"])
+    except reviewed_vote_links.ReviewedVoteLinksError as exc:
+        raise RuntimeError(f"export: {exc}") from exc
+    return methods.replace(VOTE_LINK_REVIEW_MARKER, vote_link_review_paragraph(entries))
+
+
 def _render_codebook(manifest: dict[str, Any], dictionary: dict[str, Any], inputs: CodebookInputs) -> str:
     lines = [
         *_codebook_header(manifest),
         *_codebook_coverage(manifest["coverage"]),
         *_codebook_tables(manifest["tables"], dictionary),
-        _demote_headings(inputs.methods),
+        _demote_headings(_methods_with_vote_link_review(inputs.methods, inputs.vote_links)),
         *_codebook_recipes(manifest),
         *_codebook_sources_and_citation(manifest, inputs.license),
     ]

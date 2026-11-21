@@ -307,4 +307,4 @@ Checks no diff review replaces: PR A and PR C each need the replay with old and 
 3. **Outcome and Abweichler count.** Persist both, in three columns (`votes.application_result`, `votes.abweichler_count`, `vote_members.abweichung`).
 4. **Sample size.** 329 links in about 155 units (all multi-link cases, all 15 title links, 50 random plain).
 5. **Online checks.** None by default. Ask once, with a count, for the links still unsure after protocol and DIP.
-6. **Gate.** Every release refuses a vote linked to two or more TOPs that has no review row.
+6. **Gate.** Every release refuses a vote linked to two or more TOPs that has no review row. **Amended by the owner on 2026-11-21** ("Yes, accept both"): the release gate checks every contested vote, meaning one linked to two or more TOPs or one whose TOP a step after the plain Drucksache match decided. See [`vote-pr-c.md`](vote-pr-c.md), sections 5 and 13.

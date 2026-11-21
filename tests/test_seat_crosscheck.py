@@ -62,7 +62,7 @@ class StoreFixture(unittest.TestCase):
             self.conn.execute(
                 "INSERT INTO protocols(id, document_number, date, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (protocol_id, f"{wp}/{self.sittings}", day, NOW, NOW))
-        self.conn.execute("INSERT INTO votes(id, protocol_id, date, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        self.conn.execute("INSERT INTO votes(id, protocol_id, date, top_link_step, created_at, updated_at) VALUES (?, ?, ?, 'none', ?, ?)",
                           (vote_id, protocol_id, day, NOW, NOW))
         for party, total in totals.items():
             party_id = pulse_store.upsert_party(self.conn, PARTY.get(party, party), NOW)

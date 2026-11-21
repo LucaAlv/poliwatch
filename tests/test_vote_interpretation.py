@@ -27,6 +27,7 @@ import _site_store_fixture
 import build_dip_pulse_site as build
 import derive
 import speech_kinds
+import vote_links
 import validate_dip_protocol as dip
 from _support import FIXTURES
 from _votes_fixture import vote_summary
@@ -799,7 +800,9 @@ class RepairedReportsTests(unittest.TestCase):
                 top(1, "Tagesordnungspunkt 7", [legacy("906")]),
                 top(2, "Tagesordnungspunkt 10", [legacy("811"), legacy("810")], "20/4360"),
                 top(3, "Tagesordnungspunkt 8", [legacy("1005")], "21/2234"),
-                top(4, "Tagesordnungspunkt 12", [legacy("811"), legacy("926")], "20/4053", "20/11752"),  # 811 under a second TOP too
+                # 811 under a second TOP too; the replay moves it to TOP 10 alone, the
+                # headingless section where the chair names its Drucksachen (vote_links step 2).
+                top(4, "Tagesordnungspunkt 12", [legacy("811"), legacy("926")], "20/4053", "20/11752"),
             ],
             "api_records": {"sitting_votes": [recorded]},
         }
@@ -846,7 +849,7 @@ class RepairedReportsTests(unittest.TestCase):
         saved = self.saved_votes()
         stored = self.stored_votes()
         self.assertEqual(set(saved), {"906", "811", "810", "926", "996", "1005"})
-        self.assertEqual(len(saved["811"]), 2)
+        self.assertEqual(len(saved["811"]), 1)
         # Every copy of a vote in the saved JSON holds the same interpretation, and the store holds it too.
         for vote_id, copies in saved.items():
             values = [{field: copy_.get(field) for field in FIELDS} for copy_ in copies]
@@ -958,7 +961,7 @@ class RepairedReportsTests(unittest.TestCase):
     def test_debate_url_replays_through_json_store_distribution_and_panels(self) -> None:
         report = self.legacy_report()
         url = "https://www.bundestag.de/dokumente/textarchiv/992936"
-        report["agenda_items"][1]["votes"][0]["debate_url"] = url  # 811's second copy is sparse.
+        report["agenda_items"][1]["votes"][0]["debate_url"] = url  # 811's copy under TOP 10; the replay keeps only it.
         report["api_records"]["sitting_votes"][0]["debate_url"] = url
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         self.test_a_legacy_report_the_store_the_export_and_the_panels_agree()
@@ -966,7 +969,7 @@ class RepairedReportsTests(unittest.TestCase):
         self.assertEqual(self.stored_votes()["996"]["debate_url"], url)
         self.assertTrue(all(copy_["debate_url"] == url for copy_ in self.saved_votes()["811"]))
         page = (self.output_dir / "protocols/plenarprotokoll-20-157.html").read_text()
-        self.assertEqual(page.count("Bericht und Debatte beim Bundestag"), 3)
+        self.assertEqual(page.count("Bericht und Debatte beim Bundestag"), 2)  # 811 under TOP 10, 996 among the sitting votes
         self.assertEqual(page.count('class="vote-lead"'), sum(len(copies) for copies in self.saved_votes().values()))
         self.test_a_second_repair_changes_nothing()
 
@@ -984,7 +987,7 @@ class RepairedReportsTests(unittest.TestCase):
         self.repersist()
         (self.output_dir / "data" / "xml" / "plenarprotokoll-20-157.xml").unlink()
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
-        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         before = self.stored_votes()
         self.repersist()

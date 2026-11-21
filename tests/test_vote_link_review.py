@@ -18,6 +18,10 @@ from typing import Any
 import _support  # noqa: F401
 import _site_store_fixture
 import vote_link_review as review
+import gzip
+
+import reviewed_vote_links
+import validate_dip_protocol as dip
 import vote_links
 from _support import FIXTURES
 
@@ -63,7 +67,9 @@ def sitting(repeated: bool = False) -> dict[str, Any]:
     return vote_links.attribute_votes(report)
 
 
-class SheetTests(unittest.TestCase):
+class SiteCase(unittest.TestCase):
+    """A site directory with the fixture sitting persisted and cached."""
+
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -93,6 +99,9 @@ class SheetTests(unittest.TestCase):
 
     def rows(self, text: str) -> list[dict[str, str]]:
         return list(csv.DictReader((line for line in text.splitlines() if not line.startswith("#")), delimiter="\t"))
+
+
+class SheetTests(SiteCase):
 
     def test_every_stratum_and_its_evidence(self) -> None:
         code, text, _ = self.run_sheet()
@@ -245,6 +254,101 @@ class SheetTests(unittest.TestCase):
         code, _, err = self.run_sheet("--batch-protocols", one, "--batch-protocols", one,
                                       "--batch-name", "t4", "--batch-name", "later")
         self.assertEqual((code, "20/999 is in the batches t4 and later" in err), (2, True), err)
+
+
+class EntriesTests(SiteCase):
+    """``--entries`` turns filled sheets into scripts/reviewed_vote_links.json, and the sheet keeps them (item 15)."""
+
+    HEAD = "protocol\tvote_id\ttop_id\ttop_occurrence\tverdict\tpattern\taction\tevidence\treviewer\n"
+
+    def filled(self, *rows: str) -> Path:
+        path = self.site.parent / f"filled-{len(list(self.site.parent.glob('filled-*')))}.tsv"
+        path.write_text("# a comment line\n" + self.HEAD + "".join(row + "\n" for row in rows), encoding="utf-8")
+        return path
+
+    def run_entries(self, *sheets: tuple[Path, str]) -> tuple[int, str]:
+        argv = ["--output-dir", str(self.site), "--entries-file", str(self.entries_file)]
+        for path, source in sheets:
+            argv += ["--entries", str(path), source]
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = review.main(argv)
+        return code, stderr.getvalue()
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.entries_file = self.site.parent / "reviewed_vote_links.json"
+
+    def test_filled_rows_become_entries_with_heading_and_page_from_the_store(self) -> None:
+        sheet = self.filled("20/999\t12345\tT1\t1\tright\t-\tnone\tthe chair calls it  here\tB01",
+                            "20/999\tv4\tT4\t1\twrong\tA\trule\tumbrella\tB02")
+        code, err = self.run_entries((sheet, "sheet 2026-11-21"))
+        self.assertEqual(code, 0, err)
+        entries = {entry.vote_id: entry for entry in reviewed_vote_links.load(self.entries_file)}
+        self.assertEqual((entries["12345"].heading_starts, entries["12345"].page_start), ("TOP 1 Beratung Testgesetz", 101))
+        self.assertEqual(entries["12345"].evidence, "the chair calls it here")
+        self.assertEqual((entries["v4"].verdict, entries["v4"].pattern, entries["v4"].source), ("wrong", "A", "sheet 2026-11-21"))
+        # Merging the same verdicts again changes nothing; another source's rows add to them.
+        before = self.entries_file.read_bytes()
+        self.assertEqual(self.run_entries((sheet, "sheet 2026-11-21"))[0], 0)
+        self.assertEqual(self.entries_file.read_bytes(), before)
+        more = self.filled("20/999\tv5\tT5\t1\tright\t-\tnone\tread\tplan")
+        self.assertEqual(self.run_entries((more, "plan vote-pr-c"))[0], 0)
+        self.assertEqual(len(reviewed_vote_links.load(self.entries_file)), 3)
+
+    # Value: protects=no verdict is overwritten silently and no row without a verdict becomes an entry (plan section 4); fails_when=--entries merges by key without comparing verdicts, or reads an empty verdict as a value; why_new=PR C makes the entries file the record; seam=main
+    def test_a_changed_or_missing_verdict_is_refused_and_nothing_is_written(self) -> None:
+        self.assertEqual(self.run_entries((self.filled("20/999\t12345\tT1\t1\tright\t-\tnone\tok\tB01"), "sheet 2026-11-21"))[0], 0)
+        before = self.entries_file.read_bytes()
+        cases = [
+            (self.filled("20/999\t12345\tT1\t1\twrong\tA\trule\tumbrella\tB09"), "holds verdict right, the sheet wrong"),
+            (self.filled("20/999\tv5\tT5\t1\t\t\t\t\t"), "has no verdict"),
+            (self.filled("20/999\tv5\tT9\t1\tright\t-\tnone\tok\tB01"), "holds no such TOP"),
+            (self.filled("20/999\tv5\tT5\t1\tright\tA\tnone\tok\tB01"), "needs a pattern A to D"),
+        ]
+        for sheet, message in cases:
+            with self.subTest(message=message):
+                code, err = self.run_entries((sheet, "sheet 2026-11-21"))
+                self.assertEqual(code, 2)
+                self.assertIn(message, err)
+                self.assertEqual(self.entries_file.read_bytes(), before)
+        code, err = self.run_entries((self.filled("20/999\tv5\tT5\t1\tright\t-\tnone\tok\tB01"), "by hand"))
+        self.assertEqual(code, 2)
+        self.assertIn("source 'by hand'", err)
+
+    # Value: protects=a regenerated sheet keeps every verdict the entries file holds (TODOS "Check that vote links are right" item 15); fails_when=build_sheet writes the verdict columns empty; why_new=a later batch regenerates the sheet; seam=main
+    def test_a_regenerated_sheet_keeps_the_verdicts(self) -> None:
+        self.run_entries((self.filled("20/999\t12345\tT1\t1\tright\t-\tnone\tthe chair calls it\tB01"), "sheet 2026-11-21"))
+        code, text, _ = self.run_sheet("--entries-file", str(self.entries_file))
+        self.assertEqual(code, 0)
+        rows = {(row["vote_id"], row["top_id"]): row for row in self.rows(text)}
+        self.assertEqual([rows[("12345", "T1")][column] for column in ("verdict", "pattern", "action", "evidence", "reviewer")],
+                         ["right", "-", "none", "the chair calls it", "B01"])
+        self.assertEqual(rows[("v2", "T1")]["verdict"], "")
+
+    # Value: protects=the oracle fixture holds what the rule reads, re-read from the XML, also for a cached report whose JSON predates called_drucksachen (plan section 6); fails_when=--fixture copies the cached JSON as it is; why_new=PR C adds the fixture; seam=main
+    def test_the_fixture_rereads_a_report_whose_json_predates_the_field(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        self.assertNotIn("called_drucksachen", report["agenda_items"][1])
+        xml = (FIXTURES / "protocol.xml").read_text(encoding="utf-8")
+        start, end = xml.index('<tagesordnungspunkt top-id="T2">'), xml.index("</tagesordnungspunkt>", xml.index('top-id="T2"'))
+        xml = xml[:start] + '<tagesordnungspunkt top-id="T2"><p klasse="J">Abstimmung über Drucksache 20/123.</p>' + xml[end:]
+        (self.site / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(report), encoding="utf-8")
+        (self.site / "data" / "xml" / "plenarprotokoll-20-999.xml").write_text(xml, encoding="utf-8")
+        self.entries_file.write_text(reviewed_vote_links.dump(reviewed_vote_links.check({"entries": [{
+            "protocol": "20/999", "vote_id": "12345", "top_id": "T2", "top_occurrence": 1, "heading_starts": "", "page_start": None,
+            "verdict": "right", "pattern": "-", "action": "none", "note": "", "evidence": "", "reviewer": "", "source": "plan vote-pr-c"}]})),
+            encoding="utf-8")
+        out = self.site.parent / "fixture.json.gz"
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(review.main(["--output-dir", str(self.site), "--entries-file", str(self.entries_file), "--fixture", str(out)]), 0)
+        [sitting] = json.loads(gzip.decompress(out.read_bytes()))["sittings"]
+        self.assertEqual([item["called_drucksachen"] for item in sitting["agenda_items"]], [[], ["20/123"]])
+        self.assertEqual(vote_links.links(sitting)["12345"], ({1: "drucksache_call"}, "call"))
+        first = out.read_bytes()
+        with contextlib.redirect_stderr(io.StringIO()):
+            review.main(["--output-dir", str(self.site), "--entries-file", str(self.entries_file), "--fixture", str(out)])
+        self.assertEqual(out.read_bytes(), first)
 
 
 class BatchDrawTests(unittest.TestCase):

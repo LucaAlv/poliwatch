@@ -49,6 +49,7 @@
           "url": "https://dserver.bundestag.de/btd/21/048/2104833.pdf"
         }
       ],
+      "called_drucksachen": [],
       "question_formats": [],
       "xml_turn_diagnostics": [],
       "xml_speech_count": 14,
@@ -874,6 +875,7 @@
   "validation_summary": {
     "xml_top_count": 1,
     "speech_kinds_version": 10,
+    "vote_inputs_version": 1,
     "xml_speech_count": 14,
     "xml_contribution_counts": {
       "erwiderung": 1,

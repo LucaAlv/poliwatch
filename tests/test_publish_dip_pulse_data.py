@@ -97,6 +97,10 @@ class ReleaseTestCase(unittest.TestCase):
             target = cls.repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(b.REPO_ROOT / relative, target)
+        # The synthetic store reuses real sitting numbers (20/101) the shipped
+        # review names, so this repository reviews nothing; the export below
+        # reads its codebook inputs from here.
+        (cls.repo / b.CODEBOOK_INPUT_FILES["vote_links"]).write_text('{"entries": [\n]}\n', encoding="utf-8")
         git(cls.repo, "add", "-A")
         git(cls.repo, "commit", "-qm", "inputs")
         cls.head = git(cls.repo, "rev-parse", "HEAD")
@@ -113,16 +117,22 @@ class ReleaseTestCase(unittest.TestCase):
                 reviewed=[],
             )
             pulse_store.persist_report(conn, tw.report(parsed))
+            cls.prepare_store(conn)
             _mps, lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
         cls.exports = cls.root / "exports"
-        with mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None):
+        with mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None), \
+                mock.patch.object(b, "REPO_ROOT", cls.repo):
             cls.manifest = b.export_distribution_data(
                 db_path, cls.exports, mp_lookup=lookup, readiness=READINESS, catalog_count=2, dossier_count=2, tag=VERSION, commit=cls.head[:12], license_text=b.default_license_text()
             )
         (protocols,) = [entry["name"] for entry in cls.manifest["files"] if entry["name"].startswith("protocols-")]
         cls.stored = sorted((row["document_number"], row["date"]) for row in publish._csv_rows(cls.exports / cls.manifest["generation"] / protocols))
+
+    @classmethod
+    def prepare_store(cls, conn) -> None:
+        """A subclass's change to the store before it is exported."""
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -756,6 +766,54 @@ class PublishTests(ReleaseTestCase):
                 self.edit_manifest(coverage=edit)
                 code, _, stderr = self.run_script("--initial", "--publish")
                 self.assert_refused(code, stderr, "coverage.excluded")
+
+
+class VoteLinkReviewGateTests(ReleaseTestCase):
+    """Owner decision 6, amended 2026-11-21 (docs/plans/vote-pr-c.md, section 5):
+    --publish refuses a contested vote link without a right entry."""
+
+    @classmethod
+    def prepare_store(cls, conn) -> None:
+        # v1 under TOP 1 of 20/100, placed by its Einzelplan: a contested vote.
+        with conn:
+            conn.execute("UPDATE votes SET protocol_id = '5801', top_link_step = 'einzelplan' WHERE id = 'v1'")
+
+    def entries_commit(self, **fields) -> str:
+        """A commit of the test repository whose scripts/reviewed_vote_links.json holds one entry for v1."""
+        entry = {"protocol": "20/100", "vote_id": "v1", "top_id": "T1", "top_occurrence": 1, "heading_starts": "TOP 1 Haushalt",
+                 "page_start": None, "verdict": "right", "pattern": "-", "action": "none", "note": "", "evidence": "",
+                 "reviewer": "", "source": "plan vote-pr-c", **fields}
+        path = self.repo / "scripts" / "reviewed_vote_links.json"
+        original = path.read_text(encoding="utf-8")
+        try:
+            path.write_text(publish.reviewed_vote_links.dump(publish.reviewed_vote_links.check({"entries": [entry]})), encoding="utf-8")
+            git(self.repo, "commit", "-qam", "entries")
+            return git(self.repo, "rev-parse", "HEAD")
+        finally:
+            path.write_text(original, encoding="utf-8")
+            git(self.repo, "commit", "-qam", "restore")
+
+    # Value: protects=a contested vote link (a later rule step decided it) cannot be published unreviewed, and a dry run names every one; fails_when=run_release skips the review gate or gates only votes on two or more TOPs; why_new=owner decision of 2026-11-21; seam=main
+    def test_publish_refuses_an_unreviewed_contested_vote_and_a_dry_run_names_it(self) -> None:
+        code, _, stderr = self.run_script("--initial", "--publish")
+        self.assert_refused(code, stderr, "--publish refused: 1 vote link(s) need a review before release",
+                            "20/100 vote v1 T1 #1: contested link (einzelplan, 1 TOP(s)) has no reviewed entry")
+        self.assertEqual(self.runner.gh("release", "create"), [])
+        code, stdout, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("--publish would refuse: 1 vote link(s) need a review before release", stdout)
+        self.assertIn("  20/100 vote v1 T1 #1: contested link (einzelplan, 1 TOP(s)) has no reviewed entry", stdout)
+
+    def test_a_reviewed_link_passes_and_a_wrong_or_moved_entry_is_refused(self) -> None:
+        generation = self.exports_copy / self.manifest["generation"]
+
+        def refusals(**fields) -> list[str]:
+            return publish.vote_link_review_refusals(self.manifest, generation, self.repo, self.entries_commit(**fields))
+
+        self.assertEqual(refusals(), [])
+        self.assertIn("20/100 vote v1 T1 #1: contested link is reviewed wrong", refusals(verdict="wrong", pattern="A", action="rule"))
+        self.assertEqual(refusals(page_start=5), ["20/100 vote v1 T1 #1: the TOP starts on page None, not 5"])
+        self.assertEqual(refusals(heading_starts="TOP 2"), ["20/100 vote v1 T1 #1: the TOP's heading no longer starts 'TOP 2'"])
 
 
 class MissingSittingTests(ReleaseTestCase):

@@ -62,12 +62,12 @@ class SittingVotePersistenceTests(unittest.TestCase):
 
         sparse = dict(vote)
         sparse.pop("debate_url")
-        pulse_store.persist_vote(self.conn, sparse, self.report["protocol"]["id"], "later")
+        pulse_store.persist_vote(self.conn, sparse, self.report["protocol"]["id"], "later", top_link_step="match")
         self.assertEqual(
             self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0],
             vote["debate_url"],
         )
-        pulse_store.persist_vote(self.conn, {**vote, "debate_url": None}, self.report["protocol"]["id"], "later")
+        pulse_store.persist_vote(self.conn, {**vote, "debate_url": None}, self.report["protocol"]["id"], "later", top_link_step="match")
         self.assertIsNone(self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0])
 
     def test_removed_sitting_vote_is_pruned_when_report_is_replaced(self):

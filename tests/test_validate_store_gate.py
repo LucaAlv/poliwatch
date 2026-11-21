@@ -17,6 +17,7 @@ import build_dip_pulse_site as site
 import persist_dip_pulse_store as pulse_store
 import politikfelder
 import reviewed_units
+import reviewed_vote_links
 import speech_kinds
 import validate_dip_protocol as dip
 import validate_store_gate as gate
@@ -180,6 +181,41 @@ class MainStopsCleanlyTests(unittest.TestCase):
                         contextlib.redirect_stderr(io.StringIO()) as stderr:
                     self.assertEqual(gate.main([str(output), "--receipt", str(Path(tmp) / "r.json")]), 2)
                 self.assertIn("ERROR [gate]:", stderr.getvalue())
+
+
+class ReviewedVoteLinkCheckTests(unittest.TestCase):
+    # Value: protects=the store gate fails on a reviewed vote link that no longer holds and reports the release condition without failing on it (plan section 5); fails_when=the check ignores the entries, or a contested vote fails the store gate and so every weekly build; why_new=PR C adds the reviewed file; seam=none
+    def test_a_stale_entry_fails_and_the_release_condition_is_only_reported(self) -> None:
+        report = _support.stamp_reviewed(json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8")))
+        report["validation_summary"]["speech_kinds_version"] = speech_kinds.VERSION
+
+        def entry(top_id: str, verdict: str, **fields) -> dict:
+            return {"protocol": "20/999", "vote_id": "12345", "top_id": top_id, "top_occurrence": 1,
+                    "heading_starts": "TOP 1 Beratung Testgesetz" if top_id == "T1" else "TOP 2 Fragestunde",
+                    "page_start": 101 if top_id == "T1" else 103, "verdict": verdict,
+                    "pattern": "A" if verdict == "wrong" else "-", "action": "rule" if verdict == "wrong" else "none",
+                    "note": "", "evidence": "", "reviewer": "", "source": "sheet 2026-11-21", **fields}
+
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
+            database = Path(tmp) / "data" / "bundestag-pulse.sqlite"
+            database.parent.mkdir()
+            site.rebuild_database_from_entries(database, [{"report": report}])
+            holding = reviewed_vote_links.check({"entries": [entry("T1", "right"), entry("T2", "wrong"),
+                                                             entry("T1", "right", protocol="18/1")]})
+            result = gate.reviewed_vote_link_check(database, holding)
+            self.assertEqual((result["stale_count"], result["checked"], result["skipped_not_in_store"]), (0, 2, 1))
+            self.assertEqual(result["release"], {"contested_votes": 0, "refusals": [], "refusal_count": 0})
+            stale = gate.reviewed_vote_link_check(database, reviewed_vote_links.check({"entries": [entry("T2", "right")]}))
+            self.assertEqual(stale["stale"], ["20/999 vote 12345 T2 #1: reviewed right, but the rule no longer makes the link"])
+            self.assertEqual(stale["release"]["refusal_count"], 1)
+
+    def test_a_malformed_entries_file_is_a_clean_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "data").mkdir()
+            with mock.patch.object(reviewed_vote_links, "load", side_effect=reviewed_vote_links.ReviewedVoteLinksError("bad entry")), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(gate.main([tmp, "--receipt", str(Path(tmp) / "r.json")]), 2)
+            self.assertIn("ERROR [reviewed-vote-links]: bad entry", stderr.getvalue())
 
 
 class CachedRosterFileTests(unittest.TestCase):

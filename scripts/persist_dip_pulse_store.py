@@ -35,7 +35,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -60,6 +60,10 @@ def require_current_schema(conn):
     if votes and not {"application_result", "abweichler_count"} <= votes:
         # Schema 12: the outcome and the Abweichler figures were computed by
         # each reader; they are written at persist from the cached reports.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if votes and "top_link_step" not in votes:
+        # Schema 14: no deciding step, and the basis CHECK lacks einzelplan and
+        # drucksache_call; vote_links works both out from the cached reports.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     item_votes = {row[1] for row in conn.execute("PRAGMA table_info(agenda_item_votes)")}
     if item_votes and "basis" not in item_votes:
@@ -458,6 +462,10 @@ def initialize(conn: sqlite3.Connection) -> None:
           debate_url TEXT,
           context_state TEXT CHECK (context_state IN (%(context_states)s)),
           passage_state TEXT CHECK (passage_state IN (%(passage_states)s)),
+          -- Which step of vote_links.top_links decided the vote's TOPs: none (no
+          -- TOP), match (the plain Drucksache or title match), or a later step
+          -- (call, einzelplan, narrowed), which the release gate checks.
+          top_link_step TEXT NOT NULL CHECK (top_link_step IN (%(link_steps)s)),
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -466,10 +474,27 @@ def initialize(conn: sqlite3.Connection) -> None:
           agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
           -- What the link rests on (vote_links.top_links): a shared Drucksache
-          -- printed under the TOP, one only a DIP Vorgang of the TOP holds, or
-          -- the unique title match.
+          -- printed under the TOP, one only a DIP Vorgang of the TOP holds, the
+          -- unique title match, the vote's Einzelplan, or the number the chair
+          -- names in the section where the vote is called.
           basis TEXT NOT NULL CHECK (basis IN (%(link_bases)s)),
+          -- The note of a reviewed link flagged as unsure (vote PR C2); NULL otherwise.
+          review_note TEXT,
           PRIMARY KEY (agenda_item_id, vote_id)
+        );
+
+        -- Reviewed links a one-off entry dropped or flagged (vote PR C2), kept
+        -- for the vote page; empty until an entry acts.
+        CREATE TABLE IF NOT EXISTS vote_link_reviews (
+          vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+          protocol TEXT NOT NULL,
+          top_id TEXT NOT NULL,
+          top_occurrence INTEGER NOT NULL CHECK (top_occurrence >= 1),
+          heading TEXT,
+          action TEXT NOT NULL CHECK (action IN ('drop', 'flag')),
+          note TEXT NOT NULL,
+          reviewed_on TEXT NOT NULL,
+          PRIMARY KEY (vote_id, protocol, top_id, top_occurrence)
         );
 
         CREATE TABLE IF NOT EXISTS agenda_item_politikfelder (
@@ -591,6 +616,7 @@ def initialize(conn: sqlite3.Connection) -> None:
             "document_states": _sql_list(antrag_text.DOCUMENT_STATES),
             "passage_states": _sql_list(antrag_text.PASSAGE_STATES),
             "link_bases": _sql_list(vote_links.BASES),
+            "link_steps": _sql_list(vote_links.STEPS),
         }
     )
     _migrate_mps_columns(conn)
@@ -1623,7 +1649,10 @@ def persist_vote(
     vote: dict[str, Any],
     protocol_id: str,
     now: str,
+    *,
+    top_link_step: str,
 ) -> None:
+    """``top_link_step``: the step of ``vote_links.top_links`` that decided the vote's TOPs."""
     vote_id = _vote_id(vote)
     total = vote.get("total") or {}
     result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
@@ -1637,9 +1666,9 @@ def persist_vote(
           id, protocol_id, date, topic, title, description, detail_url, yes_count, no_count,
           abstain_count, absent_count, result_raw, result_source, result_scope, procedure_type,
           inverted, inversion_source, inversion_excerpt, application_result, abweichler_count,
-          xlsx_url, debate_url, created_at, updated_at
+          xlsx_url, debate_url, top_link_step, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           protocol_id = excluded.protocol_id,
           date = excluded.date,
@@ -1660,6 +1689,7 @@ def persist_vote(
           inversion_excerpt = excluded.inversion_excerpt,
           application_result = excluded.application_result,
           abweichler_count = excluded.abweichler_count,
+          top_link_step = excluded.top_link_step,
           debate_url = CASE WHEN ? THEN excluded.debate_url ELSE COALESCE(excluded.debate_url, votes.debate_url) END,
           -- A copy of the vote without a link (e.g. the same vote attached to
           -- a second agenda item) never erases one already stored, so a
@@ -1701,6 +1731,7 @@ def persist_vote(
             derive.vote_abweichler_count(vote, abweichler_groups),
             clean(vote.get("xlsx_url")),
             clean(vote.get("debate_url")),
+            top_link_step,
             now,
             now,
             "debate_url" in vote,
@@ -1987,7 +2018,7 @@ def persist_report(
             persist_contributions(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_withheld(conn, protocol_id, item, agenda_item_id, now)
         for _item, vote in report_vote_pairs:
-            persist_vote(conn, vote, protocol_id, now)
+            persist_vote(conn, vote, protocol_id, now, top_link_step=vote_bases[_vote_id(vote)].step)
         # iter_report_votes deliberately yields one row per vote. A vote may
         # still be cited under more than one TOP, so write every link.
         for position, item in enumerate(report.get("agenda_items") or []):
@@ -1998,7 +2029,7 @@ def persist_report(
                 vote_id = _vote_id(vote)
                 conn.execute(
                     "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, ?)",
-                    (agenda_item_id, vote_id, vote_bases[vote_id][position]),
+                    (agenda_item_id, vote_id, vote_bases[vote_id].tops[position]),
                 )
         persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
         persist_vote_context(conn, report, vorgang_cache, now)

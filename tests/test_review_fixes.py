@@ -257,17 +257,20 @@ class ScanResultStandsAsItIsTests(unittest.TestCase):
                 with self.assertRaisesRegex(dip.DipError, "keeping the cached dossier"):
                     build.keep_cached_dossier_when_votes_failed(fresh, existing, 30)
 
-    def test_a_no_scan_rebuild_that_lost_votes_to_a_reparse_loses_the_evidence_too(self) -> None:
+    # Value: protects=a no-scan rebuild whose re-parse changed the TOP ids keeps every cached vote and its evidence (TODOS "Check that vote links are right" item 4: the carry-forward collects all cached votes, then vote_links places them); fails_when=cached votes are copied only onto a TOP with the same id, so they and the sitting's completeness are lost; why_new=PR C carries every cached vote; seam=none
+    def test_a_no_scan_rebuild_whose_reparse_changed_the_top_ids_keeps_the_votes_and_the_evidence(self) -> None:
         prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
         existing = two_vote_report(prior)
         existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
         fresh = report_with(0, None)
-        fresh["agenda_items"][0]["top_id"] = "TOP 9"  # re-parsed with other ids: nothing to copy the votes onto
+        fresh["agenda_items"][0]["top_id"] = "TOP 9"  # re-parsed with other ids
         fresh["validation_summary"] = {"roll_call_scan_end": "not_scanned"}
         build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
         build.annotate_report_acquisition(fresh, existing, vote_scan_pages=0, profile_resolver=None, summary_mode="off")
         fresh["protocol"] = {"dokumentnummer": "21/90"}
-        self.assertFalse(facts.completeness_from_reports([fresh])["21/90"]["votes"])
+        # Neither vote shares a number or a title with the TOP: both are sitting votes.
+        self.assertEqual([v["id"] for v in fresh["sitting_votes"]], ["1", "2"])
+        self.assertTrue(facts.completeness_from_reports([fresh])["21/90"]["votes"])
 
     def test_the_cached_dossier_survives_a_skipped_refresh_through_the_merge(self) -> None:
         cached = {"report": {"protocol": {"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11"}}, "slug": "21-1"}

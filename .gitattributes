@@ -3,4 +3,5 @@
 # the committed ones.
 LICENSE-DATA.md text eol=lf
 docs/data-methods.md text eol=lf
+scripts/reviewed_vote_links.json text eol=lf
 scripts/data_dictionary.json text eol=lf

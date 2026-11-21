@@ -19,6 +19,7 @@ import publish_dip_pulse_data as publish
 import release_changes
 import render_dip_pulse_html as html
 import reviewed_units
+import vote_links
 import speech_kinds as sk
 import validate_dip_protocol as dip
 
@@ -262,7 +263,7 @@ class ReviewedListTests(unittest.TestCase):
     #   fails_when=unparsed_reports ignores reviewed_digest (a list edit leaves a published Rede counted) or flags every report; why_new=test_a_changed_reviewed_list covers the store, not the cache; seam=none
     def test_a_cached_report_under_other_reviewed_entries_is_reread(self):
         def cached(number, digest, version=sk.VERSION):
-            return {"report": {"protocol": {"dokumentnummer": number, "reviewed_digest": digest}, "validation_summary": {"speech_kinds_version": version}}}
+            return {"report": {"protocol": {"dokumentnummer": number, "reviewed_digest": digest}, "validation_summary": {"speech_kinds_version": version, "vote_inputs_version": vote_links.INPUTS_VERSION}}}
         listed, unlisted = "18/2", "18/7"
         fresh = [cached(listed, reviewed_units.sitting_digest(listed)), cached(unlisted, reviewed_units.digest([]))]
         self.assertEqual(build.unparsed_reports(fresh), [])
@@ -277,7 +278,7 @@ class ReviewedListTests(unittest.TestCase):
             protocol = {"dokumentnummer": number, "xml_url": f"https://example.test/{number}.xml"}
             if digest != "absent":
                 protocol["reviewed_digest"] = digest
-            return {"report": {"protocol": protocol, "validation_summary": {"speech_kinds_version": version}}}
+            return {"report": {"protocol": protocol, "validation_summary": {"speech_kinds_version": version, "vote_inputs_version": vote_links.INPUTS_VERSION}}}
 
         no_digest, other_list = cached("18/7"), cached("18/2", reviewed_units.digest([]))
         old_rule, both = cached("18/8", reviewed_units.digest([]), sk.VERSION - 1), cached("18/9", version=sk.VERSION - 1)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
