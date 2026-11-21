@@ -143,7 +143,7 @@ class LegalPagesTests(unittest.TestCase):
                 else:
                     self.assertNotIn("Die Datendownloads der Seite", page)
 
-    # Value: protects=the legal pages attribute personal data to the source that supplies it and do not promise the licence file inside every single download; fails_when=roll-call results are credited to abgeordnetenwatch.de again, or sources.html says LICENSE-DATA.md comes with each download; why_new=red-team review of this branch, owner decisions D1 A and D2 A; seam=render_datenschutz_page, render_sources_page; no_claim=legal sufficiency
+    # Value: protects=the legal pages attribute personal data to the source that supplies it, state the legal bases, recipients, Art. 21 route and sessionStorage/TDDDG basis, and do not promise the licence file inside every single download; fails_when=roll-call results are credited to abgeordnetenwatch.de again, a legal-basis, recipient, Art. 21 or TDDDG sentence is dropped, the page says localStorage again, or sources.html says LICENSE-DATA.md comes with each download; why_new=red-team review of this branch, owner decisions D1 A and D2 A; seam=render_datenschutz_page, render_sources_page; no_claim=legal sufficiency
     def test_legal_pages_name_sources_and_the_licence_file_accurately(self) -> None:
         persons = self.pages["datenschutz.html"].split("<h2>Personen in den Daten</h2>")[1].split("</section>")[0]
         self.assertIn("namentlicher Abstimmungen auf bundestag.de", persons)
@@ -151,6 +151,13 @@ class LegalPagesTests(unittest.TestCase):
         self.assertIn("Wahlkreis, Bundesland, Geburtsjahr, Beruf und Geschlecht von abgeordnetenwatch.de", persons)
         self.assertNotIn("in jedem Download", self.pages["sources.html"])
         self.assertIn("<code>LICENSE-DATA.md</code> liegt jedem Export bei", self.pages["sources.html"])
+        # ADR 0003 questions 4 and 8: the legal bases, the recipients, the objection route and the storage statement.
+        for needle in ("Art. 6 Abs. 1 lit. f DSGVO", "Art. 9 Abs. 2 lit. e DSGVO", "Art. 85 DSGVO", "Empfänger sind", "Art. 21 DSGVO prüfen wir"):
+            self.assertIn(needle, persons)
+        storage = self.pages["datenschutz.html"].split("<h2>Speicherung in Ihrem Browser</h2>")[1].split("</section>")[0]
+        self.assertIn("(sessionStorage)", storage)
+        self.assertIn("Abs. 2 Nr. 2 TDDDG", storage)
+        self.assertNotIn("localStorage", self.pages["datenschutz.html"])
 
     # Value: protects=the publication validator refuses an output tree without impressum.html or datenschutz.html; fails_when=a deployable tree can lack a legal page; why_new=ADR 0003 D4 makes both pages part of every public build; seam=validate_publication_directory; no_claim=page content
     def test_the_publication_validator_requires_both_legal_pages(self) -> None:
@@ -165,7 +172,7 @@ class LegalPagesTests(unittest.TestCase):
                 with self.assertRaisesRegex(publication.PublicationStateError, f"entry points are missing: {name}"):
                     publication.validate_publication_directory(copy_dir)
 
-    # Value: protects=the Datenschutz page names exactly the localStorage keys the scripts of every built page use and no host is loaded that it does not name (none today); fails_when=a new stored setting (in the shared head and scripts or in a page-specific inline script such as the dossier runtime or a Fakt page) or a CDN font/script/style is added without a matching text change, or any page script reads sessionStorage, indexedDB or document.cookie; why_new=eng review D4 A, a false privacy statement is a correctness defect; the test read only page_head() and page_scripts(), so a key written by a page-specific script would slip past (TODOS "Impressum/licence build: deferred polish" item 1); seam=the demo build's HTML; no_claim=outbound links, which load nothing until clicked, and pages the demo does not build
+    # Value: protects=the Datenschutz page names exactly the sessionStorage keys the scripts of every built page use and no host is loaded that it does not name (none today); fails_when=a new stored setting (in the shared head and scripts or in a page-specific inline script such as the dossier runtime or a Fakt page) or a CDN font/script/style is added without a matching text change, or any page script reads localStorage, indexedDB or document.cookie; why_new=eng review D4 A, a false privacy statement is a correctness defect; the test read only page_head() and page_scripts(), so a key written by a page-specific script would slip past (TODOS "Impressum/licence build: deferred polish" item 1); seam=the demo build's HTML; no_claim=outbound links, which load nothing until clicked, and pages the demo does not build
     def test_datenschutz_names_every_stored_key_and_every_loaded_host(self) -> None:
         shared = pulse_html.page_head() + pulse_html.page_scripts()
         scripts = shared + "\n".join(
@@ -173,16 +180,16 @@ class LegalPagesTests(unittest.TestCase):
             for markup in self.pages.values()
             for body in re.findall(r"<script\b[^>]*>(.*?)</script>", markup, flags=re.S | re.I)
         )
-        self.assertIn("localStorage", scripts)
+        self.assertIn("sessionStorage", scripts)
         used = set(re.findall(r'const key = "([^"]+)"', scripts))
         # A key passed as a literal to the storage API, outside the shared "const key" form.
         used |= set(re.findall(r"(?:getItem|setItem|removeItem)\(\s*[\"']([^\"']+)[\"']", scripts))
-        self.assertEqual(scripts.count("localStorage"), scripts.count("window.localStorage"))
+        self.assertEqual(scripts.count("sessionStorage"), scripts.count("window.sessionStorage"))
         named = {key for key, _ in site.DATENSCHUTZ_STORAGE_KEYS}
         self.assertEqual(used, named)
         for key in named:
             self.assertIn(f"<code>{key}</code>", self.pages["datenschutz.html"])
-        for word in ("sessionStorage", "indexedDB", "document.cookie"):
+        for word in ("localStorage", "indexedDB", "document.cookie"):
             self.assertNotIn(word, scripts)
         loaded = set()
         for relative, markup in self.pages.items():

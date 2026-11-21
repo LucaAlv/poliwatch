@@ -52,6 +52,7 @@ Decided by the owner as N1 B on 2026-11-07. The build's shape was settled in the
 ## Coverage and the bar (N9, gate step 4)
 
 - **Coverage.** DATA.md and the Daten page publish coverage per year, by Sitzungen and by Reden. They give the withheld share by own words per year, per Fraktion and year, and per Sitzung. Withheld own words are divided by own words of all Reden, stored or withheld.
+- **The minimum for analyses (N9, owner 2026-11-21).** No sitting is kept out for its coverage. Each analysis on the site declares a minimum coverage, 98% of own words by default, and marks a period below it as thin, at the analysis's own grain; a period that holds an excluded Sitzung is thin whatever its share. On the 806-sitting store that marks the year 2013 and five months (2013-11, 2013-12, 2014-03, 2015-08, 2021-09).
 - **The exclusion record.** Every entry of `coverage-exclusions.json` carries a reason code and a sentence. A Sitzung may stay out for good only with `source_defect` or `not_narrowable`. The codes `awaiting_rule` and `awaiting_acquisition` name Sitzungen on their way back. A bare "excluded" is refused.
 - **The release enforces the bar.** `--publish` refuses while any exclusion reads a code other than `source_defect` or `not_narrowable`, the first release included; a dry run names those Sitzungen. The gate does not refuse them, because T4's own builds must pass it while the codes are still on the record (owner decision D6, 2026-11-14).
 

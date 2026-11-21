@@ -906,7 +906,7 @@ def theme_bootstrap_script() -> str:
       const root = document.documentElement;
       let theme = "light";
       try {
-        theme = window.localStorage.getItem(key)
+        theme = window.sessionStorage.getItem(key)
           || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       } catch (_) {}
       root.dataset.theme = theme === "dark" ? "dark" : "light";
@@ -1142,7 +1142,7 @@ def theme_runtime_script() -> str:
           toggle.querySelector("[data-theme-label]").textContent = dark ? "Hell" : "Dunkel";
         });
         if (persist) {
-          try { window.localStorage.setItem(key, next); } catch (_) {}
+          try { window.sessionStorage.setItem(key, next); } catch (_) {}
         }
       };
       setTheme(root.dataset.theme, false);
@@ -1168,7 +1168,7 @@ def ai_summary_runtime_script() -> str:
       if (!controls.length || !bodies.length) return;
       let state = "expanded";
       try {
-        const stored = window.localStorage.getItem(key);
+        const stored = window.sessionStorage.getItem(key);
         if (stored === "expanded" || stored === "collapsed") state = stored;
       } catch (_) {}
       const apply = (next, persist = false) => {
@@ -1182,7 +1182,7 @@ def ai_summary_runtime_script() -> str:
         });
         root.dataset.aiSummaries = collapsed ? "collapsed" : "expanded";
         if (persist) {
-          try { window.localStorage.setItem(key, collapsed ? "collapsed" : "expanded"); } catch (_) {}
+          try { window.sessionStorage.setItem(key, collapsed ? "collapsed" : "expanded"); } catch (_) {}
         }
       };
       controls.forEach((control) => {

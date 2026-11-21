@@ -316,7 +316,7 @@ The owner accepted every recommendation above and gave these approvals:
 - **Commit e-mail:** keep the history. This repo's local `user.email` is the GitHub noreply address already on 153 commits. The "block command line pushes that expose my email" setting stays an owner step.
 - **`CITATION.cff` `url`:** left out until the site has a host. `repository-code` goes in with PR A.
 - **CPP-BT download:** the 10.7 MB speech metadata from Zenodo is approved for PR B. Its version and SHA-256 go into the first run's record.
-- **Still the owner's:** turning on secret scanning and push protection (Settings → Code security), and the "block pushes that expose my email" setting.
+- **Still the owner's:** turning on secret scanning and push protection (Settings → Code security), and the "block pushes that expose my email" setting. **Done 2026-11-21:** both on (secret scanning and push protection checked `enabled` through the API).
 - **Held:** PR C, C2 and D. C lands after the withheld-Reden PR B, which also edits `publish_dip_pulse_data.py`.
 
 ## What the owner supplies
