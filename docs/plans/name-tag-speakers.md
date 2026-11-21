@@ -1,6 +1,6 @@
 # Speakers printed as `<name>` who are not the chair
 
-Prepares the owner decision for TODOS.md "ADR 0004 follow-ups", bullet "Speakers printed as `<name>` who are not the chair (census finding 8)". The starting point is the receipt [`t4-acquire/name-tag-speakers.tsv`](t4-acquire/name-tag-speakers.tsv) (M4 of [t4-acquire.md](t4-acquire.md)). Measured on 2026-11-20 against main v0.46.35.0 (08d1e72), read-only on the reference store `.context/dip-pulse-site`. At the time of measuring, that store held 803 XML files and 803 protocols, because the running online build had already added 18/62 and 18/90. Nothing is built here.
+Prepares the owner decision for TODOS.md "ADR 0004 follow-ups", bullet "Speakers printed as `<name>` who are not the chair (census finding 8)". The starting point is the receipt [`t4-acquire/name-tag-speakers.tsv`](t4-acquire/name-tag-speakers.tsv) (M4 of [t4-acquire.md](t4-acquire.md)). Measured on 2026-11-20 against main v0.46.35.0 (08d1e72), read-only on the reference store `.context/dip-pulse-site`. At the time of measuring, that store held 803 XML files and 803 protocols, because the running online build had already added 18/62 and 18/90. Nothing is built here. Since then, v0.46.37.0 (#201) added the stage-direction rule for 20/25. It changes only Kaddor's WP 20 Rede, so no WP 18 or 19 figure here moves; line references below are to that version.
 
 **Recommendation in short:** store every one of these turns as what it is (option S): a Rede or a Beitrag of the named speaker, bound by a reviewed list entry. Withholding (option W) needs the same list and the same parser work, and it would then hide about 71,000 correctly printed words.
 
@@ -51,7 +51,7 @@ Everything except 19/99, 19/104 (Woidke) and 19/125 is in WP 18. Inside a `<rede
 
 ### How the parser reads them today, and what that costs beyond the turns themselves
 
-`speech_segments` (`scripts/validate_dip_protocol.py:1240`) makes every `<name>` child of a `<rede>` the Sitzungsleitung. The comment at `:796` says the XML uses `<name>` "for nobody else". These 170 turns are the exceptions. The cost goes beyond the lost words:
+`speech_segments` (`scripts/validate_dip_protocol.py:1250`) makes every `<name>` child of a `<rede>` the Sitzungsleitung. The comment at `:792` says the XML uses `<name>` "for nobody else". These 170 turns are the exceptions. The cost goes beyond the lost words:
 
 - **Two Reden are withheld because of a `<name>`.** 18/6 `ID1800602300` Winkelmeier-Becker (1,251 words): Neu's Zwischenfrage was printed as `<name>`, so Beck's later one is "unresolved". 18/36 `ID1803601400` Pfeiffer (1,803 words): his own consent was lost, so Dehm's Zwischenfrage is "unresolved".
 - **Wrong attribution.** In 18/29 `ID1802903200`, Henning Otte's Zwischenfrage in Neu's Rede (41 words) is counted as Otte's own words. Neu's Rede is the `<name>` turn, so the host's owner seems to speak again.
@@ -82,13 +82,13 @@ A variant of W that withholds the whole host `<rede>` would withhold 77 stored R
 
 ### How each option meets the existing rules
 
-- **Reconciliation that accounts for every `<rede>`** (`reconcile_reden`, `:1752`). For in-rede Reden, the split parts go into `created`, as 6c's do, so each needs a status. A host keeps its own status. The outside Reden are new `<rede>` elements that the raw inventory (`:1714`) never saw. The rule records each one as emitted under its `N<ordinal>` id, and a listed entry that the sitting does not match stops the run. S and W are the same here.
+- **Reconciliation that accounts for every `<rede>`** (`reconcile_reden`, `:1762`). For in-rede Reden, the split parts go into `created`, as 6c's do, so each needs a status. A host keeps its own status. The outside Reden are new `<rede>` elements that the raw inventory (`:1724`) never saw. The rule records each one as emitted under its `N<ordinal>` id, and a listed entry that the sitting does not match stops the run. S and W are the same here.
 - **Split parts and marker ordinals.** A `<name>` that becomes a marker is counted as a marker, so the ordinals of later markers in the same host go up by one. That renames 7 existing units, which the prototype found: 6 nested Beiträge (18/6 Jurk, 18/10 Weiler, 18/24 Krellmann, 18/25 Mutlu, 18/30 Pothmer, 18/101 Hahn) and one withheld unit. Inserting the 6 Fragestunde turns shifts the `sequence` of 228 later turns in three Tagesordnungspunkte (18/3 TOP 6, 18/16 TOP 1, 18/22 TOP 2). Those turns have no `rede_id`, so their ids move too. Pre-release, ids are changed in place. The alternative would be leaving converted markers out of the count and giving them an id form of their own, which costs more than it saves. Again the same for S and W.
 - **`withheld_units`.** Under S, 2 withheld Reden are released (18/6, 18/36: 3,054 words) and no Rede is added. W adds 81 withheld units. Of these, 79 are in WP 18, and they would make up most of what WP 18 withholds (section 3).
 - **The reviewed-units list.** One entry per (sitting, host or `N<ordinal>`, printed person) with its kind and Redner-ID: 141 entries, generated from the TSV. One existing entry moves: 18/29's `withhold` of Annette Groth's § 31 part, `ID1802902700:2`, becomes `ID1802902700:2:2:2`, because Frei's and Bartz's Reden are now split off before it. The digest changes for the 51 sittings the entries touch, so R3 re-reads exactly those.
 - **`erste-reden` (v3).** Under S, a person's first Rede is now the earlier one, so debuts move earlier (section 3). Under W, the earlier Rede is withheld. By v3, a withheld first Rede gives the person **no debut row at all**. W therefore removes these debuts instead of correcting them.
 - **ADR 0004 presidium kinds.** A non-chair `<name>` inside a listed `procedural` `<rede>` (18/4) is an oath answer and stays procedural. No other listed `<rede>` holds one.
-- **The sibling rule for stage directions** (20/25). A `<name>` in parentheses continues the current speaker. The detector here leaves those tags alone. Both rules must use one chair test, so that a tag is read in this order: chair, stage direction, listed speaker. An unlisted tag is refused (section 5).
+- **The stage-direction rule** (20/25, landed in v0.46.37.0). `mark_stage_direction_names` runs first in the parse and renames a `<name>` whose whole text is one pair of parentheses to `<kommentar>`, so the current speaker goes on. Those tags never reach this rule, and the detector here leaves them alone too. A tag is read in this order: stage direction, chair, listed speaker. An unlisted tag is refused (section 5).
 
 ## 3. Figures each option moves
 
@@ -172,7 +172,7 @@ Settled by this plan and not asked:
 
 **Parser** (`scripts/validate_dip_protocol.py`):
 
-- `mark_name_speakers(root, entries)` runs right after `mark_reviewed_units`, before `mark_roleless_chairs` and `split_nested_reden`. It finds every `<name>` in the Sitzungsverlauf that is not the chair. It uses the chair test above, shared with the sibling stage-direction rule (one function, used by both rules and by the census). For each one:
+- `mark_name_speakers(root, entries)` runs right after `mark_reviewed_units`, before `mark_roleless_chairs` and `split_nested_reden`. It finds every `<name>` in the Sitzungsverlauf that is not the chair. It uses the chair test above (one function, used by the rule and by the census). Parenthesised tags are already `<kommentar>` by then. For each one:
   - **Listed:**
     - `rede`, `zwischenfrage`, `befragung_*`, `own_words`: the `<name>` is replaced in place by `<p klasse="redner"><redner id="…">`. The `<name>` structure inside it is built from the tag: titles, first and last name, Fraktion, and `<rolle>` for a role. The tag is kept as the tail. An `own_words` entry uses the host owner's id. A `rede` marker carries `listed_kind="rede"`.
     - `rede` outside a `<rede>`: the `<name>` and its paragraphs, up to the next `<name>`, marker or `<rede>`, are wrapped into `<rede id="N<ordinal>">` with that marker.
@@ -185,7 +185,7 @@ Settled by this plan and not asked:
   - **Stale entry:** an entry that no `<name>` matches stops the run (`ReviewedUnitsError`).
 - `split_nested_reden` splits at a `listed_kind="rede"` marker unconditionally. It skips the Rednerliste and salutation tests. Without the forced split, the prototype left 16 of the 67 Reden unsplit ("Danke schön. – Frau Präsidentin!", "Liebe Frau Präsidentin!", a floor given as "erhält nun … das Wort"). Eight were read as Zwischenfragen, and the other eight withheld their host Rede.
 - `reconcile_reden` records the `N<ordinal>` Reden as emitted.
-- The comment at `:796` is corrected.
+- The comment at `:792` is corrected.
 
 **List** (`scripts/reviewed_units.py`, `scripts/reviewed_units.json`):
 
@@ -197,7 +197,7 @@ Settled by this plan and not asked:
 
 **Rules and versions:**
 
-- `speech_kinds.VERSION` 9 → 10, because the parse output changes. That forces a full re-read.
+- `speech_kinds.VERSION` 10 → 11, because the parse output changes. That forces a full re-read.
 - `WITHHELD_REASONS` gains `unreviewed_name_speaker`, which bumps the export format 20 → 21, as `unreviewed_presidium` bumped it last time.
 - No store schema change. `dip:` binding uses the registry's DIP Personenkennung. If `persist_dip_pulse_store` cannot take a DIP id from a speaker dict today, that is the one persist change.
 - `erste-reden` keeps version 3: its definition does not change.
@@ -228,8 +228,8 @@ Settled by this plan and not asked:
 
 **Replay:**
 
-- One full `--offline --repersist` of a copy of the reference store. The speech rule bump re-reads all 803 reports.
+- One full `--offline --repersist` of a copy of the reference store. The speech rule bump re-reads all 806 reports.
 - `scripts/compare_store_values.py` against a `cp -cR` baseline, following the README recipe "Validate a data correction".
 - Expected: changes in exactly 48 sittings, matching section 3: 47 measured, plus 18/64 for Biermann. 18/4, 18/181 and 18/223 only change their diagnostics. The review checklist's "Figures" check covers this.
 
-**Size:** about 200 lines of parser, 60 of list code, 141 generated entries and 300 lines of tests, plus docs. One PR, one replay. Build it after the stage-direction rule lands, so the two share the chair test.
+**Size:** about 200 lines of parser, 60 of list code, 141 generated entries and 300 lines of tests, plus docs. One PR, one replay. The stage-direction rule it follows has landed (v0.46.37.0), so it can be built once the owner has decided.
