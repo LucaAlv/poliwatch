@@ -276,11 +276,11 @@ No test or gate yet checks that a link is right. Decision N10 (2026-11-09), size
 
 Rows 329 → 399 → 408 (2026-11-21), units 155 → 195 → 201. 27 links are in S1 and S2 (14 before T4), 7 title links are in S2. The counts in the list above are those of the 801 sittings; with the `nov21` batch S2 is 107 TOPs (297 links) and S4 is 64.
 
-**Review passes 1 and 2 done (2026-11-21), offline; the owner's decisions on the disagreements are next, then PR C.** The sheet carries pass 1's verdicts for all 408 rows; pass 2 is in `docs/plans/vote-links-review-pass2.tsv`; the outcome is at the end of `docs/plans/vote-links-review-summary.md`. Results:
-- 354 right and 54 wrong, every wrong row from a pattern (`rule`): A umbrella Drucksache 43 (16 votes), B 2, C 2, D (vote taken in a separate Zusatzpunkt section, new) 5, E (item without its own section, new) 2.
+**Review passes 1 and 2 done and their disagreements decided (2026-11-21), offline; PR C is next.** The sheet carries the verdicts for all 408 rows; pass 2 is in `docs/plans/vote-links-review-pass2.tsv`; the outcome is at the end of `docs/plans/vote-links-review-summary.md`. Results:
+- 356 right and 52 wrong, every wrong row from a pattern (`rule`): A umbrella Drucksache 43 (16 votes), B 2, C 2, D (vote taken in a separate Zusatzpunkt section, new) 5.
 - 0 one-off drops, 0 flags, 0 unsure.
 - S4, the random stratum: 0 errors in 64, so the unreviewed plain links are wrong at under 4.6% (95%).
-- Pass 2 agreed on 116 of 119 rows. It calls 703 and 704 (19/197) right where pass 1 said wrong (E), and gives vote 317 another cause.
+- Pass 2 agreed on 116 of 119 rows. The three disagreements were decided on 2026-11-21 (owner's go, after a third reader agreed): 703 and 704 (19/197) right, vote 317 wrong with cause A, reached by the title path.
 - No online look is needed (0 requests).
 
 PR C has to add the missing right links for 317, 375, 557 and the five D votes, not only drop the wrong ones.
