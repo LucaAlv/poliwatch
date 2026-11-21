@@ -235,6 +235,17 @@ class SheetTests(unittest.TestCase):
         code, _, err = self.run_sheet("--batch-protocols", self.batch_file("sitting\n20/999\n"), "--batch-name", "T 4")
         self.assertEqual((code, "--batch-name takes" in err), (2, True))
 
+    def test_two_batches_need_a_name_each_and_share_no_sitting(self) -> None:
+        one = self.batch_file("sitting\n20/999\n")
+        code, _, err = self.run_sheet("--batch-protocols", one, "--batch-protocols", one, "--batch-name", "t4")
+        self.assertEqual((code, "one --batch-name for each --batch-protocols" in err), (2, True), err)
+        code, _, err = self.run_sheet("--batch-protocols", one, "--batch-protocols", one,
+                                      "--batch-name", "t4", "--batch-name", "t4")
+        self.assertEqual((code, "two batches are named t4" in err), (2, True), err)
+        code, _, err = self.run_sheet("--batch-protocols", one, "--batch-protocols", one,
+                                      "--batch-name", "t4", "--batch-name", "later")
+        self.assertEqual((code, "20/999 is in the batches t4 and later" in err), (2, True), err)
+
 
 class BatchDrawTests(unittest.TestCase):
     def links(self, protocols: list[str]) -> list[dict[str, Any]]:
@@ -245,10 +256,19 @@ class BatchDrawTests(unittest.TestCase):
     def test_a_batch_leaves_the_first_draw_as_it_was(self) -> None:
         before = review.strata(self.links(["20/1", "20/2"]), 7, 5, 3)
         after = review.strata(self.links(["20/1", "20/2", "18/1", "18/2", "18/3", "18/4"]), 7, 5, 3,
-                              frozenset({"18/1", "18/2", "18/3", "18/4"}))
+                              [frozenset({"18/1", "18/2", "18/3", "18/4"})])
         self.assertEqual({position for position in after if position < 40}, set(before))
         # 80 plain batch links: 16% is 12.8, drawn as 13.
         self.assertEqual(len([position for position in after if position >= 40]), 13)
+
+    def test_a_second_batch_leaves_the_earlier_draws_as_they_were(self) -> None:
+        first = frozenset({"18/1", "18/2", "18/3", "18/4"})
+        one = review.strata(self.links(["20/1", "20/2", "18/1", "18/2", "18/3", "18/4"]), 7, 5, 3, [first])
+        two = review.strata(self.links(["20/1", "20/2", "18/1", "18/2", "18/3", "18/4", "21/1"]), 7, 5, 3,
+                            [first, frozenset({"21/1"})])
+        self.assertEqual({position for position in two if position < 120}, set(one))
+        # 20 plain links in the second batch: the minimum of 10 is drawn.
+        self.assertEqual(len([position for position in two if position >= 120]), 10)
 
     def test_the_batch_sample_size(self) -> None:
         self.assertEqual([review.batch_sample_size(pool) for pool in (0, 3, 51, 62, 63, 100)], [0, 3, 10, 10, 11, 16])
