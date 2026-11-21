@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.38.0] - 2026-11-21
+
+A namentliche Abstimmung is now linked to the Tagesordnungspunkt where it was actually called, not to every agenda item that shares one of its Drucksachen. 408 of the 710 links were checked one by one against the Plenarprotokoll and DIP, read by AI agents in two passes, with the owner deciding the three cases where the passes disagreed: 356 were right and 52 wrong, and all 52 come from four patterns that the link rule now handles. On the 806 stored sittings the links go from 710 to 676. All 52 wrong links are gone and all 356 right ones stay. A store built before this version owes one `--offline --repersist`, which re-reads every sitting from its cached XML.
+
+### Changed
+
+- **A vote is linked to the section where it was taken, in six steps.** Step 1 is the existing match: a shared Drucksache, printed under the agenda item or linked through DIP, or else a unique title. Then:
+  - the section without heading and Rede in which the chair names the vote's Drucksache wins (`basis = drucksache_call`);
+  - a vote on one Einzelplan goes to that Einzelplan's section (`einzelplan`);
+  - an agenda item whose shared Drucksachen all sit inside another match's is dropped;
+  - an item reached only through a DIP position that touches it on one page is dropped;
+  - among the rest, the "Dritte Beratung" section is kept.
+  
+  A Geschäftsordnungsantrag no longer lends an agenda item the Drucksachen of the Vorlagen it only names, and Drucksache numbers compare without leading zeros, with Bundesrat numbers left out.
+- **The figures that move** on the 806 stored sittings, each from the old value to the new one:
+  - links (`agenda_item_votes`): from 710 to 676;
+  - by basis: `drucksache_xml` from 180 to 149, `drucksache_vorgang` from 510 to 485, `title` from 20 to 17, plus the new `einzelplan` 18 and `drucksache_call` 7;
+  - votes linked to two or more agenda items: from 17 (61 links) to 0;
+  - votes linked to no agenda item went from 70 to 60;
+  - agenda items with two or more votes: from 107 (297 links) to 95 (264 links);
+  - `vote_proceedings`: from 833 to 832.
+  
+  Each new value is more correct, for these reasons:
+  - The 34 links fewer are the wrong links of the review. A budget vote reached every Einzelplan through the Haushaltsgesetz (pattern A). A procedural motion lent its Drucksachen (B). A neighbouring Bundeswehr mandate shared a boundary page (C). A Zusatzpunkt called in a section of its own was linked to the debate it was taken with (D).
+  - The links in the new categories, and the 10 votes that now have an agenda item, were each read in the protocol and checked right.
+  - `vote_proceedings` follows the narrower links. Votes 318 and 319 (18/71) lose the Finanzplan they were not on, and vote 375 (18/141) gains the one its Einzelplan section debated.
+  
+  Nothing else moves: Reden, Beiträge, persons, vote totals, outcomes, Abweichler and every Fakt value are unchanged.
+- **The vote panel moves with the link.** For example, votes 980 and 961 now show under TOP II instead of TOP I. The five Zusatzpunkt votes 476, 477, 480, 579 and 588 now show under their own Zusatzpunkt.
+
+### Added
+
+- **`votes.top_link_step` says which step decided a vote's agenda items** (`none`, `match`, `call`, `einzelplan`, `narrowed`). `agenda_item_votes.basis` takes the two new values. The store schema is 15 and the export format 21. The empty column `agenda_item_votes.review_note` and the empty table `vote_link_reviews` are reserved for the next step, in which single reviewed links are dropped or flagged on the vote page.
+- **`scripts/reviewed_vote_links.json` records every reviewed link with its verdict.** It holds 428 entries: the 408 of the sample, 8 right links the review named, and 12 links the new rule made, each read. DATA.md states the review's figures from this file at export.
+  - A test checks every entry against a frozen copy of the 156 reviewed sittings.
+  - The store gate checks every entry against the store.
+  - A data release (`--publish`) refuses any vote that a later step decided, or that is linked to two or more agenda items, unless each of its links has a matching `right` entry. It also refuses any link whose entry says `wrong`.
+- **`scripts/vote_link_review.py --entries` merges a filled review sheet into that file**, refusing an empty or changed verdict. A regenerated sheet keeps the verdicts it already holds.
+
+### Fixed
+
+- **A rule change now reaches every stored report.** Every report, kept or fresh, is placed by the current rule right before it is stored. The offline render places every report it loads by the same rule. A sitting cached before the parser read the chair's Drucksache numbers is re-read from its XML.
+- **A carried-forward sitting keeps all its cached votes.** This includes two agenda items with the same id.
+
 ## [0.46.37.0] - 2026-11-21
 
 A stage direction the Plenarprotokoll prints in the chair's element no longer cuts a speech short. In sitting 20/25 the source prints "(Vizepräsident Wolfgang Kubicki räuspert sich)" as if the chair took the floor, and Lamya Kaddor's closing words after it were read as chair text and stored nowhere. They now count to her Rede. One figure moves: her Rede `ID202506700` goes from 783 to 835 words, 16 to 18 paragraphs and 5,317 to 5,661 characters. No other Rede, Beitrag or withheld Rede changes in any of the 806 sittings held, and the number of Reden stays the same everywhere (20/25: 115). The speech-counting rule goes from version 9 to 10, so a store built before this version owes one `--offline --repersist`; until then the facts, export and offline render refuse it.
