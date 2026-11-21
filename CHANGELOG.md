@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.39.0] - 2026-11-22
+
+The owner's ten open decisions before the first data release are recorded, and three legal gaps the research on ADR 0003 found are closed. No stored figure, vote link or export row changes.
+
+### Changed
+
+- **The site keeps its two settings for one tab, not for good.** The dark-theme choice and the AI-summary collapse state are stored in `sessionStorage` instead of `localStorage`, so they are gone once the tab closes. A reader who wants the dark theme picks it again in a new tab.
+- **The Datenschutz page names its legal bases.** For the people in the data it gives Art. 6 Abs. 1 lit. f and Art. 9 Abs. 2 lit. e DSGVO and, for the published protocol text, Art. 85 DSGVO with § 23 MStV; it names the recipients, the permanent versioned archive and how an objection under Art. 21 is handled. The storage section names § 25 Abs. 2 Nr. 2 TDDDG.
+- **The data notes say what the speech text leaves out.** `LICENSE-DATA.md` and the codebook entries for `speeches.text` and `contributions.text` now say they hold only the speaker's own words: applause, Zwischenrufe and chair remarks the protocol prints as their own element, and other speakers' turns, are not in them.
+- **The root `LICENSE` says which files are not under MIT.** The Plenarprotokoll XML, roll-call pages and MdB-Stammdaten excerpt kept as test fixtures, and the protocol-derived data under `scripts/` and `docs/`, carry the Bundestag's source line and the DIP terms.
+
+### For contributors
+
+- The owner's decisions of 2026-11-21 are recorded in TODOS.md, ADR 0003, 0004 and 0005, `docs/release-review.md` and `docs/plans/v1-scope-review.md`: the e-mail on the roll-call and Stammdaten terms (sent, answer awaited), the name-tag speakers stored as Reden or Beiträge, nominations no longer counted as Reden (O13), ADR 0004 confirmed, the CPP-BT thresholds signed off, a 98% minimum coverage per analysis period, the trademark check, Zenodo set up, GitHub secret scanning on, and the legal questions answered by research with question 4 sent to a free law clinic.
+
 ## [0.46.38.0] - 2026-11-21
 
 A namentliche Abstimmung is now linked to the Tagesordnungspunkt where it was actually called, not to every agenda item that shares one of its Drucksachen. 408 of the 710 links were checked one by one against the Plenarprotokoll and DIP, read by AI agents in two passes, with the owner deciding the three cases where the passes disagreed: 356 were right and 52 wrong, and all 52 come from four patterns that the link rule now handles. On the 806 stored sittings the links go from 710 to 676. All 52 wrong links are gone and all 356 right ones stay. A store built before this version owes one `--offline --repersist`, which re-reads every sitting from its cached XML.

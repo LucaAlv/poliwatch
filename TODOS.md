@@ -1638,7 +1638,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 - The host and its log retention, after the hosting decision.
 - The supervisory authority: the Landesdatenschutzbehörde of the operator's Land.
 
-Until then both pages render these values as `data-operator-missing` placeholders. Also open for the lawyer: § 25 TDDDG on the two localStorage entries (ADR 0003, question 8).
+Until then both pages render these values as `data-operator-missing` placeholders. ~~Also open for the lawyer: § 25 TDDDG on the two localStorage entries (ADR 0003, question 8).~~ Answered 2026-11-21: both moved to `sessionStorage`, and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.
 
 Done when no generated page carries `data-operator-missing`. The deploy gate in "Site hosting plan" refuses to publish until then.
 
@@ -1675,6 +1675,7 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 - **Before the public site:** home address in the Impressum (question 1); an order-processing agreement with the host (Art. 28 DSGVO, with "Site hosting plan"). When the surface cuts drop the AI summaries, drop `bundestag-pulse-ai-summaries-v1` from `DATENSCHUTZ_STORAGE_KEYS` with them (the demo test fails until both go together); today 4,424 pages of the reference build carry the toggle, so the page is true.
 - **Done 2026-11-21 (owner-decisions branch):** `LICENSE-DATA.md` and the data dictionary say that `speeches.text` and `contributions.text` hold only the speaker's own words, without applause, Zwischenrufe or chair text (question 7; 13 of 61,559 stored Reden carry "(Beifall" printed inline in a paragraph, the rest none); `datenschutz.html` names the legal bases, recipients, the archive and Art. 21 (question 4), and the two settings moved to `sessionStorage` with § 25 Abs. 2 Nr. 2 TDDDG named (question 8, checked in a browser on the demo build); the root `LICENSE` names the source and terms of the Bundestag material held in the repository (question 2).
 - **Merge the research note to main** (a docs PR from its branch).
+- **Left by the review of the owner-decisions PR (2026-11-22), wording only:** (a) `datenschutz.html` says the settings hold "nur in dem Tab"; a duplicated tab copies `sessionStorage`, so add "oder in einer Kopie dieses Tabs". (b) `LICENSE-DATA.md` and the codebook could name the 13 Reden that keep "(Beifall" printed inline in a paragraph. (c) `docs/project-documentation.md:505` still says `DATENSCHUTZ_STORAGE_KEYS` lists localStorage keys; `docs/bundestag-puls-architecture.*` and `docs/designs/fixed-public-experience.md` still say localStorage. (d) Re-check the Datenschutz sentences on Art. 85 / § 23 MStV and on releases that never change once the clinic answers question 4. (e) TODOS item 17 under the Impressum/licence ship findings: the people in the data now have a stated basis; server logs and e-mail contact still do not.
 
 **Why:** The data release publishes personal data and DIP-derived text; a release cannot be changed once cited.
 
