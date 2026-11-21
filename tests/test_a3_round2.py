@@ -491,3 +491,54 @@ class PresidiumFragestundeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def kaddor(direction):
+    """20/25 TOP 5, cut down: Lamya Kaddor's Rede ``ID202506700`` with the
+    stage direction the source prints as a ``<name>`` before her closing words."""
+    xml = ('<dbtplenarprotokoll wahlperiode="20" sitzung-nr="25"><sitzungsverlauf>'
+           '<tagesordnungspunkt top-id="Tagesordnungspunkt 5"><p klasse="T_fett">Vereinbarte Debatte zum Bevölkerungsschutz</p>'
+           '<name>Vizepräsident Wolfgang Kubicki:</name><p klasse="J_1">Nächste Rednerin ist Lamya Kaddor.</p>'
+           '<rede id="ID202506700"><p klasse="redner"><redner id="11005095"><name><vorname>Lamya</vorname>'
+           '<nachname>Kaddor</nachname><fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion></name></redner>'
+           'Lamya Kaddor (BÜNDNIS 90/DIE GRÜNEN):</p>'
+           '<p klasse="J_1">Hybride Angriffe sind nicht erst ein Problem seit Beginn des Krieges.</p>'
+           f'<name>{direction}</name>'
+           '<p klasse="J_1">– Sofort, Herr Präsident. – Eines ist aber auch klar.</p>'
+           '<p klasse="J">Ich danke Ihnen für Ihre Aufmerksamkeit.</p>'
+           '<kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN, bei der SPD und der FDP)</kommentar>'
+           '<name>Vizepräsident Wolfgang Kubicki:</name><p klasse="J_1">Vielen Dank, Frau Kollegin.</p></rede>'
+           '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+    return dip.parse_protocol_xml(xml)['agenda_items'][0]['speeches']
+
+
+class StageDirectionNameTests(unittest.TestCase):
+    """ADR 0004, amendment of 2026-11-20 (20/25): a stage direction the source
+    prints as a ``<name>`` in parentheses is no chair turn; the speaker goes on."""
+
+    def test_a_parenthesised_name_continues_the_speaker(self):
+        speeches = kaddor('(Vizepräsident Wolfgang Kubicki räuspert sich)')
+        self.assertEqual(len(speeches), 1)
+        self.assertEqual(speeches[0]['paragraphs'], [
+            'Hybride Angriffe sind nicht erst ein Problem seit Beginn des Krieges.',
+            '– Sofort, Herr Präsident. – Eines ist aber auch klar.',
+            'Ich danke Ihnen für Ihre Aufmerksamkeit.'])
+        self.assertNotIn('räuspert', speeches[0]['text'])
+
+    def test_whitespace_around_the_parentheses_does_not_matter(self):
+        speeches = kaddor(' \n (Vizepräsident Wolfgang Kubicki räuspert sich) \n')
+        self.assertEqual(len(speeches[0]['paragraphs']), 3)
+
+    def test_the_chair_name_that_follows_still_ends_the_speaker(self):
+        speeches = kaddor('(Vizepräsident Wolfgang Kubicki räuspert sich)')
+        self.assertNotIn('Vielen Dank, Frau Kollegin.', speeches[0]['text'])
+
+    def test_a_chair_name_is_still_chair_text(self):
+        # Value: protects=a <name> with a parenthesis inside its pair stays a chair turn; fails_when=the rule widens to a greedy or nested match;
+        # why_new=extends this table (row 5); seam=none; no_claim=real 20/25 source (cut-down fixture)
+        for name in ('Vizepräsident Wolfgang Kubicki:', 'Vizepräsidentin Petra Pau',
+                     'Vizepräsident Wolfgang Kubicki: (räuspert sich)', '(Vizepräsident Wolfgang Kubicki:',
+                     '(Vizepräsident Wolfgang Kubicki:) (räuspert sich)'):
+            with self.subTest(name=name):
+                self.assertEqual(kaddor(name)[0]['paragraphs'],
+                                 ['Hybride Angriffe sind nicht erst ein Problem seit Beginn des Krieges.'])

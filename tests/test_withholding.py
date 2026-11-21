@@ -280,7 +280,7 @@ class ReviewedListTests(unittest.TestCase):
             return {"report": {"protocol": protocol, "validation_summary": {"speech_kinds_version": version}}}
 
         no_digest, other_list = cached("18/7"), cached("18/2", reviewed_units.digest([]))
-        old_rule, both = cached("18/8", reviewed_units.digest([]), sk.VERSION - 1), cached("18/9", version=sk.VERSION - 1)
+        old_rule, both = cached("18/8", reviewed_units.digest([]), sk.VERSION - 1), cached("18/9", version=sk.VERSION - 1)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
         self.assertEqual(build.stale_causes(no_digest["report"]), ("reviewed",))
         self.assertEqual(build.stale_causes(other_list["report"]), ("reviewed",))
         self.assertEqual(build.stale_causes(old_rule["report"]), ("rule",))
@@ -294,7 +294,7 @@ class ReviewedListTests(unittest.TestCase):
         with self.assertRaises(build.CachedReportError) as caught:
             build.require_parsed_reports([old_rule, both])
         message = str(caught.exception)
-        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/8, 18/9)", message)
+        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/8, 18/9)", message)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
         self.assertIn("1 were parsed under other entries of scripts/reviewed_units.json than it holds now (18/9)", message)
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.37.0] - 2026-11-21
+
+A stage direction the Plenarprotokoll prints in the chair's element no longer cuts a speech short. In sitting 20/25 the source prints "(Vizepräsident Wolfgang Kubicki räuspert sich)" as if the chair took the floor, and Lamya Kaddor's closing words after it were read as chair text and stored nowhere. They now count to her Rede. One figure moves: her Rede `ID202506700` goes from 783 to 835 words, 16 to 18 paragraphs and 5,317 to 5,661 characters. No other Rede, Beitrag or withheld Rede changes in any of the 806 sittings held, and the number of Reden stays the same everywhere (20/25: 115). The speech-counting rule goes from version 9 to 10, so a store built before this version owes one `--offline --repersist`; until then the facts, export and offline render refuse it.
+
+### Fixed
+
+- **A `<name>` element whose whole text is one pair of parentheses, with no parenthesis inside, is read as a stage direction, not a chair turn.** The speaker before it goes on. A chair label that holds a parenthesis, such as a constituency in "Norbert Müller (Potsdam) (DIE LINKE):", is read as before. The rule is an amendment to ADR 0004; the source fault is listed as E12 in `docs/source-errors.md`, and `docs/data-methods.md` describes it for readers of the data.
+
 ## [0.46.36.0] - 2026-11-21
 
 The sheet for checking vote links by hand now covers the 806-sitting reference store, and the store refuses a few more ways a report could place a vote wrongly. No stored figure, vote link, page or export changes. Running the new checks on all 806 cached reports of the reference store refuses none of them.

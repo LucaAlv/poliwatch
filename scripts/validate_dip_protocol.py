@@ -968,6 +968,20 @@ def mark_reviewed_units(root: ET.Element, entries: list[dict[str, str]]) -> None
         found[0].set("reviewed_reason", entry["reason"])
 
 
+def mark_stage_direction_names(root: ET.Element) -> None:
+    """ADR 0004 (20/25): a ``<name>`` whose whole text stands in parentheses is a
+    stage direction the source printed in the chair's element, not a chair turn:
+    20/25 ``ID202506700`` holds ``<name>(Vizepräsident Wolfgang Kubicki räuspert
+    sich)</name>`` before Lamya Kaddor's closing words. It is renamed
+    ``<kommentar>``, which no reader of the parse treats as a turn, so the
+    speaker before it goes on. A ``<name>`` that opens with a speaker's label is
+    untouched, whatever parentheses it holds.
+    """
+    for name in root.iter("name"):
+        if len(name) == 0 and re.fullmatch(r"\([^()]*\)", elem_text(name)):
+            name.tag = "kommentar"
+
+
 def mark_presidium_fraktionsreden(root: ET.Element) -> None:
     """ADR 0004: a Vizepräsident(in) who owns a ``<rede>`` and is printed with a
     ``<fraktion>`` gives that Fraktion's Rede (18/46 Pau). The presidium
@@ -1763,6 +1777,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     """Parse one Plenarprotokoll XML. ``reviewed``: the reviewed-list entries
     of this sitting; by default those of ``scripts/reviewed_units.json``."""
     root = ET.fromstring(xml_text)
+    mark_stage_direction_names(root)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     sitting_entries = reviewed_units.for_sitting(sitting) if reviewed is None else reviewed
     # Withhold entries name a unit as emitted; ADR 0004's kinds a whole source
