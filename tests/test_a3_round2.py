@@ -534,8 +534,11 @@ class StageDirectionNameTests(unittest.TestCase):
         self.assertNotIn('Vielen Dank, Frau Kollegin.', speeches[0]['text'])
 
     def test_a_chair_name_is_still_chair_text(self):
+        # Value: protects=a <name> with a parenthesis inside its pair stays a chair turn; fails_when=the rule widens to a greedy or nested match;
+        # why_new=extends this table (row 5); seam=none; no_claim=real 20/25 source (cut-down fixture)
         for name in ('Vizepräsident Wolfgang Kubicki:', 'Vizepräsidentin Petra Pau',
-                     'Vizepräsident Wolfgang Kubicki: (räuspert sich)', '(Vizepräsident Wolfgang Kubicki:'):
+                     'Vizepräsident Wolfgang Kubicki: (räuspert sich)', '(Vizepräsident Wolfgang Kubicki:',
+                     '(Vizepräsident Wolfgang Kubicki:) (räuspert sich)'):
             with self.subTest(name=name):
                 self.assertEqual(kaddor(name)[0]['paragraphs'],
                                  ['Hybride Angriffe sind nicht erst ein Problem seit Beginn des Krieges.'])
