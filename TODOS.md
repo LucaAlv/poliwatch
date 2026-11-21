@@ -24,7 +24,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - ~~Before T4: facts must treat a sitting with withheld Reden as partial (P1 under "Found by PR 2's ship review" in the coverage gate entry).~~ **Built in PR A of `docs/plans/withheld-before-t4.md`** (2026-11-14, ADR 0005 "Facts").
 3. "Main and stable releases": ~~the review checklist~~ (done 2026-11-15) and ~~the policy text~~ (`docs/release-policy.md`, 2026-11-20). Left for the first release: the swap of the `CLAUDE.md` section on the day of the first `--publish`, ~~the owner's sign-off of the thresholds~~ (signed off 2026-11-21), and the first review record.
 4. "Rename the project to open-parlament". ~~"Comparison and joinable ids in DATA.md"~~ is written (2026-11-20, see Completed); "Vergleich section in DATA.md: what it leaves open" holds the rest.
-5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", ~~a Zenodo account~~ (set up 2026-11-21), ~~the trademark check~~ (done 2026-11-21, no live hit).
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", ~~a Zenodo account~~ (set up 2026-11-21), ~~the trademark check~~ (done 2026-11-21, no live hit). Before the first `--publish` (owner, 2026-11-21): ADR 0003 question 4 in writing to the Cyber Law Clinic Hamburg, per "ADR 0003 legal questions: what the research leaves to do".
 6. The first release: the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only). Items 1–5 of "Release pipeline: deferred /ship review findings", which had to come first, are done (2026-11-17).
 7. "Public repository: follow-ups": the two GitHub settings are on (2026-11-21); the test-excerpt question rides on the e-mail of item 5.
 
@@ -39,7 +39,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 2. ~~"Persist or prove the vote outcome and Abweichler count", before slice 2.~~ **Done in #160 (v0.44.0.0):** schema 13, export format 19.
 3. "Politikfelder over time: which Zusammenschluss emphasises what", the first analysis. It takes C1's seat table where it needs a denominator. Agenda-item tag coverage in WP 18 is 60.7% (1,445 of 2,381 items, the tagging replayed over the reports of the 801-sitting store on 2026-11-18; its stored tables read 1,443 until the next repersist; 59.7% was measured before T4): check it before calling the analysis good enough. The Reden-character coverage in `docs/plans/v1-scope-review.md` E9 (92.7% for WP 18) is still the 2026-11-06 measure: in the stored tables of the 801-sitting store, 91.6% of WP 18 Reden characters sit under a TOP with a Politikfeld (71,915,490 of 78,488,817, read 2026-11-19), and 91.9% once the two Einzelplan 21 TOPs (25 Reden, 192,790 characters) are repersisted. Re-measure all four Wahlperioden with the analysis.
 4. Abstimmungen: "B4 extractive fallback: finish validation locally" and the rest of "Abstimmungen for the daily view".
-5. "Site hosting plan": a German host with SSH, provider to pick; `generation_file_href` changes; `data/` is not deployed wholesale; the deploy gate. Then the Impressum inputs and Datenschutz values.
+5. "Site hosting plan": a German host with SSH, provider to pick; `generation_file_href` changes; `data/` is not deployed wholesale; the deploy gate. Then the Impressum inputs and Datenschutz values. Before going public: the home address in the Impressum and the theme in `sessionStorage` (ADR 0003 questions 1 and 8, amendment 2026-11-21).
 6. Automatic main releases: "Scheduled data-release workflow", with an alert when an update fails.
 7. "Reader test before launch".
 
@@ -1665,6 +1665,20 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 
 **Effort:** S (check and e-mail); M if the source must change
 **Priority:** P2
+**Depends on:** None
+
+### ADR 0003 legal questions: what the research leaves to do
+
+**What:** The owner decided on 2026-11-21 (ADR 0003, amendment 2026-11-21) to answer the open legal questions by research instead of a lawyer: `docs/research/adr-0003-legal-questions-2026-11.md` (branch `claude/adoring-thompson-8d2b43`, a74d630), research, not legal advice. Left:
+- **Before the first `--publish`, question 4.** Write to the Cyber Law Clinic of Universität Hamburg (https://www.jura.uni-hamburg.de/studium/lehrprojekte/law-clinics/cyber-law-clinic/beratung.html; free, not liable, „Bedürftigkeit“ is a step with no stated criteria). Bring the note's proposed bases (Art. 6 Abs. 1 lit. f, Art. 9 Abs. 2 lit. e, Art. 85 with § 23 MStV for third parties named in speeches), a one-page record of processing (Art. 30; the small-organisation exemption does not apply to Art. 9 data) with a DPIA threshold note (Art. 35), and a takedown process (withhold one Rede on a justified request with a reason, as refused Reden are withheld; correct in the next main release; ask Zenodo to restrict a stable version). Ask whether they hold. If the clinic declines, ask the Landesdatenschutzbeauftragte of the operator's Land. Record the answer in ADR 0003. The owner writes the inquiry; an agent can draft it.
+- **Before the first data release, optional from the note:** keep paragraph breaks in `speeches.text` and `contributions.text` (question 7; a speech-text cleaner of its own, a replay, `char_count` moves by one per extra break); say in `LICENSE-DATA.md` that the quoted wording in `documents.forderung`, `vote_passages` and `votes.inversion_excerpt` stays under the DIP layer, and reword „The DIP terms, in particular no. 5, continue to apply to any reuse“ so it reads as the source's notice, not a term (question 2).
+- **Before the public site:** home address in the Impressum (question 1); the theme in `sessionStorage` and the basis sentence „Sie gilt nur bis zum Schließen des Browsers“ (question 8); an order-processing agreement with the host (Art. 28 DSGVO, with "Site hosting plan").
+- **Merge the research note to main** (a docs PR from its branch).
+
+**Why:** The data release publishes personal data and DIP-derived text; a release cannot be changed once cited.
+
+**Effort:** S (inquiry and record), M with the paragraph breaks
+**Priority:** P1 (question 4), P2 (the rest)
 **Depends on:** None
 
 ### Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)
