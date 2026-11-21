@@ -1942,7 +1942,10 @@ def persist_report(
     if not protocol_id:
         raise ValueError("Report has no protocol.id")
 
-    derive.require_vote_shape(report)
+    try:
+        derive.require_vote_shape(report)
+    except ValueError as exc:
+        raise ValueError(f"Report {protocol.get('dokumentnummer') or protocol_id}: {exc}") from exc
     # The links are the rule's (vote_links), never a placement a cached report
     # kept from an older rule or a carry-forward.
     misplaced = vote_links.placement_errors(report)

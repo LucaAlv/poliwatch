@@ -25,7 +25,9 @@ sittings, ``docs/plans/t4-acquire/restored-sittings.tsv``). Their rows carry
 take them in full like any sitting. S4 keeps them apart: the draw above runs
 over the other sittings alone, so it picks the links it picked before the
 batch was fetched, and a second draw takes ``BATCH_RATE`` of the batch's plain
-links, at least ``BATCH_MIN``.
+links, at least ``BATCH_MIN``. Both options repeat, one name per list, for
+sittings fetched later still: the batches are drawn in the order given, so a
+new one changes no earlier draw.
 
 A row's key is ``(vote_id, protocol, top_id, top_occurrence)``: ``top_occurrence``
 counts the TOPs of the sitting with the same ``top_id`` up to this one, in item
@@ -56,7 +58,7 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 import derive
 import persist_dip_pulse_store as pulse_store
@@ -192,14 +194,16 @@ def batch_sample_size(pool: int) -> int:
 
 
 def strata(links: list[dict[str, Any]], seed: int, sample_vorgang: int, sample_xml: int,
-           batch: frozenset[str] = frozenset()) -> dict[int, list[str]]:
-    """Row position in ``links`` -> its strata. The links of the ``batch``
-    sittings stay out of the two S4 draws and get their own, after them."""
+           batches: Sequence[frozenset[str]] = ()) -> dict[int, list[str]]:
+    """Row position in ``links`` -> its strata. The links of each batch's
+    sittings stay out of the two S4 draws and get a draw of their own after
+    them, in the order of ``batches``."""
     per_vote = Counter(link["vote_id"] for link in links)
     per_top = Counter(link["agenda_item_id"] for link in links)
     chosen: dict[int, list[str]] = {}
     plain: dict[str, list[int]] = {"drucksache_vorgang": [], "drucksache_xml": []}
-    batch_plain: list[int] = []
+    batch_of = {sitting: index for index, batch in enumerate(batches) for sitting in batch}
+    batch_plain: list[list[int]] = [[] for _ in batches]
     for position, link in enumerate(links):
         marks = []
         if per_vote[link["vote_id"]] > 1:
@@ -211,7 +215,8 @@ def strata(links: list[dict[str, Any]], seed: int, sample_vorgang: int, sample_x
         if marks:
             chosen[position] = marks
         elif link["basis"] in plain:
-            (batch_plain if link["document_number"] in batch else plain[link["basis"]]).append(position)
+            index = batch_of.get(link["document_number"])
+            (plain[link["basis"]] if index is None else batch_plain[index]).append(position)
     rng = random.Random(seed)
     for basis, size in (("drucksache_vorgang", sample_vorgang), ("drucksache_xml", sample_xml)):
         pool = plain[basis]
@@ -219,8 +224,9 @@ def strata(links: list[dict[str, Any]], seed: int, sample_vorgang: int, sample_x
             raise ReviewInputError(f"--sample-{basis.split('_')[1]} {size} exceeds the {len(pool)} plain {basis} links")
         for position in rng.sample(pool, size):
             chosen[position] = ["S4"]
-    for position in rng.sample(batch_plain, batch_sample_size(len(batch_plain))):
-        chosen[position] = ["S4"]
+    for pool in batch_plain:
+        for position in rng.sample(pool, batch_sample_size(len(pool))):
+            chosen[position] = ["S4"]
     return chosen
 
 
@@ -279,7 +285,10 @@ def _strata_counts(rows: Iterable[Mapping[str, str]]) -> dict[str, int]:
 
 
 def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: int,
-                batch: frozenset[str] = frozenset(), batch_name: str = "-") -> tuple[list[dict[str, str]], dict[str, Any]]:
+                batches: Mapping[str, frozenset[str]] | None = None) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    """The sheet's rows and its counts. ``batches``: name -> sittings, in draw order."""
+    batches = dict(batches or {})
+    batch_name = {sitting: name for name, sittings in batches.items() for sitting in sittings}
     database = output_dir / STORE
     if not database.is_file():
         raise ReviewInputError(f"no store at {database}")
@@ -288,7 +297,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
     try:
         pulse_store.require_current_schema(conn)
         links = sorted(stored_links(conn), key=_sort_key)
-        unknown = batch - {row[0] for row in conn.execute("SELECT document_number FROM protocols")}
+        unknown = set(batch_name) - {row[0] for row in conn.execute("SELECT document_number FROM protocols")}
         # Votes of one sitting that ended with the same tally: the text cannot
         # say whose announcement a match is.
         twins = {tuple(row) for row in conn.execute(
@@ -299,7 +308,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
     if unknown:
         raise ReviewInputError(f"the batch list names {len(unknown)} sittings the store does not hold: "
                                + ", ".join(sorted(unknown)[:5]))
-    chosen = strata(links, seed, sample_vorgang, sample_xml, batch)
+    chosen = strata(links, seed, sample_vorgang, sample_xml, list(batches.values()))
     tops_of_vote: dict[str, list[str]] = {}
     for link in links:
         tops_of_vote.setdefault(link["vote_id"], []).append(f"{link['top_id']}#{link['top_occurrence']}")
@@ -324,7 +333,7 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
         own = f"{link['top_id']}#{link['top_occurrence']}"
         rows.append({
             "stratum": "+".join(chosen[position]),
-            "batch": batch_name if number in batch else "-",
+            "batch": batch_name.get(number, "-"),
             "protocol": number,
             "date": _cell(link["date"]),
             "vote_id": _cell(link["vote_id"]),
@@ -344,9 +353,10 @@ def build_sheet(output_dir: Path, seed: int, sample_vorgang: int, sample_xml: in
         "links": len(links),
         "rows": len(rows),
         "strata": _strata_counts(rows),
-        "batch_links": sum(1 for link in links if link["document_number"] in batch),
-        "batch_strata": _strata_counts(row for row in rows if row["batch"] != "-"),
-        "batch_rows": sum(1 for row in rows if row["batch"] != "-"),
+        "batches": {name: {"links": sum(1 for link in links if link["document_number"] in sittings),
+                           "strata": _strata_counts(row for row in rows if row["batch"] == name),
+                           "rows": sum(1 for row in rows if row["batch"] == name)}
+                    for name, sittings in batches.items()},
         # A unit is one vote of S1, one TOP of S2, or one row of S3 or S4 in no other stratum.
         "units": len({row["vote_id"] for row in rows if "S1" in row["stratum"]})
         + len({(row["protocol"], row["top_id"], row["top_occurrence"]) for row in rows if "S2" in row["stratum"]})
@@ -378,9 +388,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=20261114, help="seed of the S4 draw (default: 20261114)")
     parser.add_argument("--sample-vorgang", type=int, default=34, help="plain drucksache_vorgang links in S4 (default: 34)")
     parser.add_argument("--sample-xml", type=int, default=16, help="plain drucksache_xml links in S4 (default: 16)")
-    parser.add_argument("--batch-protocols", type=Path, help="TSV with a sitting column: the sittings of a later batch, "
-                        "kept out of the S4 draw above and sampled on their own")
-    parser.add_argument("--batch-name", default="t4", help="the batch column's value on those sittings' rows (default: t4)")
+    parser.add_argument("--batch-protocols", type=Path, action="append", default=[],
+                        help="TSV with a sitting column: the sittings of a later batch, kept out of the S4 draw above "
+                        "and sampled on their own (repeatable; batches are drawn in the order given)")
+    parser.add_argument("--batch-name", action="append", default=[],
+                        help="the batch column's value on those sittings' rows, one per --batch-protocols "
+                        "(default for a single batch: t4)")
     return parser
 
 
@@ -389,12 +402,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.sample_vorgang < 0 or args.sample_xml < 0:
         print("error: a sample size cannot be negative", file=sys.stderr)
         return 2
-    if not _BATCH_NAME_RE.fullmatch(args.batch_name):
+    names = args.batch_name or (["t4"] if len(args.batch_protocols) <= 1 else [])
+    if not all(_BATCH_NAME_RE.fullmatch(name) for name in names):
         print("error: --batch-name takes up to 20 lower-case letters, digits and hyphens", file=sys.stderr)
         return 2
+    if args.batch_protocols and len(names) != len(args.batch_protocols):
+        print("error: give one --batch-name for each --batch-protocols", file=sys.stderr)
+        return 2
     try:
-        batch = read_batch(args.batch_protocols) if args.batch_protocols else frozenset()
-        rows, summary = build_sheet(args.output_dir, args.seed, args.sample_vorgang, args.sample_xml, batch, args.batch_name)
+        batches: dict[str, frozenset[str]] = {}
+        for name, path in zip(names, args.batch_protocols):
+            if name in batches:
+                raise ReviewInputError(f"two batches are named {name}")
+            sittings = read_batch(path)
+            for other, held in batches.items():
+                if sittings & held:
+                    raise ReviewInputError(f"{sorted(sittings & held)[0]} is in the batches {other} and {name}")
+            batches[name] = sittings
+        rows, summary = build_sheet(args.output_dir, args.seed, args.sample_vorgang, args.sample_xml, batches)
     except (ReviewInputError, RuntimeError, sqlite3.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -402,12 +427,14 @@ def main(argv: list[str] | None = None) -> int:
               "sample": f"S4 {args.sample_vorgang} drucksache_vorgang + {args.sample_xml} drucksache_xml",
               "links in store": summary["links"], "rows": summary["rows"], "units": summary["units"],
               "rows per stratum": ", ".join(f"{key} {value}" for key, value in summary["strata"].items())}
-    if batch:
-        header["sample"] += (f"; batch {args.batch_name} apart: {BATCH_RATE:.0%} of its plain Drucksache links, "
+    if batches:
+        header["sample"] += (f"; batch {', '.join(batches)} apart: {BATCH_RATE:.0%} of its plain Drucksache links, "
                              f"at least {BATCH_MIN}")
-        header[f"batch {args.batch_name}"] = (
-            f"{len(batch)} sittings of {args.batch_protocols.as_posix()}, {summary['batch_links']} links in store, "
-            f"{summary['batch_rows']} rows: " + ", ".join(f"{key} {value}" for key, value in summary["batch_strata"].items()))
+    for (name, sittings), path in zip(batches.items(), args.batch_protocols):
+        counts = summary["batches"][name]
+        header[f"batch {name}"] = (
+            f"{len(sittings)} sittings of {path.as_posix()}, {counts['links']} links in store, "
+            f"{counts['rows']} rows: " + ", ".join(f"{key} {value}" for key, value in counts["strata"].items()))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     # Written beside the target and renamed, so a stopped run never leaves half a sheet.
     partial = args.out.with_name(args.out.name + ".partial")

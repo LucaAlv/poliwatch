@@ -148,6 +148,17 @@ class VoteContextPersistTests(unittest.TestCase):
                     pulse_store.persist_report(conn, report, cache)
                 self.assertEqual(self.rows(conn, "SELECT id, protocol_id, context_state FROM votes"), before)
 
+    # Value: protects=a vote without an id in api_records fails persist with the protocol number, not a bare "has no id" from the link gate; fails_when=require_vote_shape skips api_records or persist drops the number; why_new=TODOS.md "Check that vote links are right" item 11; seam=none
+    def test_an_id_less_api_records_vote_is_refused_with_the_protocol_number(self):
+        cache = _context_cache({"20/123": []}, {})
+        conn = self.persisted(cache)
+        for field in ("sitting_votes", "matched_roll_call_votes"):
+            with self.subTest(field=field):
+                report = json.loads((FIXTURES / "report.json").read_text())
+                report["api_records"] = {field: [{"title": "ohne Kennung"}]}
+                with self.assertRaisesRegex(ValueError, r"20/999.*a roll-call vote has no id"):
+                    pulse_store.persist_report(conn, report, cache)
+
     # Value: protects=two vote ids equal after cleaning inside one report are one vote and the FIRST copy is stored (before the B4 edge fixes persist kept the last), for TOP votes and sitting_votes, in both orders; fails_when=iter_report_votes dedupes on the raw id again or persist writes every copy; why_new=review of the vote-identity cleaning rule (2026-10-31); seam=none
     def test_ids_equal_after_cleaning_store_the_first_copy(self):
         cache = _context_cache({"20/123": []}, {})
