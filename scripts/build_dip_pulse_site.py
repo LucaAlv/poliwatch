@@ -12365,8 +12365,8 @@ def render_bundestag_page(features: Selection | None = None) -> str:
 # once the site goes public.
 # ---------------------------------------------------------------------------
 
-# The localStorage keys page_scripts() writes, each on a click only, with what
-# it holds. tests/test_demo_site.py checks this against the scripts.
+# The sessionStorage keys page_scripts() writes, each on a click only, with what
+# it holds (ADR 0003 question 8: one session, DSK Orientierungshilfe Rn. 80). tests/test_demo_site.py checks this against the scripts.
 DATENSCHUTZ_STORAGE_KEYS = (
     ("bundestag-pulse-theme", "ob Sie das helle oder das dunkle Design gewählt haben, sobald Sie den Schalter „Dunkel“/„Hell“ betätigen"),
     ("bundestag-pulse-ai-summaries-v1", "ob die KI-Zusammenfassungen ein- oder ausgeklappt sind, sobald Sie den Schalter dafür betätigen"),
@@ -12494,11 +12494,12 @@ def render_datenschutz_page(
          "Skripte, Stile und Bilder kommen vom selben Server; Schriften, Skripte oder andere Inhalte von "
          f"fremden Servern werden nicht geladen.{download_sentence}</p>"),
         ("Speicherung in Ihrem Browser",
-         "<p>Zwei Einstellungen speichert die Website im lokalen Speicher Ihres Browsers (localStorage), "
+         "<p>Diese Einstellungen speichert die Website im Sitzungsspeicher Ihres Browsers (sessionStorage), "
          "jeweils erst, wenn Sie den zugehörigen Schalter betätigen:</p>"
          f"<ul>{storage_items}</ul>"
-         "<p>Die Werte bleiben in Ihrem Browser und werden nicht übertragen. Sie können sie in den "
-         "Einstellungen Ihres Browsers löschen.</p>"),
+         "<p>Die Werte bleiben in Ihrem Browser, werden nicht übertragen und gelten nur, bis Sie den Browser "
+         "oder den Tab schließen. Rechtsgrundlage ist §\u00a025 Abs. 2 Nr. 2 TDDDG: Die Speicherung ist "
+         "unbedingt erforderlich, um die von Ihnen gewählte Einstellung bereitzustellen.</p>"),
         ("Links auf andere Websites",
          "<p>Die Seiten verlinken auf andere Websites, etwa bundestag.de, dip.bundestag.de, "
          "abgeordnetenwatch.de und gesetze-im-internet.de. Erst wenn Sie einen solchen Link anklicken, ruft "
@@ -12513,7 +12514,19 @@ def render_datenschutz_page(
          "Quellen: den Plenarprotokollen und dem DIP des Deutschen Bundestages, den Ergebnissen namentlicher "
          "Abstimmungen auf bundestag.de sowie Wahlkreis, Bundesland, Geburtsjahr, Beruf und Geschlecht von "
          "abgeordnetenwatch.de. Zweck ist, die Arbeit des Bundestages "
-         "nachvollziehbar zu machen.</p>"),
+         "nachvollziehbar zu machen.</p>"
+         "<p>Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO. Das berechtigte Interesse ist, das öffentliche "
+         "Handeln der Abgeordneten aus dem amtlichen Protokoll nachvollziehbar und überprüfbar zu machen. "
+         "Soweit Abstimmungen, Fraktionszugehörigkeit und Reden politische Meinungen erkennen lassen, gilt "
+         "zusätzlich Art. 9 Abs. 2 lit. e DSGVO: Die Abgeordneten haben sie im Plenum offensichtlich öffentlich "
+         "gemacht. Die Reden geben den Wortlaut des amtlichen Protokolls wieder; Personen, die darin genannt "
+         "werden, erscheinen so, wie das Protokoll sie nennt. Für diese Veröffentlichung des amtlichen "
+         "Protokolls stützen wir uns außerdem auf Art. 85 DSGVO in Verbindung mit §\u00a023 MStV.</p>"
+         "<p>Empfänger sind alle, die die Website oder die Datendownloads abrufen. Die Datenstände werden "
+         "auf GitHub und, für geprüfte Versionen, bei Zenodo veröffentlicht und als versioniertes Archiv "
+         "dauerhaft aufbewahrt, damit Zitate nachprüfbar bleiben. Eine veröffentlichte Version wird nicht "
+         "nachträglich geändert; eine Berichtigung erscheint in der nächsten Version. Einen Widerspruch nach "
+         "Art. 21 DSGVO prüfen wir; gibt er Anlass zu einer Änderung, erscheint sie in der nächsten Version.</p>"),
         ("Ihre Rechte",
          "<p>Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), "
          "Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21). "

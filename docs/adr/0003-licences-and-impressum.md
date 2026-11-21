@@ -140,7 +140,7 @@ The owner cannot afford a lawyer and decided on 2026-11-21 to replace one with a
 - **Question 4, before the first `--publish`:** the bases for MP data are Art. 6 Abs. 1 lit. f and Art. 9 Abs. 2 lit. e DSGVO. Third-party data inside the speech texts and erasure against fixed releases are untested, so they go in writing to the Cyber Law Clinic of Universität Hamburg (free; it may decline on need), with the proposed bases (also Art. 85 with § 23 MStV), a record of processing and a takedown process; if it declines, to the Landesdatenschutzbeauftragte of the operator's Land.
 - **Question 1, before the public site:** the Impressum gives the operator's home address. That settles the question; a c/o service would reopen it.
 - **Question 6:** stays covered by naming the operator as Verantwortlicher under § 18 Abs. 2 MStV (D4).
-- **Question 8, before the public site:** the theme moves to `sessionStorage` (DSK Orientierungshilfe Digitale Dienste, Rn. 80), and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.
+- **Question 8:** both settings moved to `sessionStorage` on 2026-11-21 (DSK Orientierungshilfe Digitale Dienste, Rn. 80), and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.
 - **Fixed at once (2026-11-21):** the omissions notice in `LICENSE-DATA.md`; the legal bases and the true storage list in `datenschutz.html`; a source and licence notice for the Bundestag material held in the public repository.
 
 ## Consequences and follow-ups
