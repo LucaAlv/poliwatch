@@ -27,6 +27,7 @@ from stable_ids import document_issuer, document_number as stable_document_numbe
 import person_registry as registry
 import publication_state as publication
 import speech_kinds
+import vote_links
 from features import (
     NAV_ITEMS,
     Selection,
@@ -3150,6 +3151,11 @@ def render_html(
     votes_component_ctx["vote_passages"] = antrag_text.report_vote_passages(
         report, cache, votes_component_ctx["vote_contexts"]
     )
+    # The reviewed drops and flags of the sitting's vote links, which each vote's panel names.
+    link_reviews: dict[str, list[Any]] = {}
+    for review in vote_links.reviewed_links(report)[1]:
+        link_reviews.setdefault(review.entry.vote_id, []).append(review)
+    votes_component_ctx["link_reviews"] = link_reviews
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     # Each TOP's Drucksachen once: its section lists them, the header counts them.
     documents_by_index = {item["index"]: top_documents(item) for item in items}

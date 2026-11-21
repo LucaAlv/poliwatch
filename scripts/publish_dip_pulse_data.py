@@ -257,15 +257,17 @@ _VOTE_LINK_TABLES = {
     "protocols": ("id", "document_number"),
     "agenda_items": ("id", "protocol_id", "item_index", "top_id", "heading", "page_start"),
     "votes": ("id", "protocol_id", "top_link_step"),
-    "agenda_item_votes": ("agenda_item_id", "vote_id"),
+    "agenda_item_votes": ("agenda_item_id", "vote_id", "review_note"),
+    "vote_link_reviews": ("vote_id", "protocol", "top_id", "top_occurrence", "action", "note"),
 }
 
 
 def vote_link_review_refusals(manifest: dict[str, Any], generation_dir: Path, repo_root: Path, full_commit: str) -> list[str]:
     """Owner decision 6, amended 2026-11-21 (docs/plans/vote-pr-c.md, section 5):
     every link of a contested vote (two or more TOPs, or decided by a step after
-    the plain match) needs a reviewed entry with verdict right, and no entry of
-    an exported sitting may have stopped holding. The entries are those of
+    the plain match) needs a reviewed entry with verdict right or a flag, and no
+    entry of an exported sitting may have stopped holding (a drop's link absent
+    with its record, a flag's link present with its note). The entries are those of
     ``scripts/reviewed_vote_links.json`` at the export's commit, a codebook
     input verify_export has matched; the links are the exported CSV rows."""
     relative = "scripts/reviewed_vote_links.json"
@@ -289,7 +291,8 @@ def vote_link_review_refusals(manifest: dict[str, Any], generation_dir: Path, re
         except (OSError, EOFError, KeyError, ValueError, csv.Error) as exc:
             raise ReleaseError(f"cannot read the exported {table} table ({exc}); export it again") from exc
     try:
-        sittings = reviewed_vote_links.sittings_of_rows(rows["protocols"], rows["agenda_items"], rows["votes"], rows["agenda_item_votes"])
+        sittings = reviewed_vote_links.sittings_of_rows(rows["protocols"], rows["agenda_items"], rows["votes"],
+                                                        rows["agenda_item_votes"], rows["vote_link_reviews"])
     except (KeyError, ValueError) as exc:
         raise ReleaseError(f"the exported vote links do not fit their agenda items ({exc}); export it again") from exc
     return reviewed_vote_links.gate(entries, sittings)["refusals"]

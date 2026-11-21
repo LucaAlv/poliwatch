@@ -478,13 +478,14 @@ def initialize(conn: sqlite3.Connection) -> None:
           -- unique title match, the vote's Einzelplan, or the number the chair
           -- names in the section where the vote is called.
           basis TEXT NOT NULL CHECK (basis IN (%(link_bases)s)),
-          -- The note of a reviewed link flagged as unsure (vote PR C2); NULL otherwise.
+          -- The note of a reviewed link flagged as unsure (scripts/reviewed_vote_links.json,
+          -- action flag); NULL otherwise.
           review_note TEXT,
           PRIMARY KEY (agenda_item_id, vote_id)
         );
 
-        -- Reviewed links a one-off entry dropped or flagged (vote PR C2), kept
-        -- for the vote page; empty until an entry acts.
+        -- Reviewed links a one-off entry dropped or flagged
+        -- (scripts/reviewed_vote_links.json), kept for the vote page.
         CREATE TABLE IF NOT EXISTS vote_link_reviews (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
           protocol TEXT NOT NULL,
@@ -1984,7 +1985,11 @@ def persist_report(
         shown = "; ".join(misplaced[:3]) + (f"; and {len(misplaced) - 3} more" if len(misplaced) > 3 else "")
         raise ValueError(f"Report {protocol.get('dokumentnummer') or protocol_id} places votes against the vote-link rule: "
                          f"{shown}. Run vote_links.attribute_votes on it (an --offline --repersist does).")
-    vote_bases = vote_links.links(report)
+    # The rule's links with the reviewed drops and flags of the sitting applied
+    # (scripts/reviewed_vote_links.json); a stale entry stops the run here.
+    vote_bases, link_reviews = vote_links.reviewed_links(report)
+    flag_notes = {(review.entry.vote_id, review.position): review.entry.note
+                  for review in link_reviews if review.entry.action == "flag"}
     derive.check_sprechrollen([report])
     _warn_merged_redner_ids(report)
     with conn:
@@ -2019,6 +2024,17 @@ def persist_report(
             persist_withheld(conn, protocol_id, item, agenda_item_id, now)
         for _item, vote in report_vote_pairs:
             persist_vote(conn, vote, protocol_id, now, top_link_step=vote_bases[_vote_id(vote)].step)
+        # The sitting's review records are the entries applied now, never an older run's.
+        conn.execute("DELETE FROM vote_link_reviews WHERE protocol = ? OR vote_id IN (SELECT id FROM votes WHERE protocol_id = ?)",
+                     (clean(protocol.get("dokumentnummer")), protocol_id))
+        for review in link_reviews:
+            entry = review.entry
+            conn.execute(
+                "INSERT INTO vote_link_reviews(vote_id, protocol, top_id, top_occurrence, heading, action, note, reviewed_on) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (entry.vote_id, entry.protocol, entry.top_id, entry.top_occurrence, entry.heading_starts or None,
+                 entry.action, entry.note, entry.reviewed_on),
+            )
         # iter_report_votes deliberately yields one row per vote. A vote may
         # still be cited under more than one TOP, so write every link.
         for position, item in enumerate(report.get("agenda_items") or []):
@@ -2028,8 +2044,8 @@ def persist_report(
             for vote in derive.item_votes(item):
                 vote_id = _vote_id(vote)
                 conn.execute(
-                    "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, ?)",
-                    (agenda_item_id, vote_id, vote_bases[vote_id].tops[position]),
+                    "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id, basis, review_note) VALUES (?, ?, ?, ?)",
+                    (agenda_item_id, vote_id, vote_bases[vote_id].tops[position], flag_notes.get((vote_id, position))),
                 )
         persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
         persist_vote_context(conn, report, vorgang_cache, now)

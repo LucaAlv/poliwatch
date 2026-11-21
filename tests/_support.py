@@ -21,6 +21,14 @@ import reviewed_units  # noqa: E402
 # test of a real listed sitting installs the shipped one (shipped_reviewed_units).
 reviewed_units.use([])
 
+import reviewed_vote_links  # noqa: E402
+
+# Likewise for the vote-link review: a drop or flag entry of a real sitting would
+# act on (or refuse) a synthetic report with that sitting's number. A test of
+# the shipped entries passes them explicitly or installs them with
+# reviewed_vote_links.using.
+reviewed_vote_links.use([])
+
 
 @contextlib.contextmanager
 def shipped_reviewed_units():

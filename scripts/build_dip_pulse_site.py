@@ -164,7 +164,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten, mit dem Grund jeder Verknüpfung (basis).",
-    "vote_link_reviews": "Geprüfte Verknüpfungen von Abstimmungen und Tagesordnungspunkten, die ein Einzelfalleintrag entfernt oder als unsicher markiert; bisher leer.",
+    "vote_link_reviews": "Geprüfte Verknüpfungen von Abstimmungen und Tagesordnungspunkten, die ein Einzelfalleintrag entfernt oder als unsicher markiert.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
     "vote_passages": "Antrag- und Entschließungsantrag-Drucksachen, die für eine namentliche Abstimmung als Zitatquelle geprüft wurden, mit dem DIP-Vorgang ohne Zusammenfassung, für den sie stehen, und Rang; zitiert wird nur ein Dokument mit documents.forderung_state extracted.",
     "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
@@ -4834,6 +4834,11 @@ def vote_link_review_paragraph(entries: list[reviewed_vote_links.Entry]) -> str:
     if added:
         text += (f" Die Regeländerung band {added} Verknüpfungen neu, die nicht als Zeile in der Stichprobe standen; "
                  "jede wurde im Protokoll gelesen und ist als richtig geprüft.")
+    dropped = sum(1 for entry in entries if entry.action == "drop")
+    flagged = sum(1 for entry in entries if entry.action == "flag")
+    if dropped or flagged:
+        text += (f" Als Einzelfall entfernt sind {dropped} Verknüpfungen, als nicht sicher geprüft markiert {flagged} "
+                 "(`vote_link_reviews`).")
     return text
 
 
@@ -14873,6 +14878,12 @@ def main() -> int:
         reviewed_units.load()
     except reviewed_units.ReviewedUnitsError as exc:
         print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 1
+    # Likewise the reviewed vote links, whose drops and flags act at persist.
+    try:
+        reviewed_vote_links.in_force()
+    except reviewed_vote_links.ReviewedVoteLinksError as exc:
+        print(f"ERROR [reviewed-vote-links]: {exc}. Fix: repair scripts/reviewed_vote_links.json (docs/plans/vote-pr-c.md, section 4), then re-run.", file=sys.stderr)
         return 1
 
     if getattr(args, "validate_publication", None):

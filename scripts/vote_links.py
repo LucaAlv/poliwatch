@@ -40,7 +40,10 @@ it (``called_drucksachen``, read by the parser with ``chair_numbers``).
 
 ``top_links`` returns, per vote, the TOPs and the step that decided them:
 ``match`` when the TOPs are step 1's, else ``call``, ``einzelplan`` or
-``narrowed``; ``none`` for no TOP. A vote linked to no TOP is a sitting vote
+``narrowed``; ``none`` for no TOP. ``links`` then applies the one-off drop and
+flag entries of ``scripts/reviewed_vote_links.json`` (owner decision 2): a
+dropped TOP leaves the vote's set, and a vote left with none has step ``none``;
+a flagged link stays. A vote linked to no TOP is a sitting vote
 (``report["sitting_votes"]``). A link says the roll call was taken on a Vorlage
 this TOP dealt with, not that the vote alone settled the TOP
 (``docs/data-methods.md``, "Abstimmungen und Tagesordnungspunkte"; owner
@@ -53,6 +56,7 @@ import re
 from typing import Any, Iterable, Mapping, NamedTuple
 
 import derive
+import reviewed_vote_links
 import stable_ids
 
 #: Every value ``agenda_item_votes.basis`` takes.
@@ -63,7 +67,7 @@ STEPS = ("none", "match", "call", "einzelplan", "narrowed")
 
 #: The steps after the plain match. A vote they decided, or one linked to two or
 #: more TOPs, is contested: the release gate needs a reviewed entry for each link.
-CONTESTED_STEPS = ("call", "einzelplan", "narrowed")
+CONTESTED_STEPS = reviewed_vote_links.CONTESTED_STEPS
 
 #: What the rule reads from the parsed XML. A change of it (a new parse field,
 #: another reading of one) bumps this, so every cached report is re-read from its
@@ -320,9 +324,26 @@ def report_votes(report: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     return votes
 
 
-def links(report: Mapping[str, Any]) -> dict[str, TopLink]:
-    """``top_links`` for every vote of ``report`` (``report_votes``)."""
-    return top_links(report.get("agenda_items") or [], report_votes(report).values())
+def apply_reviews(protocol: Any, items: list[Mapping[str, Any]], placed: Mapping[str, TopLink],
+                  entries: Iterable[Any] | None = None) -> tuple[dict[str, TopLink], list[Any]]:
+    """The drop and flag entries of sitting ``protocol`` applied to ``placed``,
+    the rule's links over ``items`` (``reviewed_vote_links.apply``): the links
+    and the ``Review`` of every entry applied. ``entries`` default to the ones
+    in force. An entry that no longer fits stops the run."""
+    return reviewed_vote_links.apply(derive.clean_text(protocol), items, placed, entries)
+
+
+def reviewed_links(report: Mapping[str, Any], entries: Iterable[Any] | None = None) -> tuple[dict[str, TopLink], list[Any]]:
+    """``top_links`` for every vote of ``report`` (``report_votes``) with the
+    drops and flags of its sitting applied (``apply_reviews``)."""
+    items = report.get("agenda_items") or []
+    return apply_reviews((report.get("protocol") or {}).get("dokumentnummer"), items,
+                         top_links(items, report_votes(report).values()), entries)
+
+
+def links(report: Mapping[str, Any], entries: Iterable[Any] | None = None) -> dict[str, TopLink]:
+    """The links of ``reviewed_links``: the rule's, after the drops."""
+    return reviewed_links(report, entries)[0]
 
 
 def _vote_order(report: Mapping[str, Any], votes: Mapping[str, Any]) -> list[str]:
