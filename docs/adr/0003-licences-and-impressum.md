@@ -129,7 +129,7 @@ The operator is one person with limited time, the audience is mostly not develop
 6. Whether the site is „journalistisch-redaktionell gestaltet" at all (§ 18 Abs. 2 MStV, and the press-law duties that come with it), or whether § 18 Abs. 1 is enough.
 
 7. Whether whitespace normalisation and joining paragraphs (D2) count as a change under § 62 UrhG, or whether the export must keep paragraph breaks.
-8. Whether the two localStorage entries the site writes on a click (the theme and the AI-summary collapse state, never transmitted) need consent or a statement of their basis under § 25 TDDDG. `datenschutz.html` describes them and states no legal basis.
+8. (Answered 2026-11-21, see the amendment of that date: both entries moved to `sessionStorage`, and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.) Whether the two localStorage entries the site writes on a click (the theme and the AI-summary collapse state, never transmitted) need consent or a statement of their basis under § 25 TDDDG. `datenschutz.html` describes them and states no legal basis.
 
 ## Amendment 2026-11-21: the open questions answered by research, one sent out
 

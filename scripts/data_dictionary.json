@@ -271,7 +271,7 @@
           "license": "dip"
         },
         "text": {
-          "meaning": "Wortlaut der Rede/des Beitrags; bei Reden Whitespace normalisiert und Absatzumbrüche zu Leerzeichen zusammengeführt. Nur die eigenen Worte des Sprechers: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung sind nicht enthalten.",
+          "meaning": "Wortlaut der Rede/des Beitrags; bei Reden Whitespace normalisiert und Absatzumbrüche zu Leerzeichen zusammengeführt. Nur die eigenen Worte des Sprechers: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll als eigenes Element druckt, sind nicht enthalten.",
           "unit": "Beitragswortlaut als normalisierter Text; vereinzelt NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
@@ -1390,7 +1390,7 @@
           "license": "dip"
         },
         "text": {
-          "meaning": "Redewortlaut mit den XML-Absätzen zu einem Fließtext verbunden; Whitespace normalisiert, Wortlaut und Satzzeichen nicht redigiert. Nur die eigenen Worte des Redners: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll innerhalb der Rede druckt, sind nicht enthalten; Beiträge anderer Redner stehen in contributions.",
+          "meaning": "Redewortlaut mit den XML-Absätzen zu einem Fließtext verbunden; Whitespace normalisiert, Wortlaut und Satzzeichen nicht redigiert. Nur die eigenen Worte des Redners: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll innerhalb der Rede als eigenes Element druckt, sind nicht enthalten; Beiträge anderer Redner stehen in contributions.",
           "unit": "Normalisierter Redewortlaut als Text oder NULL.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"

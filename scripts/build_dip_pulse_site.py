@@ -12497,9 +12497,9 @@ def render_datenschutz_page(
          "<p>Diese Einstellungen speichert die Website im Sitzungsspeicher Ihres Browsers (sessionStorage), "
          "jeweils erst, wenn Sie den zugehörigen Schalter betätigen:</p>"
          f"<ul>{storage_items}</ul>"
-         "<p>Die Werte bleiben in Ihrem Browser, werden nicht übertragen und gelten für die aktuelle "
-         "Browsersitzung; stellt Ihr Browser geschlossene Tabs oder die letzte Sitzung wieder her, stellt er "
-         "sie mit wieder her. Rechtsgrundlage ist §\u00a025 Abs. 2 Nr. 2 TDDDG: Die Speicherung ist "
+         "<p>Die Werte bleiben in Ihrem Browser, werden nicht übertragen und gelten nur in dem Tab, in dem Sie "
+         "den Schalter betätigt haben, solange er geöffnet ist; stellt Ihr Browser geschlossene Tabs oder die "
+         "letzte Sitzung wieder her, stellt er sie mit wieder her. Rechtsgrundlage ist §\u00a025 Abs. 2 Nr. 2 TDDDG: Die Speicherung ist "
          "unbedingt erforderlich, um die von Ihnen gewählte Einstellung bereitzustellen.</p>"),
         ("Links auf andere Websites",
          "<p>Die Seiten verlinken auf andere Websites, etwa bundestag.de, dip.bundestag.de, "
