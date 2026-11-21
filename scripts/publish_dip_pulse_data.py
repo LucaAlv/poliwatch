@@ -15,9 +15,11 @@ are exactly the ones it builds (``--publish`` after a dry run the same day, or
 after a failed ``gh`` call); otherwise it refuses and never overwrites. ``--publish`` creates the release through ``gh`` and refuses unless
 the export's licence string is the short string of its commit's LICENSE-DATA.md (ADR 0003), every exclusion on its record
 is final, ``source_defect`` or ``not_narrowable`` (ADR 0005, "Coverage and the
-bar"), and every v1 sitting DIP lists with XML is in the export or on its
+bar"), every v1 sitting DIP lists with XML is in the export or on its
 exclusion record (read from the catalog the build left next to the exports
-directory, or ``--catalog``). This script never pushes, tags or uploads by itself; the only remote
+directory, or ``--catalog``), and every contested vote link of the export is
+reviewed (``scripts/reviewed_vote_links.json`` as the export's commit holds it;
+docs/plans/vote-pr-c.md, section 5). This script never pushes, tags or uploads by itself; the only remote
 command is the one printed.
 
 The release is refused unless its export was built with a release tag, from a
@@ -56,6 +58,7 @@ from typing import Any, Callable
 import build_revision
 import release_changes
 import release_version
+import reviewed_vote_links
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADR = "docs/adr/0003-licences-and-impressum.md"
@@ -247,6 +250,54 @@ def unreleased_sittings_problem(manifest: dict[str, Any], generation_dir: Path, 
         return (f"{len(missing)} v1 {'sitting' if len(missing) == 1 else 'sittings'} DIP lists with XML {verb} neither in the export "
                 f"nor on its exclusion record ({_shown(missing)}); acquire them, or record why they stay out, and export again")
     return None
+
+
+#: The exported tables the vote-link review gate reads, with the columns it needs.
+_VOTE_LINK_TABLES = {
+    "protocols": ("id", "document_number"),
+    "agenda_items": ("id", "protocol_id", "item_index", "top_id", "heading", "page_start"),
+    "votes": ("id", "protocol_id", "top_link_step"),
+    "agenda_item_votes": ("agenda_item_id", "vote_id"),
+}
+
+
+def vote_link_review_refusals(manifest: dict[str, Any], generation_dir: Path, repo_root: Path, full_commit: str) -> list[str]:
+    """Owner decision 6, amended 2026-11-21 (docs/plans/vote-pr-c.md, section 5):
+    every link of a contested vote (two or more TOPs, or decided by a step after
+    the plain match) needs a reviewed entry with verdict right, and no entry of
+    an exported sitting may have stopped holding. The entries are those of
+    ``scripts/reviewed_vote_links.json`` at the export's commit, a codebook
+    input verify_export has matched; the links are the exported CSV rows."""
+    relative = "scripts/reviewed_vote_links.json"
+    text = build_revision.blob_text(repo_root, full_commit, relative)
+    if text is None:
+        return [f"the export's commit {full_commit[:12]} holds no {relative}; export from a commit that has it"]
+    try:
+        entries = reviewed_vote_links.parse(text, f"{relative} at commit {full_commit[:12]}")
+    except reviewed_vote_links.ReviewedVoteLinksError as exc:
+        raise ReleaseError(str(exc)) from exc
+    names: dict[str, list[str]] = {}
+    for entry in manifest.get("files") or []:
+        if entry.get("kind") == "table_csv":
+            names.setdefault(str(entry["name"]).partition("-")[0], []).append(entry["name"])
+    rows: dict[str, list[tuple]] = {}
+    for table, columns in _VOTE_LINK_TABLES.items():
+        if len(names.get(table, [])) != 1:
+            raise ReleaseError(f"the export lists {len(names.get(table, []))} {table} tables, not one; export it again")
+        try:
+            rows[table] = [tuple(row[column] for column in columns) for row in _csv_rows(generation_dir / names[table][0])]
+        except (OSError, EOFError, KeyError, ValueError, csv.Error) as exc:
+            raise ReleaseError(f"cannot read the exported {table} table ({exc}); export it again") from exc
+    try:
+        sittings = reviewed_vote_links.sittings_of_rows(rows["protocols"], rows["agenda_items"], rows["votes"], rows["agenda_item_votes"])
+    except (KeyError, ValueError) as exc:
+        raise ReleaseError(f"the exported vote links do not fit their agenda items ({exc}); export it again") from exc
+    return reviewed_vote_links.gate(entries, sittings)["refusals"]
+
+
+def vote_link_review_text(refusals: list[str]) -> str:
+    return (f"{len(refusals)} vote link(s) need a review before release (docs/plans/vote-pr-c.md, section 5: "
+            "every link of a contested vote has a right entry in scripts/reviewed_vote_links.json, and no entry stops holding)")
 
 
 def withheld_cap_problem(changes: dict[str, Any], confirmed: list[str]) -> str | None:
@@ -511,6 +562,10 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     unreleased = unreleased_sittings_problem(manifest, args.exports_dir / manifest["generation"], catalog_path)
     if args.publish and unreleased:
         raise ReleaseError(f"--publish refused: {unreleased}")
+    unreviewed = vote_link_review_refusals(manifest, args.exports_dir / manifest["generation"], repo_root, full_commit)
+    if args.publish and unreviewed:
+        shown = "; ".join(unreviewed[:12]) + ("; …" if len(unreviewed) > 12 else "")
+        raise ReleaseError(f"--publish refused: {vote_link_review_text(unreviewed)}: {shown}")
     tag = release_version.tag_for(version)
     released = remote_versions(repo_root, run) if args.publish else set()
     known = local_versions(repo_root, run) | released
@@ -588,6 +643,10 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
             out(f"--publish would refuse: {awaiting_text(waiting)}.")
         if unreleased:
             out(f"--publish would refuse: {unreleased}.")
+        if unreviewed:
+            out(f"--publish would refuse: {vote_link_review_text(unreviewed)}:")
+            for refusal in unreviewed:
+                out(f"  {refusal}")
         return
     result = run(command, cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:

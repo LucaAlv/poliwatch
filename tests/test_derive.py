@@ -356,14 +356,14 @@ class CommitteeRecipeParityTests(unittest.TestCase):
             return {**template, "id": source["id"], "document_numbers": source["document_numbers"], "members": []}
 
         # Placed as vote_links places them: a vote goes under the TOPs that list one of its numbers
-        # (plain strings), so 3, 5 and 6 sit under the TOP that carries 20/200, 20/400 and 20/500 or
-        # 20/600, and 4 ("20/0301" is not "20/301") is a sitting vote. The committee lookup reads the
+        # (without leading zeros), so 3, 4, 5 and 6 sit under the TOP that carries 20/200, 20/301,
+        # 20/400 and 20/500 or 20/600 ("20/0301" is "20/301"). The committee lookup reads the
         # whole sitting, so no panel or recipe row depends on where a vote sits.
         by_id = {v["id"]: v for item in cases["agenda_items"] for v in item.get("votes", [])}
         by_id.update({v["id"]: v for v in cases["sitting_votes"]})
         report["agenda_items"][0]["votes"] = [vote(by_id[key]) for key in ("1", "2")]
-        report["agenda_items"][1]["votes"] = [vote(by_id[key]) for key in ("3", "5", "6")]
-        report["sitting_votes"] = [vote(by_id["4"])]
+        report["agenda_items"][1]["votes"] = [vote(by_id[key]) for key in ("3", "4", "5", "6")]
+        report["sitting_votes"] = []
         return report
 
     def test_recipe_rows_equal_the_panel_derivation(self) -> None:

@@ -19,6 +19,7 @@ import facts
 import persist_dip_pulse_store as pulse_store
 import render_dip_pulse_html as html
 import speech_kinds
+import vote_links
 
 #: Every distinct <rolle_lang> in the 302 cached reports of the store (2026-09-29),
 #: and the side it counts for: the Bundesregierung side has 95 of them (5.394
@@ -200,7 +201,7 @@ def report(number: str, *speakers: dict) -> dict:
     return {
         "protocol": {"id": f"p-{number}", "dokumentnummer": number, "datum": "2026-01-01",
                      "reviewed_digest": _support.reviewed_units.sitting_digest(number)},
-        "validation_summary": {"speech_kinds_version": speech_kinds.VERSION},
+        "validation_summary": {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION},
         "agenda_items": [
             {
                 "index": 1,

@@ -1,6 +1,6 @@
 {
   "runner": "python3.13 tests/run_pregate.py {files}",
-  "strays": {"allow": [".gstack/pregate.json", "CITATION.cff"]},
+  "strays": {"allow": [".gstack/pregate.json", "CITATION.cff", "docs/plans/vote-pr-c/harness.py", "docs/plans/vote-pr-c/rules.py"]},
   "dependencies": {
     "scripts/facts.py": ["tests/test_facts.py"],
     "scripts/build_revision.py": ["tests/test_build_revision.py", "tests/test_data_pipeline_cli.py", "tests/test_daten_export.py", "tests/test_publish_dip_pulse_data.py"],
@@ -16,11 +16,16 @@
     "scripts/vote_links.py": [
    "tests/test_vote_links.py",
    "tests/test_build_dip_pulse_site.py",
-   "tests/test_vote_acquisition.py"
+   "tests/test_vote_acquisition.py",
+   "tests/test_vote_link_oracle.py"
   ],
   "scripts/vote_link_review.py": [
    "tests/test_vote_link_review.py"
   ],
+  "scripts/reviewed_vote_links.py": ["tests/test_reviewed_vote_links.py", "tests/test_vote_link_oracle.py", "tests/test_validate_store_gate.py", "tests/test_publish_dip_pulse_data.py"],
+  "scripts/reviewed_vote_links.json": ["tests/test_reviewed_vote_links.py", "tests/test_vote_link_oracle.py", "tests/test_daten_export.py"],
+  "tests/fixtures/vote_links/reviewed-sittings.json.gz": ["tests/test_vote_link_oracle.py"],
+  "tests/fixtures/vote_links/chair-sections.xml": ["tests/test_vote_links.py"],
   "scripts/derive.py": ["tests/test_derive.py", "tests/test_seat_counts.py"],
     "scripts/stammdaten.py": ["tests/test_stammdaten.py", "tests/test_seat_crosscheck.py", "tests/test_repersist.py"],
     "tests/fixtures/mdb-stammdaten-mini.xml": ["tests/test_stammdaten.py", "tests/test_repersist.py"],

@@ -24,6 +24,7 @@ import persist_dip_pulse_store as store
 import person_registry as registry
 from _registry_fixture import RegistryFixture
 from stable_ids import roster_occurrence_id, stable_key
+import vote_links
 
 
 def report(pid="s1", names=("Ada Example",), rede_ids=None):
@@ -33,7 +34,7 @@ def report(pid="s1", names=("Ada Example",), rede_ids=None):
          "paragraph_count": 1, "char_count": 19, "text": "Ein geprüfter Text."}
         for index, name in enumerate(names)
     ]
-    return {"validation_summary": {"speech_kinds_version": store.speech_kinds.VERSION}, "protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10",
+    return {"validation_summary": {"speech_kinds_version": store.speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}, "protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10",
                                                                                                 "reviewed_digest": _support.reviewed_units.sitting_digest(f"21/{pid[-1]}")},
             "agenda_items": [{"index": 1, "heading": "Debatte", "xml_speakers": speakers}]}
 

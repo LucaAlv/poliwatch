@@ -26,6 +26,7 @@ import person_registry
 import render_dip_pulse_html as pulse_html
 import speech_kinds
 from features import COMPONENTS, EnrichmentSelection, all_selection, default_selection
+import vote_links
 
 
 
@@ -1723,7 +1724,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
                 "protocol": {"id": f"pp-{slug}", "datum": datum, "dokumentnummer": document_number, "titel": "T",
                              "reviewed_digest": _support.reviewed_units.sitting_digest(document_number)},
                 "agenda_items": items,
-                "validation_summary": {"speech_kinds_version": speech_kinds.VERSION},
+                "validation_summary": {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION},
             },
             "page_path": Path(f"plenarprotokoll-{slug}.html"),
             "report_path": Path(f"plenarprotokoll-{slug}.json"),
@@ -3974,7 +3975,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
         output_dir = Path(tmp) / "site"
         (output_dir / "data").mkdir(parents=True)
         report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
-        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}
         _support.stamp_reviewed(report)
         (output_dir / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(report), encoding="utf-8")
         _site_store_fixture.build_site_store(output_dir, [{"report": report}])
@@ -4076,7 +4077,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             self.assertIn("If that refuses a report, follow the Fix it prints", stderr)
             self.assertIn(build_dip_pulse_site.CONCURRENT_UPDATE_NOTE, stderr)
             self.assertFalse((output_dir / "puls.html").exists())
-            old["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            old["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}
             path.write_text(json.dumps(old), encoding="utf-8")
             code, stderr = self._build(output_dir, "--repersist")
             self.assertEqual(code, 0, stderr)
@@ -4089,7 +4090,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
     def _cache_second_sitting(output_dir: Path) -> dict[str, Any]:
         report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
         report["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
-        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}
         _support.stamp_reviewed(report)
         (output_dir / "data" / "plenarprotokoll-20-998.json").write_text(json.dumps(report), encoding="utf-8")
         return report

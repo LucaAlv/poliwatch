@@ -389,8 +389,8 @@ def _insert_vote(
     conn.execute(
         """
         INSERT INTO votes(id, date, topic, title, description, detail_url,
-                           yes_count, no_count, abstain_count, absent_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?)
+                           yes_count, no_count, abstain_count, absent_count, top_link_step, created_at, updated_at)
+        VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, 'none', ?, ?)
         """,
         (
             vote_id,

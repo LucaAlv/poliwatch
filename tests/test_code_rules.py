@@ -369,7 +369,7 @@ GROUPS: dict[str, tuple[frozenset[str], str]] = {
         "renders HTML from the rows it is given; it never opens the store writer",
     ),
     "parse": (
-        frozenset({"validate_dip_protocol", "vote_links", "dip_cache", "sitzungskalender"}),
+        frozenset({"validate_dip_protocol", "vote_links", "reviewed_vote_links", "dip_cache", "sitzungskalender"}),
         "reads the protocol XML and DIP records into reports; no store, pages or facts",
     ),
     "domain": (

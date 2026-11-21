@@ -1,0 +1,14 @@
+<!-- Two real TOP sections, verbatim: 18/237 Zusatzpunkt 10 (whole) and 19/197 "Einzelplan 20" (its first paragraph and the two that name a Drucksache; the section holds 15 Reden, rede-count). For the called_drucksachen parser test. -->
+<sections>
+  <tagesordnungspunkt top-id="Zusatzpunkt 10" sitting="18/237" rede-count="0">
+      <p klasse="J">Zusatzpunkt 10. Abstimmung über den Antrag der Fraktion Die Linke auf Drucksache 18/12639 mit dem Titel „Sofortiger Abschiebestopp nach Afghanistan“. Sind die Plätze an den Urnen besetzt? – Das ist der Fall. Ich eröffne die zweite namentliche Abstimmung.</p>
+      <p klasse="J">Ist noch ein Mitglied des Hauses anwesend, das seine Stimme bei der zweiten namentlichen Abstimmung nicht abgegeben hat? – Das ist nicht der Fall. Ich schließe die Abstimmung und bitte die Schriftführerinnen und Schriftführer, mit der Auszählung zu beginnen.<sup>2</sup><fussnote>  Ergebnis Seite 24152 C</fussnote></p>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Einzelplan 20" sitting="19/197" rede-count="15">
+    <p klasse="J">Berichterstattung zum Einzelplan 20: die Abgeordneten Ekin Deligöz, Dr. André Berghegger, Esther Dilcher, Ulrike Schielke-Ziesing, Bettina Stark-Watzinger, Michael Leutert.</p>
+    <p klasse="J">Also kommen wir jetzt zu Zusatzpunkt 1, zur Abstimmung über den Antrag der Fraktion der FDP auf der Drucksache 19/24969 mit dem Titel „Beschluss des Bundestages gemäß Artikel 115 Absatz 2 Satz 6 und 7 des Grundgesetzes“. Nach Artikel 115 Absatz 2 Satz 6 des Grundgesetzes ist zur Annahme des Antrags die absolute Mehrheit der Mitglieder – das sind 355 Stimmen – erforderlich.</p>
+    <p klasse="J">Die Schriftführerinnen und Schriftführer haben die vorgesehenen Plätze eingenommen. Deswegen eröffne ich die namentliche Abstimmung über den Antrag der Fraktion der FDP auf Drucksache 19/24969. Die Abstimmungsurnen werden um 12.21 Uhr geschlossen. Das bevorstehende Ende der namentlichen Abstimmung wird rechtzeitig bekannt gegeben.<sup>1</sup>
+				<fussnote>Ergebnis Seite 24859 C</fussnote>
+			</p>
+    </tagesordnungspunkt>
+</sections>

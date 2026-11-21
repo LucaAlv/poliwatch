@@ -1,0 +1,22 @@
+# The 20 right links PR C adds that the review sheet has no row for (docs/plans/vote-pr-c.md, sections 1 and 3): the 8 the review's notes name (317, 375, 557 and the five pattern-D votes) and the 12 read for the plan. Input of scripts/vote_link_review.py --entries with source "plan vote-pr-c".
+protocol	vote_id	top_id	top_occurrence	verdict	pattern	action	evidence	reviewer
+18/69	317	Tagesordnungspunkt I (Fortsetzung)	2	right	-	none	The Einzelplan 04 section, the second occurrence of TOP I (Fortsetzung); the vote's description names Einzelplan 04 (review summary, pattern A).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+18/141	375	Einzelplan 12	1	right	-	none	The Einzelplan 12 section the vote names (review summary, pattern A).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+18/202	435	Einzelplan 04	1	right	-	none	"Wir kommen jetzt zur Abstimmung über den Einzelplan 04 … Wir stimmen namentlich ab." in that section.	plan vote-pr-c section 3; blind second reader agreed
+18/237	476	Zusatzpunkt 10	1	right	-	none	The chair calls the roll call on Drucksache 18/12639 in the Zusatzpunkt 10 section (review summary, pattern D).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+18/237	477	Zusatzpunkt 11	1	right	-	none	The chair calls the roll call in the Zusatzpunkt 11 section (review summary, pattern D).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+18/239	480	Zusatzpunkt 3	1	right	-	none	The chair calls the roll call in the Zusatzpunkt 3 section (review summary, pattern D).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+19/45	531	Einzelplan 04	1	right	-	none	Einzelplan 04 in the Ausschussfassung, roll call in that section.	plan vote-pr-c section 3; blind second reader agreed
+19/45	532	Einzelplan 14	1	right	-	none	Änderungsantrag 19/3179 to Einzelplan 14, called by name in that section.	plan vote-pr-c section 3; blind second reader agreed
+19/45	533	Einzelplan 14	1	right	-	none	Änderungsantrag 19/3185 to Einzelplan 14, called by name in that section.	plan vote-pr-c section 3; blind second reader agreed
+19/59	548	Zusatzpunkt 5	1	right	-	none	"Damit kommen wir zum Zusatzpunkt 5 … Die Fraktion der AfD verlangt namentliche Abstimmung." TOP 30 only debated it jointly.	plan vote-pr-c section 3; blind second reader agreed
+19/64	556	Einzelplan 04	1	right	-	none	"Wir kommen zur Abstimmung über den Einzelplan 04 … Es ist namentliche Abstimmung verlangt."	plan vote-pr-c section 3; blind second reader agreed
+19/66	557	Einzelplan 60	1	right	-	none	The Einzelplan 60 section the vote names (review summary, pattern A).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+19/83	579	Zusatzpunkt 10	1	right	-	none	The chair calls the roll call in the Zusatzpunkt 10 section (review summary, pattern D).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+19/87	588	Zusatzpunkt 14	1	right	-	none	The chair calls the roll call in the Zusatzpunkt 14 section (review summary, pattern D).	review notes, passes 1 and 2 (vote-links-review-summary.md)
+19/102	604	Zusatzpunkt 12	1	right	-	none	"Zusatzpunkt 12. … Antrag der Fraktion der AfD auf Drucksache 19/9757 … namentlich ab." It was linked to ZP 11, the coalition's Antrag.	plan vote-pr-c section 3; blind second reader agreed
+19/129	640	Einzelplan 16	1	right	-	none	Änderungsantrag 19/15464 to Einzelplan 16, roll call opened in that section.	plan vote-pr-c section 3; blind second reader agreed
+19/130	641	Einzelplan 04	1	right	-	none	"Wir kommen zur namentlichen Abstimmung über den Einzelplan 04."	plan vote-pr-c section 3; blind second reader agreed
+19/198	705	Einzelplan 4	1	right	-	none	"Ich eröffne die namentliche Abstimmung über den Einzelplan 04."	plan vote-pr-c section 3; blind second reader agreed
+20/40	778	Einzelplan 04	1	right	-	none	The roll call on Einzelplan 04 opened in the section "a) Einzelplan 04 / b) Einzelplan 22".	plan vote-pr-c section 3; blind second reader agreed
+20/69	820	Einzelplan 04	1	right	-	none	The roll call on Einzelplan 04 opened in that section.	plan vote-pr-c section 3; blind second reader agreed

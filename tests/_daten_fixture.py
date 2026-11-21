@@ -200,18 +200,18 @@ def seed_store(path: Path) -> dict[str, Any]:
             conn.execute(
                 """
                 INSERT INTO votes(id, date, topic, title, description, detail_url,
-                                   yes_count, no_count, abstain_count, absent_count, created_at, updated_at)
+                                   yes_count, no_count, abstain_count, absent_count, top_link_step, created_at, updated_at)
                 VALUES ('v1', '2024-05-15', 'Topic 1', 'Erste Abstimmung', 'desc',
-                        'https://example.test/v1', 10, 8, 0, 0, ?, ?)
+                        'https://example.test/v1', 10, 8, 0, 0, 'none', ?, ?)
                 """,
                 (now, now),
             )
             conn.execute(
                 """
                 INSERT INTO votes(id, date, topic, title, description, detail_url,
-                                   yes_count, no_count, abstain_count, absent_count, created_at, updated_at)
+                                   yes_count, no_count, abstain_count, absent_count, top_link_step, created_at, updated_at)
                 VALUES ('v2', '2024-05-22', 'Topic 2', 'Zweite Abstimmung', 'desc',
-                        'https://example.test/v2', 6, 5, 0, 0, ?, ?)
+                        'https://example.test/v2', 6, 5, 0, 0, 'none', ?, ?)
                 """,
                 (now, now),
             )

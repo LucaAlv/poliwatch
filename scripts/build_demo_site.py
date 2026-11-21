@@ -30,6 +30,7 @@ import persist_dip_pulse_store as pulse_store
 import publication_state as publication
 import reviewed_units
 import speech_kinds
+import vote_links
 import validate_dip_protocol as dip
 from features import EnrichmentSelection
 
@@ -110,6 +111,7 @@ def build_demo_store(
         reasons = {
             "rule": f"was made under speech rule {'(none)' if found is None else found}, not the current rule {speech_kinds.VERSION}",
             "reviewed": "was parsed under other entries of scripts/reviewed_units.json than it holds now for its sitting",
+            "votes": f"was parsed before the vote-link rule read its current inputs ({vote_links.INPUTS_VERSION})",
         }
         raise DemoFixtureError(
             f"the fixture {' and '.join(reasons[cause] for cause in site.stale_causes(report))}. "

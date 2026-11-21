@@ -705,6 +705,23 @@ def extract_drucksachen(elem: ET.Element) -> list[dict[str, str | None]]:
     return docs
 
 
+def called_drucksachen(top: ET.Element, *, heading: str, speech_count: int) -> list[str]:
+    """The Drucksache numbers the chair names in a TOP section with no heading and
+    no Rede, where the chair calls a vote debated jointly elsewhere (18/237
+    Zusatzpunkt 10: "Abstimmung über den Antrag … auf Drucksache 18/12639"):
+    every paragraph that is not a ``T…`` heading paragraph, read with
+    ``vote_links.chair_numbers``. Empty for every other section. Step 2 of the
+    vote-link rule reads it; it is not a printed Drucksache of the TOP."""
+    if heading or speech_count:
+        return []
+    numbers: list[str] = []
+    for paragraph in top.findall("p"):
+        if (paragraph.attrib.get("klasse") or "").startswith("T"):
+            continue
+        numbers += [number for number in vote_links.chair_numbers("".join(paragraph.itertext())) if number not in numbers]
+    return numbers
+
+
 _REDNER_LABEL_RE = re.compile(r"^(?P<name>.+?)\s*\((?P<fraktion>[^()]+)\)\s*:?$")
 
 
@@ -2132,6 +2149,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                 "question_formats": sorted(top_format.formats),
                 "xml_turn_diagnostics": diagnostics,
                 "drucksachen": extract_drucksachen(top),
+                "called_drucksachen": called_drucksachen(top, heading=heading, speech_count=len(speeches)),
                 "ueberweisung": transfer_lines,
                 "page_range": {
                     "start": sorted_pages[0] if sorted_pages else None,
@@ -3914,6 +3932,8 @@ def xml_top_fields(top: dict[str, Any]) -> dict[str, Any]:
         "heading": top["heading"],
         "page_range": top["page_range"],
         "xml_drucksachen": top["drucksachen"],
+        # The numbers the chair names in a section without heading and Rede (vote_links step 2).
+        "called_drucksachen": list(top["called_drucksachen"]),
         "question_formats": top["question_formats"],
         "xml_turn_diagnostics": [dict(d) for d in top.get("xml_turn_diagnostics", [])],
         "xml_speech_count": len(top["speeches"]),
@@ -3954,6 +3974,8 @@ def contribution_summary(agenda_items: list[dict[str, Any]], sitting_contributio
     contributions = [c for top in agenda_items for c in top["contributions"]] + (sitting_contributions or [])
     return {
         "speech_kinds_version": speech_kinds.VERSION,
+        # What the vote-link rule reads from this parse (build_dip_pulse_site.stale_causes, "votes").
+        "vote_inputs_version": vote_links.INPUTS_VERSION,
         "xml_speech_count": sum(len(top["speeches"]) for top in agenda_items),
         "xml_contribution_counts": speech_kinds.kind_counts(contributions),
         # Withheld Reden (ADR 0005): outside every count above, own words only.
@@ -4348,14 +4370,17 @@ def enrich_with_api(
             continue
     for vote in roll_call_cache.values():
         vote["protocol_id"] = protocol_id
+    # One rule run: the placement of the fetched votes is the candidates' links,
+    # which also drive the warnings below (a fetched vote keeps its candidate's
+    # title, description and numbers).
     placed = vote_links.attribute_votes({
         "agenda_items": enriched_tops,
         "api_records": {"roll_call_vote_candidates": roll_call_candidates,
                         "matched_roll_call_votes": list(roll_call_cache.values())},
-    })
-    sitting_votes = placed["sitting_votes"]
+    }, placed=candidate_tops)
+    sitting_votes = placed.get("sitting_votes", [])
 
-    attributed_vote_ids = {vote_id for vote_id, tops in candidate_tops.items() if tops}
+    attributed_vote_ids = {vote_id for vote_id, link in candidate_tops.items() if link.tops}
     unmatched_candidates = [candidate for vote_id, candidate in candidate_by_id.items() if vote_id not in attributed_vote_ids]
     # Interpret each vote once from the evidence attributable to its documents
     # and the chair's announcements. A shared vote may have several TOP links;

@@ -621,7 +621,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             conn = store.connect(path)
             store.persist_report(conn, r)
             self.assertEqual(sk.VERSION, 10)
-            self.assertEqual(store.SCHEMA_VERSION, 14)
+            self.assertEqual(store.SCHEMA_VERSION, 15)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()
@@ -675,7 +675,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             vote = seeded["vote_ids"]["21/9"][0]
             conn.execute("UPDATE votes SET protocol_id=? WHERE id=?", (seeded["protocol_ids"]["21/9"], vote))
             other = conn.execute('SELECT id FROM agenda_items WHERE protocol_id=?', (seeded['protocol_ids']['21/10'],)).fetchone()[0]
-            conn.execute("INSERT INTO agenda_item_votes VALUES (?,?,'drucksache_xml')",(other,vote))
+            conn.execute("INSERT INTO agenda_item_votes VALUES (?,?,'drucksache_xml',NULL)",(other,vote))
             receipt_metrics = [metric for metric in facts.REGISTRY if 'AS protocol_date' in metric['sql']]
             self.assertEqual(len(receipt_metrics), 2)
             for metric in receipt_metrics:

@@ -593,7 +593,7 @@ class PartyMigrationTests(unittest.TestCase):
                 occurrence_id=f"fixture:dip:seed-{index}",
             )
         conn.execute(
-            "INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now)
+            "INSERT INTO votes(id, top_link_step, created_at, updated_at) VALUES ('v1', 'none', ?, ?)", (now, now)
         )
         for name, yes in (("CDU/CSU", 5), ("['CDU/CSU']", 3), ("['DIE LINKE']", 2)):
             conn.execute(
@@ -694,7 +694,7 @@ class PartyMigrationTests(unittest.TestCase):
                     (now, now),
                 )
                 duplicate_id = "dirty"
-                conn.execute("INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now))
+                conn.execute("INSERT INTO votes(id, top_link_step, created_at, updated_at) VALUES ('v1', 'none', ?, ?)", (now, now))
                 # Canonical row: a lone "yes" (leading_vote "yes"). Duplicate:
                 # ten "no" votes (leading_vote "no"). Merged majority is "no".
                 conn.execute(

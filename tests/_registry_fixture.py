@@ -50,7 +50,7 @@ class RegistryFixture:
     def vote_up(self, conn, vote, name, party, url):
         """A roll-call member keyed by its profile link, as persist_vote binds one."""
         from stable_ids import vote_member_occurrence_id
-        conn.execute("INSERT OR IGNORE INTO votes(id, created_at, updated_at) VALUES (?, '', '')", (vote,))
+        conn.execute("INSERT OR IGNORE INTO votes(id, top_link_step, created_at, updated_at) VALUES (?, 'none', '', '')", (vote,))
         record = self.up(conn, vote_member_occurrence_id(vote, name, party), f"profile:{url}", name, party=party, profile_url=url)
         conn.execute("INSERT OR IGNORE INTO vote_members(vote_id, mp_id, vote) VALUES (?, ?, 'yes')", (vote, record))
         return record

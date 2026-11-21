@@ -139,6 +139,7 @@ def agenda(*numbers: str) -> dict:
                 "page_range": None,
                 "question_formats": [],
                 "drucksachen": [{"dokumentnummer": number}],
+                "called_drucksachen": [],
                 "speeches": [],
                 "contributions": [],
             }

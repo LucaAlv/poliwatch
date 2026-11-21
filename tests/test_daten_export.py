@@ -588,7 +588,8 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_codebook_hashing_and_rendering_use_one_capture(self) -> None:
         root = self.authored_copy()
         path = root / b.CODEBOOK_INPUT_FILES["methods"]
-        path.write_text("Methoden vorher")
+        before = f"Methoden vorher\n{b.VOTE_LINK_REVIEW_MARKER}\n"
+        path.write_text(before)
         read_bytes = Path.read_bytes
         reads = []
 
@@ -605,7 +606,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
         self.assertIn("Methoden vorher", codebook)
         self.assertNotIn("Methoden nachher", codebook)
-        self.assertEqual(manifest["codebook_inputs"][b.CODEBOOK_INPUT_FILES["methods"]], hashlib.sha256(b"Methoden vorher").hexdigest())
+        self.assertEqual(manifest["codebook_inputs"][b.CODEBOOK_INPUT_FILES["methods"]], hashlib.sha256(before.encode()).hexdigest())
 
     def test_missing_or_truncated_new_assets_trigger_regeneration(self) -> None:
         manifest = self.export()
@@ -1241,19 +1242,19 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_thirty_four_csvs_named_and_headered(self) -> None:
+    def test_all_thirty_five_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 34)
+        self.assertEqual(len(csv_files), 35)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
             "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
             "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz", "mdb_stammdaten_stand-local.csv.gz",
-            "withheld_units-local.csv.gz", "withheld_turns-local.csv.gz",
+            "withheld_units-local.csv.gz", "withheld_turns-local.csv.gz", "vote_link_reviews-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -1292,7 +1293,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 20)
+        self.assertEqual(manifest["export_format"], 21)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1866,6 +1867,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
             "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
+            "vote_link_reviews": ["vote_id", "protocol", "top_id", "top_occurrence"],
             "vote_members": ["vote_id", "mp_id"], "vote_passages": ["vote_id", "document_id"],
             "vote_politikfelder": ["vote_id", "politikfeld"],
             "vote_proceedings": ["vote_id", "proceeding_id"], "votes": ["id"],

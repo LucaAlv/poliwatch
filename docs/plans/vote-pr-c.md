@@ -1,6 +1,6 @@
 # Vote PR C: fix the four link patterns, record the review, gate the release
 
-**Status (2026-11-21):** plan only; nothing is built. Third PR of [`vote-links-and-figures.md`](vote-links-and-figures.md) ("PR split for part 1", item 3). It carries the outcome of the N10 review ([`vote-links-review-summary.md`](vote-links-review-summary.md), "Outcome of passes 1 and 2") and owner decisions 1, 2 and 6 of 2026-11-14. Main is v0.46.37.0: store schema 14, export format 20, speech rule 10. This branch is cut from `claude/sweet-ellis-983a79`, which holds the review (three commits, not yet merged).
+**Status (2026-11-21):** C1 built on this branch (not merged); see "Deviations in the build" at the end. C2 is next. Third PR of [`vote-links-and-figures.md`](vote-links-and-figures.md) ("PR split for part 1", item 3). It carries the outcome of the N10 review ([`vote-links-review-summary.md`](vote-links-review-summary.md), "Outcome of passes 1 and 2") and owner decisions 1, 2 and 6 of 2026-11-14. Main is v0.46.37.0: store schema 14, export format 20, speech rule 10. This branch is cut from `claude/sweet-ellis-983a79`, which holds the review (three commits, not yet merged).
 
 Every figure below was measured offline, read-only, on the 806 cached reports of the reference store `/Users/luca/Projects/poliwatch/.context/dip-pulse-site` (710 links, 736 votes). The scratch harness that measured them is in [`vote-pr-c/`](vote-pr-c/): `harness.py` loads the reports and the sheet, `rules.py` holds every candidate condition, and [`vote-pr-c/expected-links.tsv`](vote-pr-c/expected-links.tsv) lists the 676 links the proposed rule gives. The harness's re-implementation of today's rule reproduces all 710 stored links before any condition is switched on. The decisions only the owner can make are at the end.
 
@@ -263,3 +263,35 @@ The plan on `claude/name-speakers-plan-fff320` bumps the speech rule ("9 → 10"
 2. **Decided: C2 is built right after C1, before the first `--publish`.** No entry needs it today, but without it the release gate has no remedy for a one-off wrong link in a new week except a rule change.
 
 Everything else in this plan (the conditions, the file and its keys, the version bumps, the order against the name-tag build) is an engineering choice made here and open to the review below.
+
+## Deviations in the build
+
+C1 was built test-first in the order of section 9. The replay of the reference store (a `cp -cR` copy, `--offline --repersist` with this branch, against a copy replayed with main's code) gives the figures of section 1 exactly and equals `vote-pr-c/expected-links.tsv` link by link (676 rows, 0 added, 0 missing, 0 with another basis):
+
+| | main | C1 |
+| --- | --- | --- |
+| Links | 710 | 676 |
+| `drucksache_xml` / `drucksache_vorgang` / `title` | 180 / 510 / 20 | 149 / 485 / 17 |
+| `einzelplan` / `drucksache_call` | – | 18 / 7 |
+| Votes with no TOP | 70 | 60 |
+| Votes linked to 2 or more TOPs | 17 (61 links) | 0 |
+| TOPs with 2 or more votes | 107 (297 links) | 95 (264 links) |
+| `votes.top_link_step` none / match / call / einzelplan / narrowed | – | 60 / 641 / 7 / 16 / 12 |
+| Entries that no longer hold (store gate) | – | 0 of 428 |
+| Contested votes / unreviewed (release condition) | – | 35 / 0 |
+
+`compare_store_values.py` shows nothing else moving: Reden 61,559, Beiträge 45,928, Redeanteil, persons, `agenda_item_documents` (38,147), `vote_politikfelder` (1,264), vote totals, outcomes and Abweichler, and 0 of 1,944 Fakt values. One derived figure the plan did not list moves with the links: `vote_proceedings` 833 → 832, because a vote's Vorgänge are narrowed to those of its TOP. 318 and 319 (18/71) lose "Finanzplan des Bundes 2014 bis 2018", which only the umbrella TOP I (Fortsetzung) held; the Schlussabstimmung and the Entschließungsantrag were on the Haushaltsgesetz, so the new rows are more correct. 375 (18/141) gains "Finanzplan des Bundes 2015 bis 2019", which its new Einzelplan 12 section holds as a jointly debated Vorgang; that follows the existing narrowing rule (`politikfelder`), and whether a jointly debated Finanzplan should count as a vote's context is a question for that rule, not for PR C.
+
+Deviations, each with its reason:
+
+1. **Entries carry `evidence` and `reviewer`.** Item 15 asks the sheet to keep all five verdict columns on regeneration; with only `note` and `source` in the record, a regenerated sheet would lose the reviewers' evidence. `note` stays what the vote page shows for a C2 drop or flag.
+2. **The loader refuses `drop` and `flag` until C2.** Accepting them while nothing applies them would let an acting entry sit silently without effect. The store gate, the oracle and the release gate check every entry kind already.
+3. **`heading_starts` is at most 40 characters and has no trailing space.** The plan's own example holds 43 characters; a cut at 40 that ends in a space is trimmed, so a cleaned heading still starts with it.
+4. **`scripts/reviewed_vote_links.json` is a codebook input.** DATA.md states the review's figures from it at export, and the release reads it as the export's commit holds it; as a codebook input its hash is in the manifest and `verify_export` already matches it against that commit. Generated from the entries: reviewed sample (408), right and wrong (356 / 52), the wrong ones per pattern, and the links the rule change added (20). Written as text in `docs/data-methods.md`, because the entries do not record them: the 64 links of the random stratum with the 4.6 % bound, and the 2 wrong links found outside the sample. The split "12 of the 20 outside the review's notes" is not stated, for the same reason.
+5. **`docs/data-changelog.md` is not edited.** It describes the release changelog mechanism; no release exists yet, so there is no release changelog to carry old → new figures. They are in the table above and go into CHANGELOG.md at the ship.
+6. **A replay does rewrite the cached JSON.** Section 6 and section 7 assumed it never does; `rebuild_cached_detail_pages` writes every re-read report back. After this replay the cached reports hold `called_drucksachen` and `vote_inputs_version`. `--fixture` still re-reads each sitting from its XML in memory, so it does not depend on a replay having run; the sheet reads no field the replay adds and is left as it was.
+7. **`attribute_votes` writes a vote list only where it holds a vote or the report has the key.** Persist now attributes every report, and an attribution that added empty `votes` and `sitting_votes` keys rewrote reports a test proves must stay as they were (`test_registry_contracts`, "the cached source evidence is never rewritten").
+8. **Item 4 carries every cached vote when the run fetched none.** A test that asserted the old loss (a re-parse that renamed the TOP lost both votes and the sitting's completeness) now asserts the votes are kept, placed by the rule, and the sitting stays complete.
+9. **The release gate reads the exported CSVs**, not the export's SQLite: the CSVs are the rows `verify_export` checked against the manifest, and an in-memory database would need an opener outside `SQLITE_OPENERS`. Both build a `Sitting` through one function (`reviewed_vote_links.sittings_of_rows`), as the store gate does.
+10. **Test fixtures that met the new steps.** `vote_interpretation_protocol.xml` has headingless, Rede-free sections whose chair text names the votes' Drucksachen, so step 2 moves vote 811 to TOP 10 alone; the test now expects one copy. The parity test of `test_derive` placed vote 4 (`20/0301`) as a sitting vote because numbers compared as strings; canonical numbers link it to the TOP holding `20/301`.
+11. **The Einzelplan pattern has a word boundary in front** (`\bEinzelplan`), and the third-reading test strips leading non-word characters before matching instead of one pattern with overlapping `\W*` and `\s*` (class 8). Neither changes a link on the store.

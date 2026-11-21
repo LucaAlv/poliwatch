@@ -18,12 +18,13 @@ import render_dip_pulse_html as render
 import facts
 import speech_kinds
 from stable_ids import stable_key
+import vote_links
 
 
 def report(pid='s1', names=('Ada Example',)):
     return {'protocol': {'id':pid,'dokumentnummer':f'21/{pid[-1]}','datum':'2026-06-10',
                          'reviewed_digest':_support.reviewed_units.sitting_digest(f'21/{pid[-1]}')},
-            'validation_summary':{'speech_kinds_version':speech_kinds.VERSION},
+            'validation_summary':{'speech_kinds_version': speech_kinds.VERSION, 'vote_inputs_version': vote_links.INPUTS_VERSION},
             'agenda_items':[{'index':1,'heading':'Debatte','xml_speakers':[
                 {'rede_id':f'{pid}-r{index}', 'speaker':{'display_name':name,'xml_redner_id':str(index+1),'fraktion':'SPD'},
                  'paragraph_count':1,'char_count':19,'text':'Ein geprüfter Text.'} for index,name in enumerate(names)]}]}
@@ -265,6 +266,7 @@ def documents_report():
     and DIP links BT 20/456."""
     r = json.loads((_support.FIXTURES / 'report.json').read_text(encoding='utf-8'))
     r.setdefault('validation_summary', {})['speech_kinds_version'] = speech_kinds.VERSION
+    r['validation_summary']['vote_inputs_version'] = vote_links.INPUTS_VERSION
     return r
 
 
@@ -432,7 +434,7 @@ class SourceIdNormalisationTests(unittest.TestCase):
         conn.execute('PRAGMA foreign_keys = ON'); store.initialize(conn)
         for pid, person_id in (('a', 7), ('b', '7')):
             r = {'protocol': {'id': pid, 'dokumentnummer': {'a': '21/1', 'b': '21/2'}[pid], 'datum': '2026-06-10'},
-                 'validation_summary': {'speech_kinds_version': speech_kinds.VERSION}, 'agenda_items': [],
+                 'validation_summary': {'speech_kinds_version': speech_kinds.VERSION, 'vote_inputs_version': vote_links.INPUTS_VERSION}, 'agenda_items': [],
                  'sampled_people': [{'id': person_id, 'titel': 'Ada Example', 'fraktion': 'SPD'}]}
             store.persist_report(conn, r)
         self.assertEqual([tuple(r) for r in conn.execute('SELECT identity_key, dip_person_id FROM mps')], [('dip:7', '7')])

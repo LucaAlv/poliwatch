@@ -98,7 +98,7 @@ def make_output(
         for vote_id, date, number, leading, party_name in votes:
             if not conn.execute("SELECT 1 FROM votes WHERE id = ?", (vote_id,)).fetchone():
                 conn.execute(
-                    "INSERT INTO votes(id, date, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO votes(id, date, top_link_step, created_at, updated_at) VALUES (?, ?, 'none', ?, ?)",
                     (vote_id, date, NOW, NOW),
                 )
                 conn.execute(
@@ -680,7 +680,7 @@ class CompareStoreValuesTests(unittest.TestCase):
             item = conn.execute("SELECT agenda_item_id FROM agenda_item_votes WHERE vote_id = 'v1'").fetchone()[0]
             for vote_id in ("v8", "v9"):
                 conn.execute(
-                    "INSERT INTO votes(id, date, application_result, abweichler_count, created_at, updated_at) VALUES (?, '2026-03-04', 'accepted', 0, ?, ?)",
+                    "INSERT INTO votes(id, date, application_result, abweichler_count, top_link_step, created_at, updated_at) VALUES (?, '2026-03-04', 'accepted', 0, 'none', ?, ?)",
                     (vote_id, NOW, NOW),
                 )
                 conn.execute("INSERT INTO agenda_item_votes(agenda_item_id, vote_id, basis) VALUES (?, ?, 'drucksache_xml')", (item, vote_id))

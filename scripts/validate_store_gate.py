@@ -31,6 +31,11 @@ checks, in order:
 5. The export: ``data/exports/datenstand.json`` passes the manifest validator,
    every listed file exists with its size and checksum, and the protocol and
    vote counts match the store; ``--validate-publication`` passes.
+6. The reviewed vote links (``scripts/reviewed_vote_links.json``): every entry
+   of a sitting the store holds still holds (right links made, wrong ones not,
+   keys matching by heading and first page). The release condition over the
+   store (every contested vote reviewed, docs/plans/vote-pr-c.md section 5) is
+   reported, not failed: it stops ``--publish``, never a build.
 
 The receipt (JSON) records each check, the store counts, the timings and the
 fingerprints. Exit codes: 0 every check passed, 1 a check failed, 2 bad input.
@@ -65,6 +70,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from dip_cache import PERSON_FILENAME  # noqa: E402
 import reviewed_units  # noqa: E402
+import reviewed_vote_links  # noqa: E402
 from sqlite_open import open_readonly  # noqa: E402
 from stable_ids import key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
@@ -351,6 +357,26 @@ def abweichler_count_mismatches(database_path: Path) -> list[str]:
         conn.close()
 
 
+def reviewed_vote_link_check(database_path: Path, entries: list[reviewed_vote_links.Entry]) -> dict[str, Any]:
+    """Check 6: the entries that no longer hold (``stale``, failing) and the
+    release condition over the store (``release``, reported only)."""
+    conn = open_readonly(database_path)
+    try:
+        sittings = reviewed_vote_links.sittings_of_store(conn)
+    finally:
+        conn.close()
+    by_protocol: dict[str, list[reviewed_vote_links.Entry]] = {}
+    for entry in entries:
+        by_protocol.setdefault(entry.protocol, []).append(entry)
+    stale = [problem for protocol, sitting in sorted(sittings.items())
+             for problem in reviewed_vote_links.problems(by_protocol.get(protocol, []), sitting)]
+    release = reviewed_vote_links.gate(entries, sittings)
+    return {"entries": len(entries), "checked": release["reviewed"], "skipped_not_in_store": release["skipped"],
+            "stale": stale[:50], "stale_count": len(stale),
+            "release": {"contested_votes": release["contested"], "refusals": release["refusals"][:50],
+                        "refusal_count": len(release["refusals"])}}
+
+
 def _store_identity(database_path: Path) -> dict[str, Any]:
     status = database_path.stat()
     return {"sha256": _sha256(database_path), "bytes": status.st_size, "mtime_ns": status.st_mtime_ns, "inode": status.st_ino}
@@ -615,6 +641,8 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         checks["every_withheld_rede_has_a_redner_id"] = not receipt["withheld_without_redner_id"]
         receipt["abweichler_count_mismatches"] = abweichler_count_mismatches(database_path)
         checks["abweichler_count_matches_members"] = not receipt["abweichler_count_mismatches"]
+        receipt["reviewed_vote_links"] = reviewed_vote_link_check(database_path, reviewed_vote_links.load())
+        checks["reviewed_vote_links_hold"] = receipt["reviewed_vote_links"]["stale_count"] == 0
         receipt["counts"] = store_counts(database_path)
         receipt["counts_vs_2026_10_05"] = {
             key: {"old": old, "new": receipt["counts"][key], "delta": receipt["counts"][key] - old}
@@ -690,6 +718,11 @@ def main(argv: list[str] | None = None) -> int:
         reviewed_units.load()
     except reviewed_units.ReviewedUnitsError as exc:
         print(f"ERROR [reviewed-units]: {exc}. Fix: repair scripts/reviewed_units.json (docs/adr/0005-withhold-refused-reden.md), then re-run.", file=sys.stderr)
+        return 2
+    try:
+        reviewed_vote_links.load()
+    except reviewed_vote_links.ReviewedVoteLinksError as exc:
+        print(f"ERROR [reviewed-vote-links]: {exc}. Fix: repair scripts/reviewed_vote_links.json (docs/plans/vote-pr-c.md, section 4), then re-run.", file=sys.stderr)
         return 2
     output_dir = args.output_dir.resolve()
     if not (output_dir / "data").is_dir():
