@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.36.0] - 2026-11-21
+
+The sheet for checking vote links by hand now covers the 806-sitting reference store, and the store refuses a few more ways a report could place a vote wrongly. No stored figure, vote link, page or export changes. Running the new checks on all 806 cached reports of the reference store refuses none of them.
+
+### Added
+
+- **The review sheet takes the sittings fetched since it was written.** 18/62, 18/90 and 21/107 to 21/109 entered the store on 2026-11-20 and 2026-11-21. Their 9 links join the sheet as batch `nov21`, so it now lists 408 of the 710 links in 201 review units. The 399 rows written before are unchanged, and the reviewer notes name vote 1046 (21/109) as one to read first.
+- **`scripts/vote_link_review.py` takes several later batches.** `--batch-protocols` and `--batch-name` can be given more than once, one name per list. Each batch is drawn on its own, in the order given, so a batch added later changes no earlier draw. Two batches with one name, or one sitting in two batches, are refused.
+
+### Changed
+
+- **The store refuses a vote that sits both under an agenda item and among the sitting's unattached votes.** A reader of the unattached votes would have shown it twice.
+- **A misplaced vote gives one error instead of two.** A vote the rule attaches to no agenda item, held under one anyway, used to be named twice, which could push a third fault out of the three errors shown.
+- **A vote without an id in the DIP records is refused when the report is loaded, with the protocol number.** Before, the store refused it later, with an error that named no sitting.
+- **The parser and the vote links read printed Drucksachen through one host check,** so they cannot disagree about which link counts as a Drucksache.
+
 ## [0.46.35.0] - 2026-11-20
 
 The sheet for checking the links between roll-call votes and agenda items by hand is written for the 801-sitting reference store. It lists 399 of the 701 links in 195 review units, with notes for the reviewer beside it. No link, figure, page or export changes. The rule that makes the links is untouched, and the verdict columns of the sheet are still empty. On the 718 sittings held before the restored ones came back, the sheet picks the same 329 links the plan sized; the 83 restored sittings add 70.
