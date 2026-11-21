@@ -301,6 +301,9 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 12. ~~**One misplaced unlinked vote gives two errors.**~~ **Done (2026-11-20):** a vote held under a TOP the rule does not link it to, and missing from `sitting_votes`, gives the one "sits under" error. No stored figure or link moved.
 13. ~~**`vote_links` uses the private `derive._clean`**~~ **Done (2026-11-20):** `derive._clean` is now the public `derive.clean_text`; `vote_links` calls it. No stored figure or link moved.
 
+**Deferred from the review of the items 9 to 13 guards (2026-11-21), none a wrong figure or link:**
+14. **Wording and hygiene left by the guards.** (a) `vote_links.placement_errors`' docstring does not name the new "linked to a TOP and also sits in sitting_votes" error. (b) The `require_vote_shape` docstring now holds one very long line after the `api_records` clause; wrap it. (c) `enrich_with_api`'s `position_matches_top` filters `top["drucksachen"]` through `derive.printed_drucksachen`, but `extract_drucksachen` already applied the host test to every parsed TOP, so the call only keeps the two paths textually joined. (d) `tests/test_derive.py` `test_parser_and_vote_links_share_one_host_test` asserts through `inspect.getsource(...)` containing a name, which breaks on a rename that keeps the behaviour. (e) `require_vote_shape` calls `.get` on `report["api_records"]`; a non-dict, non-empty value (a list or string) raises AttributeError in the loader and renderer, as it already did in `vote_links.links`. The scraper always writes a dict.
+
 **Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest errors: an amendment that shares a Drucksache with an unrelated TOP on the same day, and a fuzzy title match that binds a neighbouring TOP (review checklist class 7).
 
 **Effort:** M (human ~2 days / CC ~2 h, estimated)
