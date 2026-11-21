@@ -58,7 +58,7 @@ class ReviewedVoteLinksError(Exception):
     """The reviewed vote links file is missing or malformed. Names the entry; stops the run."""
 
 
-Key = tuple[str, str, str, int]
+LinkKey = tuple[str, str, str, int]
 
 
 @dataclass(frozen=True)
@@ -78,7 +78,7 @@ class Entry:
     source: str
 
     @property
-    def key(self) -> Key:
+    def key(self) -> LinkKey:
         return (self.protocol, self.vote_id, self.top_id, self.top_occurrence)
 
     @property
@@ -113,7 +113,7 @@ def check(data: Any, where: str = PATH.name) -> list[Entry]:
     if not isinstance(data, dict) or set(data) != {"entries"} or not isinstance(data["entries"], list):
         raise ReviewedVoteLinksError(f'{where} must be an object with exactly one key, "entries", an array')
     entries: list[Entry] = []
-    seen: set[Key] = set()
+    seen: set[LinkKey] = set()
     for position, raw in enumerate(data["entries"], 1):
         label = f"{where} entry {position}"
         if not isinstance(raw, dict) or set(raw) != ENTRY_KEYS:
@@ -212,7 +212,7 @@ class Sitting:
                     return position
         return None
 
-    def key_of(self, vote_id: str, position: int) -> Key:
+    def key_of(self, vote_id: str, position: int) -> LinkKey:
         top_id = self.tops[position][0]
         occurrence = sum(1 for other, _h, _p in self.tops[:position + 1] if other == top_id)
         return (self.protocol, vote_id, top_id, occurrence)
@@ -326,7 +326,7 @@ def gate(entries: Iterable[Entry], sittings: Mapping[str, Sitting]) -> dict[str,
     (how many votes), ``reviewed`` (entries checked) and ``skipped`` (entries of
     sittings ``sittings`` does not hold)."""
     entries = list(entries)
-    by_key = {entry.key: entry for entry in entries}
+    by_link = {entry.key: entry for entry in entries}
     by_protocol: dict[str, list[Entry]] = {}
     for entry in entries:
         by_protocol.setdefault(entry.protocol, []).append(entry)
@@ -339,7 +339,7 @@ def gate(entries: Iterable[Entry], sittings: Mapping[str, Sitting]) -> dict[str,
             count += 1
             for position in positions:
                 key = sitting.key_of(vote_id, position)
-                entry = by_key.get(key)
+                entry = by_link.get(key)
                 where = f"{protocol} vote {vote_id} {key[2]} #{key[3]}"
                 if entry is None:
                     refusals.append(f"{where}: contested link ({sitting.steps.get(vote_id)}, {len(positions)} TOP(s)) has no reviewed entry")
