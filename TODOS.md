@@ -24,7 +24,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - ~~Before T4: facts must treat a sitting with withheld Reden as partial (P1 under "Found by PR 2's ship review" in the coverage gate entry).~~ **Built in PR A of `docs/plans/withheld-before-t4.md`** (2026-11-14, ADR 0005 "Facts").
 3. "Main and stable releases": ~~the review checklist~~ (done 2026-11-15) and ~~the policy text~~ (`docs/release-policy.md`, 2026-11-20). Left for the first release: the swap of the `CLAUDE.md` section on the day of the first `--publish`, the owner's sign-off of the thresholds, and the first review record.
 4. "Rename the project to open-parlament". ~~"Comparison and joinable ids in DATA.md"~~ is written (2026-11-20, see Completed); "Vergleich section in DATA.md: what it leaves open" holds the rest.
-5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
 6. The first release: the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only). Items 1–5 of "Release pipeline: deferred /ship review findings", which had to come first, are done (2026-11-17).
 7. "Public repository: follow-ups".
 
@@ -438,7 +438,7 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 **What is left:**
 - The owner turns on secret scanning and push protection (Settings → Code security), and "Block command line pushes that expose my email". The commit history stays as it is (decided 2026-11-14); this repo's `user.email` is the GitHub noreply address.
-- One sentence in the roll-call e-mail ("Settle the roll-call source for redistribution"): are test excerpts of the roll-call pages in a public code repository covered (`tests/fixtures/roll_call_detail_*.html`, `member_votes.html`, `namenslisten_list.html`, `roll_call_1002.json`, and named Stimmen in `docs/plans/e4-refiled-votes-old-new.tsv`)?
+- One sentence in the roll-call e-mail ("Settle the roll-call source for redistribution"): are test excerpts of the roll-call pages in a public code repository covered (`tests/fixtures/roll_call_detail_*.html`, `member_votes.html`, `namenslisten_list.html`, `roll_call_1002.json`, and named Stimmen in `docs/plans/e4-refiled-votes-old-new.tsv`)? **Asked in the owner's e-mail of 2026-11-21** (question 3), answer awaited.
 
 **Why:** Found by the v1 scope review.
 
@@ -1656,7 +1656,7 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 
 **What:**
 - Check whether the Plenarprotokoll's „Endgültiges Ergebnis" also lists non-voters, or only Ja/Nein/Enthalten. **Answered 2026-10-31:** 0 of the 232 „Endgültiges Ergebnis" blocks in the cached WP 20/21 protocol XML list non-voters, so only the XLSX roll-call lists carry them.
-- Ask parlamentsdokumentation@bundestag.de whether the roll-call XLSX lists may be redistributed.
+- Ask parlamentsdokumentation@bundestag.de whether the roll-call XLSX lists may be redistributed. **Sent by the owner on 2026-11-21** (owner decision 1 of the owner-decisions session; the owner worded it from a draft). One e-mail asks three things: (1) whether the per-member results (Ja, Nein, Enthaltung and „nicht abgegeben“) of the roll-call pages and XLSX lists may be redistributed in processed form, on what terms and with what source line; (2) the MdB-Stammdaten rows ("Settle the MdB-Stammdaten redistribution terms"); (3) the test excerpts ("Public repository: follow-ups"). The first `--publish` waits for the answer; other Stage 1 work goes on meanwhile. No reply by 2026-12-12: send a reminder. Record the answer here, in the two entries named, and as an amendment to ADR 0003 that closes open question 5.
 - If the answer is no, or only the XLSX carries the non-voters, source per-member votes from the protocol XML or from abgeordnetenwatch (CC0) instead.
 
 **Why:** bundestag.de's default terms are private use only. The Open Data page calls the XLSX lists open data but names no licence (ADR 0003, open question 5).
@@ -1668,7 +1668,7 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 ### Settle the MdB-Stammdaten redistribution terms (`bundestag-stammdaten` layer)
 
 **What:** The seat tables (`mdb_zugehoerigkeiten`, `party_seats`, `mdb_stammdaten_stand`) carry the licence layer `bundestag-stammdaten` (C1, D7). The Open Data page gives "© Deutscher Bundestag" and says the data "können zur maschinellen Weiterverarbeitung genutzt werden", with no licence. Then:
-- ask, together with the roll-call question, whether the derived Zugehörigkeit rows (id, name, dates, group) may be redistributed;
+- ask, together with the roll-call question, whether the derived Zugehörigkeit rows (id, name, dates, group) may be redistributed; **asked in the owner's e-mail of 2026-11-21** (question 2; see "Settle the roll-call source for redistribution"), answer awaited;
 - write the layer's terms into `LICENSE-DATA.md` (which `DATA.md` quotes; it says only that they are open), its attribution short string and ADR 0003, neither of which names the MdB-Stammdaten yet.
 
 ~~Also: DATA.md's sources paragraph (`_codebook_sources_and_citation`) names the open redistribution question for the roll-call data only; name the MdB-Stammdaten there too until the terms are settled (ship adversarial pass 3).~~ **Done 2026-11-18:** the sentence now reads "der namentlichen Abstimmungsdaten (ADR 0003) und der MdB-Stammdaten" (the ADR is cited for the roll-call data only, since it does not name the MdB-Stammdaten yet); the terms and LICENSE-DATA.md work below stay open.
