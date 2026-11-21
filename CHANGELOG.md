@@ -8,10 +8,10 @@ The owner's ten open decisions before the first data release are recorded, and t
 
 ### Changed
 
-- **The site keeps its two settings for one tab, not for good.** The dark-theme choice and the AI-summary collapse state are stored in `sessionStorage` instead of `localStorage`, so they are gone once the tab closes. A reader who wants the dark theme picks it again in a new tab.
+- The dark-theme choice and the AI-summary collapse state are stored in `sessionStorage` instead of `localStorage`. They hold in the tab where the switch was used, not in a new tab, and end with it unless the browser restores the tab or the last session.
 - **The Datenschutz page names its legal bases.** For the people in the data it gives Art. 6 Abs. 1 lit. f and Art. 9 Abs. 2 lit. e DSGVO and, for the published protocol text, Art. 85 DSGVO with § 23 MStV; it names the recipients, the permanent versioned archive and how an objection under Art. 21 is handled. The storage section names § 25 Abs. 2 Nr. 2 TDDDG.
 - **The data notes say what the speech text leaves out.** `LICENSE-DATA.md` and the codebook entries for `speeches.text` and `contributions.text` now say they hold only the speaker's own words: applause, Zwischenrufe and chair remarks the protocol prints as their own element, and other speakers' turns, are not in them.
-- **The root `LICENSE` says which files are not under MIT.** The Plenarprotokoll XML, roll-call pages and MdB-Stammdaten excerpt kept as test fixtures, and the protocol-derived data under `scripts/` and `docs/`, carry the Bundestag's source line and the DIP terms.
+- The root `LICENSE` says that the Plenarprotokoll XML, roll-call pages and MdB-Stammdaten excerpt kept as test fixtures, and the protocol-derived data under `scripts/` and `docs/` are not under MIT and carry the Bundestag's source line and the DIP terms.
 
 ### For contributors
 
