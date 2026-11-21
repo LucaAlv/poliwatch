@@ -22,7 +22,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - ~~Plan item 1.5 of "A3 /gstack-ship review: deferred findings".~~ Measured 2026-11-12: 937 of 945 WP 18/19 MdB ids find their abgeordnetenwatch profile, no wrong person ([a3-phase4.md](docs/plans/a3-phase4.md), "Plan item 1.5"). Follow-ups: "abgeordnetenwatch profiles for WP 18/19: what item 1.5 leaves open".
    - "Check that vote links are right".
    - ~~Before T4: facts must treat a sitting with withheld Reden as partial (P1 under "Found by PR 2's ship review" in the coverage gate entry).~~ **Built in PR A of `docs/plans/withheld-before-t4.md`** (2026-11-14, ADR 0005 "Facts").
-3. "Main and stable releases": ~~the review checklist~~ (done 2026-11-15) and ~~the policy text~~ (`docs/release-policy.md`, 2026-11-20). Left for the first release: the swap of the `CLAUDE.md` section on the day of the first `--publish`, the owner's sign-off of the thresholds, and the first review record.
+3. "Main and stable releases": ~~the review checklist~~ (done 2026-11-15) and ~~the policy text~~ (`docs/release-policy.md`, 2026-11-20). Left for the first release: the swap of the `CLAUDE.md` section on the day of the first `--publish`, ~~the owner's sign-off of the thresholds~~ (signed off 2026-11-21), and the first review record.
 4. "Rename the project to open-parlament". ~~"Comparison and joinable ids in DATA.md"~~ is written (2026-11-20, see Completed); "Vergleich section in DATA.md: what it leaves open" holds the rest.
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, the trademark check.
 6. The first release: the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only). Items 1–5 of "Release pipeline: deferred /ship review findings", which had to come first, are done (2026-11-17).
@@ -387,7 +387,7 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 **Done 2026-11-20 (documentation):** `docs/release-policy.md` (what main and stable releases are, the `stable-<version>` tag as the marker, the bug-in-review rule, why the two can differ, what a release fixes, and the finished `CLAUDE.md` section); a pointer to it in `CLAUDE.md`'s pre-release section; `docs/release-reviews/TEMPLATE.md` for the review record; step 5 of `docs/release-review.md` now checks the Vergleich section that exists.
 
 **Left, for the first release:**
-- The owner signs off the token-ratio thresholds (15%, 50 tokens; the first run recommends keeping both) and the spot-check size (five sittings).
+- ~~The owner signs off the token-ratio thresholds (15%, 50 tokens; the first run recommends keeping both) and the spot-check size (five sittings).~~ **Signed off by the owner on 2026-11-21**, all three unchanged (`docs/release-review.md`, steps 3 and 4).
 - On the day of the first `--publish`: replace `CLAUDE.md`'s pre-release section with the block in `docs/release-policy.md`, and do the three edits listed under it (plan PR D). Not before: until then nothing is published and the pre-release rule is the true one (owner decision 2026-11-14).
 - The first release's review record (`docs/release-reviews/<version>.md`) and its `stable-<version>` tag. The DOI waits for the Zenodo account.
 
