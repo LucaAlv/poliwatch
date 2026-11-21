@@ -301,6 +301,13 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 12. **One misplaced unlinked vote gives two errors.** A vote the rule links to no TOP, held under a TOP and missing from `sitting_votes`, is named twice ("linked to no TOP and missing from sitting_votes" and "sits under X"); persist shows the first three errors, so the pair can hide a third fault. Wording only.
 13. **`vote_links` uses the private `derive._clean`** (`norm_title`, `_vote_order`). Make it public or give `derive` a public text cleaner.
 
+**Deferred from the code review of the 806-sitting sheet (branch `claude/store-806`, 2026-11-21), none a wrong row today:**
+14. **Regenerating the sheet erases filled verdicts.** `vote_link_review.py` writes the whole file anew, and since 2026-11-21 a later fetch means a regeneration with one more `--batch-protocols` list. Once the review has started, carry the five verdict columns over by row key (`vote_id`, `protocol`, `top_id`, `top_occurrence`), or refuse to overwrite a sheet that holds a verdict without a flag. Until then: regenerate only before the first verdict, or merge by hand from git.
+15. **Extending an existing batch list changes that batch's S4 draw.** Only a batch given as a new list, after the earlier ones, leaves earlier draws as they were. A sitting added to `vote-links-review-later-sittings.tsv` would re-draw `nov21` once its plain links pass 10 (`batch_sample_size`), and nothing reports it. Record each list's sittings in the sheet header and refuse a regeneration whose earlier batch differs, or state the rule in the script's help.
+16. **`--batch-name` without `--batch-protocols` is accepted and ignored**, so a forgotten list flag gives a sheet with no batch kept apart and a changed first draw, with exit 0. Refuse names without lists.
+17. **No test runs two batches through `main()` to a written sheet.** The per-name `batch` column and the per-batch header lines are tested for one batch and for the refusals only.
+18. **The sheet header names a branch commit** (`code revision`), which a squash merge does not keep on main (63e0ec6 now, 4b13df9 before). Record the revision of main the script equals, or the script file's blob hash.
+
 **Why:** The links are the stated difference from other datasets (`PRODUCT.md`, Positioning), and every planned count could pass with a misleading link. The likeliest errors: an amendment that shares a Drucksache with an unrelated TOP on the same day, and a fuzzy title match that binds a neighbouring TOP (review checklist class 7).
 
 **Effort:** M (human ~2 days / CC ~2 h, estimated)

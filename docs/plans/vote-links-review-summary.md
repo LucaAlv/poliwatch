@@ -54,7 +54,7 @@ Five sittings entered the store after 2026-11-20: 18/62 and 18/90 (the Fragestun
 - S2: 21/108 TOP 5 (votes 1038 and 1039, Startchancengesetz and the Entschließungsantrag to it) and 21/109 TOP 26 (votes 1043, 1044 and 1045, two Änderungsanträge and the Gesetzentwurf on the Nachrichtendienstrecht).
 - S4: votes 1040, 1041 and 1042 (21/108) and 1046 (21/109). The batch holds 4 plain links, fewer than the minimum of 10, so its draw takes all of them.
 - The generator keeps this batch out of the earlier draws like the `t4` batch, so the 60 S4 rows of the 801 sittings are the ones drawn before.
-- To look at first: vote 1046 (21/109, Sea Guardian). The text before its tally names 21/9077, and `shared` holds 21/8819 and 21/9152, both printed under the TOP only. It joins the 14 rows under "Announcement names other Drucksachen" below.
+- To look at first: vote 1046 (21/109, Sea Guardian). The text before its tally names 21/9077, and `shared` holds 21/8819 and 21/9152, both printed under the TOP only. It is the fifteenth row under "Announcement names other Drucksachen" below.
 
 ## Checks on the sheet's inputs (2026-11-20)
 
@@ -67,7 +67,7 @@ Not verdicts; places to look first.
 
 - **19/68, votes 562, 563 and 564 (12 links).** Each links to TOPs 6, 8, 17 and 19. All four TOPs hold the Unterrichtung 19/5647 through their own Vorgang, and each vote lists it. 562 (Mietwohnungsneubau) belongs to TOP 6, 563 and 564 (Mietrechtsanpassung) to TOP 8; the other 9 links rest on 19/5647 alone. This looks like pattern A outside the Haushalt.
 - **18/42, vote 280 (Mali, MINUSMA).** Linked to TOP III (MINUSMA) and TOP IV (UNIFIL). DIP's MINUSMA position is assigned to both TOPs; this looks like pattern C.
-- **Announcement names other Drucksachen.** In 14 Drucksache rows with a unique tally, the announcement names numbers of which none is in `shared`: votes 299 and 300 (18/54, each shows the other's Entschließungsantrag), 367 (18/130), 376 (18/141), 445 (18/209), 494 (19/5), 558 (19/66), 642 (19/132), 676 (19/165), 691 (19/184), 784 (20/42), 886 (20/145), 928 (20/194) and 1024 (21/97). The 800 characters before a tally can also hold the previous vote's numbers or an Änderungsantrag the TOP does not list, so each needs reading.
+- **Announcement names other Drucksachen.** In 15 Drucksache rows with a unique tally (14 on the 801-sitting store), the announcement names numbers of which none is in `shared`: votes 299 and 300 (18/54, each shows the other's Entschließungsantrag), 367 (18/130), 376 (18/141), 445 (18/209), 494 (19/5), 558 (19/66), 642 (19/132), 676 (19/165), 691 (19/184), 784 (20/42), 886 (20/145), 928 (20/194), 1024 (21/97) and, with the `nov21` batch, 1046 (21/109). The 800 characters before a tally can also hold the previous vote's numbers or an Änderungsantrag the TOP does not list, so each needs reading.
 - **Known from the pilot:** the ten Haushalt votes in S1 (pattern A) and vote 493 (pattern C).
 
 ## How to run the review

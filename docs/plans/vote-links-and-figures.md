@@ -89,7 +89,7 @@ In all: 329 links in about 155 units. If S4 finds no error, the plain-link error
 | Column | Content |
 | --- | --- |
 | `stratum` | S1 to S4, or several |
-| `batch` | `t4` for a sitting T4 restored (`--batch-protocols`), else `-` |
+| `batch` | `t4` for a sitting T4 restored, `nov21` for a sitting fetched on 2026-11-20 or 2026-11-21 (one `--batch-protocols` list each), else `-` |
 | `protocol`, `date`, `vote_id`, `vote_title` | the vote |
 | `item_index`, `top_id`, `top_occurrence`, `top_heading` | the TOP; first 120 characters of the heading |
 | `basis` | `drucksache_xml`, `drucksache_vorgang`, `title` |
