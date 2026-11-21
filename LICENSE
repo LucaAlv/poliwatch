@@ -26,3 +26,18 @@ This licence covers the code in this repository only. The generated data and
 every data export (the SQLite file, the CSV tables, DATA.md and the published
 site's figures) are not under MIT: they are licensed in layers, one per source,
 as LICENSE-DATA.md states (ADR 0003, docs/adr/0003-licences-and-impressum.md).
+
+Source material from the Deutscher Bundestag held in this repository is not
+under MIT either: the Plenarprotokoll XML files and excerpts, the roll-call
+pages and lists, and the MdB-Stammdaten excerpt under tests/fixtures/, and the
+names, Redner-IDs, protocol references and quoted wording in the data files
+under scripts/ (for example person_corrections.json, reviewed_units.json) and
+in docs/. Quelle: Deutscher Bundestag/Bundesrat – DIP (Plenarprotokolle cited
+as „BT-PlPr." with their number) and Deutscher Bundestag (bundestag.de, the
+roll-call pages and the MdB-Stammdaten). Many test fixtures are shortened or
+edited to test one case; they are not the official text. Plenarprotokolle are
+amtliche Werke (§ 5 Abs. 2 UrhG); the DIP terms of use
+(https://dip.bundestag.de/documents/nutzungsbedingungen_dip.pdf), in particular
+no. 5, apply to their reuse as conditions of the source, not as terms we add.
+Whether the roll-call excerpts may be held here was asked of the Bundestag on
+2026-11-21 (TODOS.md, "Settle the roll-call source for redistribution").

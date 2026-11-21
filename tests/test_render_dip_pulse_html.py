@@ -560,7 +560,7 @@ class AttentionRankingTests(unittest.TestCase):
 
     def test_js_marker_is_set_in_head_on_every_page_even_without_storage(self) -> None:
         # Every page (dossier and build_dip_pulse_site pages alike) emits the
-        # marker through page_head. It has to sit outside the localStorage
+        # marker through page_head. It has to sit outside the sessionStorage
         # try/catch so a blocked storage API still marks scripts as running.
         markup = self._render([self._item(1, 1)])
         marker = 'root.dataset.js = "1";'

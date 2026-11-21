@@ -129,7 +129,19 @@ The operator is one person with limited time, the audience is mostly not develop
 6. Whether the site is „journalistisch-redaktionell gestaltet" at all (§ 18 Abs. 2 MStV, and the press-law duties that come with it), or whether § 18 Abs. 1 is enough.
 
 7. Whether whitespace normalisation and joining paragraphs (D2) count as a change under § 62 UrhG, or whether the export must keep paragraph breaks.
-8. Whether the two localStorage entries the site writes on a click (the theme and the AI-summary collapse state, never transmitted) need consent or a statement of their basis under § 25 TDDDG. `datenschutz.html` describes them and states no legal basis.
+8. (Answered 2026-11-21, see the amendment of that date: both entries moved to `sessionStorage`, and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.) Whether the two localStorage entries the site writes on a click (the theme and the AI-summary collapse state, never transmitted) need consent or a statement of their basis under § 25 TDDDG. `datenschutz.html` describes them and states no legal basis.
+
+## Amendment 2026-11-21: the open questions answered by research, one sent out
+
+The owner cannot afford a lawyer and decided on 2026-11-21 to replace one with a research pass and an independent second read: `docs/research/adr-0003-legal-questions-2026-11.md` (branch `claude/adoring-thompson-8d2b43`, a74d630). It is research, not legal advice. Decided by the owner on 2026-11-21, as that note and the owner-decisions session recommended:
+
+- **Question 5** went to parlamentsdokumentation@bundestag.de on 2026-11-21 (TODOS.md, "Settle the roll-call source for redistribution").
+- **Questions 2, 3 and 7: the research positions stand.** Q2: DIP clause 5 is passed on as a notice of the source, never as the project's own term. Q3: the full speech corpus ships; no file or page collects one MP's speeches in full (person pages keep snippets and links). Q7: joining paragraphs is very likely no change under § 62 UrhG; the omissions (applause, Zwischenrufe, chair text inside a Rede) are a „Kürzung“ and are marked in `LICENSE-DATA.md`.
+- **Question 4, before the first `--publish`:** the bases for MP data are Art. 6 Abs. 1 lit. f and Art. 9 Abs. 2 lit. e DSGVO. Third-party data inside the speech texts and erasure against fixed releases are untested, so they go in writing to the Cyber Law Clinic of Universität Hamburg (free; it may decline on need), with the proposed bases (also Art. 85 with § 23 MStV), a record of processing and a takedown process; if it declines, to the Landesdatenschutzbeauftragte of the operator's Land.
+- **Question 1, before the public site:** the Impressum gives the operator's home address. That settles the question; a c/o service would reopen it.
+- **Question 6:** stays covered by naming the operator as Verantwortlicher under § 18 Abs. 2 MStV (D4).
+- **Question 8:** both settings moved to `sessionStorage` on 2026-11-21 (DSK Orientierungshilfe Digitale Dienste, Rn. 80), and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.
+- **Fixed at once (2026-11-21):** the omissions notice in `LICENSE-DATA.md`; the legal bases and the true storage list in `datenschutz.html`; a source and licence notice for the Bundestag material held in the public repository.
 
 ## Consequences and follow-ups
 
