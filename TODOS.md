@@ -24,7 +24,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
    - ~~Before T4: facts must treat a sitting with withheld Reden as partial (P1 under "Found by PR 2's ship review" in the coverage gate entry).~~ **Built in PR A of `docs/plans/withheld-before-t4.md`** (2026-11-14, ADR 0005 "Facts").
 3. "Main and stable releases": ~~the review checklist~~ (done 2026-11-15) and ~~the policy text~~ (`docs/release-policy.md`, 2026-11-20). Left for the first release: the swap of the `CLAUDE.md` section on the day of the first `--publish`, ~~the owner's sign-off of the thresholds~~ (signed off 2026-11-21), and the first review record.
 4. "Rename the project to open-parlament". ~~"Comparison and joinable ids in DATA.md"~~ is written (2026-11-20, see Completed); "Vergleich section in DATA.md: what it leaves open" holds the rest.
-5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", a Zenodo account, ~~the trademark check~~ (done 2026-11-21, no live hit).
+5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", ~~a Zenodo account~~ (set up 2026-11-21), ~~the trademark check~~ (done 2026-11-21, no live hit).
 6. The first release: the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only). Items 1–5 of "Release pipeline: deferred /ship review findings", which had to come first, are done (2026-11-17).
 7. "Public repository: follow-ups".
 
@@ -1829,7 +1829,7 @@ Since v0.30.0.0 every export carries `LICENSE-DATA.md`, and items 6 and 10 of "R
 **What is left:**
 - Archive each release's data files through Zenodo's upload API from the release script. Zenodo's GitHub integration archives only the source zip, not the release assets. The upload gives a concept DOI plus one DOI per version.
 - Show "Zitieren als …" with the version DOI on the Daten page and in the codebook.
-- This needs a Zenodo account and token.
+- ~~This needs a Zenodo account and token.~~ **Set up by the owner on 2026-11-21:** a Zenodo account and a sandbox account (sandbox.zenodo.org, for building and testing the upload with test DOIs), each with a personal access token scoped `deposit:write` and `deposit:actions`. The tokens are in the owner's macOS keychain under the service names `zenodo-token` and `zenodo-sandbox-token` (both checked present on 2026-11-21; read with `security find-generic-password -a "$USER" -s <name> -w`), never in a file or the repository. Creator on the record: Veh, Adrian Luca, ORCID 0009-0004-1222-5378. `CITATION.cff` still names "Luca" as given name and carries no ORCID: add `given-names: "Adrian Luca"` and `orcid: "https://orcid.org/0009-0004-1222-5378"` in the rename PR, and use the same in the Zenodo metadata.
 
 **Why:** A DOI is what journals and editors accept as a stable reference, and it survives a change of host or name. The product name is still open, which matters little here: the DOI stays.
 
