@@ -143,7 +143,7 @@ class LegalPagesTests(unittest.TestCase):
                 else:
                     self.assertNotIn("Die Datendownloads der Seite", page)
 
-    # Value: protects=the legal pages attribute personal data to the source that supplies it and do not promise the licence file inside every single download; fails_when=roll-call results are credited to abgeordnetenwatch.de again, or sources.html says LICENSE-DATA.md comes with each download; why_new=red-team review of this branch, owner decisions D1 A and D2 A; seam=render_datenschutz_page, render_sources_page; no_claim=legal sufficiency
+    # Value: protects=the legal pages attribute personal data to the source that supplies it, state the legal bases, recipients, Art. 21 route and sessionStorage/TDDDG basis, and do not promise the licence file inside every single download; fails_when=roll-call results are credited to abgeordnetenwatch.de again, a legal-basis, recipient, Art. 21 or TDDDG sentence is dropped, the page says localStorage again, or sources.html says LICENSE-DATA.md comes with each download; why_new=red-team review of this branch, owner decisions D1 A and D2 A; seam=render_datenschutz_page, render_sources_page; no_claim=legal sufficiency
     def test_legal_pages_name_sources_and_the_licence_file_accurately(self) -> None:
         persons = self.pages["datenschutz.html"].split("<h2>Personen in den Daten</h2>")[1].split("</section>")[0]
         self.assertIn("namentlicher Abstimmungen auf bundestag.de", persons)
@@ -151,6 +151,13 @@ class LegalPagesTests(unittest.TestCase):
         self.assertIn("Wahlkreis, Bundesland, Geburtsjahr, Beruf und Geschlecht von abgeordnetenwatch.de", persons)
         self.assertNotIn("in jedem Download", self.pages["sources.html"])
         self.assertIn("<code>LICENSE-DATA.md</code> liegt jedem Export bei", self.pages["sources.html"])
+        # ADR 0003 questions 4 and 8: the legal bases, the recipients, the objection route and the storage statement.
+        for needle in ("Art. 6 Abs. 1 lit. f DSGVO", "Art. 9 Abs. 2 lit. e DSGVO", "Art. 85 DSGVO", "Empfänger sind", "Art. 21 DSGVO prüfen wir"):
+            self.assertIn(needle, persons)
+        storage = self.pages["datenschutz.html"].split("<h2>Speicherung in Ihrem Browser</h2>")[1].split("</section>")[0]
+        self.assertIn("(sessionStorage)", storage)
+        self.assertIn("Abs. 2 Nr. 2 TDDDG", storage)
+        self.assertNotIn("localStorage", self.pages["datenschutz.html"])
 
     # Value: protects=the publication validator refuses an output tree without impressum.html or datenschutz.html; fails_when=a deployable tree can lack a legal page; why_new=ADR 0003 D4 makes both pages part of every public build; seam=validate_publication_directory; no_claim=page content
     def test_the_publication_validator_requires_both_legal_pages(self) -> None:
