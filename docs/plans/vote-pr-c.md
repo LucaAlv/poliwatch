@@ -2,7 +2,7 @@
 
 **Status (2026-11-21):** C1 built on this branch (not merged); see "Deviations in the build" at the end. C2 is next. Third PR of [`vote-links-and-figures.md`](vote-links-and-figures.md) ("PR split for part 1", item 3). It carries the outcome of the N10 review ([`vote-links-review-summary.md`](vote-links-review-summary.md), "Outcome of passes 1 and 2") and owner decisions 1, 2 and 6 of 2026-11-14. Main is v0.46.37.0: store schema 14, export format 20, speech rule 10. This branch is cut from `claude/sweet-ellis-983a79`, which holds the review (three commits, not yet merged).
 
-Every figure below was measured offline, read-only, on the 806 cached reports of the reference store `/Users/luca/Projects/poliwatch/.context/dip-pulse-site` (710 links, 736 votes). The scratch harness that measured them is in [`vote-pr-c/`](vote-pr-c/): `harness.py` loads the reports and the sheet, `rules.py` holds every candidate condition, and [`vote-pr-c/expected-links.tsv`](vote-pr-c/expected-links.tsv) lists the 676 links the proposed rule gives. The harness's re-implementation of today's rule reproduces all 710 stored links before any condition is switched on. The decisions only the owner can make are at the end.
+Every figure below was measured offline, read-only, on the 806 cached reports of the reference store `/Users/luca/Projects/poliwatch/.context/dip-pulse-site` (710 links, 736 votes). They were measured with a scratch harness, the plan's experiment: `harness.py` loaded the reports and the sheet, `rules.py` held every candidate condition, and its re-implementation of the rule of the time reproduced all 710 stored links before any condition was switched on. Both scripts are superseded by `scripts/vote_links.py` and `tests/test_vote_link_oracle.py`; they were removed before the ship and remain in this branch's history at 76cb71d (`git show 76cb71d:docs/plans/vote-pr-c/rules.py`). [`vote-pr-c/expected-links.tsv`](vote-pr-c/expected-links.tsv) lists the 676 links the rule gives. The decisions only the owner can make are at the end.
 
 ## 1. Summary
 
@@ -42,7 +42,7 @@ What is left is the vote's link set. **`top_links` returns, per vote, the set an
 
 ### Per pattern: the condition, what it fixes, what else it moves
 
-Each condition was run alone and together over all 806 reports (harness `report_diff`; output reproducible with `rules.py`).
+Each condition was run alone and together over all 806 reports (harness `report_diff`; reproducible with `rules.py` at 76cb71d).
 
 | Pattern | Condition | Fixes (reviewed wrong links) | Adds | Moves outside the 408 |
 | --- | --- | --- | --- | --- |
@@ -214,7 +214,7 @@ The Vorgang-level side of B and C is a new follow-up, not PR C: `agenda_item_doc
 
 ## 10. Adversarial review
 
-Two independent Sonnet reviewers attacked the draft on 2026-11-21, with the plan, the code and the read-only store, without this session's reasoning. One reviewed the architecture against the review checklist; the other hunted for a link the rule gets wrong and judged the 12 links of section 3 blind, from the XML, before reading section 3. Both reproduced the 676 links with the harness.
+Two independent Sonnet reviewers attacked the draft on 2026-11-21, with the plan, the code and the read-only store, without this session's reasoning. One reviewed the architecture against the review checklist; the other hunted for a link the rule gets wrong and judged the 12 links of section 3 blind, from the XML, before reading section 3. Both reproduced the 676 links with the harness (at 76cb71d).
 
 **Folded in:**
 1. *The fixtures and the sheet cannot read `called_drucksachen` from the cached JSON*, which a replay never rewrites. `--fixture` and the sheet generator now re-parse in memory first (section 6).

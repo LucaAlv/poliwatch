@@ -1,6 +1,6 @@
 {
   "runner": "python3.13 tests/run_pregate.py {files}",
-  "strays": {"allow": [".gstack/pregate.json", "CITATION.cff", "docs/plans/vote-pr-c/harness.py", "docs/plans/vote-pr-c/rules.py"]},
+  "strays": {"allow": [".gstack/pregate.json", "CITATION.cff"]},
   "dependencies": {
     "scripts/facts.py": ["tests/test_facts.py"],
     "scripts/build_revision.py": ["tests/test_build_revision.py", "tests/test_data_pipeline_cli.py", "tests/test_daten_export.py", "tests/test_publish_dip_pulse_data.py"],

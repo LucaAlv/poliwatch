@@ -1,4 +1,4 @@
-# Links the PR C rule gives on the 806 cached reports of the reference store (2026-11-21), from rules.py make_rule2. 676 rows.
+# Links the PR C rule gives on the 806 cached reports of the reference store (2026-11-21), from rules.py make_rule2 (the plan's experiment, at 76cb71d; superseded by scripts/vote_links.py). 676 rows.
 vote_id	protocol	top_id	top_occurrence	basis
 247	18/3	Tagesordnungspunkt 7	1	drucksache_vorgang
 248	18/3	Tagesordnungspunkt 2	1	drucksache_vorgang
