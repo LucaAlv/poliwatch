@@ -294,7 +294,7 @@ class ReviewedListTests(unittest.TestCase):
         with self.assertRaises(build.CachedReportError) as caught:
             build.require_parsed_reports([old_rule, both])
         message = str(caught.exception)
-        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/8, 18/9)", message)
+        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/8, 18/9)", message)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
         self.assertIn("1 were parsed under other entries of scripts/reviewed_units.json than it holds now (18/9)", message)
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
