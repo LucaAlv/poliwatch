@@ -121,13 +121,13 @@ Why the 10 Einzelplan votes had no TOP: in WP 18, 19 and early WP 20 an Einzelpl
 
 The loader stops a run only for entries that act (`drop`, `flag`) and for a malformed file, as `reviewed_units` does: a stale acting entry stops the weekly online build until it is deleted. That is the `reviewed_units` model, kept on purpose; it never fires while no entry acts. A verdict-only entry that no longer holds does not stop a build: it fails the oracle, the store gate and the release, which is where a regression of a checked link belongs. Entries apply after the rule and never stand in for a pattern (decision 2). Today no entry is `drop` or `flag`: the review found no one-off. The file feeds no parse, so a change to it makes no report stale: the attribution at the persist choke point (section 7) applies it on every run, and a test proves that a changed entry reaches the store without a re-read.
 
-## 5. The release gate (owner decision 6)
+## 5. The release gate (owner decision 6, amended 2026-11-21)
 
 **What it reads.** The export's SQLite (`agenda_item_votes`, `votes`) and `scripts/reviewed_vote_links.json` as of the export's commit, read with `build_revision.blob_text` the way `verify_export` already reads the licence file, so the entries are the ones the export was built with.
 
 **What it refuses.** Under `--publish`, every **contested vote** (one linked to two or more TOPs, or whose `top_link_step` is `call`, `einzelplan` or `narrowed`, so a step after the plain match decided it) unless each of its links has an entry with verdict `right` or action `flag`, matching key, `heading_starts` and `page_start`. It also refuses any present link whose entry says `wrong`. A dry run names them all. The export maps to the key by joining `agenda_items.top_id`, `item_index` and `protocols.document_number`, counting occurrences in `item_index` order. It sits beside `awaiting_exclusions` and `unreleased_sittings_problem` in `run_release`, and like them it does not stop `validate_store_gate` or a build, so T4-style and weekly builds still pass (ADR 0005, "The release enforces the bar", D6 precedent).
 
-**Why contested, not only two or more TOPs.** Decision 6 keys on "two or more TOPs" because that is where the review found every error. After PR C no vote is linked to two or more TOPs, so the literal gate would check nothing, while a wrong narrowing, a wrong Einzelplan move or a wrong call-section move would each leave one wrong link that it never sees. Steps 2 and 3 resolved most of the old multi-TOP votes (894, 960 and 979 had 5, 7 and 4 links), so they are gated too. This reading needs the owner's yes (question 1).
+**Why contested, not only two or more TOPs.** Decision 6 keys on "two or more TOPs" because that is where the review found every error. After PR C no vote is linked to two or more TOPs, so the literal gate would check nothing, while a wrong narrowing, a wrong Einzelplan move or a wrong call-section move would each leave one wrong link that it never sees. Steps 2 and 3 resolved most of the old multi-TOP votes (894, 960 and 979 had 5, 7 and 4 links), so they are gated too. The owner accepted this reading on 2026-11-21; it amends decision 6 (section 13).
 
 **What persist records for it.** `votes.top_link_step` TEXT NOT NULL, one of `none`, `match`, `call`, `einzelplan`, `narrowed`, written from the same `top_links` result as the links, so the two cannot disagree within one store.
 
@@ -257,7 +257,9 @@ The plan on `claude/name-speakers-plan-fff320` bumps the speech rule ("9 → 10"
 
 ## 13. Owner decisions
 
-1. **The release gate checks every contested vote, not only votes still linked to two or more TOPs.** A vote is contested when a step after the plain Drucksache match decided its TOP (narrowed, moved to its Einzelplan, or moved to the section where the chair called it). Pick: yes. After PR C no vote has two or more TOPs, so the literal decision 6 checks nothing, while a wrong step would leave a single wrong link nobody sees. Today 35 votes are contested, all reviewed; a budget week adds about 5 to 10 to review before its release. Alternative: keep decision 6 literal and rely on the oracle for the reviewed sittings only.
-2. **When to build the one-off mechanism (C2).** Pick: right after C1, before the first `--publish`. No entry needs it today, but without it the release gate has no remedy for a one-off wrong link in a new week except a rule change. Alternative: a TODOS entry, built when the first one-off appears.
+**Decided by the owner on 2026-11-21** ("Yes, accept both"), both as picked:
+
+1. **Decided: the release gate checks every contested vote, not only votes still linked to two or more TOPs.** This amends owner decision 6 of 2026-11-14. A vote is contested when a step after the plain Drucksache match decided its TOP (narrowed, moved to its Einzelplan, or moved to the section where the chair called it), or when it is linked to two or more TOPs. Today 35 votes are contested, all reviewed; a budget week adds about 5 to 10 to review before its release.
+2. **Decided: C2 is built right after C1, before the first `--publish`.** No entry needs it today, but without it the release gate has no remedy for a one-off wrong link in a new week except a rule change.
 
 Everything else in this plan (the conditions, the file and its keys, the version bumps, the order against the name-tag build) is an engineering choice made here and open to the review below.
