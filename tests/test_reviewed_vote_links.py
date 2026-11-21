@@ -260,8 +260,41 @@ class GateTests(unittest.TestCase):
         self.assertEqual((result["reviewed"], result["skipped"], result["refusals"]), (1, 1, []))
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+
+class ApplyTests(unittest.TestCase):
+    """``apply`` on a vote the rule links to two TOPs of a synthetic sitting."""
+
+    ITEMS = [{"top_id": "Tagesordnungspunkt I", "heading": "Zweite Beratung des Haushaltsgesetzes", "page_range": {"start": {"page": 4900}}},
+             {"top_id": "Tagesordnungspunkt II", "heading": "Dritte Beratung des von der Bundesregierung eingebrachten",
+              "page_range": {"start": {"page": 5000}}}]
+
+    def entry(self, position: int, **fields) -> reviewed.Entry:
+        item = self.ITEMS[position]
+        base = {"top_id": item["top_id"], "heading_starts": item["heading"][:40], "page_start": item["page_range"]["start"]["page"],
+                "verdict": "wrong", "action": "drop", "note": "gehört nicht dazu"}
+        return reviewed.check({"entries": [raw(**{**base, **fields})]})[0]
+
+    def placed(self, step: str = "match") -> dict:
+        import vote_links
+        return {"980": vote_links.TopLink({0: "title", 1: "title"}, step)}
+
+    # Value: protects=a drop removes only its own TOP; a vote left a TOP keeps the rule's deciding step, one left none falls to step none; fails_when=apply resets the step or drops every TOP of the vote; why_new=oracle tests drop a vote's only TOP; seam=none; no_claim=real sittings (synthetic items)
+    def test_a_drop_on_one_of_two_tops_keeps_the_other_link_and_its_step(self) -> None:
+        first, second = self.entry(0), self.entry(1)
+        links, applied = reviewed.apply("21/45", self.ITEMS, self.placed("narrowed"), [first])
+        self.assertEqual((links["980"].tops, links["980"].step), ({1: "title"}, "narrowed"))
+        self.assertEqual([(r.entry, r.position) for r in applied], [(first, 0)])
+        links, applied = reviewed.apply("21/45", self.ITEMS, self.placed("narrowed"), [first, second])
+        self.assertEqual((links["980"].tops, links["980"].step), ({}, "none"))
+        self.assertEqual([r.position for r in applied], [0, 1])
+
+    # Value: protects=the caller's links are not mutated and entries of another sitting apply to nothing; fails_when=apply edits placed in place or reads another sitting's entry; why_new=no other test passes placed twice; seam=none; no_claim=real sittings (synthetic items)
+    def test_apply_leaves_its_input_alone_and_skips_other_sittings(self) -> None:
+        placed = self.placed()
+        reviewed.apply("21/45", self.ITEMS, placed, [self.entry(0)])
+        self.assertEqual(placed, self.placed())
+        self.assertEqual(reviewed.apply("21/45", self.ITEMS, placed, [self.entry(0, protocol="21/44")]), (placed, []))
 
 
 class ReviewParagraphTests(unittest.TestCase):
@@ -286,3 +319,7 @@ class ReviewParagraphTests(unittest.TestCase):
                                              raw(vote_id="981", action="flag", note="unsicher")]})
         self.assertIn("Als Einzelfall entfernt sind 1 Verknüpfungen, als nicht sicher geprüft markiert 1",
                       b.vote_link_review_paragraph(acting))
+
+
+if __name__ == "__main__":
+    unittest.main()

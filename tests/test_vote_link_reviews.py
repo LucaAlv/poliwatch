@@ -140,6 +140,17 @@ class PageTests(unittest.TestCase):
             vote_links.attribute_votes(report)
         self.assertEqual(report["agenda_items"][0].get("votes") or [], [])
 
+    # Value: protects=a drop on one of a vote's TOPs says the vote also sat under the dropped one, and each review gets its own line; fails_when=the linked wording is lost or a second review overwrites the first; why_new=fixtures link one TOP, so the linked branch never renders; seam=none; no_claim=the full page (calls the line renderer)
+    def test_a_drop_on_a_vote_that_keeps_another_top_says_also(self) -> None:
+        from features import votes
+
+        drop, flag = reviewed.Review(entry(), 0), reviewed.Review(entry(**FLAG), 1)
+        kept = votes._link_review_html([drop, flag], True)
+        self.assertEqual(kept.count("vote-link-review"), 2)
+        self.assertIn("verband diese Abstimmung auch mit T1;", kept)
+        self.assertNotIn("auch mit", votes._link_review_html([drop], False))
+        self.assertEqual(votes._link_review_html([], True), "")
+
     # Value: protects=a dropped link leaves the bill page of the TOP's Vorgang (plan section 9); fails_when=the bill page reads the vote from a placement the drop did not reach; why_new=vote PR C2; seam=reviewed_vote_links.using
     def test_a_drop_removes_the_vote_from_the_bill_page(self) -> None:
         for entries, expected in (([], ["12345"]), ([entry()], [])):
