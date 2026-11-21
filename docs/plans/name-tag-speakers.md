@@ -32,7 +32,7 @@ Both open SQLite with `mode=ro&immutable=1`. A turn counts as the chair's when t
 
 | Kind | Where | Turns | Words | Entries | In the receipt | What it is |
 |---|---|---:|---:|---:|---:|---|
-| `rede` | in a `<rede>` | 86 | 59,263 | 67 | 79 | A whole Rede. The chair gives the floor in Rednerliste form ("Nächste Rednerin ist …"), and the turn opens with a salutation. One entry includes the speaker's later turns in the same Rede: continuations after a chair remark, the consent to a Zwischenfrage and the answer to it. Examples: 18/30 holds 22 of them (Pantel, Yüksel and Rainer in one host); 18/29 Krüger has 1,552 words. 18/104 `ID1810402200` is a `<rede>` that *starts* with `<name>Christian Kühn …`: it is stored today as an empty Rede with no speaker. |
+| `rede` | in a `<rede>` | 86 | 59,263 | 67 | 79 | A whole Rede. The chair gives the floor in Rednerliste form ("Nächste Rednerin ist …"), and the turn opens with a salutation. One entry includes the speaker's later turns in the same Rede: continuations after a chair remark, the consent to a Zwischenfrage and the answer to it. Examples: 18/30 holds 21 of these entries, in 25 turns (Pantel, Yüksel and Rainer in one host); 18/29 Krüger has 1,552 words. 18/104 `ID1810402200` is a `<rede>` that *starts* with `<name>Christian Kühn …`: it is stored today as an empty Rede bound to the placeholder person "Unbekannt", with no Fraktion or Sprechrolle. |
 | `befragung_antwort` | in a `<rede>` | 33 | 6,088 | 29 | 31 | Wanka's answers in the Befragungen 18/25 and 18/35. Each sits inside the asker's `<rede>`, whose Frage is stored as `befragung_frage`. |
 | `zwischenfrage` | in a `<rede>` | 17 | 1,349 | 15 | 17 | An MdB asks inside someone else's Rede, after the chair's offer and the Redner's consent. Neu asks 5 of them (in 6 turns), Müller 2. |
 | `befragung_frage` | in a `<rede>` | 3 | 335 | 3 | 3 | An MdB's Frage printed inside the minister's answer `<rede>`: Kolbe in 18/19, Müller twice in 18/87. |
@@ -55,10 +55,10 @@ Everything except 19/99, 19/104 (Woidke) and 19/125 is in WP 18. Inside a `<rede
 
 - **Two Reden are withheld because of a `<name>`.** 18/6 `ID1800602300` Winkelmeier-Becker (1,251 words): Neu's Zwischenfrage was printed as `<name>`, so Beck's later one is "unresolved". 18/36 `ID1803601400` Pfeiffer (1,803 words): his own consent was lost, so Dehm's Zwischenfrage is "unresolved".
 - **Wrong attribution.** In 18/29 `ID1802903200`, Henning Otte's Zwischenfrage in Neu's Rede (41 words) is counted as Otte's own words. Neu's Rede is the `<name>` turn, so the host's owner seems to speak again.
-- **An empty Rede with no speaker.** 18/104 `ID1810402200` is stored with `char_count` 0 and no `mp_id`, and it counts in the Reden total.
+- **An empty Rede with no speaker.** 18/104 `ID1810402200` is stored with `char_count` 0, bound to the placeholder person "Unbekannt" and with no Fraktion or Sprechrolle, and it counts in the Reden total.
 - **Debuts are late** (section 3).
 
-Found on the way, not part of this rule: the store keeps Wanka as **two persons**. Her Redner-ID 999990003 appears in 10 files (18/43–18/108) and 999990030 in 22 (18/121–18/244). Nothing joins them, so she has two Personenseiten and her debut is counted twice. That gets its own TODOS.md item.
+Found on the way, not part of this rule: the store keeps Wanka as **two persons**. Her Redner-ID 999990003 appears in 10 files (18/43–18/108) and 999990030 in 22 (18/121–18/244). Nothing joins them, so she has two Personenseiten and her debut is counted twice. Maas and Schwesig are split the same way: their WP 18 minister ids 999990001 and 999990002 are not joined to their later ids 11004809 and 999990099. That gets its own TODOS.md item.
 
 ## 2. The options, kind by kind
 
@@ -119,7 +119,9 @@ The share of WP 18 Reden by Fraktion moves by at most 0.08 points (Bundesregieru
 | WP 18 withheld Reden | 67 | 65 | 144 |
 | WP 18 withheld words | 56,704 | 53,650 | 123,603 |
 | WP 18 withheld share (own words) | 0.498% | 0.469% | 1.080% |
-| All WPs withheld share | 0.192% | 0.185% | 0.356% |
+| All WPs withheld share | 0.192% | 0.184% | 0.356% |
+
+On today's store of 806 sittings (21/107 to 21/109 added), the scripts reproduce the TSV unchanged and every WP 18 and 19 figure here stands. Only the all-WP shares move: 0.191% old, 0.184% under S, 0.354% under W.
 
 The S figures are more correct for two reasons. Two Reden that were withheld only because of a misprinted `<name>` are read. And the words that were missing from both sides of the ratio are now counted.
 
