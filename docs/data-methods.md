@@ -85,7 +85,7 @@ Einen Fehler, den mindestens zwei geprüfte Verknüpfungen teilen, behebt die Re
 
 <!-- vote-link-review: generated at export from scripts/reviewed_vote_links.json -->
 
-Unter 64 zufällig gezogenen einfachen Verknüpfungen (eine Abstimmung, ein Tagesordnungspunkt, über eine Drucksache) fand die Prüfung keinen Fehler; die Fehlerquote der nicht geprüften einfachen Verknüpfungen liegt damit bei 95 % Sicherheit unter 4,6 %. Die Regel für den Aufruf (Schritt 2) fand außerhalb der Stichprobe 2 weitere falsche Verknüpfungen und band beide Abstimmungen an ihren Abschnitt. Vor einer Veröffentlichung braucht jede Verknüpfung einer Abstimmung, die ein späterer Schritt einordnete oder die mit mehreren Tagesordnungspunkten verknüpft ist, einen geprüften Eintrag in `scripts/reviewed_vote_links.json`.
+Unter 64 zufällig gezogenen einfachen Verknüpfungen (eine Abstimmung, ein Tagesordnungspunkt, über eine Drucksache) fand die Prüfung keinen Fehler; die Fehlerquote der nicht geprüften einfachen Verknüpfungen liegt damit bei 95 % Sicherheit unter 4,6 %. Die Regel für den Aufruf (Schritt 2) fand außerhalb der Stichprobe 2 weitere falsche Verknüpfungen und band beide Abstimmungen an ihren Abschnitt. Vor einer Veröffentlichung braucht jede Verknüpfung einer Abstimmung, die ein späterer Schritt einordnete oder die die Regel mit mehreren Tagesordnungspunkten verknüpft, einen geprüften Eintrag in `scripts/reviewed_vote_links.json`; entfernt ein Eintrag eine von mehreren Verknüpfungen, braucht jede verbleibende weiterhin ihren.
 
 ## Sitzzahlen
 

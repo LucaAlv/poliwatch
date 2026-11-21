@@ -302,7 +302,7 @@ C2 was built test-first from section 9. The shipped file holds no `drop` or `fla
 
 1. **The flag line is reworded.** Decision 2's "Zuordnung zu TOP X ungeprüft sicher: …" does not parse as German; the panel says "Die Zuordnung zu TOP X ist nicht sicher geprüft (Prüfung vom TT.MM.JJJJ): {note}". The drop line is decision 2's sentence with the note after a colon, and "auch" only where the vote keeps another TOP.
 2. **A drop or flag needs a dated source** (`sheet YYYY-MM-DD`): the vote page names the date of the review, and `vote_link_reviews.reviewed_on` is NOT NULL. `plan vote-pr-c` entries cannot act.
-3. **A drop that leaves a vote no TOP sets `top_link_step = none`**, as for any vote without a TOP; the rule's step stays where a TOP remains. The record of the drop is in `vote_link_reviews` (TODOS, item 41).
+3. **A drop that leaves a vote no TOP sets `top_link_step = none`**, as for any vote without a TOP; the rule's step stays where a TOP remains. The record of the drop is in `vote_link_reviews`. The release gate counts a vote's TOPs before the drops (`reviewed_vote_links.contested`), so a drop on one of two TOPs leaves the other link gated (found in the code review of C2).
 4. **`vote_link_reviews.heading` holds the entry's `heading_starts`** (NULL for a headingless section), as the data dictionary describes the column, not the TOP's full heading.
 5. **The store gate also refuses the reverse:** a `review_note` or `vote_link_reviews` row that no acting entry names, so a store persisted under an older file fails the gate and the release.
 6. **`CONTESTED_STEPS` moved to `reviewed_vote_links`** (`vote_links.CONTESTED_STEPS` refers to it): `vote_links.links` now calls the entries module, and the code rules forbid the import cycle.

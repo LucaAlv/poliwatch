@@ -242,6 +242,19 @@ class GateTests(unittest.TestCase):
         result = reviewed.gate(self.entries({"verdict": "wrong", "action": "drop", "note": "nicht dazu"}), {"21/45": dropped})
         self.assertEqual((result["refusals"], result["contested"]), ([], 0))
 
+    # Value: protects=a drop on one of a vote's two TOPs leaves the other link gated, so a drop entry cannot stand in for the review of the link the vote keeps; fails_when=contested() counts only the links left after the drops (TODOS item 41 of vote PR C2); why_new=code review of vote PR C2; seam=none
+    def test_a_drop_on_one_of_two_tops_leaves_the_other_link_gated(self) -> None:
+        drop = {"top_id": "Tagesordnungspunkt I", "heading_starts": "Zweite Beratung des Haushaltsgesetzes", "page_start": 4900,
+                "verdict": "wrong", "action": "drop", "note": "nicht dazu"}
+        kept = sitting({("980", 1)}, {"980": "match"})
+        kept.reviews = {("21/45", "980", "Tagesordnungspunkt I", 1): ("drop", "nicht dazu")}
+        result = reviewed.gate(self.entries(drop), {"21/45": kept})
+        self.assertEqual(result["refusals"],
+                         ["21/45 vote 980 Tagesordnungspunkt II #1: contested link (match, 1 TOP(s)) has no reviewed entry"])
+        self.assertEqual(result["contested"], 1)
+        result = reviewed.gate(self.entries(drop, {}), {"21/45": kept})
+        self.assertEqual((result["refusals"], result["contested"]), ([], 1))
+
     def test_entries_of_sittings_outside_the_store_are_skipped_and_counted(self) -> None:
         result = reviewed.gate(self.entries({}, {"protocol": "18/1"}), {"21/45": sitting({("980", 1)})})
         self.assertEqual((result["reviewed"], result["skipped"], result["refusals"]), (1, 1, []))

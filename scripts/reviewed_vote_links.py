@@ -460,12 +460,17 @@ def problems(entries: Iterable[Entry], sitting: Sitting) -> list[str]:
 def contested(sitting: Sitting) -> dict[str, list[int]]:
     """The votes the release gate checks, with the positions of their TOPs: a
     vote linked to two or more TOPs, or one a step after the plain match
-    decided (``CONTESTED_STEPS``)."""
+    decided (``CONTESTED_STEPS``). The TOPs counted are those the rule linked,
+    before any drop: a drop on one of a vote's two TOPs leaves the other link
+    gated, so the drop entry never stands in for a review of the link the vote
+    keeps. Only the links made are returned."""
     per_vote: dict[str, list[int]] = {}
     for vote_id, position in sorted(sitting.links):
         per_vote.setdefault(vote_id, []).append(position)
+    dropped = Counter(key[1] for key, (action, _note) in sitting.reviews.items()
+                      if action == "drop" and (key[1], sitting.position(key[2], key[3])) not in sitting.links)
     return {vote_id: positions for vote_id, positions in per_vote.items()
-            if len(positions) > 1 or sitting.steps.get(vote_id) in CONTESTED_STEPS}
+            if len(positions) + dropped[vote_id] > 1 or sitting.steps.get(vote_id) in CONTESTED_STEPS}
 
 
 def gate(entries: Iterable[Entry], sittings: Mapping[str, Sitting]) -> dict[str, Any]:
