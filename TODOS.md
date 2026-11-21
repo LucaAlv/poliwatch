@@ -107,7 +107,7 @@ The implementer must prove (answered by PR 1 and PR 2, v0.37.0.0 and v0.39.0.0: 
 
 All ten choices were answered by the owner's adjudicator hook.
 
-**N9, decided 2026-11-09:** no bar on sittings. Every sitting stays in, and each analysis on the site declares a minimum coverage, marking a period below it as thin. The owner sets the number after step 6's fetch measures the withheld share by words.
+**N9, decided 2026-11-09:** no bar on sittings. Every sitting stays in, and each analysis on the site declares a minimum coverage, marking a period below it as thin. The owner sets the number after step 6's fetch measures the withheld share by words. **Number set by the owner on 2026-11-21: 98%.** An analysis marks a period as thin when less than 98% of the own words of its Reden, stored or withheld, are stored (a withheld share above 2%, the share ADR 0005 defines and DATA.md publishes), at the analysis's own grain (a month in a monthly series, a year in a yearly one), and also when the period holds an excluded sitting, whatever its share (today 18/20, 2014-03-13, so March 2014). An analysis may declare a higher minimum; 98% is the default. Measured 2026-11-21 on the 806-sitting store (`_withheld_coverage`, read-only): 102 withheld Reden, 80,109 of 41,840,330 own words (0.19%); WP 18 0.50%, WP 19 0.17%, WP 20 0.008%, WP 21 0.001%. Thin today by year: 2013 only (3.25%). By month, 4 of 144 are over 2% (2015-08 6.3%, 2013-11 3.6%, 2021-09 2.9%, 2013-12 2.7%), plus March 2014 for 18/20: 5 months. At 99% it would be 10 months, at 95% one. The `<name>` speakers (decision of 2026-11-21) are not in these shares; their build lowers WP 18's share (0.498% → 0.469% in the plan's prototype).
 
 **N10, decided 2026-11-09:** a reviewed sample of vote links before the first release, in "Check that vote links are right".
 
@@ -1869,6 +1869,8 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 **Effort:** M
 **Priority:** P2
+**Coverage minimum (N9, owner 2026-11-21):** the analysis declares 98% and marks each period below it, or holding an excluded sitting, as thin ("Coverage gate before the first data release", N9).
+
 **Depends on:** Politikfeld tags; the Rede-counting items; v1 coverage
 
 ## Abstimmungen
