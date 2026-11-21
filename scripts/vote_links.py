@@ -36,9 +36,9 @@ BASES = ("drucksache_xml", "drucksache_vorgang", "title")
 
 
 def norm_title(value: str | None) -> str:
-    value = derive._clean(value).lower()
+    value = derive.clean_text(value).lower()
     value = re.sub(r"[^a-zäöüß0-9]+", " ", value)
-    return derive._clean(value)
+    return derive.clean_text(value)
 
 
 def title_matches(heading: str | None, title: str | None) -> bool:
@@ -129,7 +129,7 @@ def _vote_order(report: Mapping[str, Any], votes: Mapping[str, Any]) -> list[str
     listed = [
         derive.vote_identity(candidate)
         for candidate in (report.get("api_records") or {}).get("roll_call_vote_candidates") or []
-        if derive._clean(candidate.get("id"))
+        if derive.clean_text(candidate.get("id"))
     ]
     ordered = list(dict.fromkeys(vote_id for vote_id in listed if vote_id in votes))
     named = set(ordered)
@@ -168,8 +168,12 @@ def placement_errors(report: Mapping[str, Any]) -> list[str]:
     placed = links(report)
     errors = []
     sitting = {derive.vote_identity(vote) for vote in report.get("sitting_votes") or []}
+    under_a_top = {derive.vote_identity(vote) for item in report.get("agenda_items") or [] for vote in derive.item_votes(item)}
+    # A vote held under a TOP is named below, once, for each TOP it should not sit under.
     errors += [f"vote {vote_id} is linked to no TOP and missing from sitting_votes"
-               for vote_id, tops in sorted(placed.items()) if not tops and vote_id not in sitting]
+               for vote_id, tops in sorted(placed.items()) if not tops and vote_id not in sitting | under_a_top]
+    errors += [f"vote {vote_id} is linked to a TOP and also sits in sitting_votes"
+               for vote_id in sorted(sitting & {vote_id for vote_id, tops in placed.items() if tops})]
     for position, item in enumerate(report.get("agenda_items") or []):
         held = {derive.vote_identity(vote) for vote in derive.item_votes(item)}
         should = {vote_id for vote_id, tops in placed.items() if position in tops}
