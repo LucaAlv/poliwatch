@@ -1,12 +1,13 @@
 # store: .context/dip-pulse-site
-# code revision: 4b13df9
+# code revision: 63e0ec6
 # seed: 20261114
-# sample: S4 34 drucksache_vorgang + 16 drucksache_xml; batch t4 apart: 16% of its plain Drucksache links, at least 10
-# links in store: 701
-# rows: 399
-# units: 195
-# rows per stratum: S1 61, S2 292, S3 20, S4 60
+# sample: S4 34 drucksache_vorgang + 16 drucksache_xml; batch t4, nov21 apart: 16% of its plain Drucksache links, at least 10
+# links in store: 710
+# rows: 408
+# units: 201
+# rows per stratum: S1 61, S2 297, S3 20, S4 64
 # batch t4: 83 sittings of docs/plans/t4-acquire/restored-sittings.tsv, 111 links in store, 70 rows: S1 14, S2 54, S3 5, S4 10
+# batch nov21: 5 sittings of docs/plans/vote-links-review-later-sittings.tsv, 9 links in store, 9 rows: S2 5, S4 4
 stratum	batch	protocol	date	vote_id	vote_title	item_index	top_id	top_occurrence	top_heading	basis	shared	announced	tally	other_tops	verdict	pattern	action	evidence	reviewer
 S3	t4	18/11	2014-01-30	251	Gentechnisch veränderte Maislinie 1507 für den Anbau in der EU	3	Tagesordnungspunkt 6	1	Zweite und dritte Beratung des von den Fraktionen der CDU/CSU und SPD eingebrachten Entwurfs eines Gesetzes zur Gewährun	title	-	18/180, 18/397	unique	-					
 S2	-	18/18	2014-02-21	254	Änderung des Abgeordnetengesetzes	1	Tagesordnungspunkt 16	1	b) Zweite und dritte Beratung des von den Fraktionen der CDU/CSU und SPD eingebrachten Entwurfs eines … Strafrechtsänder	drucksache_vorgang	18/477:Gesetzentwurf:57616, 18/619:Beschlussempfehlung und Bericht:57616	-	unique	-					
@@ -407,3 +408,12 @@ S2	-	21/99	2026-10-08	1030	Gesetzentwurf zur Besteuerung von Immobilienverkäufe
 S2	-	21/99	2026-10-08	1031	Gesetzentwurf zur Besteuerung von Kryptowerten	2	Zusatzpunkt 3	1	Kleine und mittlere Einkommen tatsächlich entlasten und Rücklagen- und Vermögensaufbau stärken 8 a) Beratung der Beschlu	drucksache_xml	21/5752:Gesetzentwurf:334536:xml, 21/6112:Beschlussempfehlung und Bericht:334536:xml	21/5752, 21/6112	unique	-					
 S2	-	21/99	2026-10-08	1032	Änderungsantrag zur Kassenzulassung des nicht-invasiven Pränataltests	11	Tagesordnungspunkt 14	1	Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Gesundheit (14. Ausschuss) zu dem Antrag der Abgeo	drucksache_xml	21/3873:Antrag:330644:xml, 21/6075:Beschlussempfehlung und Bericht:330644:xml, 21/8475:Änderungsantrag:330644	-	unique	-					
 S2	-	21/99	2026-10-08	1033	Antrag zur Kassenzulassung des nicht-invasiven Pränataltests	11	Tagesordnungspunkt 14	1	Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Gesundheit (14. Ausschuss) zu dem Antrag der Abgeo	drucksache_xml	21/3873:Antrag:330644:xml, 21/6075:Beschlussempfehlung und Bericht:330644:xml, 21/8475:Änderungsantrag:330644	21/3873, 21/8475, 21/6075	unique	-					
+S2	nov21	21/108	2026-11-12	1038	Startchancen- und Qualitätsentwicklungsgesetz	1	Tagesordnungspunkt 5	1	– Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Verbesserung der Star	drucksache_xml	21/8239:Gesetzentwurf:338785:xml, 21/8827:Unterrichtung:338785:xml, 21/9153:Beschlussempfehlung und Bericht:338785:xml	21/9078, 21/9079, 21/8239, 21/8827, 21/9153	unique	-					
+S2	nov21	21/108	2026-11-12	1039	Entschließungsantrag der Linken zum Startchancengesetz	1	Tagesordnungspunkt 5	1	– Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Verbesserung der Star	drucksache_vorgang	21/9156:Entschließungsantrag:341559	21/9156	unique	-					
+S4	nov21	21/108	2026-11-12	1040	Reform des Erneuerbare-Energien-Gesetzes	4	Zusatzpunkt 4, 5	1	Energiewende gemeinsam gestalten – Für ein Erneuerbare-Energien-Gesetz mit fairen Chancen für alle	drucksache_xml	21/6914:Gesetzentwurf:336979:xml, 21/9137:Beschlussempfehlung und Bericht:336979:xml	21/6914, 21/9137	unique	-					
+S4	nov21	21/108	2026-11-12	1041	Bundeswehreinsatz im Mittelmeer (Eunavfor Med Irini)	10	Tagesordnungspunkt 11	1	11 – Beratung der Beschlussempfehlung und des Berichts des Auswärtigen Ausschusses (3. Ausschuss) zu dem Antrag der Bund	drucksache_xml	21/8821:Antrag:340932:xml, 21/9149:Beschlussempfehlung und Bericht:340932:xml	21/9149, 21/8821	unique	-					
+S4	nov21	21/108	2026-11-12	1042	Antrag der Linken zur Ausgestaltung des Unterhaltsvorschusses	11	Tagesordnungspunkt 12	1	a) Beratung des Antrags der Abgeordneten Mareike Hermeier, Nicole Gohlke, Doris Achelwilm, weiterer Abgeordneter und der	drucksache_xml	21/9070:Antrag:341458:xml	21/9070	unique	-					
+S2	nov21	21/109	2026-11-13	1043	Erster Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts	1	Tagesordnungspunkt 26	1	– Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Reform des Nachrichte	drucksache_vorgang	21/9163:Änderungsantrag:338341	21/7688, 21/9163	unique	-					
+S2	nov21	21/109	2026-11-13	1044	Zweiter Änderungsantrag der Grünen zur Reform des Nachrichtendienstrechts	1	Tagesordnungspunkt 26	1	– Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Reform des Nachrichte	drucksache_vorgang	21/9164:Änderungsantrag:338341	21/9164	unique	-					
+S2	nov21	21/109	2026-11-13	1045	Gesetzentwurf zur Reform des Nachrichtendienstrechts	1	Tagesordnungspunkt 26	1	– Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Reform des Nachrichte	drucksache_xml	21/7868:Gesetzentwurf:338341:xml, 21/8295:Unterrichtung:338341:xml, 21/9161:Beschlussempfehlung und Bericht:338341:xml	21/7868, 21/8295, 21/9161	unique	-					
+S4	nov21	21/109	2026-11-13	1046	Bundeswehreinsatz im Mittelmeer (Sea Guardian)	6	Tagesordnungspunkt 30	1	– Beratung der Beschlussempfehlung und des Berichts des Auswärtigen Ausschusses (3. Ausschuss) zu dem Antrag der Bundesr	drucksache_xml	21/8819:xml:-, 21/9152:xml:-	21/9077	unique	-					
