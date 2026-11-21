@@ -79,7 +79,7 @@ Eine Abweichung ist also nur Ja gegen ein Nein-Mehrheitsvotum oder Nein gegen ei
 5. Bleiben mehrere, fällt einer weg, der die Drucksache nur über eine DIP-Vorgangsposition hat, die ihn auf einer einzigen Seite streift, während sie einen anderen Treffer über mehr Seiten deckt.
 6. Bleiben mehrere und beginnt genau eine Überschrift mit „Dritte Beratung“, gilt diese.
 
-Schritt 1 allein ergibt `top_link_step = match`; entscheidet ein späterer Schritt, steht dort `call`, `einzelplan` oder `narrowed`, ohne Tagesordnungspunkt `none`. Eine Abstimmung kann mit mehreren Tagesordnungspunkten verknüpft sein. Die Verknüpfung sagt nicht, dass diese Abstimmung allein über den Tagesordnungspunkt entschied. Abstimmungen ohne Zeile hängen über `votes.protocol_id` an ihrer Sitzung.
+Bleiben es die Tagesordnungspunkte aus Schritt 1, steht `top_link_step = match`, auch wo Schritt 2 oder 3 denselben einen Abschnitt bestätigt und `basis` dann dessen Grund nennt; ändert ein späterer Schritt die Tagesordnungspunkte, steht dort `call`, `einzelplan` oder `narrowed`, ohne Tagesordnungspunkt `none`. Eine Abstimmung kann mit mehreren Tagesordnungspunkten verknüpft sein. Die Verknüpfung sagt nicht, dass diese Abstimmung allein über den Tagesordnungspunkt entschied. Abstimmungen ohne Zeile hängen über `votes.protocol_id` an ihrer Sitzung.
 
 <!-- vote-link-review: generated at export from scripts/reviewed_vote_links.json -->
 

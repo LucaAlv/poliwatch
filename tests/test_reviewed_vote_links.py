@@ -167,3 +167,17 @@ class GateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewParagraphTests(unittest.TestCase):
+    """What DATA.md says about who reviewed the links must match the entries."""
+
+    def test_the_paragraph_names_the_agent_readers_not_a_hand_review(self) -> None:
+        import build_dip_pulse_site as b
+
+        entries = reviewed.load()
+        # The sheet's verdicts were read by agents (vote-links-review-summary.md, "Outcome of passes 1 and 2").
+        self.assertTrue(all("Sonnet" in entry.reviewer for entry in entries if entry.source.startswith("sheet ")))
+        text = b.vote_link_review_paragraph(entries)
+        self.assertNotIn("von Hand", text)
+        self.assertIn("KI-Agenten", text)

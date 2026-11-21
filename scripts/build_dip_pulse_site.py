@@ -4824,8 +4824,8 @@ def vote_link_review_paragraph(entries: list[reviewed_vote_links.Entry]) -> str:
     added = sum(1 for entry in entries if entry.source == "plan vote-pr-c")
     ruled = sum(by_pattern.values())
     patterns = ", ".join(f"{pattern} {count}" for pattern, count in sorted(by_pattern.items()))
-    text = (f"Vor der Veröffentlichung wurden {len(sheet)} Verknüpfungen einer Stichprobe von Hand gegen Protokoll und DIP "
-            f"geprüft: {right} richtig, {wrong} falsch.")
+    text = (f"Vor der Veröffentlichung wurden {len(sheet)} Verknüpfungen einer Stichprobe einzeln gegen Protokoll und DIP "
+            f"geprüft, gelesen von KI-Agenten (Claude Sonnet): {right} richtig, {wrong} falsch.")
     if ruled:
         share = "Alle" if ruled == wrong else f"{ruled} der"
         text += (f" {share} {wrong} falschen gehen auf {len(by_pattern)} Muster zurück, die die Regel seither behandelt "
