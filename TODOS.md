@@ -540,12 +540,15 @@ Speakers of the 29 adopted Reden also get an abgeordnetenwatch profile on replay
 3. **A loose marker with no Redner-ID can never be listed.** Loose kinds must pass the digits-only `REDNER_ID_RE`, but `mark_loose_markers` compares the entry with `printed or ""`, so such a marker refuses its sitting and `UNLISTED_LOOSE_MARKER_FIX` asks for an entry `_check` rejects. Allow an empty `redner_id` for `loose_sitzungsleitung` and `loose_remark` (as `NAME_KINDS_WITHOUT_SPEAKER` does), or say in the refusal that a code change is needed.
 4. **The guard covers only markers standing directly in a source TOP.** A marker directly in `<sitzungsverlauf>` or `<sitzungsbeginn>`, or one `mark_name_speakers` creates directly in a TOP, is not in `loose_ordinals`: nothing reads it and nothing refuses it. Refuse (or count) any `p[@klasse='redner']` left outside a `<rede>` in a non-Fragestunde container after placement. Census the 806-sitting store first.
 5. **`marker_ordinal` holds three kinds of number:** the sitting-wide M ordinal (loose procedural diagnostics), the N ordinal (name diagnostics), and the marker's place in its `<rede>`. Loose and name diagnostics both carry `source_rede_id: None`, so M3 and N3 of one TOP look alike. Nothing reads the field today. Emit `M3`/`N3` or add a field naming the ordinal's space.
+6. **A `next` run puts its first marker in front of the host's owner marker** (ship review, Codex, 2026-11-22). Classification and the speaker read the Rede's first marker, so a loose marker printed with other metadata than the owner's (a Fraktion-only label before a minister's Rede, say) would set the Rede's speaker and role. All 23 `next` runs on the 806-sitting store open with `<name>` metadata identical to the host owner's (checked 2026-11-22), so nothing moves today. Insert the run after the owner marker, or refuse a run whose first marker's `<name>` differs from the owner's.
+7. **A `next` run moves turns without the chair text between them** (same review). Two separately granted Zwischenfragen of one asker in one `next` run would merge into one Beitrag, since segmentation never sees the second grant. No `next` run on the store holds a Zwischenfrage (checked 2026-11-22). Refuse a `next` run with a Beitrag kind after its first turn, or keep the chair's grant text with each turn.
+8. **A `none` marker inside a wrapped range ends up after the new `<rede>`** (ship review, native adversarial). Its turn stays in the TOP but loses its source position. Nothing reads it today (`loose_procedural` builds its diagnostic before any move); fix it if a consumer ever reads TOP-level order.
 
-**Why:** Items 1 and 3 would stop a run or refuse a sitting on a correct entry; items 2 and 4 are places where words could go uncounted with no refusal; item 5 misleads anyone joining diagnostics to markers.
+**Why:** Items 1 and 3 would stop a run or refuse a sitting on a correct entry; items 2 and 4 are places where words could go uncounted with no refusal; item 5 misleads anyone joining diagnostics to markers; items 6 and 7 would store a turn under the wrong role or merge two Beiträge on an entry the store does not hold yet.
 
 **Context:** `scripts/validate_dip_protocol.py` `loose_marker_ordinals`, `mark_loose_markers`, `parse_protocol_xml`; `scripts/reviewed_units.py` `_check`; tests in `tests/test_loose_markers.py`.
 
-**Effort:** S each (item 4: M with the census)
+**Effort:** S each (item 4: M with the census; items 6 and 7: S, with a test each)
 **Priority:** P3 (item 4: P2, before the first `--publish`, if the census finds such markers)
 **Depends on:** None
 
@@ -1728,7 +1731,7 @@ Done when no generated page carries `data-operator-missing`. The deploy gate in 
 - **Before the public site:** home address in the Impressum (question 1); an order-processing agreement with the host (Art. 28 DSGVO, with "Site hosting plan"). When the surface cuts drop the AI summaries, drop `bundestag-pulse-ai-summaries-v1` from `DATENSCHUTZ_STORAGE_KEYS` with them (the demo test fails until both go together); today 4,424 pages of the reference build carry the toggle, so the page is true.
 - **Done 2026-11-21 (owner-decisions branch):** `LICENSE-DATA.md` and the data dictionary say that `speeches.text` and `contributions.text` hold only the speaker's own words, without applause, Zwischenrufe or chair text (question 7; 13 of 61,559 stored Reden carry "(Beifall" printed inline in a paragraph, the rest none); `datenschutz.html` names the legal bases, recipients, the archive and Art. 21 (question 4), and the two settings moved to `sessionStorage` with § 25 Abs. 2 Nr. 2 TDDDG named (question 8, checked in a browser on the demo build); the root `LICENSE` names the source and terms of the Bundestag material held in the repository (question 2).
 - ~~**Merge the research note to main** (a docs PR from its branch).~~ **Done 2026-11-22:** the note is on main as `docs/research/adr-0003-legal-questions-2026-11.md`. It was read against main that day; statements the owner decisions and PR #204 made false carry an *Update 2026-11-22* line and a "Status on main" section, and its conclusions are unchanged.
-- **Left by the review of the owner-decisions PR (2026-11-22), wording only:** (a) `datenschutz.html` says the settings hold "nur in dem Tab"; a duplicated tab copies `sessionStorage`, so add "oder in einer Kopie dieses Tabs". (b) `LICENSE-DATA.md` and the codebook could name the 13 Reden that keep "(Beifall" printed inline in a paragraph. (c) `docs/project-documentation.md:505` still says `DATENSCHUTZ_STORAGE_KEYS` lists localStorage keys; `docs/bundestag-puls-architecture.*` and `docs/designs/fixed-public-experience.md` still say localStorage. (d) Re-check the Datenschutz sentences on Art. 85 / § 23 MStV and on releases that never change once the clinic answers question 4. (e) TODOS item 17 under the Impressum/licence ship findings: the people in the data now have a stated basis; server logs and e-mail contact still do not.
+- **Left by the review of the owner-decisions PR (2026-11-22), wording only:** (a) `datenschutz.html` says the settings hold "nur in dem Tab"; a duplicated tab copies `sessionStorage`, so add "oder in einer Kopie dieses Tabs". (b) `LICENSE-DATA.md` and the codebook could name the 13 Reden that keep "(Beifall" printed inline in a paragraph. (c) `docs/project-documentation.md:505` still says `DATENSCHUTZ_STORAGE_KEYS` lists localStorage keys; `docs/designs/fixed-public-experience.md` still says localStorage (`docs/bundestag-puls-architecture.*`: **done** v0.46.47.0, 2026-11-22). (d) Re-check the Datenschutz sentences on Art. 85 / § 23 MStV and on releases that never change once the clinic answers question 4. (e) TODOS item 17 under the Impressum/licence ship findings: the people in the data now have a stated basis; server logs and e-mail contact still do not.
 
 **Why:** The data release publishes personal data and DIP-derived text; a release cannot be changed once cited.
 
@@ -2627,6 +2630,16 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 **Why:** Review lenses correctness, spec, standards and checklist; none changes a figure or output.
 
 **Effort:** S
+**Priority:** P4
+**Depends on:** None
+
+### The generated architecture diagram fails the design detector
+
+**What:** The ship review of v0.46.47.0 (2026-11-22) ran the design detector on `docs/bundestag-puls-architecture.html` because the branch changed one label there. It counts 82 findings that predate the change and come from the diagram generator's own styling: 4 text colours below 4.5:1 contrast (`#64748b` on the dark panels), 65 functional labels between 8 and 10.6 px, and a few others (dark glow, a skipped heading). The diagram is a contributor document, not a page of the site.
+
+**Why:** Anyone reading the diagram in the dark theme strains at its smallest labels; it does not follow DESIGN.md.
+
+**Effort:** S if the generator takes a theme or font-size option, M otherwise
 **Priority:** P4
 **Depends on:** None
 
