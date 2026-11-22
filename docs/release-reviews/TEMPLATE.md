@@ -35,9 +35,11 @@ Copy this file to `<version>.md` and fill it in while running `docs/release-revi
 - Named votes checked:
 - Sittings that changed status since the last stable:
 
-## 4. Comparison with CPP-BT
+## 4. Comparison with CPP-BT, per sitting
 
 - Command and exit code:
+- Not compared, beside the last stable's (`surname_not_compared`, `fraktion_not_compared`, `redner_id_not_compared_*`), and the reason for each count that rose:
+- Redner-ID agreement (`redner_id_agree`, `redner_id_differ`, `redner_id_differ_theirs_10000` of `redner_id_compared`):
 - `ids_only_ours`:
 - Ids only CPP-BT has, by class, and those read by hand:
 - Surname and Fraktion differences not in `scripts/cpp_bt_known_differences.tsv`:
@@ -49,11 +51,11 @@ Copy this file to `<version>.md` and fill it in while running `docs/release-revi
 - Figures under "Verknüpfung über die Kennungen des Bundestages" against step 4's output:
 - Licence section and the roll-call question:
 
-## 6. Findings
+## 6. Verdict
+
+Findings:
 
 | Finding | Fixed in release |
 |---|---|
-
-## Verdict
 
 Stable or not, and why. If stable: the tag `stable-<version>` and, once it exists, the Zenodo DOI.
