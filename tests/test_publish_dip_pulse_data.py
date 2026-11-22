@@ -504,6 +504,26 @@ class ReleaseRepositoryTests(unittest.TestCase):
                 self.assertEqual(publish.github_repository(url), expected)
 
 
+    # Value: protects=an origin URL counts as a github.com repository only when its host is github.com, whatever credentials, fragments or queries it carries; fails_when=a crafted origin whose real host is elsewhere is read as the cited repository, so another server answers the tag checks (Codex fix-check); why_new=the origin check is new; seam=none; no_claim=git's own URL parsing beyond these forms
+    def test_remote_github_repository_needs_github_as_the_host(self) -> None:
+        for url, expected in (
+            ("https://github.com/LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("https://x-access-token:T@github.com/LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("git@github.com:LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("ssh://git@github.com/LucaAlv/poliwatch", "LucaAlv/poliwatch"),
+            ("https://evil.example#@github.com/LucaAlv/poliwatch.git", None),
+            ("https://evil.example?@github.com/LucaAlv/poliwatch.git", None),
+            ("https://github.com/LucaAlv/poliwatch.git?x=1", None),
+            ("https://github.com/LucaAlv/poliwatch.git#frag", None),
+            ("https://github.com:8443/LucaAlv/poliwatch", None),
+            ("https://github.com.evil.example/LucaAlv/poliwatch", None),
+            ("http://github.com/LucaAlv/poliwatch", None),
+            ("https://[bad", None),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(publish.remote_github_repository(url), expected)
+
+
 class LineEndingTests(unittest.TestCase):
     # Value: protects=a core.autocrlf=true checkout (CRLF working tree, LF commit) hashes its authored inputs exactly as the release script hashes the committed blobs; fails_when=the exporter hashes CRLF bytes, so a clean checkout builds an export the release script refuses as "differs from commit"; why_new=release item 10d (P1); seam=_read_codebook_inputs vs build_revision.blob_sha256; no_claim=other git filters (eol attributes, smudge)
     def test_autocrlf_checkout_hashes_the_inputs_like_the_committed_blobs(self) -> None:

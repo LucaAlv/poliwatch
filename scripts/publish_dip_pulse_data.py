@@ -340,12 +340,24 @@ def github_repository(url: str) -> str | None:
 
 
 def remote_github_repository(url: str) -> str | None:
-    """owner/name of a git remote URL on github.com (https, git@github.com:… or
-    ssh://git@github.com/…, a trailing .git dropped), or None."""
-    for pattern in (r"https://(?:[^@/\s]*@)?github\.com/(.+)", r"git@github\.com:(.+)", r"ssh://git@github\.com/(.+)"):
-        match = re.fullmatch(pattern, url.strip())
-        if match:
-            return github_repository(f"https://github.com/{match[1]}")
+    """owner/name of a git remote URL on github.com (https with any credentials,
+    git@github.com:… or ssh://git@github.com/…, a trailing .git dropped), or None.
+    An https URL is parsed, so only a host of exactly github.com counts."""
+    url = url.strip()
+    scp = re.fullmatch(r"git@github\.com:([^?#\s]+)", url)
+    if scp:
+        return github_repository(f"https://github.com/{scp[1]}")
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    if (parts.scheme, parts.hostname, port, parts.query, parts.fragment) == ("https", "github.com", None, "", "") or (
+        parts.scheme == "ssh" and parts.hostname == "github.com" and parts.username == "git" and port is None and not parts.query and not parts.fragment
+    ):
+        if "#" in url or "?" in url:
+            return None
+        return github_repository(f"https://github.com{parts.path}")
     return None
 
 
