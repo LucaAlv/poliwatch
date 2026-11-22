@@ -11,14 +11,37 @@ Research note, 2026-11-21. It works through the questions in `docs/adr/0003-lice
 
 Quotes keep the source's spelling.
 
+**Status on main, 2026-11-22.** The research below was written on 2026-11-21 and its text is unchanged. Owner decisions and PR #204 (v0.46.39.0) landed after it, so a few of its statements about the repository describe the state before them. Each such place carries an *Update 2026-11-22* line, and the section "Status on main, 2026-11-22" before the short-answer table lists what is done and what is still open. The positions and risk ratings are not changed.
+
 **What the project does today.** Each question depends on these facts, taken from the repository on 2026-11-21:
 - The export ships the full text of every Rede (`speeches.text`) and Beitrag, with the paragraphs joined by single spaces (`LICENSE-DATA.md`, "What we changed").
-- `speeches.text` holds only the speaker's own words: „Chair text and comments never become speaker text“ (`speech_segments`, `scripts/validate_dip_protocol.py`). Applause, Zwischenrufe and the chair's remarks are left out. `LICENSE-DATA.md` does not say so (second read, challenge 16).
-- The repository has been public since 2026-11-06. It already carries full Plenarprotokoll XML files in `tests/fixtures/` and MP names with protocol URLs in `scripts/person_corrections.json`. No DIP source notice covers them (second read, challenge 6).
+- `speeches.text` holds only the speaker's own words: „Chair text and comments never become speaker text“ (`speech_segments`, `scripts/validate_dip_protocol.py`). Applause, Zwischenrufe and the chair's remarks are left out. `LICENSE-DATA.md` does not say so (second read, challenge 16). *Update 2026-11-22: it says so now, in "What we changed" and in the `text` entry of `scripts/data_dictionary.json` (PR #204).*
+- The repository has been public since 2026-11-06. It already carries full Plenarprotokoll XML files in `tests/fixtures/` and MP names with protocol URLs in `scripts/person_corrections.json`. No DIP source notice covers them (second read, challenge 6). *Update 2026-11-22: the root `LICENSE` now names the source and terms of this material (PR #204).*
 - An MP's profile page lists that MP's speeches as a 240-character snippet (`text[:240]`, `scripts/validate_dip_protocol.py`) with a link, not as full texts (`scripts/build_dip_pulse_site.py`, "Reden im Bundestag").
-- The site writes two localStorage keys, each only after a click (`DATENSCHUTZ_STORAGE_KEYS`). The AI-summary key is written only on pages that carry an AI summary toggle. AI summaries are out of v1 (`PRODUCT.md`), so the v1 site writes only the theme key. `datenschutz.html` still says „Zwei Einstellungen speichert die Website“, which is not true of v1.
+- The site writes two localStorage keys (as of 2026-11-21), each only after a click (`DATENSCHUTZ_STORAGE_KEYS`). The AI-summary key is written only on pages that carry an AI summary toggle. AI summaries are out of v1 (`PRODUCT.md`), so the v1 site writes only the theme key. `datenschutz.html` still says „Zwei Einstellungen speichert die Website“, which is not true of v1. *Update 2026-11-22: both settings are in `sessionStorage` and `datenschutz.html` was reworded (PR #204). It still lists both keys, because per `TODOS.md` the reference build's pages carry the AI-summary toggle; the key leaves the list when the AI summaries leave the surface.*
 - There are no cookies, no tracking and no third-party resources (`datenschutz.html`).
 - There is no advertising and no payment. Fakt der Woche and the AI summaries are off the v1 site.
+
+## Status on main, 2026-11-22
+
+Checked against main (v0.46.43.0). The decisions are in ADR 0003, "Amendment 2026-11-21"; the build changes came in PR #204.
+
+**Done since the note was written:**
+- **Q1:** the owner chose the home address for the Impressum. That settles the question; a c/o service would reopen it.
+- **Q2, public repository:** the root `LICENSE` names the source and terms of the Bundestag material held in `tests/fixtures/`, `scripts/` and `docs/`, and says the DIP terms apply as conditions of the source, not as terms the project adds.
+- **Q7, omissions:** `LICENSE-DATA.md` ("What we changed") and the codebook entry for `text` in `scripts/data_dictionary.json` say that `speeches.text` and `contributions.text` hold only the speaker's own words. The paragraph breaks are not kept, and that is stated too.
+- **Q8:** the theme and AI-summary collapse state are stored in `sessionStorage` (`scripts/render_dip_pulse_html.py`). `datenschutz.html`, built by `render_datenschutz_page` in `scripts/build_dip_pulse_site.py`, names § 25 Abs. 2 Nr. 2 TDDDG and says the values live in the tab's session storage.
+- **Q4, text:** `datenschutz.html` ("Personen in den Daten") now names Art. 6 Abs. 1 lit. f, Art. 9 Abs. 2 lit. e and Art. 85 with § 23 MStV, the recipients, the archive, and the right to object (Art. 21).
+
+**Still open, as the note says:**
+- **Q4:** the written inquiry to the Cyber Law Clinic of Universität Hamburg (or, if it declines, to the Landesdatenschutzbeauftragte), the Art. 30 record with the Art. 35 threshold note, and the takedown and erasure process. `TODOS.md`, "ADR 0003 legal questions: what the research leaves to do", tracks them. The owner decided this route on 2026-11-21; it is not yet sent.
+- **Q2:** the sentence in `LICENSE-DATA.md` „The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP layer“ is unchanged, and so is the layer note for the three quoting columns (`documents.forderung`, `vote_passages`, `votes.inversion_excerpt`).
+- **Q7:** the paragraph breaks are still joined with single spaces. The note's cost estimate stands, with one correction: `clean(` is called 86 times in `scripts/persist_dip_pulse_store.py` on main, not 85.
+- **Q8:** `datenschutz.html` still lists the AI-summary key (see above). Its wording about the tab (a duplicated tab copies `sessionStorage`) is tracked in `TODOS.md`.
+- **Q6:** unchanged. The Impressum names the operator as Verantwortlicher under § 18 Abs. 2 MStV (ADR 0003 D4).
+- **Hosting:** the Art. 28 DSGVO agreement with the host stays open with the hosting decision.
+
+---
 
 ## Short answer
 
@@ -34,7 +57,7 @@ Quotes keep the source's spelling.
 
 **Where research is not enough:** question 1 if the owner wants a c/o address, and question 4 for third-party data in the full-text corpus and for erasure against fixed releases. Details and free routes are under "Where research is not enough".
 
-**Fix-now actions the research turned up** (the owner decides; this note changes none of them):
+**Fix-now actions the research turned up** (the owner decides; this note changes none of them). *Update 2026-11-22: all three are done, see "Status on main".*
 - **Public repository:** add a DIP source and change notice for `tests/fixtures/*.xml` and the protocol-derived data in `scripts/` (question 2).
 - **`LICENSE-DATA.md` "What we changed":** say that `speeches.text` leaves out Zwischenrufe, applause and chair text (question 7). Its silence on this is a misleading statement in user-facing output.
 - **`datenschutz.html`:** stop listing the AI-summary key while v1 does not write it (question 8). Add the legal bases (questions 4 and 8).
@@ -82,6 +105,8 @@ None. This is an organisational choice. The repository side is already done: the
 ### When it applies
 
 Before the public site. The data release on Zenodo or GitHub carries the operator's name and the licence, not an Impressum.
+
+*Update 2026-11-22: the owner decided on the home address (ADR 0003, amendment 2026-11-21), so the c/o question is closed for now.*
 
 ---
 
@@ -144,8 +169,8 @@ The practical lever is clause 3, not a lawsuit: „Ein Verstoß gegen die DIP-Nu
 ### Engineering way out
 
 Partly. The layered notice, the "Lizenzschicht" column and the `LICENSE_LAYER_SOURCES` check already keep the layers apart. Three small additions close the gaps:
-1. **The three quoting columns.** Either move them to the DIP layer, or add a sentence in `LICENSE-DATA.md` that their quoted wording stays under the DIP terms. Cost: a data-dictionary entry or one sentence.
-2. **The public repository.** `tests/fixtures/*.xml` (full Plenarprotokolle) and protocol-derived data in `scripts/` are published on GitHub without the DIP source line or a change notice. The root `LICENSE` says MIT „covers the code in this repository only“ and sends generated data and exports to `LICENSE-DATA.md`. Source files kept as test fixtures are neither, so nothing names their terms. Add a short notice: either a line in `LICENSE`, or a README in `tests/fixtures/`, giving „Quelle: Deutscher Bundestag/Bundesrat – DIP“ and saying the MIT licence does not cover them. Cost: a few lines. This applies now, not at the release.
+1. **The three quoting columns.** *Update 2026-11-22: still open (`TODOS.md`).* Either move them to the DIP layer, or add a sentence in `LICENSE-DATA.md` that their quoted wording stays under the DIP terms. Cost: a data-dictionary entry or one sentence.
+2. **The public repository.** `tests/fixtures/*.xml` (full Plenarprotokolle) and protocol-derived data in `scripts/` are published on GitHub without the DIP source line or a change notice. The root `LICENSE` says MIT „covers the code in this repository only“ and sends generated data and exports to `LICENSE-DATA.md`. Source files kept as test fixtures are neither, so nothing names their terms. Add a short notice: either a line in `LICENSE`, or a README in `tests/fixtures/`, giving „Quelle: Deutscher Bundestag/Bundesrat – DIP“ and saying the MIT licence does not cover them. Cost: a few lines. This applies now, not at the release. *Update 2026-11-22: done as a paragraph in the root `LICENSE` (PR #204).*
 3. **The short string.** Optionally scope it: „eigene Auswertungen (Lizenzschicht derived): CC BY 4.0“. Cost: one string and its quote in `DATA.md`.
 
 ### When it applies
@@ -253,7 +278,7 @@ Before the first data release, for the corpus. Before any per-MP full-text featu
 - Every comparable corpus (CPP-BT, Open Discourse, ParlLawSpeech, GermaParl) carries the same third-party data. None of them states a basis.
 
 **Do before the first release:**
-1. **State the bases in `datenschutz.html`.** The „Personen in den Daten“ section names the purpose but no legal basis. Art. 13 and 14 require more than one paragraph:
+1. **State the bases in `datenschutz.html`.** *Update 2026-11-22: done in PR #204; the section now names the bases, the recipients, the archive and Art. 21.* The „Personen in den Daten“ section named the purpose but no legal basis. Art. 13 and 14 require more than one paragraph:
    - the bases (Art. 6 Abs. 1 lit. f, Art. 9 Abs. 2 lit. e, Art. 85 with § 23 MStV);
    - the legitimate interest pursued;
    - the source of the data;
@@ -388,7 +413,7 @@ Before the public site, and again before AI summaries or Fakt der Woche return.
 - `speeches.text` leaves out what the protocol prints inside a Rede but which is not the speaker's: applause, Zwischenrufe and the chair's remarks („Chair text and comments never become speaker text“, `speech_segments`). The codebook says text the rules attached to a Rede is included.
 - That is a „Kürzung“. § 63 Abs. 1 Satz 2 requires it to be marked when whole Sprachwerke are reproduced, and DIP 4b requires every change to be marked.
 - `LICENSE-DATA.md` does not mark it. Leaving out the interjection a speaker answers can also make a passage read differently. That is the „sinnentstellend“ test of DIP clause 5, not just § 62.
-- The fix is a sentence in „What we changed“ and the codebook, for example: „`speeches.text` enthält nur die Worte des Redners; Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll innerhalb der Rede druckt, sind nicht enthalten.“
+- The fix is a sentence in „What we changed“ and the codebook (*done 2026-11-22, PR #204*), for example: „`speeches.text` enthält nur die Worte des Redners; Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll innerhalb der Rede druckt, sind nicht enthalten.“
 - Better still, link each Rede to its place in the protocol, which the rows already do through the protocol id and page.
 
 **Keep the paragraph breaks anyway.** Paragraph structure is part of the record researchers want, and it removes the smaller question entirely.
@@ -403,11 +428,11 @@ Before the public site, and again before AI summaries or Fakt der Woche return.
 ### Engineering way out
 
 Yes, two pieces:
-1. **Mark the omission:** two sentences in `LICENSE-DATA.md` and the `speeches.text` entry in `scripts/data_dictionary.json`. No figure moves. An hour.
+1. **Mark the omission:** two sentences in `LICENSE-DATA.md` and the `speeches.text` entry in `scripts/data_dictionary.json`. No figure moves. An hour. *Update 2026-11-22: done (PR #204).*
 2. **Keep the paragraph breaks** in `speeches.text` and `contributions.text`, for example by joining paragraphs with `\n\n` as `proceedings.abstract` already does. The paragraphs are already parsed (`speech_text_and_paragraphs`), and `paragraphs_json` holds them until it is dropped at export.
 
 The cost of piece 2, in plain words:
-- `persist_dip_pulse_store.clean` collapses all whitespace and is called 85 times on many fields. It cannot simply change: speech text needs its own cleaner that keeps `\n\n`. `contribution_unit` joins with a space too.
+- `persist_dip_pulse_store.clean` collapses all whitespace and is called 85 times on many fields (86 on main on 2026-11-22). It cannot simply change: speech text needs its own cleaner that keeps `\n\n`. `contribution_unit` joins with a space too.
 - A re-run of the store and the replay.
 - Updating „What we changed“ and the codebook.
 - Reporting the figures that move: `char_count` is `len(text)`, so every Rede with more than one paragraph gains one character per extra break. Word counts and anything computed on words should not move. Check that on the replay.
@@ -462,7 +487,7 @@ The site has no login. On the DSK's reading, keeping the choice in `localStorage
 - The theme already follows `prefers-color-scheme` without a click, so few visitors need the toggle at all.
 - The alternative, keeping `localStorage` with a „Auswahl in diesem Browser merken“ note at the toggle, follows WP194 but not the DSK, and the DSK is the German supervisor.
 
-**Fix the page text.** `datenschutz.html` lists the AI-summary key and says „Zwei Einstellungen speichert die Website“. The v1 site writes only the theme key, so the sentence is untrue for v1. List a key only while some page can write it.
+**Fix the page text.** *Update 2026-11-22: reworded in PR #204; the AI-summary key is still listed while pages carry its toggle.* `datenschutz.html` listed the AI-summary key and said „Zwei Einstellungen speichert die Website“. The v1 site writes only the theme key, so the sentence was untrue for v1. List a key only while some page can write it.
 
 The DSGVO probably does not apply to the value at all: it stays on the visitor's device, is never sent, and identifies no one. So no Art. 6 basis is needed.
 
@@ -475,11 +500,11 @@ The DSGVO probably does not apply to the value at all: it stays on the visitor's
 ### Engineering way out
 
 Yes:
-1. **Switch** the two `localStorage` calls for the theme in `render_dip_pulse_html.py` to `sessionStorage`. Cost: a few lines and a test. Visitors who pick the non-default theme pick it again in each new browser session.
+1. **Switch** the two `localStorage` calls for the theme in `render_dip_pulse_html.py` to `sessionStorage`. *Update 2026-11-22: done for the theme and the AI-summary collapse state (PR #204).* Cost: a few lines and a test. Visitors who pick the non-default theme pick it again in each new browser session.
 2. **Add the basis sentence, and list only the keys the build can write** (`DATENSCHUTZ_STORAGE_KEYS`). Cost: a sentence and a condition.
 3. **Removing storage entirely** (the toggle changes only the current page) is not needed.
 
-When AI summaries return, their collapse key gets the same treatment.
+When AI summaries return, their collapse key gets the same treatment. *Update 2026-11-22: it already has the `sessionStorage` treatment.*
 
 ### When it applies
 
@@ -489,10 +514,10 @@ Before the public site.
 
 ## Where research is not enough
 
-1. **Question 1, if the owner wants a c/o address.** The rule is clear only for the home address. Whether a given Impressum service is acceptable turns on its contract (a real Zustellungsbevollmächtigung) and on the practice of the one competent Landesmedienanstalt.
+1. **Question 1, if the owner wants a c/o address.** *Update 2026-11-22: the owner chose the home address, so this item is closed unless that changes.* The rule is clear only for the home address. Whether a given Impressum service is acceptable turns on its contract (a real Zustellungsbevollmächtigung) and on the practice of the one competent Landesmedienanstalt.
    - **Free route:** ask that Landesmedienanstalt in writing whether the specific arrangement meets § 18 Abs. 1. It is the authority that would fine, and it is competent by the operator's place of residence (§ 106 Abs. 1 MStV, per WD 10-035/22). The NLM's guide shows these authorities publish advice to providers.
    - With the home address, research is enough.
-2. **Question 4: third-party data in the full-text corpus, and erasure against fixed releases.**
+2. **Question 4: third-party data in the full-text corpus, and erasure against fixed releases.** *Update 2026-11-22: the owner decided the route (the Cyber Law Clinic first, then the Landesdatenschutzbeauftragte); the inquiry is not yet sent (`TODOS.md`).*
    - Whether Art. 85 / § 23 MStV, read as in BGH VI ZR 426/24, carries a private publisher's corpus of the official record, including Art. 9 and Art. 10 data about persons the speakers name, is untested. Every comparable corpus has the same exposure and none states a basis.
    - How Art. 17 and 21 requests meet immutable DOI releases also needs an answer that holds up.
    - **Route:** a short written opinion from a data-protection lawyer, or the free clinic below, before the first data release. Bring the bases, the record of processing and the takedown process this note proposes, and ask whether they hold.
