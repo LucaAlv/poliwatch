@@ -249,14 +249,14 @@ class Sitting:
     ``(top_id, heading, page_start)``, its votes, and its links as
     ``(vote_id, position of the TOP)`` with the deciding step per vote; the
     ``review_note`` of each flagged link (``notes``), and the drops and flags
-    the store recorded (``reviews``: key -> ``(action, note)``)."""
+    the store recorded (``reviews``: key -> ``(action, note, reviewed_on)``)."""
     protocol: str
     tops: list[tuple[str, str, int | None]]
     votes: set[str]
     links: set[tuple[str, int]]
     steps: dict[str, str] = field(default_factory=dict)
     notes: dict[tuple[str, int], str] = field(default_factory=dict)
-    reviews: dict[LinkKey, tuple[str, str]] = field(default_factory=dict)
+    reviews: dict[LinkKey, tuple[str, str, str]] = field(default_factory=dict)
 
     def position(self, top_id: str, occurrence: int) -> int | None:
         seen = 0
@@ -298,7 +298,7 @@ def sitting_of_report(report: Mapping[str, Any], links: Mapping[str, Any], revie
                    {(vote_id, position) for vote_id, link in links.items() for position in link.tops},
                    {vote_id: link.step for vote_id, link in links.items()},
                    {(r.entry.vote_id, r.position): r.entry.note for r in reviews if r.entry.action == "flag"},
-                   {r.entry.key: (r.entry.action, r.entry.note) for r in reviews})
+                   {r.entry.key: (r.entry.action, r.entry.note, r.entry.reviewed_on) for r in reviews})
 
 
 @dataclass(frozen=True)
@@ -358,7 +358,7 @@ def sittings_of_rows(protocols: Iterable[tuple], agenda_items: Iterable[tuple], 
     item_index, top_id, heading, page_start), ``votes`` (id, protocol_id,
     top_link_step), ``agenda_item_votes`` (agenda_item_id, vote_id[,
     review_note]) and ``vote_link_reviews`` (vote_id, protocol, top_id,
-    top_occurrence, action, note). Numbers may come as text and an empty note
+    top_occurrence, action, note, reviewed_on). Numbers may come as text and an empty note
     as "" (an exported CSV)."""
     def number(value: Any) -> int | None:
         return None if value is None or value == "" else int(value)
@@ -384,10 +384,10 @@ def sittings_of_rows(protocols: Iterable[tuple], agenda_items: Iterable[tuple], 
         sitting.links.add((str(vote_id), position))
         if note and note[0]:
             sitting.notes[(str(vote_id), position)] = note[0]
-    for vote_id, protocol, top_id, occurrence, action, note in reviews:
+    for vote_id, protocol, top_id, occurrence, action, note, reviewed_on in reviews:
         sitting = sittings.get(derive.clean_text(protocol))
         if sitting is not None:
-            sitting.reviews[(sitting.protocol, str(vote_id), derive.clean_text(top_id), int(occurrence))] = (action, note)
+            sitting.reviews[(sitting.protocol, str(vote_id), derive.clean_text(top_id), int(occurrence))] = (action, note, reviewed_on)
     return sittings
 
 
@@ -398,7 +398,7 @@ def sittings_of_store(conn: Any) -> dict[str, Sitting]:
         conn.execute("SELECT id, protocol_id, item_index, top_id, heading, page_start FROM agenda_items").fetchall(),
         conn.execute("SELECT id, protocol_id, top_link_step FROM votes").fetchall(),
         conn.execute("SELECT agenda_item_id, vote_id, review_note FROM agenda_item_votes").fetchall(),
-        conn.execute("SELECT vote_id, protocol, top_id, top_occurrence, action, note FROM vote_link_reviews").fetchall(),
+        conn.execute("SELECT vote_id, protocol, top_id, top_occurrence, action, note, reviewed_on FROM vote_link_reviews").fetchall(),
     )
 
 
@@ -431,21 +431,21 @@ def problems(entries: Iterable[Entry], sitting: Sitting) -> list[str]:
         elif entry.action == "drop":
             if (entry.vote_id, position) in sitting.links:
                 found.append(f"{entry.label}: dropped, but the link is made")
-            elif sitting.reviews.get(entry.key) != ("drop", entry.note):
-                found.append(f"{entry.label}: the sitting holds no record of the drop with the entry's note")
+            elif sitting.reviews.get(entry.key) != ("drop", entry.note, entry.reviewed_on):
+                found.append(f"{entry.label}: the sitting holds no record of the drop with the entry's note and date")
         elif entry.action == "flag":
             note = sitting.notes.get((entry.vote_id, position))
             if (entry.vote_id, position) not in sitting.links:
                 found.append(f"{entry.label}: flagged, but the link is not made")
             elif note != entry.note:
                 found.append(f"{entry.label}: the flagged link carries the note {note!r}, not the entry's")
-            elif sitting.reviews.get(entry.key) != ("flag", entry.note):
-                found.append(f"{entry.label}: the sitting holds no record of the flag with the entry's note")
+            elif sitting.reviews.get(entry.key) != ("flag", entry.note, entry.reviewed_on):
+                found.append(f"{entry.label}: the sitting holds no record of the flag with the entry's note and date")
         elif entry.verdict == "right" and (entry.vote_id, position) not in sitting.links:
             found.append(f"{entry.label}: reviewed right, but the rule no longer makes the link")
         elif entry.verdict == "wrong" and (entry.vote_id, position) in sitting.links:
             found.append(f"{entry.label}: reviewed wrong, but the rule makes the link")
-    for key, (action, _note) in sorted(sitting.reviews.items()):
+    for key, (action, *_record) in sorted(sitting.reviews.items()):
         if key not in named:
             found.append(f"{sitting.protocol} vote {key[1]} {key[2]} #{key[3]}: the store holds a reviewed {action}, "
                          "but no acting entry of the file names it")
@@ -467,7 +467,7 @@ def contested(sitting: Sitting) -> dict[str, list[int]]:
     per_vote: dict[str, list[int]] = {}
     for vote_id, position in sorted(sitting.links):
         per_vote.setdefault(vote_id, []).append(position)
-    dropped = Counter(key[1] for key, (action, _note) in sitting.reviews.items()
+    dropped = Counter(key[1] for key, (action, *_record) in sitting.reviews.items()
                       if action == "drop" and (key[1], sitting.position(key[2], key[3])) not in sitting.links)
     return {vote_id: positions for vote_id, positions in per_vote.items()
             if len(positions) + dropped[vote_id] > 1 or sitting.steps.get(vote_id) in CONTESTED_STEPS}

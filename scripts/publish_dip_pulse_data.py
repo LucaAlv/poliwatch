@@ -258,7 +258,7 @@ _VOTE_LINK_TABLES = {
     "agenda_items": ("id", "protocol_id", "item_index", "top_id", "heading", "page_start"),
     "votes": ("id", "protocol_id", "top_link_step"),
     "agenda_item_votes": ("agenda_item_id", "vote_id", "review_note"),
-    "vote_link_reviews": ("vote_id", "protocol", "top_id", "top_occurrence", "action", "note"),
+    "vote_link_reviews": ("vote_id", "protocol", "top_id", "top_occurrence", "action", "note", "reviewed_on"),
 }
 
 

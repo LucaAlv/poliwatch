@@ -143,12 +143,12 @@ class ProblemsTests(unittest.TestCase):
         key = ("21/45", "980", "Tagesordnungspunkt II", 1)
         drop = self.entry(verdict="wrong", action="drop", note="gehört nicht dazu")
         dropped = sitting(set())
-        dropped.reviews = {key: ("drop", "gehört nicht dazu")}
+        dropped.reviews = {key: ("drop", "gehört nicht dazu", "2026-11-21")}
         self.assertEqual(reviewed.problems([drop], dropped), [])
         flag = self.entry(action="flag", note="Aufruf unklar")
         flagged = sitting({("980", 1)})
         flagged.notes = {("980", 1): "Aufruf unklar"}
-        flagged.reviews = {key: ("flag", "Aufruf unklar")}
+        flagged.reviews = {key: ("flag", "Aufruf unklar", "2026-11-21")}
         self.assertEqual(reviewed.problems([flag], flagged), [])
         wrong_flag = self.entry(verdict="wrong", action="flag", note="Aufruf unklar")
         self.assertEqual(reviewed.problems([wrong_flag], flagged), [])
@@ -165,12 +165,14 @@ class ProblemsTests(unittest.TestCase):
             return made
 
         cases = [
-            ([drop], state({("980", 1)}, reviews={key: ("drop", "gehört nicht dazu")}), "dropped, but the link is made"),
+            ([drop], state({("980", 1)}, reviews={key: ("drop", "gehört nicht dazu", "2026-11-21")}), "dropped, but the link is made"),
             ([drop], state(set()), "holds no record of the drop"),
-            ([flag], state(set(), reviews={key: ("flag", "Aufruf unklar")}), "flagged, but the link is not made"),
-            ([flag], state({("980", 1)}, {("980", 1): "anders"}, {key: ("flag", "Aufruf unklar")}), "carries the note 'anders'"),
+            ([flag], state(set(), reviews={key: ("flag", "Aufruf unklar", "2026-11-21")}), "flagged, but the link is not made"),
+            ([flag], state({("980", 1)}, {("980", 1): "anders"}, {key: ("flag", "Aufruf unklar", "2026-11-21")}), "carries the note 'anders'"),
             ([flag], state({("980", 1)}, {("980", 1): "Aufruf unklar"}), "holds no record of the flag"),
-            ([], state(set(), reviews={key: ("drop", "gehört nicht dazu")}), "no acting entry of the file names it"),
+            ([], state(set(), reviews={key: ("drop", "gehört nicht dazu", "2026-11-21")}), "no acting entry of the file names it"),
+            ([drop], state(set(), reviews={key: ("drop", "gehört nicht dazu", "2026-11-20")}), "record of the drop with the entry's note and date"),
+            ([flag], state({("980", 1)}, {("980", 1): "Aufruf unklar"}, {key: ("flag", "Aufruf unklar", "2026-11-20")}), "record of the flag with the entry's note and date"),
             ([], state({("980", 1)}, {("980", 1): "Aufruf unklar"}), "no acting entry of the file names it"),
             ([self.entry()], state({("980", 1)}, {("980", 1): "Aufruf unklar"}), "no acting entry of the file names it"),
         ]
@@ -187,12 +189,12 @@ class ProblemsTests(unittest.TestCase):
              ("b", "p1", "1", "Tagesordnungspunkt II", "Dritte Beratung", "5000")],
             [("980", "p1", "match"), ("981", "p1", "none")],
             [("b", "980", "Aufruf unklar"), ("a", "980", "")],
-            [("980", "21/45", "Tagesordnungspunkt II", "1", "flag", "Aufruf unklar"),
-             ("981", "21/45", "Tagesordnungspunkt I", "1", "drop", "gehört nicht dazu")])
+            [("980", "21/45", "Tagesordnungspunkt II", "1", "flag", "Aufruf unklar", "2026-11-22"),
+             ("981", "21/45", "Tagesordnungspunkt I", "1", "drop", "gehört nicht dazu", "2026-11-21")])
         made = sittings["21/45"]
         self.assertEqual(made.notes, {("980", 1): "Aufruf unklar"})
-        self.assertEqual(made.reviews, {("21/45", "980", "Tagesordnungspunkt II", 1): ("flag", "Aufruf unklar"),
-                                        ("21/45", "981", "Tagesordnungspunkt I", 1): ("drop", "gehört nicht dazu")})
+        self.assertEqual(made.reviews, {("21/45", "980", "Tagesordnungspunkt II", 1): ("flag", "Aufruf unklar", "2026-11-22"),
+                                        ("21/45", "981", "Tagesordnungspunkt I", 1): ("drop", "gehört nicht dazu", "2026-11-21")})
 
     def test_an_entry_of_another_sitting_is_not_checked_here(self) -> None:
         self.assertEqual(reviewed.problems([self.entry(protocol="21/44")], sitting(set())), [])
@@ -234,11 +236,11 @@ class GateTests(unittest.TestCase):
     def test_a_flagged_contested_link_and_a_holding_drop_pass(self) -> None:
         key = ("21/45", "980", "Tagesordnungspunkt II", 1)
         flagged = sitting({("980", 1)}, {"980": "narrowed"})
-        flagged.notes, flagged.reviews = {("980", 1): "unsicher"}, {key: ("flag", "unsicher")}
+        flagged.notes, flagged.reviews = {("980", 1): "unsicher"}, {key: ("flag", "unsicher", "2026-11-21")}
         result = reviewed.gate(self.entries({"verdict": "wrong", "action": "flag", "note": "unsicher"}), {"21/45": flagged})
         self.assertEqual((result["refusals"], result["contested"]), ([], 1))
         dropped = sitting(set(), {"980": "none"})
-        dropped.reviews = {key: ("drop", "nicht dazu")}
+        dropped.reviews = {key: ("drop", "nicht dazu", "2026-11-21")}
         result = reviewed.gate(self.entries({"verdict": "wrong", "action": "drop", "note": "nicht dazu"}), {"21/45": dropped})
         self.assertEqual((result["refusals"], result["contested"]), ([], 0))
 
@@ -247,7 +249,7 @@ class GateTests(unittest.TestCase):
         drop = {"top_id": "Tagesordnungspunkt I", "heading_starts": "Zweite Beratung des Haushaltsgesetzes", "page_start": 4900,
                 "verdict": "wrong", "action": "drop", "note": "nicht dazu"}
         kept = sitting({("980", 1)}, {"980": "match"})
-        kept.reviews = {("21/45", "980", "Tagesordnungspunkt I", 1): ("drop", "nicht dazu")}
+        kept.reviews = {("21/45", "980", "Tagesordnungspunkt I", 1): ("drop", "nicht dazu", "2026-11-21")}
         result = reviewed.gate(self.entries(drop), {"21/45": kept})
         self.assertEqual(result["refusals"],
                          ["21/45 vote 980 Tagesordnungspunkt II #1: contested link (match, 1 TOP(s)) has no reviewed entry"])

@@ -4348,12 +4348,14 @@ def enrich_with_api(
     if len(activities) >= 100:
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
     # Which TOPs each listed vote belongs to: one rule (vote_links), here and on
-    # every replay, with the reviewed drops and flags of the sitting applied (a
-    # stale one stops the run). A candidate whose details then fail still counts
-    # as matched.
+    # every replay, with the reviewed drops and flags of the listed votes
+    # applied (a stale one stops the run; one whose vote this scan did not list
+    # waits for the placement after cached votes are carried forward). A
+    # candidate whose details then fail still counts as matched.
     candidate_by_id = {derive.vote_identity(candidate): candidate for candidate in roll_call_candidates}
     candidate_tops, _reviews = vote_links.apply_reviews(
-        protocol.get("dokumentnummer"), enriched_tops, vote_links.top_links(enriched_tops, candidate_by_id.values()))
+        protocol.get("dokumentnummer"), enriched_tops, vote_links.top_links(enriched_tops, candidate_by_id.values()),
+        listed_only=True)
 
     # Fetch every candidate independently: one unavailable detail must not
     # prevent later candidates in the sitting from being preserved.

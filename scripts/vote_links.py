@@ -325,11 +325,20 @@ def report_votes(report: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def apply_reviews(protocol: Any, items: list[Mapping[str, Any]], placed: Mapping[str, TopLink],
-                  entries: Iterable[Any] | None = None) -> tuple[dict[str, TopLink], list[Any]]:
+                  entries: Iterable[Any] | None = None, *, listed_only: bool = False) -> tuple[dict[str, TopLink], list[Any]]:
     """The drop and flag entries of sitting ``protocol`` applied to ``placed``,
     the rule's links over ``items`` (``reviewed_vote_links.apply``): the links
     and the ``Review`` of every entry applied. ``entries`` default to the ones
-    in force. An entry that no longer fits stops the run."""
+    in force. An entry that no longer fits stops the run.
+
+    ``listed_only`` applies only the entries whose vote ``placed`` holds: the
+    online fetch places the votes it listed this run, before cached ones are
+    carried forward, so a skipped or failed scan must not read as a stale
+    entry. The placement of the whole report afterwards (``attribute_votes``)
+    applies and checks every entry."""
+    if listed_only:
+        entries = [entry for entry in (reviewed_vote_links.in_force() if entries is None else entries)
+                   if entry.vote_id in placed]
     return reviewed_vote_links.apply(derive.clean_text(protocol), items, placed, entries)
 
 

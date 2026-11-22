@@ -161,5 +161,36 @@ class PageTests(unittest.TestCase):
             self.assertEqual([vote["id"] for vote in bill["votes"]], expected)
 
 
+class OnlineFetchTests(unittest.TestCase):
+    """The online fetch places the votes it listed this run; cached votes come
+    back only later, so an entry whose vote the scan did not list must wait."""
+
+    # Value: protects=an acting entry does not abort an online refresh whose vote scan is skipped or failed (cached votes are carried forward after enrich_with_api); fails_when=enrich_with_api checks the entries against this run's listed votes only; why_new=Codex found the abort in the C2 ship review; seam=none; no_claim=a live roll-call list (scan skipped)
+    def test_a_skipped_vote_scan_does_not_read_as_a_stale_entry(self) -> None:
+        import contextlib
+        import io
+
+        import validate_dip_protocol as dip
+
+        class NoRecords:
+            def list_all(self, path, params):
+                return []
+
+        protocol = {"id": "fixture-21-43", "dokumentnummer": "21/43", "datum": "2025-12-10"}
+        parsed = dip.parse_protocol_xml((FIXTURES / "offline-v5" / "plenarprotokoll-21-43.xml").read_text(encoding="utf-8"))
+
+        def enrich() -> dict[str, Any]:
+            with contextlib.redirect_stderr(io.StringIO()):
+                return dip.enrich_with_api(NoRecords(), protocol, copy.deepcopy(parsed), person_limit=0, vote_scan_pages=0)
+
+        first = enrich()["agenda_items"][0]
+        drop = entry(protocol="21/43", vote_id="999", top_id=first["top_id"], heading_starts=first["heading"][:30],
+                     page_start=reviewed.page_of(first["page_range"]["start"]))
+        with reviewed.using([drop]):
+            self.assertIn(first["top_id"], [item["top_id"] for item in enrich()["agenda_items"]])
+            with self.assertRaisesRegex(reviewed.ReviewedVoteLinksError, "holds no vote 999"):
+                vote_links.apply_reviews("21/43", [first], {})
+
+
 if __name__ == "__main__":
     unittest.main()
