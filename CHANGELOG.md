@@ -11,6 +11,17 @@ The DATA.md of a release export now says which release it is and where it is pub
 - **A release export's DATA.md names its release.** Under „Diesen Export zitieren“ it names the Git tag `data-<version>`, the repository from `CITATION.cff`'s `repository-code` and the release „Daten <version>“ this export is meant for. Before, it said no immutable reference had been given, which would have been false for the first release. It says that a release is not changed afterwards by the project's rule, which the platform does not enforce. A local export keeps its old sentence.
 - **`CITATION.cff` is a codebook input.** Its hash is in `datenstand.json` and DATA.md, and the release script checks it against the export's commit like the other inputs, so any edit to `CITATION.cff` needs a new export. A release export refuses a `CITATION.cff` without an `https://` repository-code.
 - **The release goes to the repository its DATA.md cites.** Every `gh` call of `scripts/publish_dip_pulse_data.py` carries `--repo github.com/<owner>/<name>` from `CITATION.cff`, so `GH_REPO`, `GH_HOST` or a gh default cannot send it elsewhere. A run that asks origin for tags (`--publish`, `--previous-manifest`) refuses unless origin is that repository, and the recovery commands it prints are pinned to it.
+## [0.46.46.0] - 2026-11-22
+
+The data licence and the privacy page say more exactly what they cover. No stored value, figure or export table changes; the licence file and the codebook that every export carries change wording.
+
+### Changed
+
+- **DIP's clause 5 is passed on as the source's own notice.** `LICENSE-DATA.md` no longer reads as if the project added a term: it quotes what clause 5 forbids, says it is the source's condition and not ours, and says the CC BY 4.0 grant for our own work carries no such condition.
+- **Quoted source wording keeps the source's terms.** `documents.forderung` and `votes.inversion_excerpt` quote the wording of a Drucksache, a protocol or a vote page. The licence now says the selection is ours under CC BY 4.0 while the quoted wording stays under the DIP layer (or the `bundestag.de` row for the vote pages), and that `vote_passages` only points to the quoted documents. The change notice now says that a protocol clause or a DIP remark longer than 300 characters is cut in `votes.inversion_excerpt` and ends in „…“.
+- **The Reden that keep a reaction in their text are named.** `speeches.text` leaves out applause and Zwischenrufe the protocol prints as their own element. In 18 Reden and one Beitrag the protocol prints such a reaction inside the speaker's paragraph, so it stays: 13 Reden and the Beitrag keep a „(Beifall …)“, five Reden a Zuruf or a named Zwischenruf, and one a remark that a Zwischenfrage was asked for. `LICENSE-DATA.md` lists them by protocol number and Rede-ID, and the codebook entries for both text columns point to the list.
+- The privacy page now says that a duplicated tab keeps the display settings. The two settings live in the browser's session storage, which a duplicated tab copies, so `datenschutz.html` says they hold in the tab where they were set or in a copy of it.
+
 ## [0.46.45.0] - 2026-11-22
 
 The release review's comparison with CPP-BT now counts the Redner-ID agreement itself and says what it left out, instead of leaving both to a hand count. No stored value, export or page changes; the figures in the data notes stand.
