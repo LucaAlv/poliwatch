@@ -509,6 +509,7 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [Politikfelder fetch and replay hardening](docs/plans/politikfelder-hardening.md) — implementation scope and verification record.
 - [B4 vote lead and Bundestag report link](docs/plans/b4-vote-lead-and-article.md) — implementation scope; [source validation](docs/research/b4-vote-lead-validation.md) records the acquisition, replay, export, and browser checks.
 - [Quoted Antrag context fallback](docs/plans/b4-extractive-antrag.md) — implementation and open acceptance gate; its [research note](docs/research/b4-antrag-extraction.md) records coverage, quotation-fidelity findings, and reproduction details.
+- [ADR 0003 legal research note](docs/research/adr-0003-legal-questions-2026-11.md) — research, not legal advice, on the open licence and data-protection questions; [docs/legal/clinic-2026-11/](docs/legal/clinic-2026-11/README.md) holds the German draft packet for the Cyber Law Clinic (question 4), not yet sent.
 - [Runtime architecture diagram](docs/bundestag-puls-architecture.html) — generated overview of the build, data, and served-site flow.
 - [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md) — product intent and the design system.
 - [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar or [fakt-der-woche.md](docs/designs/fakt-der-woche.md) for the `fakt/` pages.
