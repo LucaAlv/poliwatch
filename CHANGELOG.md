@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.46.0] - 2026-11-22
+
+The data licence and the privacy page say more exactly what they cover. No stored value, figure or export table changes; the licence file and the codebook that every export carries change wording.
+
+### Changed
+
+- **DIP's clause 5 is passed on as the source's own notice.** `LICENSE-DATA.md` no longer reads as if the project added a term: it quotes what clause 5 forbids, says it is the source's condition and not ours, and says the CC BY 4.0 grant for our own work carries no such condition.
+- **Quoted source wording keeps the source's terms.** `documents.forderung` and `votes.inversion_excerpt` quote the wording of a Drucksache, a protocol or a vote page. The licence now says the selection is ours under CC BY 4.0 while the quoted wording stays under the DIP layer (or the `bundestag.de` row for the vote pages), and that `vote_passages` only points to the quoted documents. The change notice now says that a protocol clause or a DIP remark longer than 300 characters is cut in `votes.inversion_excerpt` and ends in „…“.
+- **The Reden that keep a reaction in their text are named.** `speeches.text` leaves out applause and Zwischenrufe the protocol prints as their own element. In 18 Reden and one Beitrag the protocol prints such a reaction inside the speaker's paragraph, so it stays: 13 Reden and the Beitrag keep a „(Beifall …)“, five Reden a Zuruf or a named Zwischenruf, and one a remark that a Zwischenfrage was asked for. `LICENSE-DATA.md` lists them by protocol number and Rede-ID, and the codebook entries for both text columns point to the list.
+- The privacy page now says that a duplicated tab keeps the display settings. The two settings live in the browser's session storage, which a duplicated tab copies, so `datenschutz.html` says they hold in the tab where they were set or in a copy of it.
+
 ## [0.46.43.0] - 2026-11-22
 
 The comparison with CPP-BT in the data notes is restated on the reference store replayed with v0.46.42.0. No stored value or export changes; only documented figures move.
