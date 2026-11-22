@@ -111,7 +111,7 @@
           "license": "eigene-auswertung"
         },
         "review_note": {
-          "meaning": "Vermerk einer geprüften Verknüpfung, die als unsicher markiert ist (scripts/reviewed_vote_links.json, Aktion flag). Bisher markiert keine Prüfung eine Verknüpfung, die Spalte ist daher überall leer.",
+          "meaning": "Vermerk einer geprüften Verknüpfung, die die Prüfung nicht sicher bestätigen konnte (scripts/reviewed_vote_links.json, Aktion flag); die Verknüpfung bleibt, und die Abstimmungsseite nennt den Vermerk.",
           "unit": "Text oder NULL; NULL, wo kein Prüfeintrag die Verknüpfung markiert.",
           "source": "Projektprüfung (scripts/reviewed_vote_links.json) der Verknüpfungen gegen Plenarprotokoll und DIP.",
           "license": "eigene-auswertung"
@@ -1995,7 +1995,7 @@
       }
     },
     "vote_link_reviews": {
-      "meaning": "Geprüfte Verknüpfungen, die ein Einzelfalleintrag entfernt (drop) oder als unsicher markiert (flag), für die Abstimmungsseite. Bisher entfernt oder markiert keine Prüfung eine Verknüpfung; die Tabelle ist leer.",
+      "meaning": "Geprüfte Verknüpfungen, die ein Einzelfalleintrag in scripts/reviewed_vote_links.json entfernt (drop) oder als nicht sicher geprüft markiert (flag); die Abstimmungsseite nennt jede. Eine entfernte Verknüpfung fehlt in agenda_item_votes, eine markierte steht dort mit review_note.",
       "columns": {
         "vote_id": {
           "meaning": "Kennung der Abstimmung, deren Verknüpfung geprüft wurde.",

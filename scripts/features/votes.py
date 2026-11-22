@@ -145,7 +145,9 @@ class VotePanelContext:
     a vote's anchor goes where ``derive.iter_report_votes`` first meets it.
     ``vote_contexts`` is ``politikfelder.report_vote_vorgaenge`` of the report,
     read with ``vorgang_cache``, the same answer persist stores; ``vote_passages``
-    is ``antrag_text.report_vote_passages`` of it, likewise."""
+    is ``antrag_text.report_vote_passages`` of it, likewise. ``link_reviews``
+    holds, per vote id, the reviewed drops and flags of its TOP links applied to
+    the report (``vote_links.reviewed_links``), which the panel names."""
 
     report: Mapping[str, Any]
     vote_contexts: Mapping[str, politikfelder.VoteContext]
@@ -155,6 +157,7 @@ class VotePanelContext:
     #: From the page to the site root, for site-wide links (bundestag.html).
     site_prefix: str
     vote_passages: Mapping[str, antrag_text.VotePassages] = field(default_factory=dict)
+    link_reviews: Mapping[str, list[Any]] = field(default_factory=dict)
 
 
 def member_name_html(vote: dict[str, Any], member: dict[str, Any], panel: VotePanelContext) -> str:
@@ -521,6 +524,29 @@ def _refiled_note_html(vote: dict[str, Any]) -> str:
     return f'<p class="vote-state-note">{html.esc("Anders als auf der Bundestag-Seite, nach den MdB-Stammdaten gezählt: " + "; ".join(moved) + ".")}</p>'
 
 
+def _german_date(iso: str | None) -> str:
+    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", iso or "")
+    return f"{match.group(3)}.{match.group(2)}.{match.group(1)}" if match else str(iso or "")
+
+
+def _link_review_html(reviews: list[Any], linked: bool) -> str:
+    """One line per reviewed drop or flag of the vote's TOP links (owner decision
+    2): a drop names the TOP the rule linked and the review removed, a flag the
+    TOP whose link the review could not settle; each with the review's date and
+    note. ``linked``: the vote still has a TOP."""
+    lines = []
+    for review in reviews:
+        entry = review.entry
+        when = _german_date(entry.reviewed_on)
+        if entry.action == "drop":
+            text = (f"Ein Abgleich verband diese Abstimmung {'auch ' if linked else ''}mit {entry.top_id}; "
+                    f"die Prüfung vom {when} ergab, dass sie nicht dazu gehört: {entry.note}")
+        else:
+            text = f"Die Zuordnung zu {entry.top_id} ist nicht sicher geprüft (Prüfung vom {when}): {entry.note}"
+        lines.append(f'<p class="vote-state-note vote-link-review">{html.esc(text)}</p>')
+    return "".join(lines)
+
+
 def _member_sections_html(vote: dict[str, Any], panel: VotePanelContext) -> str:
     """The Einzelstimmen grid, one section per group, fraktionslos last."""
     member_groups: dict[str, list[dict[str, Any]]] = {}
@@ -617,6 +643,8 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         explanation = ""
         if vote.get("inverted"):
             explanation = '<p class="vote-state-note">Abgestimmt wurde über die Empfehlung, den Antrag abzulehnen. Ja = Antrag ablehnen · Nein = Antrag annehmen</p>'
+        explanation += _link_review_html(panel.link_reviews.get(derive.vote_identity(vote)) or [],
+                                         first_item.get(derive.vote_identity(vote)) is not None)
 
         panels.append(
             f'<section class="vote-panel"{_panel_id(vote, item, first_item, anchored)}>'
@@ -798,6 +826,7 @@ class VotesComponent(BaseComponent):
             mp_lookup=ctx.get("mp_lookup"),
             mp_prefix=ctx.get("mp_prefix", "../abgeordnete/"),
             site_prefix=ctx.get("site_prefix", "../"),
+            link_reviews=ctx.get("link_reviews") or {},
         )
         return [render_vote_summary(ctx["item"], acquisition, panel)]
 

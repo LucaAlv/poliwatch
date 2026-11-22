@@ -66,8 +66,13 @@ class FileTests(unittest.TestCase):
             ({"entries": [raw(verdict="wrong", action="rule")]}, "needs a pattern A to D"),
             ({"entries": [raw(pattern="A")]}, "needs a pattern A to D, and only it"),
             ({"entries": [raw(verdict="wrong", action="drop", note="")]}, "note must not be empty"),
-            ({"entries": [raw(verdict="wrong", action="drop", note="ein Einzelfall")]}, "vote PR C2"),
-            ({"entries": [raw(action="flag", note="unsicher")]}, "vote PR C2"),
+            ({"entries": [raw(action="flag", note="")]}, "note must not be empty"),
+            ({"entries": [raw(action="drop", note="ein Einzelfall")]}, "a right link cannot have action drop"),
+            ({"entries": [raw(verdict="wrong", pattern="D", action="drop", note="ein Einzelfall")]}, "needs a pattern A to D, and only it"),
+            ({"entries": [raw(pattern="A", action="flag", note="unsicher")]}, "needs a pattern A to D, and only it"),
+            ({"entries": [raw(verdict="wrong", action="drop", note="ein Einzelfall", source="plan vote-pr-c")]},
+             "a drop entry needs the date of its review"),
+            ({"entries": [raw(action="flag", note="unsicher", source="plan vote-pr-c")]}, "a flag entry needs the date of its review"),
             ({"entries": [raw(source="by hand")]}, "source"),
             ({"entries": [raw(evidence="x" * 4001)]}, "at most 4000"),
             ({"entries": [raw(), raw(evidence="again")]}, "listed twice"),
@@ -75,6 +80,15 @@ class FileTests(unittest.TestCase):
         for data, message in cases:
             with self.subTest(message=message):
                 self.refused(data, message)
+
+    # Value: protects=a drop and a flag load as acting entries with their review date (vote PR C2); fails_when=the loader still refuses them or loses the date the vote page names; why_new=C2 lets one-off entries act; seam=none
+    def test_drop_and_flag_entries_load_with_their_review_date(self) -> None:
+        drop, flag = reviewed.check({"entries": [
+            raw(verdict="wrong", action="drop", note="gehört zu TOP I"),
+            raw(vote_id="981", action="flag", note="Aufruf unklar", source="sheet 2026-11-30")]})
+        self.assertEqual((drop.action, drop.reviewed_on), ("drop", "2026-11-21"))
+        self.assertEqual((flag.action, flag.reviewed_on), ("flag", "2026-11-30"))
+        self.assertEqual(reviewed.parse(reviewed.dump([drop, flag])), [drop, flag])
 
     def test_a_missing_or_unreadable_file_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -124,6 +138,64 @@ class ProblemsTests(unittest.TestCase):
                 [problem] = reviewed.problems([entry], state)
                 self.assertIn(message, problem)
 
+    # Value: protects=a drop holds where its link is gone and the store keeps its record, a flag where the link stays with the entry's note (plan section 4 table); fails_when=problems reads a drop or flag by its verdict alone; why_new=vote PR C2; seam=none
+    def test_a_holding_drop_and_flag_have_no_problem(self) -> None:
+        key = ("21/45", "980", "Tagesordnungspunkt II", 1)
+        drop = self.entry(verdict="wrong", action="drop", note="gehört nicht dazu")
+        dropped = sitting(set())
+        dropped.reviews = {key: ("drop", "gehört nicht dazu", "2026-11-21")}
+        self.assertEqual(reviewed.problems([drop], dropped), [])
+        flag = self.entry(action="flag", note="Aufruf unklar")
+        flagged = sitting({("980", 1)})
+        flagged.notes = {("980", 1): "Aufruf unklar"}
+        flagged.reviews = {key: ("flag", "Aufruf unklar", "2026-11-21")}
+        self.assertEqual(reviewed.problems([flag], flagged), [])
+        wrong_flag = self.entry(verdict="wrong", action="flag", note="Aufruf unklar")
+        self.assertEqual(reviewed.problems([wrong_flag], flagged), [])
+
+    # Value: protects=a stale drop or flag in the store fails the store gate and the release like a stale verdict (plan section 4: "the store gate and the release refuse for any entry"); fails_when=a made dropped link, a lost or re-noted flag, or a review the file no longer names passes; why_new=vote PR C2; seam=none
+    def test_each_way_a_drop_or_flag_stops_holding_is_named(self) -> None:
+        key = ("21/45", "980", "Tagesordnungspunkt II", 1)
+        drop = self.entry(verdict="wrong", action="drop", note="gehört nicht dazu")
+        flag = self.entry(action="flag", note="Aufruf unklar")
+
+        def state(links, notes=None, reviews=None):
+            made = sitting(links)
+            made.notes, made.reviews = notes or {}, reviews or {}
+            return made
+
+        cases = [
+            ([drop], state({("980", 1)}, reviews={key: ("drop", "gehört nicht dazu", "2026-11-21")}), "dropped, but the link is made"),
+            ([drop], state(set()), "holds no record of the drop"),
+            ([flag], state(set(), reviews={key: ("flag", "Aufruf unklar", "2026-11-21")}), "flagged, but the link is not made"),
+            ([flag], state({("980", 1)}, {("980", 1): "anders"}, {key: ("flag", "Aufruf unklar", "2026-11-21")}), "carries the note 'anders'"),
+            ([flag], state({("980", 1)}, {("980", 1): "Aufruf unklar"}), "holds no record of the flag"),
+            ([], state(set(), reviews={key: ("drop", "gehört nicht dazu", "2026-11-21")}), "no acting entry of the file names it"),
+            ([drop], state(set(), reviews={key: ("drop", "gehört nicht dazu", "2026-11-20")}), "record of the drop with the entry's note and date"),
+            ([flag], state({("980", 1)}, {("980", 1): "Aufruf unklar"}, {key: ("flag", "Aufruf unklar", "2026-11-20")}), "record of the flag with the entry's note and date"),
+            ([], state({("980", 1)}, {("980", 1): "Aufruf unklar"}), "no acting entry of the file names it"),
+            ([self.entry()], state({("980", 1)}, {("980", 1): "Aufruf unklar"}), "no acting entry of the file names it"),
+        ]
+        for entries, made, message in cases:
+            with self.subTest(message=message):
+                found = reviewed.problems(entries, made)
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(message, found[0])
+
+    def test_store_rows_carry_the_notes_and_the_review_records(self) -> None:
+        sittings = reviewed.sittings_of_rows(
+            [("p1", "21/45")],
+            [("a", "p1", "0", "Tagesordnungspunkt I", "Zweite Beratung", "4900"),
+             ("b", "p1", "1", "Tagesordnungspunkt II", "Dritte Beratung", "5000")],
+            [("980", "p1", "match"), ("981", "p1", "none")],
+            [("b", "980", "Aufruf unklar"), ("a", "980", "")],
+            [("980", "21/45", "Tagesordnungspunkt II", "1", "flag", "Aufruf unklar", "2026-11-22"),
+             ("981", "21/45", "Tagesordnungspunkt I", "1", "drop", "gehört nicht dazu", "2026-11-21")])
+        made = sittings["21/45"]
+        self.assertEqual(made.notes, {("980", 1): "Aufruf unklar"})
+        self.assertEqual(made.reviews, {("21/45", "980", "Tagesordnungspunkt II", 1): ("flag", "Aufruf unklar", "2026-11-22"),
+                                        ("21/45", "981", "Tagesordnungspunkt I", 1): ("drop", "gehört nicht dazu", "2026-11-21")})
+
     def test_an_entry_of_another_sitting_is_not_checked_here(self) -> None:
         self.assertEqual(reviewed.problems([self.entry(protocol="21/44")], sitting(set())), [])
 
@@ -160,13 +232,71 @@ class GateTests(unittest.TestCase):
         self.assertEqual(reviewed.gate(self.entries({}), plain)["refusals"],
                          ["21/45 vote 980 Tagesordnungspunkt II #1: reviewed right, but the rule no longer makes the link"])
 
+    # Value: protects=a contested link reviewed as unsure (flag) may be released with its note, and a dropped link leaves nothing to gate (decision 2); fails_when=the gate refuses a flagged link or a holding drop; why_new=vote PR C2; seam=none
+    def test_a_flagged_contested_link_and_a_holding_drop_pass(self) -> None:
+        key = ("21/45", "980", "Tagesordnungspunkt II", 1)
+        flagged = sitting({("980", 1)}, {"980": "narrowed"})
+        flagged.notes, flagged.reviews = {("980", 1): "unsicher"}, {key: ("flag", "unsicher", "2026-11-21")}
+        result = reviewed.gate(self.entries({"verdict": "wrong", "action": "flag", "note": "unsicher"}), {"21/45": flagged})
+        self.assertEqual((result["refusals"], result["contested"]), ([], 1))
+        dropped = sitting(set(), {"980": "none"})
+        dropped.reviews = {key: ("drop", "nicht dazu", "2026-11-21")}
+        result = reviewed.gate(self.entries({"verdict": "wrong", "action": "drop", "note": "nicht dazu"}), {"21/45": dropped})
+        self.assertEqual((result["refusals"], result["contested"]), ([], 0))
+
+    # Value: protects=a drop on one of a vote's two TOPs leaves the other link gated, so a drop entry cannot stand in for the review of the link the vote keeps; fails_when=contested() counts only the links left after the drops (TODOS item 41 of vote PR C2); why_new=code review of vote PR C2; seam=none
+    def test_a_drop_on_one_of_two_tops_leaves_the_other_link_gated(self) -> None:
+        drop = {"top_id": "Tagesordnungspunkt I", "heading_starts": "Zweite Beratung des Haushaltsgesetzes", "page_start": 4900,
+                "verdict": "wrong", "action": "drop", "note": "nicht dazu"}
+        kept = sitting({("980", 1)}, {"980": "match"})
+        kept.reviews = {("21/45", "980", "Tagesordnungspunkt I", 1): ("drop", "nicht dazu", "2026-11-21")}
+        result = reviewed.gate(self.entries(drop), {"21/45": kept})
+        self.assertEqual(result["refusals"],
+                         ["21/45 vote 980 Tagesordnungspunkt II #1: contested link (match, 1 TOP(s)) has no reviewed entry"])
+        self.assertEqual(result["contested"], 1)
+        result = reviewed.gate(self.entries(drop, {}), {"21/45": kept})
+        self.assertEqual((result["refusals"], result["contested"]), ([], 1))
+
     def test_entries_of_sittings_outside_the_store_are_skipped_and_counted(self) -> None:
         result = reviewed.gate(self.entries({}, {"protocol": "18/1"}), {"21/45": sitting({("980", 1)})})
         self.assertEqual((result["reviewed"], result["skipped"], result["refusals"]), (1, 1, []))
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+
+class ApplyTests(unittest.TestCase):
+    """``apply`` on a vote the rule links to two TOPs of a synthetic sitting."""
+
+    ITEMS = [{"top_id": "Tagesordnungspunkt I", "heading": "Zweite Beratung des Haushaltsgesetzes", "page_range": {"start": {"page": 4900}}},
+             {"top_id": "Tagesordnungspunkt II", "heading": "Dritte Beratung des von der Bundesregierung eingebrachten",
+              "page_range": {"start": {"page": 5000}}}]
+
+    def entry(self, position: int, **fields) -> reviewed.Entry:
+        item = self.ITEMS[position]
+        base = {"top_id": item["top_id"], "heading_starts": item["heading"][:40], "page_start": item["page_range"]["start"]["page"],
+                "verdict": "wrong", "action": "drop", "note": "gehört nicht dazu"}
+        return reviewed.check({"entries": [raw(**{**base, **fields})]})[0]
+
+    def placed(self, step: str = "match") -> dict:
+        import vote_links
+        return {"980": vote_links.TopLink({0: "title", 1: "title"}, step)}
+
+    # Value: protects=a drop removes only its own TOP; a vote left a TOP keeps the rule's deciding step, one left none falls to step none; fails_when=apply resets the step or drops every TOP of the vote; why_new=oracle tests drop a vote's only TOP; seam=none; no_claim=real sittings (synthetic items)
+    def test_a_drop_on_one_of_two_tops_keeps_the_other_link_and_its_step(self) -> None:
+        first, second = self.entry(0), self.entry(1)
+        links, applied = reviewed.apply("21/45", self.ITEMS, self.placed("narrowed"), [first])
+        self.assertEqual((links["980"].tops, links["980"].step), ({1: "title"}, "narrowed"))
+        self.assertEqual([(r.entry, r.position) for r in applied], [(first, 0)])
+        links, applied = reviewed.apply("21/45", self.ITEMS, self.placed("narrowed"), [first, second])
+        self.assertEqual((links["980"].tops, links["980"].step), ({}, "none"))
+        self.assertEqual([r.position for r in applied], [0, 1])
+
+    # Value: protects=the caller's links are not mutated and entries of another sitting apply to nothing; fails_when=apply edits placed in place or reads another sitting's entry; why_new=no other test passes placed twice; seam=none; no_claim=real sittings (synthetic items)
+    def test_apply_leaves_its_input_alone_and_skips_other_sittings(self) -> None:
+        placed = self.placed()
+        reviewed.apply("21/45", self.ITEMS, placed, [self.entry(0)])
+        self.assertEqual(placed, self.placed())
+        self.assertEqual(reviewed.apply("21/45", self.ITEMS, placed, [self.entry(0, protocol="21/44")]), (placed, []))
 
 
 class ReviewParagraphTests(unittest.TestCase):
@@ -181,3 +311,17 @@ class ReviewParagraphTests(unittest.TestCase):
         text = b.vote_link_review_paragraph(entries)
         self.assertNotIn("von Hand", text)
         self.assertIn("KI-Agenten", text)
+
+    # Value: protects=DATA.md counts the one-off drops and flags from the entries, and says nothing of them while none acts; fails_when=the paragraph omits acting entries or names them when there are none; why_new=vote PR C2; seam=none
+    def test_the_paragraph_counts_drops_and_flags_only_when_there_are_some(self) -> None:
+        import build_dip_pulse_site as b
+
+        self.assertNotIn("Einzelfall", b.vote_link_review_paragraph(reviewed.load()))
+        acting = reviewed.check({"entries": [raw(verdict="wrong", action="drop", note="nicht dazu"),
+                                             raw(vote_id="981", action="flag", note="unsicher")]})
+        self.assertIn("Als Einzelfall entfernt sind 1 Verknüpfungen, als nicht sicher geprüft markiert 1",
+                      b.vote_link_review_paragraph(acting))
+
+
+if __name__ == "__main__":
+    unittest.main()
