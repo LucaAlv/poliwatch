@@ -43,10 +43,13 @@ class RepoHygieneTests(unittest.TestCase):
         quoted = next(p for p in text.split("\n\n") if "`documents.forderung`" in p and "`votes.inversion_excerpt`" in p)
         self.assertIn("`vote_passages`", quoted)
         self.assertIn("stays under the DIP layer", quoted)
+        # The change notice ("What we changed") follows the layer table, so the sentence must not point "above" for it.
+        self.assertIn("the change notice below", quoted)
+        self.assertNotIn("change notice above", quoted)
         # The short string is the default --data-license and is copied verbatim into DATA.md: this change leaves it alone.
         self.assertIn("(Nutzungsbedingungen DIP)", b.default_license_text())
 
-    # Value: protects=LICENSE-DATA.md names the stored Reden (and the one Beitrag) that keep "(Beifall" printed inline in a paragraph, so its sentence that speeches.text holds only the speaker's own words does not stand without its exceptions; fails_when=the list loses a Rede, gains one the store does not carry, or the notice drops the Beitrag; why_new=review of the owner-decisions PR (TODOS "ADR 0003 legal questions", item b); seam=LICENSE-DATA.md text; no_claim=that the list matches a later store (the query is recorded in TODOS)
+    # Value: protects=LICENSE-DATA.md names the stored Reden (and the one Beitrag) that keep "(Beifall" printed inline in a paragraph, so its sentence that speeches.text holds only the speaker's own words does not stand without its exceptions; fails_when=the list loses a Rede, gains one the store does not carry, the notice drops the Beitrag or the inline Zuruf of 19/112, or says the change notice is above; why_new=review of the owner-decisions PR (TODOS "ADR 0003 legal questions", item b); seam=LICENSE-DATA.md text; no_claim=that the list matches a later store (the query is recorded in TODOS)
     def test_license_data_names_the_reden_that_keep_inline_beifall(self) -> None:
         text = (ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8")
         reden = {
@@ -61,12 +64,17 @@ class RepoHygieneTests(unittest.TestCase):
                 self.assertIn(f"{protocol} {rede_id}", paragraph)
         self.assertEqual(13, len(re.findall(r"\b\d{2}/\d+ ID\d+", paragraph.split("and the Beitrag")[0])))
         self.assertIn("21/49 ID214902800", paragraph)
+        # One Rede also prints a Zuruf inline (select rede_id from speeches where text like '%(Zuruf%'), so the exception names it.
+        self.assertIn("19/112 ID1911205300", paragraph.split("and the Beitrag")[1])
+        self.assertIn("(Zuruf", paragraph)
         # The dictionary entries of both text columns carry the exception and point to the list.
         tables = json.loads((ROOT / "scripts" / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
         for table in ("speeches", "contributions"):
             with self.subTest(table=table):
                 meaning = tables[table]["columns"]["text"]["meaning"]
                 self.assertIn("„(Beifall …)“", meaning)
+                if table == "speeches":
+                    self.assertIn("„(Zuruf …)“", meaning)
                 self.assertIn("LICENSE-DATA.md", meaning)
 
 
