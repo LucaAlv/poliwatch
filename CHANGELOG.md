@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.47.0] - 2026-11-22
+
+The DATA.md of a release export now says which release it is and where it is published, and the release script publishes to exactly that repository. No stored value, table or figure changes; the export format goes from 22 to 23 because DATA.md and the codebook inputs change.
+
+### Changed
+
+- **A release export's DATA.md names its release.** Under „Diesen Export zitieren“ it names the Git tag `data-<version>`, the repository from `CITATION.cff`'s `repository-code` and the release „Daten <version>“ this export is meant for. Before, it said no immutable reference had been given, which would have been false for the first release. It says that a release is not changed afterwards by the project's rule, which the platform does not enforce. A local export keeps its old sentence.
+- **`CITATION.cff` is a codebook input.** Its hash is in `datenstand.json` and DATA.md, and the release script checks it against the export's commit like the other inputs, so any edit to `CITATION.cff` needs a new export. A release export refuses a `CITATION.cff` without an `https://` repository-code.
+- **The release goes to the repository its DATA.md cites.** Every `gh` call of `scripts/publish_dip_pulse_data.py` carries `--repo github.com/<owner>/<name>` from `CITATION.cff`, so `GH_REPO`, `GH_HOST` or a gh default cannot send it elsewhere. A run that asks origin for tags (`--publish`, `--previous-manifest`) refuses unless origin is that repository, and the recovery commands it prints are pinned to it.
+
 ## [0.46.44.0] - 2026-11-22
 
 The research on the open legal questions of ADR 0003 and a draft packet for the Cyber Law Clinic of Universität Hamburg are in the repository. Documentation only: no stored value, export, page or figure changes.
