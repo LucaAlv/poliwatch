@@ -226,7 +226,7 @@
       "type": "frontend",
       "label": "Browser",
       "sublabel": "static pages, no client fetch",
-      "tag": "localStorage only",
+      "tag": "sessionStorage only",
       "pos": [
         45,
         445
