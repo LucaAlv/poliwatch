@@ -3648,7 +3648,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 22
+EXPORT_FORMAT = 23
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3659,6 +3659,8 @@ CODEBOOK_INPUT_FILES = {
     # The reviewed vote links: DATA.md states the review's figures from it, and
     # the release gate reads it as the export's commit holds it.
     "vote_links": "scripts/reviewed_vote_links.json",
+    # The repository a release's DATA.md names as the place its release is published.
+    "citation": "CITATION.cff",
 }
 # The data licence file: a codebook input, and a file of every generation.
 LICENSE_FILE_NAME = Path(CODEBOOK_INPUT_FILES["license"]).name
@@ -4365,6 +4367,7 @@ class CodebookInputs:
     methods: str
     license: str
     vote_links: str
+    citation: str
     sha256: dict[str, str]  # path below REPO_ROOT -> SHA-256 of the bytes read
 
 
@@ -4621,6 +4624,14 @@ def _license_notice(text: str) -> str:
     return _demote_headings(text[start.start():])
 
 
+def _repository_url(citation: str) -> str:
+    """The `repository-code` of CITATION.cff: the repository whose releases hold the data."""
+    match = re.search(r'^repository-code:\s*"?(https://[^"\s]+?)/?"?\s*$', citation, flags=re.MULTILINE)
+    if match is None:
+        raise RuntimeError(f"export: {CODEBOOK_INPUT_FILES['citation']} has no https:// repository-code, which DATA.md names for a release")
+    return match[1]
+
+
 def _export_label(manifest: dict[str, Any]) -> str:
     return "lokaler Export" if manifest["tag"] == "local" else f"Release {manifest['tag']}"
 
@@ -4802,7 +4813,19 @@ def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -> list[str]:
+def _citation_reference(manifest: dict[str, Any], citation: str) -> list[str]:
+    """What DATA.md says about an immutable reference. A release export is built
+    before its release exists (the release script creates it from this export),
+    so the tag and the repository are named, not a download URL: GitHub release
+    assets are flat and the site links <base><generation>/<file> (scripts/publish_dip_pulse_data.py)."""
+    if manifest["tag"] == "local":
+        return ["Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI."]
+    tag = release_version.tag_for(manifest["tag"])
+    return [f"Unveränderliche Referenz: der Git-Tag `{tag}` im Repository {_repository_url(citation)}; das Release „Daten {manifest['tag']}“ dieses Tags "
+            "veröffentlicht die Dateien dieses Exports, und ein Release wird nicht nachträglich geändert. Dieser Export besitzt keinen Versions-DOI."]
+
+
+def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str, citation: str) -> list[str]:
     path = CODEBOOK_INPUT_FILES["license"]
     return ["## Quellen, Bedingungen und Transformationen", "",
             f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch. Die vollständige Datei liegt diesem Export als `{LICENSE_FILE_NAME}` bei:", "",
@@ -4810,7 +4833,7 @@ def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -
             "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten (ADR 0003) und der MdB-Stammdaten bleibt eine offene Frage.", "",
             "## Diesen Export zitieren", "",
             f"{ATTRIBUTION_NAME} (Arbeitstitel; der Produktname ist nicht festgelegt), {_export_label(manifest)}, Revision {_export_revision(manifest)}, Generation {manifest['generation']}, letzte gespeicherte Sitzung {_latest_sitting(manifest)}. SQLite-Datei und ihren SHA-256 aus der Dateiliste mit angeben.",
-            "Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI.", ""]
+            *_citation_reference(manifest, citation), ""]
 
 
 #: Where docs/data-methods.md takes the review's figures, generated at export.
@@ -4863,7 +4886,7 @@ def _render_codebook(manifest: dict[str, Any], dictionary: dict[str, Any], input
         *_codebook_tables(manifest["tables"], dictionary),
         _demote_headings(_methods_with_vote_link_review(inputs.methods, inputs.vote_links)),
         *_codebook_recipes(manifest),
-        *_codebook_sources_and_citation(manifest, inputs.license),
+        *_codebook_sources_and_citation(manifest, inputs.license, inputs.citation),
     ]
     return "\n".join(lines)
 

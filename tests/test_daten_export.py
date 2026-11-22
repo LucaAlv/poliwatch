@@ -388,6 +388,45 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIsNone(recipe["rows"][0]["fraktion"])
         self.assertEqual(recipe["rows"][0]["mp_id"], "")
 
+    @staticmethod
+    def citation_block(codebook: str) -> str:
+        return codebook.split("## Diesen Export zitieren")[1]
+
+    @staticmethod
+    def repository_code() -> str:
+        match = re.search(r'^repository-code:\s*"([^"]+)"', (b.REPO_ROOT / "CITATION.cff").read_text(encoding="utf-8"), flags=re.MULTILINE)
+        assert match, "CITATION.cff has no repository-code"
+        return match[1]
+
+    # Value: protects=the DATA.md of a release export names the release it is and where it is published, instead of saying no release reference exists; fails_when=the citation block keeps the "nicht mitgegeben" sentence for a release tag, or names another tag/repository than the one release script and CITATION.cff give; why_new=TODOS release-pipeline item 11 (the first release's DATA.md would say something false about itself); seam=the manifest tag -> release_version.tag_for -> CITATION.cff repository-code; no_claim=that the release already exists at export time (it is created from this export afterwards)
+    def test_release_export_names_its_release_tag_and_repository(self) -> None:
+        manifest = self.export(tag="2026.11.01", commit="abc123def456")
+        block = self.citation_block((self.exports_dir / manifest["generation"] / "DATA.md").read_text())
+        self.assertIn("Release 2026.11.01", block)
+        self.assertIn("`data-2026.11.01`", block)
+        self.assertIn(f"„Daten 2026.11.01“", block)
+        self.assertIn(self.repository_code(), block)
+        self.assertIn("keinen Versions-DOI", block)
+        for stale in ("nicht mitgegeben", "Downloadreferenz", "Release-Referenz ergänzen"):
+            self.assertNotIn(stale, block)
+
+    # Value: protects=a local export still says it carries no immutable reference and points at no repository release; fails_when=the release sentence leaks into a local export, which has no tag to cite; why_new=the release branch is new; seam=none; no_claim=wording beyond these anchors
+    def test_local_export_keeps_the_no_reference_sentence(self) -> None:
+        manifest = self.export()
+        block = self.citation_block((self.exports_dir / manifest["generation"] / "DATA.md").read_text())
+        self.assertIn("Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben", block)
+        self.assertIn("keinen Versions-DOI", block)
+        self.assertNotIn("data-", block)
+        self.assertNotIn(self.repository_code(), block)
+
+    # Value: protects=a release export refuses to write a DATA.md without a repository to cite; fails_when=a CITATION.cff without an https repository-code gives a release sentence naming nothing; why_new=the repository comes from CITATION.cff, a new codebook input; seam=none; no_claim=other CITATION.cff fields
+    def test_release_export_refuses_a_citation_without_repository(self) -> None:
+        inputs = b._read_codebook_inputs()
+        for text in ("title: x\n", 'repository-code: "git@github.com:a/b.git"\n'):
+            with self.subTest(text=text), mock.patch.object(b, "_read_codebook_inputs", return_value=dataclasses.replace(inputs, citation=text)):
+                with self.assertRaisesRegex(RuntimeError, "repository-code"):
+                    self.export(tag="2026.11.01", commit="abc123def456")
+
     def test_empty_store_has_header_only_recipes_and_explicit_empty_coverage(self) -> None:
         database = self.tmp / "empty.sqlite"
         conn = pulse_store.connect(database)
@@ -1293,7 +1332,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 22)
+        self.assertEqual(manifest["export_format"], 23)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
