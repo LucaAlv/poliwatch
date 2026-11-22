@@ -1026,6 +1026,16 @@ NAME_KIND_CONTRIBUTION = {
 NAME_KINDS_IN_REDE = frozenset({"name_rede", "name_zwischenfrage", "name_befragung_frage", "name_befragung_antwort",
                                 "name_own_words", "name_procedural"})
 NAME_KINDS_OUTSIDE = frozenset({"name_rede", "name_fragestunde_frage", "name_procedural", "name_ansprache", "name_remark"})
+#: What to do when a sitting is refused for an unlisted speaker printed as
+#: ``<name>`` outside any ``<rede>``: a re-fetch returns the same XML.
+UNLISTED_NAME_SPEAKER_FIX = ("list the speaker in scripts/reviewed_units.json with a name_* kind, rede_id N<ordinal> "
+                             "(ADR 0004 amendment 2026-11-22, docs/plans/name-tag-speakers.md), then re-run")
+
+
+class UnlistedNameSpeakerError(ValueError):
+    """A speaker printed as ``<name>`` outside any ``<rede>`` with no reviewed
+    entry: there is no unit to withhold, so the sitting is refused. The XML is
+    valid; the reviewed list lacks the entry (``UNLISTED_NAME_SPEAKER_FIX``)."""
 
 
 def name_tag(name: ET.Element) -> str:
@@ -1140,7 +1150,7 @@ def mark_name_speakers(root: ET.Element, entries: list[dict[str, str]], created:
         where = f"{sitting} {key[0]} <name>{tag}</name>"
         if entry is None:
             if host is None:
-                raise ValueError(f"{where}: a speaker printed as <name> outside any <rede> has no entry in "
+                raise UnlistedNameSpeakerError(f"{where}: a speaker printed as <name> outside any <rede> has no entry in "
                                  "scripts/reviewed_units.json (ADR 0004)")
             element.set("unreviewed_name", tag)
             continue
@@ -4834,6 +4844,9 @@ def build_report(
         parsed_xml = parse_protocol_xml(xml_text)
     except derive.UnknownFraktionError as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}; {derive.UNKNOWN_FRAKTION_FIX}",
+                       source_rejected=True) from exc
+    except UnlistedNameSpeakerError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_NAME_SPEAKER_FIX}",
                        source_rejected=True) from exc
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc

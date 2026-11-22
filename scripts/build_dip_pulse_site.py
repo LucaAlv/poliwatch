@@ -2239,6 +2239,10 @@ def reparse_cached_xml(
             # A re-fetch returns the same XML, so the default re-fetch fix must not print.
             raise CachedReportError(f"{path} of {document_number}: {exc}", [document_number],
                                     fix=f"Fix: {derive.UNKNOWN_FRAKTION_FIX}") from exc
+        except dip.UnlistedNameSpeakerError as exc:
+            # Not a corrupt file: the reviewed list lacks an entry, so a re-fetch cannot help.
+            raise CachedReportError(f"{path} of {document_number}: {exc}", [document_number],
+                                    fix=f"Fix: {dip.UNLISTED_NAME_SPEAKER_FIX}.") from exc
         except dip.ReconciliationError as exc:
             # Not a corrupt file: the <rede> elements of a valid XML do not reconcile with the parse.
             raise CachedReportError(

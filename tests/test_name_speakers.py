@@ -157,9 +157,43 @@ class RefusalTests(unittest.TestCase):
         self.assertIn('unreviewed_name_speaker', sk.WITHHELD_REASONS)
 
     def test_an_unlisted_speaker_outside_any_rede_refuses_the_sitting(self):
-        with self.assertRaisesRegex(ValueError, r'outside any <rede> has no entry') as caught:
+        with self.assertRaisesRegex(dip.UnlistedNameSpeakerError, r'outside any <rede> has no entry') as caught:
             parse(CHAIR + '<p>Frau Pantel.</p>' + name('Sylvia Pantel (CDU/CSU)') + SPEECH)
+        self.assertIsInstance(caught.exception, ValueError)
         self.assertNotIsInstance(caught.exception, reviewed_units.ReviewedUnitsError)
+
+    # Value: protects=a sitting refused for an unlisted outside speaker names the reviewed-list fix, online and on replay;
+    #   fails_when=it reads as corrupt XML ("--fetch-xml", "re-fetch"), whose re-fetch returns the same XML;
+    #   why_new=code review of claude/name-speakers-build; seam=fetch_text stubbed
+    def test_a_sitting_refused_for_an_unlisted_outside_speaker_names_the_reviewed_list(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import build_dip_pulse_site as build
+        xml = document(CHAIR + '<p>Frau Pantel.</p>' + name('Sylvia Pantel (CDU/CSU)') + SPEECH)
+        protocol = {"id": "p1", "dokumentnummer": "18/30", "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/18/18030.xml"}}
+        reviewed_units.use([])
+        try:
+            with patch.object(dip, "fetch_text", return_value=xml), patch.object(dip, "enrich_with_api") as enrich, \
+                    self.assertRaises(dip.DipError) as online:
+                dip.build_report(SimpleNamespace(api_key="test", sleep=0), protocol)
+            enrich.assert_not_called()
+            with tempfile.TemporaryDirectory() as tmp:
+                output_dir = Path(tmp)
+                (output_dir / "data" / "xml").mkdir(parents=True)
+                (output_dir / "data" / "xml" / "plenarprotokoll-18-30.xml").write_text(xml, encoding="utf-8")
+                report = {"protocol": {"id": "p1", "dokumentnummer": "18/30"}, "agenda_items": []}
+                (output_dir / "data" / "plenarprotokoll-18-30.json").write_text(json.dumps(report), encoding="utf-8")
+                entries = build.load_existing_detail_entries(output_dir, [{"dokumentnummer": "18/30"}])
+                with self.assertRaises(build.CachedReportError) as replay:
+                    build.reparse_cached_xml(output_dir, entries)
+        finally:
+            reviewed_units.use([])
+        self.assertTrue(online.exception.source_rejected)
+        self.assertIn("scripts/reviewed_units.json with a name_* kind", str(online.exception))
+        printed_replay = f"{replay.exception}. {build.cached_report_fix(replay.exception)}"
+        self.assertIn("scripts/reviewed_units.json with a name_* kind", printed_replay)
+        self.assertNotIn("not the Plenarprotokoll XML", printed_replay)
+        self.assertNotIn("--fetch-xml", printed_replay)
 
     def test_a_stale_entry_stops_the_run(self):
         with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, r'ID1 <name>Sylvia Pantel \(CDU/CSU\)</name>'):
