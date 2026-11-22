@@ -1223,6 +1223,181 @@ def mark_name_speakers(root: ET.Element, entries: list[dict[str, str]], created:
     return diagnostics, list(ansprachen.values())
 
 
+#: The Beitrag kinds a listed loose marker must be given by the rules.
+LOOSE_KIND_CONTRIBUTION = {
+    "loose_zwischenfrage": speech_kinds.ZWISCHENFRAGE,
+    "loose_befragung_frage": speech_kinds.BEFRAGUNG_FRAGE,
+    "loose_befragung_antwort": speech_kinds.BEFRAGUNG_ANTWORT,
+}
+#: What to do when a sitting is refused for an unlisted loose marker: a re-fetch
+#: returns the same XML.
+UNLISTED_LOOSE_MARKER_FIX = ("list the marker in scripts/reviewed_units.json with a loose_* kind, rede_id M<ordinal> "
+                             "(ADR 0004, docs/plans/loose-speaker-markers.md), then re-run")
+
+
+class UnlistedLooseMarkerError(ValueError):
+    """A speaker marker standing directly in a TOP that is not a Fragestunde,
+    outside any ``<rede>``, with no reviewed entry: no rule reads it and there is
+    no unit to withhold, so the sitting is refused (``UNLISTED_LOOSE_MARKER_FIX``)."""
+
+
+def loose_marker_ordinals(root: ET.Element) -> dict[int, int]:
+    """Every speaker marker standing directly in a TOP of the source XML, by
+    ``id()`` of the element: its 1-based position among them, Fragestunde TOPs
+    included. Read before any tree edit; an entry names one as ``M<ordinal>``."""
+    markers = (child for top in root.findall("./sitzungsverlauf/tagesordnungspunkt") for child in top
+               if child.tag == "p" and child.get("klasse") == "redner")
+    return {id(marker): ordinal for ordinal, marker in enumerate(markers, 1)}
+
+
+def mark_loose_markers(top: ET.Element, formats: frozenset[str], ordinals: dict[int, int],
+                       listed: dict[str, dict[str, str]], matched: set[str], sitting: str,
+                       created: set[str]) -> list[dict[str, Any]]:
+    """ADR 0004 (amendment of 2026-11-22 on markers outside any ``<rede>``):
+    place each speaker marker that stands directly in a TOP that is not a
+    Fragestunde, outside any ``<rede>``, by its entry in
+    ``scripts/reviewed_units.json`` (``docs/plans/loose-speaker-markers.md``).
+
+    Markers between two ``<rede>`` elements form a run, and a run's turns go
+    to one place. ``wrap``: each ``loose_rede`` marker opens ``<rede
+    id="M<ordinal>">``, which holds everything up to the next ``loose_rede``
+    marker; the last ends after the run's last turn, so the chair text that
+    follows stays in the TOP. ``prev``: the run up to its last turn moves to
+    the end of the ``<rede>`` before it, with the chair text in it. ``next``:
+    only the run's turns move, to the start of the ``<rede>`` after it; the
+    chair text stays in the TOP, where the rules read an announcement such as
+    a Kurzintervention's (20/9). A Beitrag kind's marker carries
+    ``listed_kind``, which the rules must confirm; own words must be the Rede
+    owner's. A marker of a kind that goes nowhere (``attach`` ``none``) stays
+    where it is, read by nothing, even inside a run that moves:
+    ``loose_procedural`` becomes a diagnostic, Sitzungsleitung and a remark
+    nothing.
+
+    An unlisted marker refuses the sitting (``UnlistedLooseMarkerError``); an
+    entry whose Redner-ID, kind or attachment does not fit stops the run
+    (``ReviewedUnitsError``). Returns the procedural diagnostics.
+    """
+    if speech_kinds.FRAGESTUNDE in formats:
+        return []
+    children = list(top)
+    found = [(index, child) for index, child in enumerate(children) if id(child) in ordinals]
+    if not found:
+        return []
+    diagnostics: list[dict[str, Any]] = []
+
+    def is_marker(element: ET.Element) -> bool:
+        return element.tag == "p" and element.get("klasse") == "redner"
+
+    def turn_end(index: int) -> int:
+        end = index + 1
+        while end < len(children) and not (children[end].tag in ("name", "rede") or is_marker(children[end])):
+            end += 1
+        return end
+
+    def owner_id(rede: ET.Element) -> str | None:
+        first = rede.find("./p[@klasse='redner']/redner")
+        return first.get("id") if first is not None else None
+
+    runs: list[list[tuple[int, ET.Element, dict[str, str]]]] = []
+    previous_rede = -1
+    for index, marker in found:
+        rid = f"M{ordinals[id(marker)]}"
+        entry = listed.get(rid)
+        where = f"{sitting} {top.get('top-id')} {rid} {clean_text(elem_text(marker))!r}"
+        if entry is None:
+            raise UnlistedLooseMarkerError(f"{where}: a speaker marker outside any <rede> has no entry in "
+                                           "scripts/reviewed_units.json (ADR 0004)")
+        printed = (marker.find("redner").get("id") if marker.find("redner") is not None else None) or ""
+        if entry["redner_id"] != printed:
+            raise reviewed_units.ReviewedUnitsError(
+                f"scripts/reviewed_units.json: {where}: listed with Redner-ID {entry['redner_id']}, but the marker prints "
+                f"{printed or 'none'}; the entry is stale or misapplied")
+        matched.add(rid)
+        last_rede = max((i for i in range(index) if children[i].tag == "rede"), default=-1)
+        if not runs or last_rede != previous_rede:
+            runs.append([])
+        previous_rede = last_rede
+        runs[-1].append((index, marker, entry))
+
+    moves: list[tuple[list[ET.Element], ET.Element | None, str]] = []
+    staying: set[int] = set()
+    for _, marker, entry in (item for run in runs for item in run):
+        if entry["attach"] == "none":
+            index = children.index(marker)
+            staying.update(id(element) for element in children[index:turn_end(index)])
+            if entry["kind"] == "loose_procedural":
+                paragraphs = [elem_text(c) for c in children[index + 1:turn_end(index)] if c.tag == "p" and elem_text(c)]
+                diagnostics.append({
+                    "source_rede_id": None, "marker_ordinal": ordinals[id(marker)],
+                    "speaker": parse_redner(marker.find("redner")), "text": clean_text(" ".join(paragraphs)),
+                    "evidence": "procedural (reviewed marker outside any <rede>): " + entry["reason"],
+                    "treatment": "procedural"})
+    for run in (r for r in ([item for item in run if item[2]["attach"] != "none"] for run in runs) if r):
+        attaches = {entry["attach"] for _, _, entry in run}
+        where = f"scripts/reviewed_units.json: {sitting} {top.get('top-id')} {', '.join(e['rede_id'] for _, _, e in run)}"
+        if len(attaches) != 1:
+            raise reviewed_units.ReviewedUnitsError(f"{where}: one run of markers outside any <rede> goes to one place, "
+                                                    f"not {', '.join(sorted(attaches))}")
+        attach = attaches.pop()
+        for _, marker, entry in run:
+            if entry["kind"] in LOOSE_KIND_CONTRIBUTION:
+                marker.find("redner").set("listed_kind", LOOSE_KIND_CONTRIBUTION[entry["kind"]])
+        first, last = run[0][0], turn_end(run[-1][0])
+        if attach == "wrap":
+            if run[0][2]["kind"] != "loose_rede":
+                raise reviewed_units.ReviewedUnitsError(f"{where}: a wrapped run opens with a loose_rede marker")
+            opens = [index for index, _, entry in run if entry["kind"] == "loose_rede"]
+            for start, end in zip(opens, opens[1:] + [last]):
+                owner = children[start].find("redner").get("id")
+                for index, _, entry in run:
+                    if start <= index < end and entry["kind"] == "loose_own_words" and entry["redner_id"] != owner:
+                        raise reviewed_units.ReviewedUnitsError(
+                            f"{where}: {entry['rede_id']} is listed as own words, but the Rede it joins is {owner}'s")
+                moves.append((children[start:end], None, f"M{ordinals[id(children[start])]}"))
+        elif attach == "prev":
+            host = children[first - 1] if first and children[first - 1].tag == "rede" else None
+            start = max((i for i in range(first) if children[i].tag == "rede"), default=-1) + 1
+            if host is None and start > 0:
+                host = children[start - 1]
+            if host is None:
+                raise reviewed_units.ReviewedUnitsError(f"{where}: attach prev, but no <rede> precedes the run")
+            for _, _, entry in run:
+                if entry["kind"] == "loose_own_words" and entry["redner_id"] != owner_id(host):
+                    raise reviewed_units.ReviewedUnitsError(
+                        f"{where}: {entry['rede_id']} is listed as own words, but the <rede> before is {owner_id(host)}'s")
+            moves.append((children[start:last], host, "end"))
+        else:
+            end = next((i for i in range(last, len(children)) if children[i].tag == "rede"), None)
+            if end is None:
+                raise reviewed_units.ReviewedUnitsError(f"{where}: attach next, but no <rede> follows the run")
+            host = children[end]
+            if run[0][2]["redner_id"] != owner_id(host):
+                raise reviewed_units.ReviewedUnitsError(
+                    f"{where}: the run opens with {run[0][2]['redner_id']}, but the <rede> after is {owner_id(host)}'s; "
+                    "a moved run must open with the owner's words")
+            for _, _, entry in run:
+                if entry["kind"] == "loose_own_words" and entry["redner_id"] != owner_id(host):
+                    raise reviewed_units.ReviewedUnitsError(
+                        f"{where}: {entry['rede_id']} is listed as own words, but the <rede> after is {owner_id(host)}'s")
+            moves.append(([element for index, _, _ in run for element in children[index:turn_end(index)]], host, "start"))
+    for moved, host, place in moves:
+        moved = [element for element in moved if id(element) not in staying]
+        if host is None:
+            rede = ET.Element("rede", {"id": place})
+            top.insert(list(top).index(moved[0]), rede)
+            created.add(place)
+        for element in moved:
+            top.remove(element)
+        if host is None:
+            rede.extend(moved)
+        elif place == "end":
+            host.extend(moved)
+        else:
+            for offset, element in enumerate(moved):
+                host.insert(offset, element)
+    return diagnostics
+
+
 def mark_presidium_fraktionsreden(root: ET.Element) -> None:
     """ADR 0004: a Vizepräsident(in) who owns a ``<rede>`` and is printed with a
     ``<fraktion>`` gives that Fraktion's Rede (18/46 Pau). The presidium
@@ -2022,6 +2197,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     """Parse one Plenarprotokoll XML. ``reviewed``: the reviewed-list entries
     of this sitting; by default those of ``scripts/reviewed_units.json``."""
     root = ET.fromstring(xml_text)
+    loose_ordinals = loose_marker_ordinals(root)
     mark_stage_direction_names(root)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     sitting_entries = reviewed_units.for_sitting(sitting) if reviewed is None else reviewed
@@ -2031,6 +2207,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                         if entry["kind"] == reviewed_units.WITHHOLD}
     presidium_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.PRESIDIUM_KINDS]
     name_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.NAME_KINDS]
+    loose_entries = {entry["rede_id"]: entry for entry in sitting_entries if entry["kind"] in reviewed_units.LOOSE_KINDS}
+    matched_loose: set[str] = set()
     matched_entries: set[str] = set()
     inventory = raw_rede_inventory(root)
     statuses: dict[str, str] = {}
@@ -2080,6 +2258,10 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         # (20/143, 20/159) and no T_NaS/T_fett one: it is the heading then.
         heading = clean_text(" ".join(heading_lines or zusatz_lines))
         top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
+        loose_diagnostics = mark_loose_markers(top, top_format.formats, loose_ordinals, loose_entries, matched_loose,
+                                               sitting, split_parts)
+        if loose_diagnostics:
+            name_diagnostics.setdefault(id(top), []).extend(loose_diagnostics)
         split_nested_reden(top, split_parts)
         redes = top.findall("rede")
         for rede in redes:
@@ -2410,6 +2592,11 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting} lists {', '.join(unmatched)}, which names no Rede of a TOP in "
             "this sitting's XML (an annex Rede or a Fragestunde turn cannot be listed); the entry is stale or misapplied")
+    stale_loose = sorted(set(loose_entries) - matched_loose, key=lambda rid: int(rid[1:]))
+    if stale_loose:
+        raise reviewed_units.ReviewedUnitsError(
+            f"scripts/reviewed_units.json: {sitting} lists {', '.join(stale_loose)}, which names no speaker marker "
+            "outside a <rede> in a TOP that is not a Fragestunde; the entry is stale or misapplied")
     if any(name_diagnostics.values()):
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting}: a name_procedural entry outside any TOP; it has nowhere to be recorded")
@@ -4847,6 +5034,9 @@ def build_report(
                        source_rejected=True) from exc
     except UnlistedNameSpeakerError as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_NAME_SPEAKER_FIX}",
+                       source_rejected=True) from exc
+    except UnlistedLooseMarkerError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_LOOSE_MARKER_FIX}",
                        source_rejected=True) from exc
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc

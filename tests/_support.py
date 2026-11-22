@@ -60,12 +60,16 @@ def shipped_digest(number: str) -> str:
         return reviewed_units.sitting_digest(number)
 
 
-#: The reviewed-list entry the excerpt ``fixtures/withholding/18-10-top3.xml``
-#: needs: Neu's Rede is printed as <name> outside any <rede> (ADR 0004 amendment
-#: 2026-11-22). Its ordinal counts the excerpt's <name> elements, not the whole
-#: sitting's, so the shipped entry (N39) does not apply to the excerpt.
+#: The reviewed-list entries the excerpt ``fixtures/withholding/18-10-top3.xml``
+#: needs. Neu's Rede is printed as <name> outside any <rede> (ADR 0004 amendment
+#: 2026-11-22); its ordinal counts the excerpt's <name> elements, not the whole
+#: sitting's, so the shipped entry (N39) does not apply to the excerpt. Annen's
+#: and Beyer's Reden are printed as speaker markers outside any <rede> (second
+#: amendment of 2026-11-22); no
+#: earlier TOP of 18/10 has a speaker marker outside a <rede>, so the shipped
+#: M<ordinal> entries apply to the excerpt unchanged.
 NAME_ENTRIES_18_10_TOP3 = [{
     "sitting": "18/10", "rede_id": "N4", "redner_id": "11004361", "kind": "name_rede",
     "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 123)",
     "name": "Dr. Alexander S. Neu (DIE LINKE)",
-}]
+}] + [entry for entry in reviewed_units.load()["18/10"] if entry["kind"] in reviewed_units.LOOSE_KINDS]

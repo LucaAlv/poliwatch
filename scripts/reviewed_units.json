@@ -57,6 +57,22 @@
       "reason": "Holds two whole Reden counted as Zwischenfragen: Britta Haßelmann (4,209 chars) and Jan Korte (5,099), nested in Peter Beyer's Rede (a3-wp18-19-round2-result.md:109, N7)"
     },
     {
+      "sitting": "18/2",
+      "rede_id": "M1",
+      "redner_id": "11003848",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: asks for the floor for an Erklärung nach § 31 at the end of the sitting (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/2",
+      "rede_id": "M2",
+      "redner_id": "11003848",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: the Erklärung nach § 31 (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
       "sitting": "18/3",
       "rede_id": "N81",
       "redner_id": "11004429",
@@ -227,6 +243,38 @@
       "name": "Dr. Alexander S. Neu (DIE LINKE)"
     },
     {
+      "sitting": "18/6",
+      "rede_id": "M1",
+      "redner_id": "11003759",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/6",
+      "rede_id": "M2",
+      "redner_id": "11003586",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede> (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/6",
+      "rede_id": "M3",
+      "redner_id": "11004255",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede> (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/7",
+      "rede_id": "M159",
+      "redner_id": "11003790",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: opens the Aktuelle Stunde (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
       "sitting": "18/8",
       "rede_id": "ID1800800400",
       "redner_id": "999990003",
@@ -257,6 +305,54 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 9)",
       "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "M1",
+      "redner_id": "11003732",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "M2",
+      "redner_id": "11003732",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: consents to Ströbele's Zwischenfrage (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "M3",
+      "redner_id": "11002273",
+      "kind": "loose_zwischenfrage",
+      "reason": "a Zwischenfrage printed outside any <rede> (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "M4",
+      "redner_id": "11003732",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: answers the Zwischenfrage (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "M5",
+      "redner_id": "11003732",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: continues after a chair remark (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "M6",
+      "redner_id": "11004010",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: after Neu's Rede (name_rede N39) (loose-speaker-markers.tsv)",
+      "attach": "wrap"
     },
     {
       "sitting": "18/11",
@@ -434,6 +530,38 @@
       "name": "Dr. Alexander S. Neu (DIE LINKE)"
     },
     {
+      "sitting": "18/23",
+      "rede_id": "M1",
+      "redner_id": "11003786",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: Erklärung nach § 31 (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M2",
+      "redner_id": "11004182",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: Erklärung nach § 31 Abs. 1 (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M3",
+      "redner_id": "11003764",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: Erklärung zur Abstimmung nach § 31 Abs. 1 (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M4",
+      "redner_id": "11000756",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: persönliche Erklärung in the same series (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
       "sitting": "18/24",
       "rede_id": "ID1802402200",
       "redner_id": "11004079",
@@ -560,6 +688,38 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 40)",
       "name": "Dr. André Berghegger (CDU/CSU)"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "M1",
+      "redner_id": "11004053",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "M2",
+      "redner_id": "11003507",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "M3",
+      "redner_id": "11002625",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "M4",
+      "redner_id": "11002625",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: continues after a chair remark (loose-speaker-markers.tsv)",
+      "attach": "wrap"
     },
     {
       "sitting": "18/28",
@@ -913,6 +1073,14 @@
       "name": "Dr. André Berghegger (CDU/CSU)"
     },
     {
+      "sitting": "18/33",
+      "rede_id": "M1",
+      "redner_id": "11003755",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: the minister opens the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
       "sitting": "18/35",
       "rede_id": "N1",
       "redner_id": "999990003",
@@ -1169,12 +1337,28 @@
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
     },
     {
+      "sitting": "18/74",
+      "rede_id": "M1",
+      "redner_id": "11004391",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
       "sitting": "18/75",
       "rede_id": "ID1807504900",
       "redner_id": "11004614",
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 108)",
       "name": "Angelika Glöckner (SPD)"
+    },
+    {
+      "sitting": "18/76",
+      "rede_id": "M1",
+      "redner_id": "11003031",
+      "kind": "loose_procedural",
+      "reason": "a procedural turn printed outside any <rede>: accepts the election as Wehrbeauftragter (loose-speaker-markers.tsv)",
+      "attach": "none"
     },
     {
       "sitting": "18/83",
@@ -1197,6 +1381,62 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 136)",
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M1",
+      "redner_id": "11003861",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M2",
+      "redner_id": "11004391",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: after Müller's Rede (name_rede N54) (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M3",
+      "redner_id": "11004088",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: first Rede of the debate (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M4",
+      "redner_id": "11003789",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede> (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M5",
+      "redner_id": "11003789",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: consents to Lay's Zwischenfrage (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M6",
+      "redner_id": "11004088",
+      "kind": "loose_zwischenfrage",
+      "reason": "a Zwischenfrage printed outside any <rede> (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/83",
+      "rede_id": "M7",
+      "redner_id": "11003789",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: answers the Zwischenfrage (loose-speaker-markers.tsv)",
+      "attach": "wrap"
     },
     {
       "sitting": "18/87",
@@ -1245,6 +1485,22 @@
       "kind": "name_zwischenfrage",
       "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 113)",
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/91",
+      "rede_id": "M1",
+      "redner_id": "11004001",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: Erklärung nach § 31 (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/91",
+      "rede_id": "M2",
+      "redner_id": "11004001",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: continues after a chair remark (loose-speaker-markers.tsv)",
+      "attach": "wrap"
     },
     {
       "sitting": "18/94",
@@ -1300,6 +1556,22 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 118)",
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/115",
+      "rede_id": "M1",
+      "redner_id": "11004324",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: Berichterstatterin of the Petitionsausschuss (loose-speaker-markers.tsv)",
+      "attach": "wrap"
+    },
+    {
+      "sitting": "18/115",
+      "rede_id": "M2",
+      "redner_id": "11004309",
+      "kind": "loose_rede",
+      "reason": "a whole Rede printed outside any <rede>: mündliche Erklärung nach § 31 (loose-speaker-markers.tsv)",
+      "attach": "wrap"
     },
     {
       "sitting": "18/158",
@@ -1585,6 +1857,14 @@
       "reason": "François de Rugy, Präsident der Assemblée nationale: guest address, not an MdB"
     },
     {
+      "sitting": "19/14",
+      "rede_id": "M1",
+      "redner_id": "11003820",
+      "kind": "loose_sitzungsleitung",
+      "reason": "the chair printed with a speaker marker outside any <rede>: the chair printed as a speaker marker (loose-speaker-markers.tsv)",
+      "attach": "none"
+    },
+    {
       "sitting": "19/18",
       "rede_id": "ID191802600",
       "redner_id": "11003753",
@@ -1746,6 +2026,14 @@
       "reason": "The XML gives this <rede> to Katja Keul, whose Zwischenfrage opens it; Norbert Röttgen's Rede (4,459 chars) is nested inside, so the two are swapped (a3-wp18-19-round2-result.md:111, N7)"
     },
     {
+      "sitting": "19/62",
+      "rede_id": "M1",
+      "redner_id": "11004334",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: continues his Rede after a chair remark (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
       "sitting": "19/65",
       "rede_id": "ID196503400",
       "redner_id": "11004049",
@@ -1797,6 +2085,150 @@
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
     },
     {
+      "sitting": "19/114",
+      "rede_id": "M1",
+      "redner_id": "11004778",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: accepts the offer of a Nachfrage (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M2",
+      "redner_id": "11004426",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: accepts the chair's apology (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M3",
+      "redner_id": "11004877",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: remark before his Zusatzfrage (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M4",
+      "redner_id": "11003231",
+      "kind": "loose_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed outside any <rede>: the minister's reply to that remark (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M5",
+      "redner_id": "11004877",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: thanks after his own Frage (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M6",
+      "redner_id": "11004727",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: accepts the floor (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M7",
+      "redner_id": "11004727",
+      "kind": "loose_remark",
+      "reason": "a remark printed outside any <rede>: stored nowhere: asks for a Zusatzfrage; the Frage is M8 (changed in the build from befragung_frage, which counted the request as a Frage of its own) (loose-speaker-markers.tsv)",
+      "attach": "none"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M8",
+      "redner_id": "11004727",
+      "kind": "loose_befragung_frage",
+      "reason": "a Frage in a Befragung printed outside any <rede>: the Zusatzfrage (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M9",
+      "redner_id": "11003231",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: the minister answers (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M10",
+      "redner_id": "11004902",
+      "kind": "loose_remark",
+      "reason": "a remark printed outside any <rede>: stored nowhere: accepts the offer of a Zusatzfrage; the Frage is M11 (changed in the build from befragung_frage, as M7) (loose-speaker-markers.tsv)",
+      "attach": "none"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M11",
+      "redner_id": "11004902",
+      "kind": "loose_befragung_frage",
+      "reason": "a Frage in a Befragung printed outside any <rede>: the Zusatzfrage (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M12",
+      "redner_id": "11003231",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: the minister answers (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M13",
+      "redner_id": "11003231",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: thanks the chair (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M14",
+      "redner_id": "11003856",
+      "kind": "loose_befragung_frage",
+      "reason": "a Frage in a Befragung printed outside any <rede>: the Zusatzfrage (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M15",
+      "redner_id": "11003231",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: the minister answers (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M16",
+      "redner_id": "11003856",
+      "kind": "loose_befragung_frage",
+      "reason": "a Frage in a Befragung printed outside any <rede>: reply to the answer (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M17",
+      "redner_id": "11004732",
+      "kind": "loose_remark",
+      "reason": "a remark printed outside any <rede>: stored nowhere: declines a Nachfrage: \"Nein.\" (loose-speaker-markers.tsv)",
+      "attach": "none"
+    },
+    {
+      "sitting": "19/114",
+      "rede_id": "M18",
+      "redner_id": "11004905",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: announces her Nachfrage (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
       "sitting": "19/125",
       "rede_id": "ID1912505800",
       "redner_id": "11004854",
@@ -1824,6 +2256,22 @@
       "redner_id": "11004191",
       "kind": "procedural",
       "reason": "acceptance of an election just announced (<rede> form)"
+    },
+    {
+      "sitting": "19/201",
+      "rede_id": "M1",
+      "redner_id": "11001478",
+      "kind": "loose_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed outside any <rede>: the chancellor's reply after Rüthrich's Frage (loose-speaker-markers.tsv)",
+      "attach": "prev"
+    },
+    {
+      "sitting": "19/233",
+      "rede_id": "M1",
+      "redner_id": "11003646",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: starts before the chair's remark; her Rede follows (loose-speaker-markers.tsv)",
+      "attach": "next"
     },
     {
       "sitting": "20/1",
@@ -2008,11 +2456,43 @@
       "reason": "acceptance of an election just announced (<rede> form)"
     },
     {
+      "sitting": "20/9",
+      "rede_id": "M1",
+      "redner_id": "11004752",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: asks to make his Kurzintervention (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/17",
+      "rede_id": "M1",
+      "redner_id": "11004905",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: asks for the floor; her Kurzintervention follows (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/17",
+      "rede_id": "M2",
+      "redner_id": "11004905",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede> (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
       "sitting": "20/30",
       "rede_id": "ID203000100",
       "redner_id": "11004127",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "20/44",
+      "rede_id": "M1",
+      "redner_id": "11004678",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: announces his Geschäftsordnungsantrag (loose-speaker-markers.tsv)",
+      "attach": "next"
     },
     {
       "sitting": "20/79",
@@ -2022,6 +2502,86 @@
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
     },
     {
+      "sitting": "20/79",
+      "rede_id": "M1",
+      "redner_id": "999990093",
+      "kind": "loose_procedural",
+      "reason": "a procedural turn printed outside any <rede>: thanks after the oath (loose-speaker-markers.tsv)",
+      "attach": "none"
+    },
+    {
+      "sitting": "20/94",
+      "rede_id": "M1",
+      "redner_id": "11004270",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: \"Genau.\" before his Rede (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/94",
+      "rede_id": "M2",
+      "redner_id": "11004270",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede> (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/97",
+      "rede_id": "M1",
+      "redner_id": "11004678",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: \"Das Wasser fehlt.\" before his Rede (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/97",
+      "rede_id": "M2",
+      "redner_id": "11004448",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: opening words before the chair's remark (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/106",
+      "rede_id": "M1",
+      "redner_id": "11004100",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: remark before his Rede (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/115",
+      "rede_id": "M1",
+      "redner_id": "11004799",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: his Rede's first sentence, before the chair's remark (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/115",
+      "rede_id": "M2",
+      "redner_id": "11004799",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede> (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/124",
+      "rede_id": "M61",
+      "redner_id": "11005096",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: remark before her Rede (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "20/136",
+      "rede_id": "M60",
+      "redner_id": "11004041",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: remark before her Rede (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
       "sitting": "20/159",
       "rede_id": "ID2015900100",
       "redner_id": "11004282",
@@ -2029,11 +2589,27 @@
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
     },
     {
+      "sitting": "20/169",
+      "rede_id": "M1",
+      "redner_id": "11005029",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: remark before his Berichterstattung (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
       "sitting": "20/197",
       "rede_id": "ID2019702300",
       "redner_id": "999990146",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "20/197",
+      "rede_id": "M1",
+      "redner_id": "999990146",
+      "kind": "loose_procedural",
+      "reason": "a procedural turn printed outside any <rede>: thanks after the oath (loose-speaker-markers.tsv)",
+      "attach": "none"
     },
     {
       "sitting": "21/1",
@@ -2223,6 +2799,22 @@
       "redner_id": "11003821",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "21/24",
+      "rede_id": "M1",
+      "redner_id": "11005602",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: accepts the floor for his Erwiderung (loose-speaker-markers.tsv)",
+      "attach": "next"
+    },
+    {
+      "sitting": "21/27",
+      "rede_id": "M1",
+      "redner_id": "11005558",
+      "kind": "loose_own_words",
+      "reason": "the speaker's own words printed outside their <rede>: remark before his Rede (loose-speaker-markers.tsv)",
+      "attach": "next"
     },
     {
       "sitting": "21/91",

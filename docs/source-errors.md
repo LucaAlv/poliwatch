@@ -191,6 +191,15 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** 170 turns, 80,381 words, in 51 sittings: 167 in WP 18 (18/3 to 18/223), and 19/99, 19/104 and 19/125. WP 20 and 21 print none. Counted 2026-11-20 over 803 files and again 2026-11-22 over the 806 held.
 - **Our side:** each turn is listed in `scripts/reviewed_units.json` (kinds `name_*`) and rewritten into a speaker marker by `mark_name_speakers` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-22). Before the rule, the words were stored nowhere, 18/6 `ID1800602300` and 18/36 `ID1803601400` were withheld, and 18/104 `ID1810402200` was an empty Rede with no speaker.
 
+### E14. WP 18 to 21: speakers printed with a marker outside any `<rede>`
+
+- **Status:** verified 2026-11-22 (census of [loose-speaker-markers.md](plans/loose-speaker-markers.md)), on the XML of the reference store; rule built 2026-11-22.
+- **Source:** for example `https://dserver.bundestag.de/btp/18/18007.xml`, Zusatztagesordnungspunkt 1: after "Das Wort hat der Kollege Jan Korte für die Fraktion Die Linke." the source prints `<p klasse="redner"><redner id="11003790">…</redner>Jan Korte (DIE LINKE): </p>` and his 885-word Rede directly in the `<tagesordnungspunkt>`; the first `<rede>` of the TOP is the next speaker's. In 18/6 Tagesordnungspunkt 16, Golze's, Bär's and Brantner's Reden stand the same way.
+- **What is wrong:** outside a Fragestunde, a speaker's words stand in a `<rede>`. These markers open a Rede, a reply or a Zwischenfrage with no `<rede>` around it.
+- **What it should be:** a `<rede>` of its own for a Rede, and the turn inside the `<rede>` it belongs to for a reply.
+- **Scale:** 74 markers, 19,686 words, in 31 sittings: 23 whole Reden in 11 WP 18 sittings, and short turns next to a `<rede>` in WP 18 to 21 (19/114 holds 18 markers). Counted 2026-11-22 over the 806 held files.
+- **Our side:** each marker is listed in `scripts/reviewed_units.json` (kinds `loose_*`) and placed by `mark_loose_markers` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-22 on markers outside any `<rede>`). Before the rule, the words were stored nowhere.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
