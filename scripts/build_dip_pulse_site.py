@@ -12512,7 +12512,7 @@ def render_datenschutz_page(
          "jeweils erst, wenn Sie den zugehörigen Schalter betätigen:</p>"
          f"<ul>{storage_items}</ul>"
          "<p>Die Werte bleiben in Ihrem Browser, werden nicht übertragen und gelten nur in dem Tab, in dem Sie "
-         "den Schalter betätigt haben, solange er geöffnet ist; stellt Ihr Browser geschlossene Tabs oder die "
+         "den Schalter betätigt haben, oder in einer Kopie dieses Tabs, jeweils solange der Tab geöffnet ist; stellt Ihr Browser geschlossene Tabs oder die "
          "letzte Sitzung wieder her, stellt er sie mit wieder her. Rechtsgrundlage ist §\u00a025 Abs. 2 Nr. 2 TDDDG: Die Speicherung ist "
          "unbedingt erforderlich, um die von Ihnen gewählte Einstellung bereitzustellen.</p>"),
         ("Links auf andere Websites",

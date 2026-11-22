@@ -17,6 +17,28 @@ Speakers the protocol prints with a speaker marker directly in an agenda item, o
 
 - **The architecture diagram says the site keeps only sessionStorage.** The Browser node still read "localStorage only" after v0.46.39.0.
 
+## [0.46.46.0] - 2026-11-22
+
+The data licence and the privacy page say more exactly what they cover. No stored value, figure or export table changes; the licence file and the codebook that every export carries change wording.
+
+### Changed
+
+- **DIP's clause 5 is passed on as the source's own notice.** `LICENSE-DATA.md` no longer reads as if the project added a term: it quotes what clause 5 forbids, says it is the source's condition and not ours, and says the CC BY 4.0 grant for our own work carries no such condition.
+- **Quoted source wording keeps the source's terms.** `documents.forderung` and `votes.inversion_excerpt` quote the wording of a Drucksache, a protocol or a vote page. The licence now says the selection is ours under CC BY 4.0 while the quoted wording stays under the DIP layer (or the `bundestag.de` row for the vote pages), and that `vote_passages` only points to the quoted documents. The change notice now says that a protocol clause or a DIP remark longer than 300 characters is cut in `votes.inversion_excerpt` and ends in „…“.
+- **The Reden that keep a reaction in their text are named.** `speeches.text` leaves out applause and Zwischenrufe the protocol prints as their own element. In 18 Reden and one Beitrag the protocol prints such a reaction inside the speaker's paragraph, so it stays: 13 Reden and the Beitrag keep a „(Beifall …)“, five Reden a Zuruf or a named Zwischenruf, and one a remark that a Zwischenfrage was asked for. `LICENSE-DATA.md` lists them by protocol number and Rede-ID, and the codebook entries for both text columns point to the list.
+- The privacy page now says that a duplicated tab keeps the display settings. The two settings live in the browser's session storage, which a duplicated tab copies, so `datenschutz.html` says they hold in the tab where they were set or in a copy of it.
+
+## [0.46.45.0] - 2026-11-22
+
+The release review's comparison with CPP-BT now counts the Redner-ID agreement itself and says what it left out, instead of leaving both to a hand count. No stored value, export or page changes; the figures in the data notes stand.
+
+### Changed
+
+- **The Redner-ID agreement is printed on every run.** `scripts/compare_cpp_bt.py` counts, over the Rede-IDs both sides hold, how often our person's Redner-ID equals CPP-BT's: 81,372 of 81,430 on the reference store, 58 differing, 4 of them with CPP-BT's shared id 10000. It counts only the row that carries the element's own speaker (not a split-off `:N` part) and not withheld units, and lists each differing id for reading. On that store, 14 ids where our person has no Redner-ID, 1 whose only stored row is a split-off part and 1 where CPP-BT prints `NA` are left out and counted by reason. The hand count of 59 differing most likely took that split-off part's speaker for the element's.
+- **What was not compared is counted, zero included.** The summary now prints how many shared ids had no surname or no Fraktion to compare (6 and 10,098 of 81,446) next to how many were compared. The release review asks for these counts beside the last stable release's and an explanation when one rises.
+- **A return of the old 18/222 Fraktion label would now be read by hand.** v0.46.9.0 cleaned that label, so its entry in the comparison's known differences matched nothing and is removed; a label that came back would no longer pass as known.
+- The release-review record template's parts now match the review's steps one to one, and part 6 holds both the findings and the verdict.
+
 ## [0.46.44.0] - 2026-11-22
 
 The research on the open legal questions of ADR 0003 and a draft packet for the Cyber Law Clinic of Universität Hamburg are in the repository. Documentation only: no stored value, export, page or figure changes.
