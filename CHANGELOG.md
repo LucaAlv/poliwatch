@@ -13,6 +13,16 @@ The release review's comparison with CPP-BT now counts the Redner-ID agreement i
 - **A return of the old 18/222 Fraktion label would now be read by hand.** v0.46.9.0 cleaned that label, so its entry in the comparison's known differences matched nothing and is removed; a label that came back would no longer pass as known.
 - The release-review record template's parts now match the review's steps one to one, and part 6 holds both the findings and the verdict.
 
+## [0.46.44.0] - 2026-11-22
+
+The research on the open legal questions of ADR 0003 and a draft packet for the Cyber Law Clinic of Universität Hamburg are in the repository. Documentation only: no stored value, export, page or figure changes.
+
+### Added
+
+- **A research note on the open licence and data-protection questions.** `docs/research/adr-0003-legal-questions-2026-11.md` works through ADR 0003's questions 1–4 and 6–8 from statutes, the DIP terms, official guidance and court decisions, with an independent second read. It is research, not legal advice. Where the repository changed after it was written, an *Update 2026-11-22* line says what is now true.
+- **A draft packet for the Cyber Law Clinic (question 4), in German.** `docs/legal/clinic-2026-11/` holds a cover letter with the proposed legal bases (Art. 6 Abs. 1 lit. f, Art. 9 Abs. 2 lit. e, Art. 85 DSGVO with § 23 MStV), a record of processing (Art. 30), a DPIA threshold note (Art. 35) and an erasure and objection process. The owner sends it after settling every `OFFEN:` line; no contact address is in the repository.
+- **What the packet found.** A withheld Rede keeps its words in `withheld_units.text` and `withheld_turns.text`, which the export ships, so today an erasure request cannot be met. A text-free kind of withholding, which also covers text moved into a neighbouring Rede, has to be built before the process is offered as existing.
+
 ## [0.46.43.0] - 2026-11-22
 
 The comparison with CPP-BT in the data notes is restated on the reference store replayed with v0.46.42.0. No stored value or export changes; only documented figures move.
