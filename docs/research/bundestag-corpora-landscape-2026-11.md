@@ -8,7 +8,7 @@ Research note, 2026-11-06, for the second v1 scope review ([v1-scope-review.md](
 
 - **Speech text from WP 18 to the present is not a gap.** CPP-BT already offers it under CC0, with the Bundestag's own speech and speaker ids, updated in September 2026.
 - **GermaParl overlaps less than it first appears.** Its strengths (1949 on, linguistic annotation, hand checks) are not what this project offers, and its newest open version stops at 2023-07-07.
-- **What nobody else was found to offer is the link for current Wahlperioden.** Speeches, TOPs, Drucksachen, Vorgänge and named votes linked at sitting level, through WP 21. This rests on a negative search, so it is a finding and not proof.
+- **What nobody else was found to offer is the link for current Wahlperioden.** Speeches, TOPs, Drucksachen, Vorgänge and named votes linked at sitting level, through WP 21. This rests on a negative search, so it is a finding and not proof. **Narrowed on 2026-11-21:** the portal plenarprotokolle.digital shows these links through WP 21 on its pages and through a read-only interface. No download, licence or versioned release of its data was found, so the finding now holds for open datasets only (see "plenarprotokolle.digital" below).
 - **Our 85 excluded sittings are the weak point against this field.** CPP-BT's speech table has 697 sittings of WP 18 to 20. We hold 613 of them.
 - **Where both datasets hold a sitting, they agree closely.** Every `rede_id` of ours is in CPP-BT. Of the 1,716 they have and we do not, 1,666 are §31 declarations we leave out by rule. The check found 45 units we lose without refusing (29 Reden, 16 written submissions; first counted as 46, see the table below) and led to 43 units filed under the wrong person. Both are in `TODOS.md`.
 - **These are independent projects.** This project has no affiliation with any dataset named here. They work in the same direction, an open parliamentary record, separately.
@@ -115,6 +115,30 @@ A long sitting has more chances of holding one refused unit, so the rule removes
 - **ParlaMint 5.0:** 29 parliaments, Germany not among them yet. **ParlSpeech V2:** a single version from 2020, superseded by ParlLawSpeech.
 - **abgeordnetenwatch API:** CC0, votes per MP; WP range not stated.
 
+## plenarprotokolle.digital (added 2026-11-21)
+
+A public portal, not a research dataset: [plenarprotokolle.digital](https://plenarprotokolle.digital/index.php), a private, ad-free project by one person (Dennis Deutschkämer, Köln). Read on 2026-11-21: its [Methodik page](https://plenarprotokolle.digital/methodik.php) (dated 2026-10-23), its imprint and the tool list and two answers of its read-only MCP interface (`https://plenarprotokolle.digital/mcp.php`, no sign-in). Everything below is stated by those pages; nothing was measured against our store.
+
+**Holdings, as its interface states them.** 4,668 Bundestag sittings of WP 1 to 21 (newest 21/109, 2026-11-13), 416,264 Reden, 4,614 Abgeordnete, 2,677 named votes, 339,474 Vorgänge, 290,571 Drucksachen, 1,070 Bundesrat sittings.
+
+**How it processes the official sources.**
+- **Protocols:** files from the Bundestag's Open Data. Newer protocols are read from the structured XML. Older files hold text without markup, and speeches, speakers and interjections are recognised by machine. Each speech carries a field `quelle` with `xml` or `heuristik`. The page does not say at which Wahlperiode the method changes.
+- **Speakers:** resolved against the MdB-Stammdaten. An ambiguous speaker (namesakes, Land ministers) stays without an id and is assigned later from the place suffix, the form of address, Bundesrat member lists or language models.
+- **Interjections and applause:** read from the bracketed text and assigned to Fraktionen and, where named, to persons. A bracket with several parts counts once per part. It calls named interjections an approximation.
+- **Chair:** contributions of the presiding member are counted apart from Reden. In old protocols, chair remarks and Zwischenfragen inside another speaker's speech are split off "as far as recognised".
+- **TOPs:** from the protocol from WP 20 on. For WP 17 to 19 speeches are assigned automatically by Drucksache numbers and text markers, on agenda data from api.hutt.io. Before that they are mostly missing or taken from the sitting's table of contents. A field `top_quelle` marks automatic assignments.
+- **Named votes:** from abgeordnetenwatch.de (CC0) from about 2009. Older ones are read from the protocol text, and incomplete name lists are marked. Votes are linked to Vorgänge and Drucksachen from title and announcement first, otherwise with language models.
+- **Vorgänge and Drucksachen:** DIP.
+- **Bundesrat:** text from DIP from the 743rd sitting (1999-10-15). Older protocols are scanned PDFs read with Tesseract, with a second pass by image recognition on pages of low quality.
+- **Language models:** several local models vote, and a result is taken when a majority of at least two agree. Disputed cases go to a larger model or to a hand check. Ordnungsmaßnahmen count only where fixed rules and the model agree or a person confirmed the case.
+
+**Against this project.**
+- **Only the portal:** WP 1 to 17, the Bundesrat, interjections and applause per Fraktion, MdB profiles with Nebentätigkeiten, party finances, full-text and semantic search, an MCP interface.
+- **Only this project, as far as read:** a downloadable dataset with a licence and release policy, public code, a reviewed exclusion list with reasons, documented source errors, vote-to-agenda links checked by hand rather than assigned by a model.
+- **Not stated:** a licence for its processed data, a bulk download, error rates for the heuristics or the model assignments, source code (none found on the site or in a GitHub search).
+
+**How to read that.** It trades depth of checking for breadth, and says so: every page carries a notice that the machine processing may be incomplete or wrong. Its per-record provenance fields (`quelle`, `top_quelle`) are a way of disclosing method that our release could compare against. Its interface allows a per-sitting cross-check (speech count and words per speaker) without downloading anything.
+
 ## What this means
 
 1. **Positioning.** Our headline cannot be "tidy, citable Bundestag transcripts"; that exists under CC0. It is "the linked, current record". `docs/designs/fakt-der-woche.md:36-41` already said so on 2026-09-19, but that design is the feature now cut.
@@ -127,4 +151,6 @@ A long sitting has more chances of holding one refused unit, so the rule removes
 
 GermaParl: [update post](https://polmine.github.io/posts/2025/05/23/GermaParl2-Update.html), [v2.3.0-rc1](https://zenodo.org/records/15495748), [v2.1.0](https://zenodo.org/records/12794676), [docs (v2.0.1)](https://polmine.github.io/GermaParl2/), [data report](https://polmine.github.io/GermaParl2/data-report.html), [ParlaMint-DE paper](https://aclanthology.org/2026.parlaclarin-1.5/). Bundestag: [open data](https://www.bundestag.de/services/opendata). BTVote: [Dataverse](https://dataverse.harvard.edu/dataverse/btvote). Open Discourse: [Dataverse](https://doi.org/10.7910/DVN/FIKIBO), [repository](https://github.com/open-discourse/open-discourse). ParlaMint: [5.0](https://www.clarin.si/repository/xmlui/handle/11356/2004).
 
-**Not read:** the CDRS-BT record, the ParlLawSpeech codebook (GESIS answered 403), the files of any dataset other than CPP-BT's speech metadata. Parts of the Zenodo search and version lists came through a truncated fetch.
+plenarprotokolle.digital: [Methodik](https://plenarprotokolle.digital/methodik.php), [imprint](https://plenarprotokolle.digital/impressum.php), [interface description](https://plenarprotokolle.digital/sprechen.php).
+
+**Not read:** any speech text or record of plenarprotokolle.digital beyond its holdings overview and one sitting summary (3/5), the CDRS-BT record, the ParlLawSpeech codebook (GESIS answered 403), the files of any dataset other than CPP-BT's speech metadata. Parts of the Zenodo search and version lists came through a truncated fetch.
