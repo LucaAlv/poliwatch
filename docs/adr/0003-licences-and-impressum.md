@@ -133,7 +133,7 @@ The operator is one person with limited time, the audience is mostly not develop
 
 ## Amendment 2026-11-21: the open questions answered by research, one sent out
 
-The owner cannot afford a lawyer and decided on 2026-11-21 to replace one with a research pass and an independent second read: `docs/research/adr-0003-legal-questions-2026-11.md` (branch `claude/adoring-thompson-8d2b43`, a74d630). It is research, not legal advice. Decided by the owner on 2026-11-21, as that note and the owner-decisions session recommended:
+The owner cannot afford a lawyer and decided on 2026-11-21 to replace one with a research pass and an independent second read: `docs/research/adr-0003-legal-questions-2026-11.md`. It is research, not legal advice. Decided by the owner on 2026-11-21, as that note and the owner-decisions session recommended:
 
 - **Question 5** went to parlamentsdokumentation@bundestag.de on 2026-11-21 (TODOS.md, "Settle the roll-call source for redistribution").
 - **Questions 2, 3 and 7: the research positions stand.** Q2: DIP clause 5 is passed on as a notice of the source, never as the project's own term. Q3: the full speech corpus ships; no file or page collects one MP's speeches in full (person pages keep snippets and links). Q7: joining paragraphs is very likely no change under § 62 UrhG; the omissions (applause, Zwischenrufe, chair text inside a Rede) are a „Kürzung“ and are marked in `LICENSE-DATA.md`.
