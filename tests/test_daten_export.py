@@ -409,6 +409,11 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("keinen Versions-DOI", block)
         for stale in ("nicht mitgegeben", "Downloadreferenz", "Release-Referenz ergänzen"):
             self.assertNotIn(stale, block)
+        # docs/release-policy.md: nothing technically stops an edit of a GitHub release or a
+        # moved tag, so the text states the project's rule and a release that is still to be made.
+        self.assertIn("Regel des Projekts", block)
+        for overstated in ("Unveränderliche Referenz", "wird nicht nachträglich geändert", "veröffentlicht die Dateien"):
+            self.assertNotIn(overstated, block)
 
     # Value: protects=a local export still says it carries no immutable reference and points at no repository release; fails_when=the release sentence leaks into a local export, which has no tag to cite; why_new=the release branch is new; seam=none; no_claim=wording beyond these anchors
     def test_local_export_keeps_the_no_reference_sentence(self) -> None:
