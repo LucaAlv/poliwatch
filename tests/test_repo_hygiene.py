@@ -49,33 +49,44 @@ class RepoHygieneTests(unittest.TestCase):
         # The short string is the default --data-license and is copied verbatim into DATA.md: this change leaves it alone.
         self.assertIn("(Nutzungsbedingungen DIP)", b.default_license_text())
 
-    # Value: protects=LICENSE-DATA.md names the stored Reden (and the one Beitrag) that keep "(Beifall" printed inline in a paragraph, so its sentence that speeches.text holds only the speaker's own words does not stand without its exceptions; fails_when=the list loses a Rede, gains one the store does not carry, the notice drops the Beitrag or the inline Zuruf of 19/112, or says the change notice is above; why_new=review of the owner-decisions PR (TODOS "ADR 0003 legal questions", item b); seam=LICENSE-DATA.md text; no_claim=that the list matches a later store (the query is recorded in TODOS)
-    def test_license_data_names_the_reden_that_keep_inline_beifall(self) -> None:
+    # Value: protects=LICENSE-DATA.md names every stored Rede (and the one Beitrag) whose text keeps a reaction the protocol prints inside a paragraph, so its sentence that speeches.text holds only the speaker's own words does not stand without its exceptions; fails_when=the list loses a Rede, gains one the store does not carry, drops the Beitrag, or the dictionary's count disagrees with the list; why_new=review of the owner-decisions PR (TODOS "ADR 0003 legal questions", item b) and the ship review of this branch, which found named Zwischenrufe beyond Beifall; seam=LICENSE-DATA.md text; no_claim=that the list matches a later store (the query is recorded in TODOS)
+    def test_license_data_names_the_reden_that_keep_an_inline_reaction(self) -> None:
         text = (ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8")
-        reden = {
+        beifall = {
             "18/92": "ID1809200100", "18/122": "ID1812201600", "18/124": "ID1812400200", "18/127": "ID1812705400",
             "18/174": "ID1817401100", "19/89": "ID198905400", "19/110": "ID1911000200", "19/130": "ID1913005300",
             "19/137": "ID1913713700", "19/146": "ID1914613800", "19/155": "ID1915509200", "20/45": "ID204504800",
             "20/163": "ID2016309300",
         }
-        paragraph = next(p for p in text.split("\n") if "13 Reden" in p)
-        for protocol, rede_id in reden.items():
-            with self.subTest(protocol=protocol):
-                self.assertIn(f"{protocol} {rede_id}", paragraph)
-        self.assertEqual(13, len(re.findall(r"\b\d{2}/\d+ ID\d+", paragraph.split("and the Beitrag")[0])))
+        # Read-only on the reference store: a Zuruf or a named Zwischenruf „(Name [Fraktion]: …)“ inside a paragraph
+        # (18/127 also keeps a Beifall), and one stage remark on a Zwischenfrage that was not taken.
+        zwischenruf = {"18/127": "ID1812705400", "18/231": "ID1823110000", "18/233": "ID1823307900",
+                       "19/76": "ID197608000", "19/112": "ID1911205300"}
+        remark = {"19/182": "ID1918209300"}
+        paragraph = next(p for p in text.split("\n") if "18 Reden and one Beitrag" in p)
+        named = set(re.findall(r"\b\d{2}/\d+ (ID\d+)", paragraph))
+        expected = set(beifall.values()) | set(zwischenruf.values()) | set(remark.values()) | {"ID214902800"}
+        self.assertEqual(expected, named)
+        self.assertEqual(18, len(expected) - 1)
         self.assertIn("21/49 ID214902800", paragraph)
-        # One Rede also prints a Zuruf inline (select rede_id from speeches where text like '%(Zuruf%'), so the exception names it.
-        self.assertIn("19/112 ID1911205300", paragraph.split("and the Beitrag")[1])
         self.assertIn("(Zuruf", paragraph)
-        # The dictionary entries of both text columns carry the exception and point to the list.
+        self.assertIn("[Fraktion]", paragraph)
+        # The dictionary entries of both text columns carry the exception and point to the list; the count matches it.
         tables = json.loads((ROOT / "scripts" / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
         for table in ("speeches", "contributions"):
             with self.subTest(table=table):
                 meaning = tables[table]["columns"]["text"]["meaning"]
-                self.assertIn("„(Beifall …)“", meaning)
-                if table == "speeches":
-                    self.assertIn("„(Zuruf …)“", meaning)
                 self.assertIn("LICENSE-DATA.md", meaning)
+        self.assertIn("18 im Stand vom 2026-11-22", tables["speeches"]["columns"]["text"]["meaning"])
+        self.assertIn("„(Beifall …)“", tables["contributions"]["columns"]["text"]["meaning"])
+
+    # Value: protects=the change notice LICENSE-DATA.md points to for the quoted wording says how votes.inversion_excerpt differs from its source (whitespace normalised, cut to 300 characters with an ellipsis); fails_when=the bullet is dropped or stops naming the cut; why_new=Codex review of this branch: the new paragraph pointed to a notice that did not cover the excerpt; seam=LICENSE-DATA.md text; no_claim=that 300 matches clamp_text's callers (scripts/validate_dip_protocol.py)
+    def test_license_data_change_notice_covers_the_inversion_excerpt(self) -> None:
+        text = (ROOT / "LICENSE-DATA.md").read_text(encoding="utf-8")
+        notice = text.split("## What we changed (DIP no. 4b)")[1].split("\n## ")[0]
+        bullet = next(line for line in notice.split("\n") if line.startswith("- `votes.inversion_excerpt`"))
+        self.assertIn("300 characters", bullet)
+        self.assertIn("…", bullet)
 
 
 if __name__ == "__main__":
