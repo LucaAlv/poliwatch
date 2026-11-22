@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.45.0] - 2026-11-22
+
+The release review's comparison with CPP-BT now counts the Redner-ID agreement itself and says what it left out, instead of leaving both to a hand count. No stored value, export or page changes; the figures in the data notes stand.
+
+### Changed
+
+- **The Redner-ID agreement is printed on every run.** `scripts/compare_cpp_bt.py` counts, over the Rede-IDs both sides hold, how often our person's Redner-ID equals CPP-BT's: 81,372 of 81,430 on the reference store, 58 differing, 4 of them with CPP-BT's shared id 10000. It counts only the row that carries the element's own speaker (not a split-off `:N` part) and not withheld units, and lists each differing id for reading. On that store, 14 ids where our person has no Redner-ID, 1 whose only stored row is a split-off part and 1 where CPP-BT prints `NA` are left out and counted by reason. The hand count of 59 differing most likely took that split-off part's speaker for the element's.
+- **What was not compared is counted, zero included.** The summary now prints how many shared ids had no surname or no Fraktion to compare (6 and 10,098 of 81,446) next to how many were compared. The release review asks for these counts beside the last stable release's and an explanation when one rises.
+- **A return of the old 18/222 Fraktion label would now be read by hand.** v0.46.9.0 cleaned that label, so its entry in the comparison's known differences matched nothing and is removed; a label that came back would no longer pass as known.
+- The release-review record template's parts now match the review's steps one to one, and part 6 holds both the findings and the verdict.
+
 ## [0.46.44.0] - 2026-11-22
 
 The research on the open legal questions of ADR 0003 and a draft packet for the Cyber Law Clinic of Universität Hamburg are in the repository. Documentation only: no stored value, export, page or figure changes.
