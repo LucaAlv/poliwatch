@@ -38,13 +38,14 @@ def git(repo: Path, *args: str) -> str:
 
 
 # The repository CITATION.cff names, which the release DATA.md cites: every gh call is pinned to it.
-REPOSITORY = "LucaAlv/poliwatch"
+REPOSITORY = "github.com/LucaAlv/poliwatch"
 
 
 class Runner:
     """Runs git for real in the temporary repository, answers gh from a script, and records everything."""
 
-    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False, ls_remote_stdout=None):
+    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False, ls_remote_stdout=None, origin_url="https://github.com/LucaAlv/poliwatch.git"):
+        self.origin_url = origin_url
         self.calls: list[list[str]] = []
         self.missing = tuple(missing)
         self.gh_tags = list(gh_tags)
@@ -71,6 +72,11 @@ class Runner:
                     return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 422: Validation Failed")
                 return SimpleNamespace(returncode=0, stdout="https://example.invalid/release", stderr="")
             raise AssertionError(f"unexpected gh call {command}")
+        if command[:4] == ["git", "remote", "get-url", "origin"]:
+            # The temporary repository has no remote; answer as the checkout's origin would.
+            if self.origin_url is None:
+                return SimpleNamespace(returncode=2, stdout="", stderr="error: No such remote 'origin'")
+            return SimpleNamespace(returncode=0, stdout=self.origin_url + "\n", stderr="")
         if command[:2] == ["git", "ls-remote"]:
             # The temporary repository has no remote; answer as origin would.
             if self.ls_remote_fails:
@@ -602,7 +608,8 @@ class PublishTests(ReleaseTestCase):
         self.assertIn("gh release create failed", stderr)
         self.assertIn("HTTP 422", stderr)
         self.assertIn(f"git ls-remote --tags origin refs/tags/data-{VERSION}", stderr)
-        self.assertIn(f"gh release view data-{VERSION}", stderr)
+        self.assertIn(f"gh release view data-{VERSION} --repo {REPOSITORY}", stderr)
+        self.assertIn(f"gh release delete data-{VERSION} --cleanup-tag --repo {REPOSITORY}", stderr)
         self.assertIn(f"git tag -d data-{VERSION}", stderr)
         self.assertNotIn("published:", stdout)
         release = self.out / f"data-{VERSION}"
@@ -665,6 +672,27 @@ class PublishTests(ReleaseTestCase):
         self.assertEqual(runner.calls[ls_remote[0]][-1], f"refs/tags/data-{VERSION}")
         self.assertLess(ls_remote[0], create[0])
         self.assertEqual([call for call in self.runner.calls if call[:2] == ["git", "ls-remote"]], [], "a dry run asks no remote")
+
+    # Value: protects=the origin the tag checks ask is the repository the release goes to (CITATION.cff's, which DATA.md cites); fails_when=origin is a fork or another repository and its tag answers stand in for the destination's, so gh attaches the release to a tag the checks never saw (Codex, ship of the release-citation change); why_new=the release is pinned to CITATION.cff's repository with --repo, origin is not; seam=main with a recorded git remote and gh; no_claim=the real remote (mocked)
+    def test_publish_refuses_an_origin_that_is_not_the_cited_repository(self) -> None:
+        for label, origin, fragments in (
+            ("a fork", "https://github.com/someone/poliwatch.git", ("origin", "someone/poliwatch", "LucaAlv/poliwatch")),
+            ("no origin", None, ("origin", "No such remote")),
+            ("another host", "https://gitlab.com/LucaAlv/poliwatch.git", ("origin", "gitlab.com")),
+        ):
+            with self.subTest(label):
+                runner = Runner(origin_url=origin)
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+                self.assert_refused(code, stderr, *fragments)
+                self.assertEqual(runner.gh("release", "create"), [])
+                self.assertEqual([call for call in runner.calls if call[:2] == ["git", "ls-remote"]], [])
+                shutil.rmtree(self.out, ignore_errors=True)
+        for origin in ("git@github.com:LucaAlv/poliwatch.git", "ssh://git@github.com/lucaalv/poliwatch", "https://github.com/LucaAlv/poliwatch"):
+            with self.subTest(origin=origin):
+                runner = Runner(origin_url=origin)
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+                self.assertEqual(code, 0, stderr)
+                shutil.rmtree(self.out, ignore_errors=True)
 
     # Value: protects=only a tag whose ref is exactly refs/tags/<tag> (or its peeled ^{} line) counts as already on origin; fails_when=ls-remote lines for other refs are read as the tag (substring match refuses a good release) or the peeled line of an annotated tag is missed; why_new=the origin test's mock only ever answers with the asked ref; seam=main with a scripted git ls-remote; no_claim=the real remote (scripted output)
     def test_origin_tag_match_is_exact_and_sees_peeled_annotated_tags(self) -> None:

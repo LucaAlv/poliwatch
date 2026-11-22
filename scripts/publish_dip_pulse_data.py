@@ -338,10 +338,34 @@ def github_repository(url: str) -> str | None:
     return f"{match[1]}/{match[2]}"
 
 
+def remote_github_repository(url: str) -> str | None:
+    """owner/name of a git remote URL on github.com (https, git@github.com:… or
+    ssh://git@github.com/…, a trailing .git dropped), or None."""
+    for pattern in (r"https://github\.com/(.+)", r"git@github\.com:(.+)", r"ssh://git@github\.com/(.+)"):
+        match = re.fullmatch(pattern, url.strip())
+        if match:
+            return github_repository(f"https://github.com/{match[1]}")
+    return None
+
+
+def origin_problem(repo_root: Path, run: Callable[..., Any], repository: str) -> str | None:
+    """Why origin is not the repository the release goes to, or None. The tag
+    checks ask origin, so origin must be that repository (owner/name)."""
+    result = run(["git", "remote", "get-url", "origin"], cwd=repo_root, env=build_revision.clean_env(), capture_output=True, text=True)
+    if result.returncode != 0:
+        return f"cannot read origin's URL (git remote get-url origin failed: {result.stderr.strip() or 'no message'})"
+    url = result.stdout.strip()
+    named = remote_github_repository(url)
+    if named is None or named.lower() != repository.lower():
+        return (f"origin ({url}) is not {repository}, the repository CITATION.cff names and the release goes to; "
+                "the tag checks ask origin, so run from a clone whose origin is that repository")
+    return None
+
+
 def release_repository(repo_root: Path, full_commit: str) -> str:
     """The repository a release DATA.md cites (CITATION.cff's repository-code at
-    the export's commit), as owner/name for gh --repo: the release goes there,
-    not to whatever GH_REPO or gh's default names."""
+    the export's commit), as owner/name: the release goes there (gh --repo
+    github.com/<owner>/<name>), not to whatever GH_REPO, GH_HOST or gh's default names."""
     site = _site()
     relative = site.CODEBOOK_INPUT_FILES["citation"]
     try:
@@ -355,7 +379,7 @@ def release_repository(repo_root: Path, full_commit: str) -> str:
 
 
 def remote_versions(repo_root: Path, run: Callable[..., Any], repository: str) -> set[str]:
-    result = run(["gh", "release", "list", "--json", "tagName", "--limit", "1000", "--repo", repository], cwd=repo_root, capture_output=True, text=True)
+    result = run(["gh", "release", "list", "--json", "tagName", "--limit", "1000", "--repo", f"github.com/{repository}"], cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:
         raise ReleaseError(f"cannot ask gh for existing releases (gh release list failed: {result.stderr.strip() or 'no message'}); not publishing blind")
     try:
@@ -597,6 +621,10 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError(f"--publish refused: {vote_link_review_text(unreviewed)}: {shown}")
     tag = release_version.tag_for(version)
     repository = release_repository(repo_root, full_commit)
+    if args.publish or args.previous_manifest:
+        problem = origin_problem(repo_root, run, repository)
+        if problem:
+            raise ReleaseError(problem)
     released = remote_versions(repo_root, run, repository) if args.publish else set()
     known = local_versions(repo_root, run) | released
     if version in known:
@@ -652,7 +680,7 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     command = [
         "gh", "release", "create", tag, *map(str, files),
         "--title", f"Daten {version}", "--notes-file", str(release_dir / "CHANGES.md"), "--target", full_commit,
-        "--repo", repository,
+        "--repo", f"github.com/{repository}",
     ]
     out(f"version: {version}")
     out(f"tag: {tag}")
@@ -684,8 +712,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError(
             f"gh release create failed: {result.stderr.strip() or 'no message'}. The release directory {release_dir} is kept; "
             f"the same command publishes it once the cause is fixed. gh may have left a tag or a release behind: check with "
-            f"git ls-remote --tags origin refs/tags/{tag} and gh release view {tag}, and delete what this run left "
-            f"(gh release delete {tag} --cleanup-tag, or git push origin :refs/tags/{tag}; and git tag -d {tag} if a fetch "
+            f"git ls-remote --tags origin refs/tags/{tag} and gh release view {tag} --repo github.com/{repository}, and delete what this run left "
+            f"(gh release delete {tag} --cleanup-tag --repo github.com/{repository}, or git push origin :refs/tags/{tag}; and git tag -d {tag} if a fetch "
             f"brought that tag into this clone) before running it again"
         )
     out(f"published: {result.stdout.strip()}")
