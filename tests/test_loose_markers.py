@@ -201,5 +201,72 @@ class ListTests(unittest.TestCase):
         reviewed_units.use([])
 
 
+class PlacementEdgeTests(unittest.TestCase):
+    # Value: protects=a marker in a Fragestunde TOP is left to its own rules and never needs an entry, yet still counts in
+    #   the ordinals, so M2 is the next TOP's marker; fails_when=the Fragestunde skip is lost (unlisted refusal) or ordinals restart per TOP;
+    #   why_new=skip branch untested; seam=none; no_claim=real Fragestunde parsing (synthetic one-marker TOP)
+    def test_a_fragestunde_marker_needs_no_entry_but_counts_in_the_ordinals(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="18" sitzung-nr="10"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><p klasse="T_NaS">Fragestunde</p>' + CHAIR + '<p>Aufruf.</p>' + ANNEN
+               + '<p>Eine Frage.</p></tagesordnungspunkt>'
+               '<tagesordnungspunkt top-id="T2"><p klasse="T_NaS">Beratung des Antrags</p>' + rede('ID1', LINDNER, SPEECH)
+               + CHAIR + '<p>Danke.</p>' + BEYER + '<p>Ein Nachtrag.</p></tagesordnungspunkt>'
+               '</sitzungsverlauf></dbtplenarprotokoll>')
+        root = ET.fromstring(xml)
+        self.assertEqual(sorted(dip.loose_marker_ordinals(root).values()), [1, 2])
+        top1, top2 = root.findall('./sitzungsverlauf/tagesordnungspunkt')
+        ordinals = dip.loose_marker_ordinals(root)
+        formats = frozenset({dip.speech_kinds.FRAGESTUNDE})
+        self.assertEqual(dip.mark_loose_markers(top1, formats, ordinals, {}, set(), '18/10', set()), [])
+        matched = set()
+        dip.mark_loose_markers(top2, frozenset(), ordinals, {'M2': loose('M2', '11000003', 'loose_remark', 'none')},
+                               matched, '18/10', set())
+        self.assertEqual(matched, {'M2'})
+        with self.assertRaises(dip.UnlistedLooseMarkerError):
+            dip.mark_loose_markers(top1, frozenset(), ordinals, {}, set(), '18/10', set())
+
+    # Value: protects=a run attached prev/next with no <rede> on that side stops the run; fails_when=the run is moved
+    #   to nowhere or dropped; why_new=error branches untested; seam=none; no_claim=none beyond protects
+    def test_a_run_with_no_rede_to_join_stops_the_run(self):
+        with self.assertRaises(reviewed_units.ReviewedUnitsError):
+            parse(CHAIR + '<p>Wort.</p>' + LINDNER + '<p>Genau.</p>' + rede('ID1', LINDNER, SPEECH),
+                  [loose('M1', '11000004', 'loose_own_words', 'prev')])
+        with self.assertRaises(reviewed_units.ReviewedUnitsError):
+            parse(rede('ID1', LINDNER, SPEECH) + CHAIR + '<p>Wort.</p>' + LINDNER + '<p>Genau.</p>',
+                  [loose('M1', '11000004', 'loose_own_words', 'next')])
+
+    # Value: protects=a marker listed as going nowhere stays in the TOP even inside a run that moves, and the run's other
+    #   turn still joins the Rede; fails_when=the remark's words are carried into the owner's Rede text;
+    #   why_new=none-inside-move branch untested; seam=none; no_claim=none beyond protects
+    def test_a_nowhere_marker_inside_a_moving_run_stays(self):
+        body = (CHAIR + '<p>Bitte.</p>' + LINDNER + '<p>Genau.</p>' + BEYER + '<p>Zuruf ohne Wert.</p>'
+                + rede('ID1', LINDNER, SPEECH))
+        parsed = parse(body, [loose('M1', '11000004', 'loose_own_words', 'next'), loose('M2', '11000003', 'loose_remark', 'none')])
+        self.assertEqual(speeches(parsed), [('ID1', '11000004', 'Genau. ' + SPEECH[3:-4])])
+        self.assertNotIn('Zuruf', speeches(parsed)[0][2])
+
+
 if __name__ == '__main__':
     unittest.main()
+
+
+class NameSpeakerRunTests(unittest.TestCase):
+    # Value: protects=a <name> speaker's Rede (N<ordinal>) is wrapped before loose markers are placed, so a loose marker
+    #   of the same speaker after it joins that Rede, and an unlisted one beside it still refuses; fails_when=the passes
+    #   run in the other order (no <rede> to join) or the N-wrap swallows the loose marker; why_new=plan item, no test
+    #   combined both passes; seam=none; no_claim=real WP 18 name markup (synthetic minister entry)
+    def test_a_loose_marker_after_a_name_speakers_rede_joins_it(self):
+        tag = 'Manuela Schwesig, Bundesministerin für Familie, Senioren, Frauen und Jugend'
+        minister = redner('999990002', 'Schwesig', role='Bundesministerin für Familie, Senioren, Frauen und Jugend',
+                          first='Manuela', printed='Manuela Schwesig, Bundesministerin:')
+        body = (CHAIR + '<p>Das Wort hat Frau Bundesministerin Schwesig.</p>' + f'<name>{tag} : </name>\n'
+                + '<p>Frau Präsidentin! Meine Damen und Herren! Die Rede der Ministerin.</p>'
+                + CHAIR + '<p>Frau Ministerin, Ihre Redezeit ist abgelaufen.</p>'
+                + minister + '<p>Ein letzter Satz zur Sache.</p>' + rede('ID2', LINDNER, SPEECH))
+        name_entry = {**entry('N2', '999990002', 'name_rede', '18/10'), 'name': tag}
+        parsed = parse(body, [name_entry, loose('M1', '999990002', 'loose_own_words', 'prev')])
+        self.assertEqual(speeches(parsed), [
+            ('N2', '999990002', 'Frau Präsidentin! Meine Damen und Herren! Die Rede der Ministerin. Ein letzter Satz zur Sache.'),
+            ('ID2', '11000004', SPEECH[3:-4])])
+        with self.assertRaises(dip.UnlistedLooseMarkerError):
+            parse(body, [name_entry])

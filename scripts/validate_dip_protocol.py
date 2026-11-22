@@ -1423,7 +1423,8 @@ def mark_presidium_fraktionsreden(root: ET.Element) -> None:
 
 def mark_presidium_markers_outside_reden(root: ET.Element) -> None:
     """ADR 0004 (18/62, 18/90): a Vizepräsident(in) printed with a ``<fraktion>``
-    at a marker outside any ``<rede>``, which only a Fragestunde reads. When the
+    at a marker outside any ``<rede>``, which a Fragestunde reads and, in any other
+    TOP, the reviewed ``loose_*`` entry of ``mark_loose_markers`` places. When the
     last chair ``<name>`` before the marker ends with their first and last name,
     they chair and the marker is Sitzungsleitung: it is marked
     ``sitzungsleitung="1"`` (18/62 Singhammer). Otherwise they ask as an MdB, and
