@@ -11148,7 +11148,8 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
         Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden
         oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion.
         Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso
-        wenig die Annahme einer Wahl und die Antwort auf einen Eid.</span></li>
+        wenig der Wahlvorschlag einer Fraktion, die Annahme einer Wahl und die Antwort auf einen
+        Eid.</span></li>
       </ol>
     </section>
     <section>
@@ -12944,7 +12945,7 @@ def render_sources_page(
         <h2>Wie die Seite sie nutzt</h2>
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
-          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion. Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso wenig die Annahme einer Wahl und die Antwort auf einen Eid. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
+          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion. Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso wenig der Wahlvorschlag einer Fraktion, die Annahme einer Wahl und die Antwort auf einen Eid. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
           <li><strong>Meiste Reden</strong><span>Tagesordnungspunkte nach Anzahl der extrahierten Reden sortiert. Die Balken zeigen Redeanteil und Textanteil an der gesamten Sitzung. Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>

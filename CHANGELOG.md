@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.41.0] - 2026-11-22
+
+A Fraktion's nomination for the Bundestagspräsident's election no longer counts as a Rede where the protocol prints it as the nominating MdB's own speech. Four nominations leave the Reden: Volker Kauder's in 18/1 and 19/1, Rolf Mützenich's in 20/1 and Friedrich Merz's in 21/1. Reden go from 61,559 to 61,555 (CDU/CSU −3, SPD −1) and speech characters drop by 474. A store built before this version owes one `--offline --repersist`, which re-reads these four sittings from their cached XML.
+
+### Changed
+
+- **A nomination in the Präsident's election is a procedural step, not a Rede.** "Die CDU/CSU-Bundestagsfraktion schlägt Herrn Dr. Wolfgang Schäuble vor." is a motion in the election, like the acceptance that follows it. The four are listed in `scripts/reviewed_units.json` as `procedural`: no row in `speeches`, `contributions` or `withheld_units`, one diagnostic in the sitting report.
+- **What moves.** Each of the four sittings has one Rede fewer (18/1 5 → 4, 19/1 7 → 6, 20/1 8 → 7, 21/1 12 → 11), and each nomination's agenda item now shows "Keine Reden: Was das Protokoll hier als Rede druckt, sind Verfahrensschritte (Wahlvorschlag, Annahme einer Wahl, Eid, Sitzungsleitung) …". On their person pages Kauder loses two Reden (57 → 55, the nominations in 18/1 and 19/1), Mützenich (61 → 60) and Merz (63 → 62) one each. Kauder's first stored Rede is now his 18/2 Rede of 2013-11-18. The Fakt "meistdiskutierter Vorgang" has no value for 2017-10 and 2025-03, whose most discussed Vorgang was the election with the nomination as its one Rede. In later months 29 percentiles move and 6 more months change only their comparison window; no published flag, rank or winner changes.
+- The Methodik and Quellen pages, the sitting page's no-Reden lines and the data notes now name the nomination among the steps that are no Rede. The comparison with CPP-BT is restated from a run on the 806-sitting store: 81,444 shared Rede-IDs, 2,315 that only CPP-BT lists, with the four nominations explained.
+
 ## [0.46.40.0] - 2026-11-22
 
 A reviewed vote link can now be removed or marked as unsure one case at a time, and the vote's panel on its sitting page says so. The shipped review list has no such case yet, so no stored figure, vote link or export row changes.
