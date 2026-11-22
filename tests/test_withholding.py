@@ -105,11 +105,13 @@ class ParserTests(unittest.TestCase):
     # Value: protects=D4: a refused split part is withheld alone, the outer Rede stays stored (real 18/10 source);
     #   fails_when=the whole outer Rede is withheld or the part vanishes; why_new=new path; seam=none
     def test_a_refused_split_part_is_withheld_alone(self):
-        parsed = dip.parse_protocol_xml((_support.ROOT / "tests/fixtures/withholding/18-10-top3.xml").read_text(encoding="utf-8"), reviewed=[])
+        parsed = dip.parse_protocol_xml((_support.ROOT / "tests/fixtures/withholding/18-10-top3.xml").read_text(encoding="utf-8"),
+                                        reviewed=_support.NAME_ENTRIES_18_10_TOP3)
         top = parsed["agenda_items"][0]
-        self.assertEqual([s["rede_id"] for s in top["speeches"]], ["ID1801002600"])
+        # N4 is Neu's Rede, which the source prints as <name> outside any <rede>.
+        self.assertEqual([s["rede_id"] for s in top["speeches"]], ["N4", "ID1801002600"])
         [held] = top["withheld"]
-        self.assertEqual((held["rede_id"], held["sequence"], held["reason"]), ("ID1801002600:2", 2, "refused_nested_contribution"))
+        self.assertEqual((held["rede_id"], held["sequence"], held["reason"]), ("ID1801002600:2", 3, "refused_nested_contribution"))
         self.assertEqual((held["word_count"], held["nested_word_count"]), (608, 123))
         # The part is the main speaker's text after the split; the Kurzintervention inside it stays apart.
         self.assertEqual(held["speaker"]["last_name"], "Bartz")
@@ -281,7 +283,7 @@ class ReviewedListTests(unittest.TestCase):
             return {"report": {"protocol": protocol, "validation_summary": {"speech_kinds_version": version, "vote_inputs_version": vote_links.INPUTS_VERSION}}}
 
         no_digest, other_list = cached("18/7"), cached("18/2", reviewed_units.digest([]))
-        old_rule, both = cached("18/8", reviewed_units.digest([]), sk.VERSION - 1), cached("18/9", version=sk.VERSION - 1)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
+        old_rule, both = cached("18/5", reviewed_units.digest([]), sk.VERSION - 1), cached("18/9", version=sk.VERSION - 1)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
         self.assertEqual(build.stale_causes(no_digest["report"]), ("reviewed",))
         self.assertEqual(build.stale_causes(other_list["report"]), ("reviewed",))
         self.assertEqual(build.stale_causes(old_rule["report"]), ("rule",))
@@ -295,11 +297,11 @@ class ReviewedListTests(unittest.TestCase):
         with self.assertRaises(build.CachedReportError) as caught:
             build.require_parsed_reports([old_rule, both])
         message = str(caught.exception)
-        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/8, 18/9)", message)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
+        self.assertIn(f"2 predate the current speech-counting rule ({sk.VERSION}) (18/5, 18/9)", message)  # pregate-literal: VERSION=9 a sitting number (18/9), not the speech rule
         self.assertIn("1 were parsed under other entries of scripts/reviewed_units.json than it holds now (18/9)", message)
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            self.assertEqual(build.warn_unparsed_reports([no_digest, old_rule, cached("18/10", reviewed_units.digest([]))]), 2)
+            self.assertEqual(build.warn_unparsed_reports([no_digest, old_rule, cached("18/13", reviewed_units.digest([]))]), 2)
         self.assertIn("2 of 3 cached reports", stderr.getvalue())
         self.assertIn("1 predate the current speech-counting rule", stderr.getvalue())
         self.assertIn("1 were parsed under other entries of scripts/reviewed_units.json", stderr.getvalue())
@@ -474,7 +476,8 @@ class WithholdOneTests(unittest.TestCase):
         xml = sitting(rede("R1"), rede("R2", "Zwei", REFUSED), rede("R3", "Drei"), rede("R4", "Vier"))
         result = check_withhold_one.check_sitting(xml)
         self.assertEqual(result["middle"], {"withheld": 1, "problems": []})
-        real = check_withhold_one.check_sitting((_support.ROOT / "tests/fixtures/withholding/18-10-top3.xml").read_text(encoding="utf-8"))
+        real = check_withhold_one.check_sitting((_support.ROOT / "tests/fixtures/withholding/18-10-top3.xml").read_text(encoding="utf-8"),
+                                               _support.NAME_ENTRIES_18_10_TOP3)
         self.assertTrue(real and all(row["problems"] == [] for row in real.values()), real)
         base = dip.parse_protocol_xml(xml, reviewed=[])
         forced = dip.parse_protocol_xml(xml, reviewed=[entry("R3"), entry("R4")])

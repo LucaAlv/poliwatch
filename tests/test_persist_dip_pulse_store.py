@@ -480,8 +480,8 @@ class ParserCountContractTests(unittest.TestCase):
     def test_every_producer_sets_each_stored_count(self) -> None:
         import validate_dip_protocol as dip
 
-        def parse(name: str, change=lambda xml: xml) -> dict:
-            return dip.parse_protocol_xml(change((FIXTURES / name).read_text(encoding="utf-8")), reviewed=[])
+        def parse(name: str, change=lambda xml: xml, reviewed=()) -> dict:
+            return dip.parse_protocol_xml(change((FIXTURES / name).read_text(encoding="utf-8")), reviewed=list(reviewed))
 
         def path(contribution: dict) -> str:
             rede_id = contribution.get("rede_id") or ""
@@ -493,7 +493,7 @@ class ParserCountContractTests(unittest.TestCase):
 
         found: dict[str, list[tuple[dict, tuple[str, ...]]]] = {}
         parses = [
-            parse("withholding/18-10-top3.xml"),
+            parse("withholding/18-10-top3.xml", reviewed=_support.NAME_ENTRIES_18_10_TOP3),
             parse("speech-kinds-befragung-fragestunde.xml"),
             parse("offline-v5/plenarprotokoll-20-28.xml"),
             parse("a1-written-18-100.xml"),

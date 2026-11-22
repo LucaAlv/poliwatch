@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 import derive
+import reviewed_units
 import speech_kinds
 import validate_dip_protocol as dip
 
@@ -142,11 +143,16 @@ def compare(base: dict[str, Any], forced: dict[str, Any], withheld: dict[int, st
     return problems
 
 
-def check_sitting(xml_text: str) -> dict[str, Any]:
-    """All pick sets for one sitting: {pick set: {"withheld": n, "problems": [...]}}."""
+def check_sitting(xml_text: str, names: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    """All pick sets for one sitting: {pick set: {"withheld": n, "problems": [...]}}.
+    ``names``: the reviewed entries for speakers printed as ``<name>``, which
+    both parses apply (a sitting with an unlisted one outside any ``<rede>`` is
+    refused); by default those of ``scripts/reviewed_units.json``."""
     root = dip.ET.fromstring(xml_text)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
-    base = dip.parse_protocol_xml(xml_text, reviewed=[])
+    if names is None:
+        names = [e for e in reviewed_units.for_sitting(sitting) if e["kind"] in reviewed_units.NAME_KINDS]
+    base = dip.parse_protocol_xml(xml_text, reviewed=list(names))
     result = {}
     for pick_set in PICK_SETS:
         chosen = {top["index"]: picks(top, pick_set) for top in base["agenda_items"]}
@@ -157,7 +163,7 @@ def check_sitting(xml_text: str) -> dict[str, Any]:
         entries = [{"sitting": sitting, "rede_id": rid, "redner_id": _owner(root, tops[index], rid), "kind": "withhold",
                     "reason": f"check_withhold_one {pick_set}"} for index, rid in chosen.items()]
         try:
-            forced = dip.parse_protocol_xml(xml_text, reviewed=entries)
+            forced = dip.parse_protocol_xml(xml_text, reviewed=list(names) + entries)
         except Exception as exc:  # a crash is a failed check, reported with the sitting
             result[pick_set] = {"withheld": len(chosen), "problems": [f"parse failed: {type(exc).__name__}: {exc}"]}
             continue

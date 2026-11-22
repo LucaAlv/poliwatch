@@ -58,3 +58,14 @@ def shipped_digest(number: str) -> str:
     CLI run in a subprocess compares a cached report against."""
     with shipped_reviewed_units():
         return reviewed_units.sitting_digest(number)
+
+
+#: The reviewed-list entry the excerpt ``fixtures/withholding/18-10-top3.xml``
+#: needs: Neu's Rede is printed as <name> outside any <rede> (ADR 0004 amendment
+#: 2026-11-22). Its ordinal counts the excerpt's <name> elements, not the whole
+#: sitting's, so the shipped entry (N39) does not apply to the excerpt.
+NAME_ENTRIES_18_10_TOP3 = [{
+    "sitting": "18/10", "rede_id": "N4", "redner_id": "11004361", "kind": "name_rede",
+    "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 123)",
+    "name": "Dr. Alexander S. Neu (DIE LINKE)",
+}]

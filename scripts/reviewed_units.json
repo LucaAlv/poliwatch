@@ -57,6 +57,30 @@
       "reason": "Holds two whole Reden counted as Zwischenfragen: Britta Haßelmann (4,209 chars) and Jan Korte (5,099), nested in Peter Beyer's Rede (a3-wp18-19-round2-result.md:109, N7)"
     },
     {
+      "sitting": "18/3",
+      "rede_id": "N81",
+      "redner_id": "11004429",
+      "kind": "name_fragestunde_frage",
+      "reason": "a Zusatzfrage in a Fragestunde printed under <name> (name-tag-speakers.tsv entry 121)",
+      "name": "Julia Verlinden (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/3",
+      "rede_id": "N95",
+      "redner_id": "11004361",
+      "kind": "name_fragestunde_frage",
+      "reason": "a Zusatzfrage in a Fragestunde printed under <name> (name-tag-speakers.tsv entry 122)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/3",
+      "rede_id": "N118",
+      "redner_id": "11004361",
+      "kind": "name_fragestunde_frage",
+      "reason": "a Zusatzfrage in a Fragestunde printed under <name> (name-tag-speakers.tsv entry 122)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
       "sitting": "18/4",
       "rede_id": "ID1800400100",
       "redner_id": "11001478",
@@ -155,6 +179,134 @@
       "reason": "the sworn person's answer to the chair's oath prompt"
     },
     {
+      "sitting": "18/4",
+      "rede_id": "ID1800400500",
+      "redner_id": "",
+      "kind": "name_procedural",
+      "reason": "an oath answer printed under <name>: procedural (ADR 0004) (name-tag-speakers.tsv entry 1)",
+      "name": "Heiko Maas, Bundesminister der Justiz und für Verbraucherschutz"
+    },
+    {
+      "sitting": "18/4",
+      "rede_id": "ID1800400900",
+      "redner_id": "",
+      "kind": "name_procedural",
+      "reason": "an oath answer printed under <name>: procedural (ADR 0004) (name-tag-speakers.tsv entry 2)",
+      "name": "Manuela Schwesig, Bundesministerin für Familie, Senioren, Frauen und Jugend"
+    },
+    {
+      "sitting": "18/4",
+      "rede_id": "ID1800401200",
+      "redner_id": "",
+      "kind": "name_procedural",
+      "reason": "an oath answer printed under <name>: procedural (ADR 0004) (name-tag-speakers.tsv entry 3)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/6",
+      "rede_id": "ID1800601300",
+      "redner_id": "999990325",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 4)",
+      "name": "Sven Morlok, Staatsminister (Sachsen)"
+    },
+    {
+      "sitting": "18/6",
+      "rede_id": "ID1800602300",
+      "redner_id": "11004361",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 5)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/6",
+      "rede_id": "ID1800603300",
+      "redner_id": "11004361",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 6)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/8",
+      "rede_id": "ID1800800400",
+      "redner_id": "999990003",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 7)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/8",
+      "rede_id": "ID1800802100",
+      "redner_id": "11004256",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 8)",
+      "name": "Dr. Karl-Heinz Brunner (SPD)"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "N39",
+      "redner_id": "11004361",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 123)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/10",
+      "rede_id": "ID1801002700",
+      "redner_id": "11004361",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 9)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/11",
+      "rede_id": "ID1801108000",
+      "redner_id": "999990001",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 10)",
+      "name": "Heiko Maas, Bundesminister der Justiz und für Verbraucherschutz"
+    },
+    {
+      "sitting": "18/11",
+      "rede_id": "ID1801108900",
+      "redner_id": "999990002",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 11)",
+      "name": "Manuela Schwesig, Bundesministerin für Familie, Senioren, Frauen und Jugend"
+    },
+    {
+      "sitting": "18/12",
+      "rede_id": "ID1801202600",
+      "redner_id": "999990003",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 12)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/14",
+      "rede_id": "ID1801401900",
+      "redner_id": "11004361",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 13)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/15",
+      "rede_id": "ID1801502800",
+      "redner_id": "11004256",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 14)",
+      "name": "Dr. Karl-Heinz Brunner (SPD)"
+    },
+    {
+      "sitting": "18/16",
+      "rede_id": "N69",
+      "redner_id": "11004361",
+      "kind": "name_fragestunde_frage",
+      "reason": "a Zusatzfrage in a Fragestunde printed under <name> (name-tag-speakers.tsv entry 124)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
       "sitting": "18/17",
       "rede_id": "ID1801700100",
       "redner_id": "11002003",
@@ -162,11 +314,867 @@
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
     },
     {
+      "sitting": "18/17",
+      "rede_id": "ID1801700700",
+      "redner_id": "11004060",
+      "kind": "name_own_words",
+      "reason": "the host Rede's own speaker printed under <name> (name-tag-speakers.tsv entry 15)",
+      "name": "Andrej Hunko (DIE LINKE )"
+    },
+    {
+      "sitting": "18/17",
+      "rede_id": "ID1801700800",
+      "redner_id": "11004361",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 16)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/17",
+      "rede_id": "ID1801701900",
+      "redner_id": "999990001",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 17)",
+      "name": "Heiko Maas, Bundesminister der Justiz und für Verbraucherschutz"
+    },
+    {
+      "sitting": "18/18",
+      "rede_id": "ID1801802000",
+      "redner_id": "11004079",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 18)",
+      "name": "Daniela Kolbe (SPD)"
+    },
+    {
+      "sitting": "18/19",
+      "rede_id": "ID1801902500",
+      "redner_id": "11004079",
+      "kind": "name_befragung_frage",
+      "reason": "a Frage in a Befragung printed under <name> (name-tag-speakers.tsv entry 19)",
+      "name": "Daniela Kolbe (SPD)"
+    },
+    {
+      "sitting": "18/21",
+      "rede_id": "N25",
+      "redner_id": "999990002",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 125)",
+      "name": "Manuela Schwesig, Bundesministerin für Familie, Senioren, Frauen und Jugend"
+    },
+    {
+      "sitting": "18/21",
+      "rede_id": "ID1802100500",
+      "redner_id": "11004361",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 20)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/21",
+      "rede_id": "ID1802100600",
+      "redner_id": "11004361",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 21)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/22",
+      "rede_id": "N12",
+      "redner_id": "11004361",
+      "kind": "name_fragestunde_frage",
+      "reason": "a Zusatzfrage in a Fragestunde printed under <name> (name-tag-speakers.tsv entry 126)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/22",
+      "rede_id": "N18",
+      "redner_id": "11004361",
+      "kind": "name_fragestunde_frage",
+      "reason": "a Zusatzfrage in a Fragestunde printed under <name> (name-tag-speakers.tsv entry 126)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/22",
+      "rede_id": "ID1802201500",
+      "redner_id": "11003780",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 22)",
+      "name": "Andreas Jung (CDU/CSU)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "N69",
+      "redner_id": "999990001",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 127)",
+      "name": "Heiko Maas, Bundesminister der Justiz und für Verbraucherschutz"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "ID1802301000",
+      "redner_id": "11004605",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 23)",
+      "name": "Christian Petry (SPD)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "ID1802304700",
+      "redner_id": "11004256",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 24)",
+      "name": "Dr. Karl-Heinz Brunner (SPD)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "ID1802306200",
+      "redner_id": "11004361",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 25)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/24",
+      "rede_id": "ID1802402200",
+      "redner_id": "11004079",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 26)",
+      "name": "Daniela Kolbe (SPD)"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "N1",
+      "redner_id": "999990003",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 128)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500100",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 27)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500200",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 28)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500300",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 29)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500400",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 30)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500500",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 31)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500600",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 32)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500700",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 33)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500800",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 34)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802500900",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 35)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802501000",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 36)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802501100",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 37)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802501200",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 38)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/25",
+      "rede_id": "ID1802501300",
+      "redner_id": "11003780",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 39)",
+      "name": "Andreas Jung (CDU/CSU)"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "ID1802606500",
+      "redner_id": "11004252",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 40)",
+      "name": "Dr. André Berghegger (CDU/CSU)"
+    },
+    {
+      "sitting": "18/28",
+      "rede_id": "ID1802801800",
+      "redner_id": "11004252",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 41)",
+      "name": "Dr. André Berghegger (CDU/CSU)"
+    },
+    {
+      "sitting": "18/28",
+      "rede_id": "ID1802802400",
+      "redner_id": "999990001",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 42)",
+      "name": "Heiko Maas, Bundesminister der Justiz und für Verbraucherschutz"
+    },
+    {
       "sitting": "18/29",
-      "rede_id": "ID1802902700:2",
+      "rede_id": "ID1802902700:2:2:2",
       "redner_id": "11004047",
       "kind": "withhold",
       "reason": "Annette Groth's part is a Mündliche Erklärung gem. § 31 GO (DIP 2384D), not a Rede; split off as one (a3-wp18-19-round2-result.md:104, N7)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802900900",
+      "redner_id": "11004309",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 43)",
+      "name": "Sigrid Hupach (DIE LINKE)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802900900",
+      "redner_id": "11003575",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 44)",
+      "name": "Dr. Hans-Ulrich Krüger (SPD)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802901200",
+      "redner_id": "11004344",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 45)",
+      "name": "Hiltrud Lotze (SPD)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802901600",
+      "redner_id": "11003732",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 46)",
+      "name": "Niels Annen (SPD)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802901800",
+      "redner_id": "11004255",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 47)",
+      "name": "Dr. Franziska Brantner (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802901900",
+      "redner_id": "11004296",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 48)",
+      "name": "Gabriela Heinrich (SPD)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802902700",
+      "redner_id": "11004276",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 49)",
+      "name": "Thorsten Frei (CDU/CSU)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802902700",
+      "redner_id": "11004249",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 50)",
+      "name": "Julia Bartz (CDU/CSU)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802903200",
+      "redner_id": "11004361",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 51)",
+      "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802903300",
+      "redner_id": "11004436",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 52)",
+      "name": "Doris Wagner (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802903900",
+      "redner_id": "11003547",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 53)",
+      "name": "Anja Hajduk (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/29",
+      "rede_id": "ID1802904500",
+      "redner_id": "11004416",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 54)",
+      "name": "Peter Stein (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "N49",
+      "redner_id": "999990002",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 129)",
+      "name": "Manuela Schwesig, Bundesministerin für Familie, Senioren, Frauen und Jugend"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803000400",
+      "redner_id": "11004318",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 55)",
+      "name": "Thomas Jurk (SPD)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803000600",
+      "redner_id": "11003547",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 56)",
+      "name": "Anja Hajduk (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803000700",
+      "redner_id": "11004312",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 57)",
+      "name": "Dieter Janecek (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803001000",
+      "redner_id": "11004352",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 58)",
+      "name": "Jan Metzler (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803001100",
+      "redner_id": "999990003",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 59)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803001400",
+      "redner_id": "11003620",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 60)",
+      "name": "Albert Rupprecht (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803002000",
+      "redner_id": "11004386",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 61)",
+      "name": "Dr. Daniela De Ridder (SPD)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803002700",
+      "redner_id": "11004255",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 62)",
+      "name": "Dr. Franziska Brantner (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803002900",
+      "redner_id": "11004370",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 63)",
+      "name": "Sylvia Pantel (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803002900",
+      "redner_id": "11004448",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 64)",
+      "name": "Gülistan Yüksel (SPD)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803002900",
+      "redner_id": "11004384",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 65)",
+      "name": "Alois Rainer (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803003700",
+      "redner_id": "11004454",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 66)",
+      "name": "Pia Zimmermann (DIE LINKE)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803004000",
+      "redner_id": "11004254",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 67)",
+      "name": "Burkhard Blienert (SPD)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803004200",
+      "redner_id": "11004454",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 68)",
+      "name": "Pia Zimmermann (DIE LINKE)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803004600",
+      "redner_id": "11004256",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 69)",
+      "name": "Dr. Karl-Heinz Brunner (SPD)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803004800",
+      "redner_id": "11004374",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 70)",
+      "name": "Harald Petzold (Havelland) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803005000",
+      "redner_id": "11003869",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 71)",
+      "name": "Sabine Zimmermann (Zwickau) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803005300",
+      "redner_id": "11004389",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 72)",
+      "name": "Dr. Martin Rosemann (SPD)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803005400",
+      "redner_id": "11003869",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 73)",
+      "name": "Sabine Zimmermann (Zwickau) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803005700",
+      "redner_id": "11004298",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 74)",
+      "name": "Mark Helfrich (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803005700",
+      "redner_id": "11004402",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 75)",
+      "name": "Gabriele Schmidt (Ühlingen) (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803006000",
+      "redner_id": "11004286",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 76)",
+      "name": "Christian Haase (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803006300",
+      "redner_id": "11004440",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 77)",
+      "name": "Dr. Anja Weisgerber (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803006400",
+      "redner_id": "11004449",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 78)",
+      "name": "Hubertus Zdebel (DIE LINKE)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803006500",
+      "redner_id": "11003815",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 79)",
+      "name": "Carsten Müller (Braunschweig) (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803006700",
+      "redner_id": "11004252",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 80)",
+      "name": "Dr. André Berghegger (CDU/CSU)"
+    },
+    {
+      "sitting": "18/30",
+      "rede_id": "ID1803006700",
+      "redner_id": "11004320",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 81)",
+      "name": "Steffen Kanitz (CDU/CSU)"
+    },
+    {
+      "sitting": "18/33",
+      "rede_id": "N147",
+      "redner_id": "11004252",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 130)",
+      "name": "Dr. André Berghegger (CDU/CSU)"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "N1",
+      "redner_id": "999990003",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 131)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500100",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 82)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500200",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 83)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500300",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 84)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500400",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 85)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500500",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 86)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500600",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 87)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500700",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 88)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500800",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 89)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803500900",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 90)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501000",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 91)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501100",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 92)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501200",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 93)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501300",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 94)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501400",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 95)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501500",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 96)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501600",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 97)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/35",
+      "rede_id": "ID1803501700",
+      "redner_id": "999990003",
+      "kind": "name_befragung_antwort",
+      "reason": "an Antwort in a Befragung printed under <name> (name-tag-speakers.tsv entry 98)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/36",
+      "rede_id": "N1",
+      "redner_id": "999990003",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 132)",
+      "name": "Dr. Johanna Wanka, Bundesministerin für Bildung und Forschung"
+    },
+    {
+      "sitting": "18/36",
+      "rede_id": "ID1803601400",
+      "redner_id": "11003608",
+      "kind": "name_own_words",
+      "reason": "the host Rede's own speaker printed under <name> (name-tag-speakers.tsv entry 99)",
+      "name": "Dr. Jochim Pfeiffer (CDU/CSU)"
+    },
+    {
+      "sitting": "18/42",
+      "rede_id": "ID1804201700",
+      "redner_id": "11003836",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 100)",
+      "name": "Annette Schavan (CDU/CSU)"
+    },
+    {
+      "sitting": "18/53",
+      "rede_id": "ID1805302300",
+      "redner_id": "11004266",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 101)",
+      "name": "Michaela Engelmeier (SPD)"
+    },
+    {
+      "sitting": "18/57",
+      "rede_id": "ID1805703800",
+      "redner_id": "11004611",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 102)",
+      "name": "Waldemar Westermayer (CDU/CSU)"
+    },
+    {
+      "sitting": "18/58",
+      "rede_id": "ID1805804200",
+      "redner_id": "11004266",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 103)",
+      "name": "Michaela Engelmeier (SPD)"
+    },
+    {
+      "sitting": "18/63",
+      "rede_id": "ID1806307200",
+      "redner_id": "dip:1828",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 104)",
+      "name": "Jutta Blankau-Rosenfeldt, Senatorin (Hamburg)"
+    },
+    {
+      "sitting": "18/64",
+      "rede_id": "N1",
+      "redner_id": "",
+      "kind": "name_ansprache",
+      "reason": "an invited guest's address printed under <name>: an Ansprache with no Redner-ID (owner, 2026-11-21) (name-tag-speakers.tsv entry 133)",
+      "name": "Wolf Biermann"
+    },
+    {
+      "sitting": "18/64",
+      "rede_id": "N3",
+      "redner_id": "",
+      "kind": "name_ansprache",
+      "reason": "an invited guest's address printed under <name>: an Ansprache with no Redner-ID (owner, 2026-11-21) (name-tag-speakers.tsv entry 133)",
+      "name": "Wolf Biermann"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806610300",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 105)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/68",
+      "rede_id": "ID1806804800",
+      "redner_id": "11004266",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 106)",
+      "name": "Michaela Engelmeier (SPD)"
+    },
+    {
+      "sitting": "18/70",
+      "rede_id": "ID1807004600",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 107)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/72",
+      "rede_id": "N1",
+      "redner_id": "999990050",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 134)",
+      "name": "Verena Bentele, Beauftragte der Bundesregierung für die Belange behinderter Menschen"
+    },
+    {
+      "sitting": "18/74",
+      "rede_id": "N50",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 135)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/75",
+      "rede_id": "ID1807504900",
+      "redner_id": "11004614",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 108)",
+      "name": "Angelika Glöckner (SPD)"
     },
     {
       "sitting": "18/83",
@@ -183,11 +1191,115 @@
       "reason": "Frank Tempel's chair-granted Kurzintervention is merged into his Zwischenbemerkung in Stephan Mayer's Rede (a3-wp18-19-round2-result.md:80, N7)"
     },
     {
+      "sitting": "18/83",
+      "rede_id": "N54",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 136)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/87",
+      "rede_id": "ID1808700900",
+      "redner_id": "11004613",
+      "kind": "name_befragung_frage",
+      "reason": "a Frage in a Befragung printed under <name> (name-tag-speakers.tsv entry 109)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/87",
+      "rede_id": "ID1808702000",
+      "redner_id": "11004613",
+      "kind": "name_befragung_frage",
+      "reason": "a Frage in a Befragung printed under <name> (name-tag-speakers.tsv entry 110)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/88",
+      "rede_id": "ID1808806500",
+      "redner_id": "11004249",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 111)",
+      "name": "Julia Obermeier (CDU/CSU)"
+    },
+    {
+      "sitting": "18/88",
+      "rede_id": "ID1808809900",
+      "redner_id": "11004614",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 112)",
+      "name": "Angelika Glöckner (SPD)"
+    },
+    {
+      "sitting": "18/91",
+      "rede_id": "N147",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 137)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/91",
+      "rede_id": "ID1809110600",
+      "redner_id": "11004613",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 113)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/94",
+      "rede_id": "ID1809405300",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 114)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/101",
+      "rede_id": "ID1810103700",
+      "redner_id": "11004123",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 115)",
+      "name": "Dr. Konstantin von Notz ( BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
+      "sitting": "18/104",
+      "rede_id": "ID1810402200",
+      "redner_id": "11004333",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 116)",
+      "name": "Christian Kühn ( Tübingen) (BÜNDNIS 90/DIE GRÜNEN)"
+    },
+    {
       "sitting": "18/106",
       "rede_id": "ID1810600100",
       "redner_id": "11003031",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "18/106",
+      "rede_id": "N93",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 138)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/106",
+      "rede_id": "ID1810607400",
+      "redner_id": "11004613",
+      "kind": "name_zwischenfrage",
+      "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 117)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/107",
+      "rede_id": "ID1810703900",
+      "redner_id": "11004613",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 118)",
+      "name": "Norbert Müller (Potsdam) (DIE LINKE)"
     },
     {
       "sitting": "18/158",
@@ -267,6 +1379,14 @@
       "reason": "Lammert opens the vereinbarte Debatte on the 75th anniversary of the invasion of the Soviet Union with Gedenkworte on behalf of the Bundestag; no floor-giving in the turn"
     },
     {
+      "sitting": "18/181",
+      "rede_id": "N2",
+      "redner_id": "",
+      "kind": "name_remark",
+      "reason": "a remark at the lectern before the floor is given, printed under <name>: stored nowhere (name-tag-speakers.tsv entry 139)",
+      "name": "Dr. Dietmar Bartsch (DIE LINKE)"
+    },
+    {
       "sitting": "18/193",
       "rede_id": "ID1819300700",
       "redner_id": "11001274",
@@ -321,6 +1441,22 @@
       "redner_id": "11004105",
       "kind": "ansprache",
       "reason": "Frank-Walter Steinmeier, Bundespräsident: address after taking the oath at the joint sitting; the oath formula is part of the address text (P5 leaves it inside)"
+    },
+    {
+      "sitting": "18/223",
+      "rede_id": "N3",
+      "redner_id": "",
+      "kind": "name_procedural",
+      "reason": "an oath answer printed under <name>: procedural (ADR 0004) (name-tag-speakers.tsv entry 140)",
+      "name": "Bundespräsident Dr. Frank-Walter Steinmeier"
+    },
+    {
+      "sitting": "18/223",
+      "rede_id": "N5",
+      "redner_id": "",
+      "kind": "name_procedural",
+      "reason": "an oath answer printed under <name>: procedural (ADR 0004) (name-tag-speakers.tsv entry 140)",
+      "name": "Bundespräsident Dr. Frank-Walter Steinmeier"
     },
     {
       "sitting": "18/238",
@@ -631,6 +1767,22 @@
       "reason": "Schäuble opens the first sitting of 2019 with a statement on the attack on Frank Magnitz and on violence and language in politics, on behalf of the Bundestag (4,616 characters), ending with a birthday greeting"
     },
     {
+      "sitting": "19/99",
+      "rede_id": "N41",
+      "redner_id": "999990081",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 141)",
+      "name": "Bodo Ramelow, Ministerpräsident (Thüringen)"
+    },
+    {
+      "sitting": "19/104",
+      "rede_id": "ID1910400800",
+      "redner_id": "999990082",
+      "kind": "name_rede",
+      "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 119)",
+      "name": "Dr. Dietmar Woidke, Ministerpräsident (Brandenburg)"
+    },
+    {
       "sitting": "19/107",
       "rede_id": "ID1910700100",
       "redner_id": "11003167",
@@ -643,6 +1795,14 @@
       "redner_id": "999990083",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "19/125",
+      "rede_id": "ID1912505800",
+      "redner_id": "11004854",
+      "kind": "name_own_words",
+      "reason": "the host Rede's own speaker printed under <name> (name-tag-speakers.tsv entry 120)",
+      "name": "Dr. Christoph Ploß (CDU/CSU)"
     },
     {
       "sitting": "19/158",
