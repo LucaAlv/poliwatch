@@ -22,6 +22,11 @@ judges. Agreement is no proof that both sides are right, and disagreement is a l
 Keys, each defined once:
 
 * ``sitting_key``: ``18/100``. CPP-BT appends `` (neu)`` to a reprinted protocol.
+* ``redner_id_key``: a Redner-ID as compared; None for an empty value and for CPP-BT's
+  ``NA``. The agreement is counted over the ids both sides hold in a shared sitting, only
+  in ``speeches`` and ``contributions`` (not ``withheld_units``), and only on the row that
+  carries the element's own speaker (no ``:N`` in our ``rede_id``). Rows left out are
+  counted by reason, never silently.
 * ``source_rede_id``: the Bundestag's ``<rede id>``. Ours may carry ``:N`` when the
   parser splits another member's speech out of one element; ids that start with
   ``nested:`` and empty ids (Fragestunde) are not Bundestag ids and are skipped by
@@ -53,7 +58,7 @@ SITTING_RE = re.compile(r"^(\d{1,3})/(\d{1,4})(?: \(neu\))?$")
 REDE_ID_RE = re.compile(r"^ID\d{6,14}$")
 CSV_FIELD_LIMIT = 16 * 1024 * 1024
 CPP_COLUMNS = (
-    "protokoll_nr", "rede_id", "redner_nachname", "redner_fraktion", "redner_rolle_kurz", "tokens",
+    "protokoll_nr", "rede_id", "redner_id", "redner_nachname", "redner_fraktion", "redner_rolle_kurz", "tokens",
 )
 #: First values, to be calibrated on the first run and written into the checklist.
 RATIO_TOLERANCE = 0.15
@@ -128,6 +133,23 @@ def surnames_agree(ours: str, theirs: object) -> bool | None:
     words = set(re.split(r"[\s-]+", ours))
     return all(word in words for word in re.split(r"[\s-]+", their) if word)
 
+
+def redner_id_key(value: object) -> str | None:
+    """A Redner-ID for comparison; None for missing, blank and ``NA`` (CPP-BT's empty)."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return None if text.casefold() in ("", "na") else text
+
+
+#: CPP-BT's Redner-ID for people it could not tell apart; its codebook says it is issued more than once.
+CPP_SHARED_REDNER_ID = "10000"
+REDNER_ID_DEFINITION = (
+    "over the Rede ids both sides hold in a sitting both hold, in speeches and contributions only "
+    "(not withheld_units) and on the row without :N (the element's own speaker); our id is "
+    "mps.xml_redner_id of the row's mp_id, theirs is redner_id; left out and counted by reason: "
+    "ours_empty (no mp_id or the mp has no xml_redner_id), ours_no_own_row (only :N parts exist), "
+    "theirs_empty (redner_id empty or NA); ours is checked first when both are empty")
 
 FRAKTION_ALIASES = {"fraktionslos": "fraktionslos", "parteilos": "fraktionslos"}
 
@@ -227,9 +249,9 @@ def load_ours(connection: sqlite3.Connection) -> dict:
             continue
         sitting_of_protocol[protocol_id] = key
         sittings.setdefault(key, {"speech": set(), "contribution": set(), "withheld": set(), "name": {},
-                                  "fraktion": {}, "words": Counter()})
+                                  "fraktion": {}, "redner": {}, "words": Counter()})
 
-    def add(table: str, protocol_id, rede_id, name, fraktion, text) -> None:
+    def add(table: str, protocol_id, rede_id, name, fraktion, text, redner_id=None) -> None:
         key = sitting_of_protocol.get(protocol_id)
         if key is None:
             return
@@ -244,17 +266,19 @@ def load_ours(connection: sqlite3.Connection) -> dict:
                 sitting["name"].setdefault(source, our_surname_text(name))
             if fraktion:
                 sitting["fraktion"].setdefault(source, fraktion)
+            if table != "withheld":
+                sitting["redner"].setdefault(source, redner_id_key(redner_id))
         if table == "speech":
             sitting["words"][source] += len((text or "").split())  # a speech with no text counts 0, not "unknown"
 
     for row in connection.execute(
-            "SELECT s.protocol_id, s.rede_id, m.display_name, s.fraktion, s.text FROM speeches s "
+            "SELECT s.protocol_id, s.rede_id, m.display_name, s.fraktion, s.text, m.xml_redner_id FROM speeches s "
             "LEFT JOIN mps m ON m.id = s.mp_id"):
-        add("speech", *row[:4], row[4])
+        add("speech", *row[:4], row[4], row[5])
     for row in connection.execute(
-            "SELECT c.protocol_id, c.rede_id, COALESCE(m.display_name, c.speaker_name), c.fraktion "
+            "SELECT c.protocol_id, c.rede_id, COALESCE(m.display_name, c.speaker_name), c.fraktion, m.xml_redner_id "
             "FROM contributions c LEFT JOIN mps m ON m.id = c.mp_id"):
-        add("contribution", *row, None)
+        add("contribution", *row[:4], None, row[4])
     for row in connection.execute(
             "SELECT protocol_id, rede_id, speaker_name, fraktion FROM withheld_units"):
         add("withheld", *row, None)
@@ -332,7 +356,7 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
         except ValueError:
             tokens = None
         theirs[key]["ids"][rede_id] = {
-            "surname": row["redner_nachname"], "fraktion": row["redner_fraktion"],
+            "redner_id": row["redner_id"], "surname": row["redner_nachname"], "fraktion": row["redner_fraktion"],
             "role": row["redner_rolle_kurz"], "tokens": tokens}
 
     def order(key: str) -> tuple[int, int]:
@@ -342,7 +366,11 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
     all_keys = sorted({key for key in ours["sittings"] if int(key.split("/")[0]) >= wp_min} | set(theirs),
                       key=order)
     rows, differences = [], []
-    totals = Counter()
+    totals = Counter({name: 0 for name in (
+        "surname_compared", "surname_not_compared", "fraktion_compared", "fraktion_not_compared",
+        "redner_id_compared", "redner_id_agree", "redner_id_differ", "redner_id_differ_theirs_10000",
+        "redner_id_not_compared_ours_empty", "redner_id_not_compared_ours_no_own_row",
+        "redner_id_not_compared_theirs_empty")})
     by_class_total = Counter()
     for key in all_keys:
         mine = ours["sittings"].get(key)
@@ -392,9 +420,28 @@ def compare(connection: sqlite3.Connection, cpp_rows, xml_dir: Path, wp_min: int
                 a, b = fraktion_key(mine["fraktion"].get(rede_id)), fraktion_key(info["fraktion"])
                 if a is None or b is None:
                     totals["fraktion_not_compared"] += 1
-                elif a != b:
+                else:
+                    totals["fraktion_compared"] += 1
+                if a is not None and b is not None and a != b:
                     fraktion_diffs += 1
                     differences.append((key, "fraktion", rede_id, mine["fraktion"].get(rede_id, ""), info["fraktion"], ""))
+                if rede_id not in mine["redner"]:
+                    totals["redner_id_not_compared_ours_no_own_row"] += 1
+                elif mine["redner"][rede_id] is None:
+                    totals["redner_id_not_compared_ours_empty"] += 1
+                elif redner_id_key(info["redner_id"]) is None:
+                    totals["redner_id_not_compared_theirs_empty"] += 1
+                else:
+                    totals["redner_id_compared"] += 1
+                    ours_id, theirs_id = mine["redner"][rede_id], redner_id_key(info["redner_id"])
+                    if ours_id == theirs_id:
+                        totals["redner_id_agree"] += 1
+                    else:
+                        totals["redner_id_differ"] += 1
+                        shared = theirs_id == CPP_SHARED_REDNER_ID
+                        totals["redner_id_differ_theirs_10000"] += shared
+                        differences.append((key, "redner_id", rede_id, ours_id, theirs_id,
+                                            "CPP-BT's 10000, issued more than once" if shared else ""))
             row.update(surname_diffs=surname_diffs, fraktion_diffs=fraktion_diffs)
             totals["surname_diffs"] += surname_diffs
             totals["fraktion_diffs"] += fraktion_diffs
@@ -506,6 +553,8 @@ def write_report(result: dict, out: Path, inputs: list[tuple[str, str, str]], kn
                     status = "known" if is_known(known, "only_theirs", rede_id, "", "") else "read_by_hand"
             elif field in ("surname", "fraktion"):
                 status = "known" if is_known(known, field, rede_id, ours, theirs) else "read_by_hand"
+            elif field == "redner_id":
+                status = "reported"  # counted in the summary; not a pass condition of the review
             else:
                 status = "read_by_hand"
             handle.write(tsv_line([key, kind, rede_id, ours, theirs, detail, status]))
@@ -515,6 +564,7 @@ def write_report(result: dict, out: Path, inputs: list[tuple[str, str, str]], kn
             handle.write(tsv_line([f"input:{name}", f"{digest}  {note}"]))
         for name, value in sorted(result["totals"].items()):
             handle.write(tsv_line([name, value]))
+        handle.write(tsv_line(["redner_id_definition", REDNER_ID_DEFINITION]))
         for name in classes:
             handle.write(tsv_line([f"only_theirs_class:{name}", result["by_class"].get(name, 0)]))
         for name, value in sorted(result["ours_skipped"].items()):

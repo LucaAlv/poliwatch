@@ -12,7 +12,6 @@ surname		svenja schulze	SchulzeSchulze	source defect: the XML name element of 21
 surname	ID208205200	dr. lena kreck	Mende Kreck	source defect: the XML name element of 20/82 joins two persons ("Dr. Dirk-UlrichLena Mende Kreck")
 surname	ID209407600	dirk-ulrich mende	Föhr	source defect: the XML name element of 20/94 joins two persons (docs/source-errors.md C5)
 fraktion	ID209407600	SPD	CDU/CSU	source defect: the XML of 20/94 holds two Fraktionen for one speaker (docs/source-errors.md C5)
-fraktion	ID1822204600	CDU/CSU: Ich glaube, ich habe auch nicht gesagt – –	CDU/CSU	source defect: the XML <fraktion> of 18/222 holds spoken text (docs/source-errors.md C6)
 only_theirs	ID1800400100			ADR 0004, reviewed procedural unit (acceptance of an election): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
 only_theirs	ID1800400200			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
 only_theirs	ID1800400300			ADR 0004, reviewed procedural unit (oath answer): CPP-BT lists it as a Rede, we do not (scripts/reviewed_units.json)
