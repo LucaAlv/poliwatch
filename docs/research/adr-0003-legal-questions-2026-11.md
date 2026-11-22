@@ -35,7 +35,7 @@ Checked against main (v0.46.43.0). The decisions are in ADR 0003, "Amendment 202
 
 **Still open, as the note says:**
 - **Q4:** the written inquiry to the Cyber Law Clinic of Universität Hamburg (or, if it declines, to the Landesdatenschutzbeauftragte), the Art. 30 record with the Art. 35 threshold note, and the takedown and erasure process. `TODOS.md`, "ADR 0003 legal questions: what the research leaves to do", tracks them. The owner decided this route on 2026-11-21; it is not yet sent.
-- **Q2:** the sentence in `LICENSE-DATA.md` „The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP layer“ is unchanged, and so is the layer note for the three quoting columns (`documents.forderung`, `vote_passages`, `votes.inversion_excerpt`).
+- **Q2:** the sentence in `LICENSE-DATA.md` „The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP layer“ is unchanged, and so is the layer note for the quoting columns (`documents.forderung` and `votes.inversion_excerpt`; `vote_passages` holds only links, see the *Update* under question 2).
 - **Q7:** the paragraph breaks are still joined with single spaces. The note's cost estimate stands, with one correction: `clean(` is called 86 times in `scripts/persist_dip_pulse_store.py` on main, not 85.
 - **Q8:** `datenschutz.html` still lists the AI-summary key (see above). Its wording about the tab (a duplicated tab copies `sessionStorage`) is tracked in `TODOS.md`.
 - **Q6:** unchanged. The Impressum names the operator as Verantwortlicher under § 18 Abs. 2 MStV (ADR 0003 D4).
@@ -150,11 +150,13 @@ The practical lever is clause 3, not a lawsuit: „Ein Verstoß gegen die DIP-Nu
 
 **Where the layers meet.** The CC BY layer is not free of DIP material.
 - `documents.forderung`, `vote_passages` and `votes.inversion_excerpt` are tagged `derived`, but they quote Drucksache wording.
+  *Update 2026-11-22: two of the three are misdescribed. `vote_passages` holds only links (`vote_id`, `document_id`, `proceeding_id`, `rank`); the quoted wording it points to is `documents.forderung` (`scripts/data_dictionary.json`). `votes.inversion_excerpt` quotes the chair's announcement in the Plenarprotokoll, a roll-call page or a DIP title, not only Drucksache wording. The columns that carry quoted source wording are `documents.forderung` and `votes.inversion_excerpt`.*
 - DIP 4b also calls processed output „diese verarbeiteten Daten“.
 - So CC BY 4.0's ban on downstream restrictions and clause 5 can meet on these columns. The fix is to say what CC BY covers there: the project's selection and extraction, while the quoted wording stays under the DIP layer.
 
 **Test the project's own outputs against clause 5.** That is where the real exposure lies.
 - Per-MP figures such as deviation from the Fraktion line (`vote_fractions.leading_vote`) or absence-style counts are exactly what someone might call disparaging.
+  *Update 2026-11-22: `vote_fractions.leading_vote` is the Fraktion's most frequent vote, not a per-MP figure. The per-MP deviation is `vote_members.abweichung` (`scripts/data_dictionary.json`).*
 - What keeps them outside „sinnentstellend“ and „Herabwürdigung“ is what the project already does: neutral wording, the figure next to its source, and no ranking framed as a judgment.
 
 **Evidence:**

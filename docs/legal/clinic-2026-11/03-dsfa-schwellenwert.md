@@ -23,7 +23,7 @@
 | Zusammenführung von Datensätzen | ja, begrenzt | Das Projekt führt DIP, bundestag.de und abgeordnetenwatch.de zu einer Person zusammen (Personenregister). Alles stammt aus öffentlichen Quellen zu denselben öffentlichen Personen. Es entsteht kein Merkmal, das die Quellen nicht schon einzeln nennen; neu ist die Verbindung und die Abweichungsrechnung. |
 | Schutzbedürftige Betroffene | nein bei Abgeordneten; unbekannt bei Dritten | Kinder oder Patienten als namentlich Genannte sind möglich, aber nicht prüfbar. |
 | Innovative Technik | nein | Regeln und Parser, keine KI im Datensatz (KI-Zusammenfassungen sind nicht Teil von v1). |
-| Verhinderung der Rechtsausübung | nein | Betroffene können sich melden (Impressum-E-Mail), und es gibt ein Verfahren (`04-takedown-verfahren.md`). Weil Datenstände unveränderlich sind, wirkt ein Verlangen erst im nächsten Stand; das ist der Punkt, den die Clinic prüfen soll. |
+| Verhinderung der Rechtsausübung | nein | Betroffene können sich melden (Impressum-E-Mail), und es gibt einen Vorschlag für ein Verfahren (`04-takedown-verfahren.md`). **Der Vorschlag ist noch nicht gebaut:** Mit dem heutigen Code kann der Betreiber ein Löschverlangen nicht wirksam erfüllen, weil zurückgehaltene Reden ihren Text im Export behalten (dort, „Was fehlt“, Punkt 1). Bis das gebaut ist, ist diese Einschätzung vorläufig. Weil Datenstände unveränderlich sind, wirkt ein Verlangen erst im nächsten Stand; das ist der Punkt, den die Clinic prüfen soll. |
 
 Gezählt: sicher ein bis zwei Kriterien (sensible Daten; Zusammenführung), drei weitere grenzwertig oder teilweise (Umfang, Bewertung, lit. b).
 

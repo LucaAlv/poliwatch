@@ -16,7 +16,7 @@ ich betreibe als Privatperson, ohne Unternehmen und ohne Einnahmen, ein Open-Dat
 **Was veröffentlicht wird.** Ein Datensatz (SQLite-Datei und CSV-Tabellen mit Datenbeschreibung) und eine statische Website. Beide enthalten, aus öffentlichen Quellen (DIP und Plenarprotokolle des Bundestages, namentliche Abstimmungen auf bundestag.de, Profildaten von abgeordnetenwatch.de unter CC0):
 
 - Namen, Funktion und Fraktion der Abgeordneten sowie Geburtsjahr, Geschlecht, Beruf, Wahlkreis und Bundesland (die letzten fünf aus abgeordnetenwatch.de);
-- den Volltext jeder Rede und jedes Redebeitrags der 18. bis 21. Wahlperiode (seit Oktober 2013, rund 61.600 Reden in 806 Sitzungen), nur die eigenen Worte des Redners, ohne Zwischenrufe und Beifall;
+- den Volltext jeder Rede und jedes Redebeitrags der 18. bis 21. Wahlperiode (seit Oktober 2013, rund 61.600 Reden in 806 Sitzungen), nur die eigenen Worte des Redners, ohne die Zwischenrufe und den Beifall, die das Protokoll als eigene Elemente druckt (in 13 Reden steht „(Beifall“ mitten im Absatz und bleibt stehen);
 - jedes namentliche Abstimmungsergebnis jedes Mitglieds (rund 500.000 Einzelstimmen in 736 Abstimmungen) und daraus berechnete Kennzahlen, etwa ob jemand von der Fraktionsmehrheit abwich;
 - Redner ohne Mandat (Regierungsmitglieder, Bundesrat, Gäste), soweit sie im Protokoll sprechen.
 

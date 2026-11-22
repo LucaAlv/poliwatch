@@ -17,12 +17,12 @@
 |---|---|---|---|
 | T1 | Datensatz „Datenstand“ erstellen und veröffentlichen (SQLite, CSV, Datenbeschreibung, Änderungsliste, Prüfsummen) | Die Arbeit des Bundestages nachvollziehbar und maschinenlesbar machen; Zitierbarkeit | Art. 6 Abs. 1 lit. f; Art. 9 Abs. 2 lit. e; für Dritte in Reden Art. 85 DSGVO i. V. m. § 23 MStV |
 | T2 | Website mit vorberechneten Ansichten (Sitzungen, Abgeordnete, Abstimmungen) | wie T1 | wie T1 |
-| T3 | Berechnete Kennzahlen über Abgeordnete (Fraktionsabweichung bei Abstimmungen, Fakten, Erste Reden) | Einordnung der öffentlichen Tätigkeit | Art. 6 Abs. 1 lit. f; Art. 9 ist offen (siehe `03-dsfa-schwellenwert.md`, Frage 2) |
+| T3 | Berechnete Kennzahlen über Abgeordnete (Fraktionsabweichung bei Abstimmungen, Fakten, Erste Reden) | Einordnung der öffentlichen Tätigkeit | Art. 6 Abs. 1 lit. f; Art. 9 ist offen (Anschreiben `01-anschreiben.md`, Frage 1; `03-dsfa-schwellenwert.md`, Zeile „Bewertung oder Scoring“) |
 | T4 | Korrespondenz mit Betroffenen und Lesern (E-Mail, Auskunft, Berichtigung, Widerspruch, Löschung) | Antworten; Pflichten nach Art. 12 bis 21 | Art. 6 Abs. 1 lit. c und f |
 | T5 | Fehlermeldungen über GitHub Issues | Datenfehler beheben | Art. 6 Abs. 1 lit. f; GitHub ist für die Plattform selbst verantwortlich |
-| T6 | Server-Logs beim Hoster der Website | technischer Betrieb | Sache des Hosters; Auftragsverarbeitung nach Art. 28 vor dem Start der Website. OFFEN: Hoster steht noch nicht fest (TODOS.md, „Site hosting plan“) |
+| T6 | Server-Logs beim Hoster der Website | technischer Betrieb | OFFEN: Rechtsgrundlage noch nicht festgelegt (vorgeschlagen: Art. 6 Abs. 1 lit. f; TODOS.md, Impressum/Lizenz-Liste, Punkt 17: für Server-Logs fehlt sie noch). Der Betreiber bleibt Verantwortlicher; ein Vertrag nach Art. 28 mit dem Hoster als Auftragsverarbeiter kommt vor dem Start der Website hinzu und ersetzt die Rechtsgrundlage nicht. OFFEN: Hoster steht noch nicht fest (TODOS.md, „Site hosting plan“) |
 
-Die Website setzt keine Cookies, enthält keine Analyse- oder Tracking-Werkzeuge und lädt nichts von fremden Servern; sie schreibt nur auf Klick die Wahl des Farbschemas in den `sessionStorage` des Browsers, und auf Seiten mit einer KI-Zusammenfassung deren Ein- oder Ausklappzustand (`datenschutz.html` nennt beide Schlüssel; Rechtsgrundlage dort § 25 Abs. 2 Nr. 2 TDDDG). Die KI-Zusammenfassungen sind nicht Teil von v1, der Referenzbau enthält keine (`PRODUCT.md`).
+Die Website setzt keine Cookies, enthält keine Analyse- oder Tracking-Werkzeuge und lädt nichts von fremden Servern; sie schreibt nur auf Klick die Wahl des Farbschemas in den `sessionStorage` des Browsers, und auf Seiten mit einer KI-Zusammenfassung deren Ein- oder Ausklappzustand (`datenschutz.html` nennt beide Schlüssel; Rechtsgrundlage dort § 25 Abs. 2 Nr. 2 TDDDG). Die KI-Zusammenfassungen sind nicht Teil von v1 (`PRODUCT.md`); der heutige Referenzbau zeigt sie und ihren Schalter aber noch auf rund 4.400 Seiten (TODOS.md, „ADR 0003 legal questions“). Sie fallen mit den Schnitten an der Oberfläche vor dem Start weg.
 
 ## Kategorien von Betroffenen und Daten (Abs. 1 lit. c)
 
@@ -36,7 +36,7 @@ Die Website setzt keine Cookies, enthält keine Analyse- oder Tracking-Werkzeuge
 | Dritte, die in Reden oder Zwischenfragen genannt werden (nicht gezählt, nicht gesucht) | Name und was der Redner über sie sagt, so wie das Protokoll es druckt | Plenarprotokoll-XML | möglich: Gesundheit, Religion, Straftaten (Art. 9, Art. 10); nicht prüfbar, weil das Projekt Namen im Text nicht erfasst |
 | Absender von E-Mails und Meldungen | Adresse, Nachricht, Zeitpunkt | die Betroffenen selbst | nein |
 
-Nicht im Datensatz: Zwischenrufe und Beifall (`<kommentar>` wird nicht gelesen), Anschriften, Kontaktdaten, Fotos, Social-Media-Konten der Abgeordneten. KI-Zusammenfassungen sind nicht Teil von v1.
+Nicht im Datensatz: Zwischenrufe und Beifall, soweit das Protokoll sie als eigene Elemente druckt (`<kommentar>` wird nicht gelesen; in 13 von 61.637 Reden steht „(Beifall“ mitten im Absatz und bleibt im Text, `LICENSE-DATA.md`), Anschriften, Kontaktdaten, Fotos, Social-Media-Konten der Abgeordneten. KI-Zusammenfassungen sind nicht Teil von v1.
 
 Umfang am 2026-11-22: 806 Sitzungen (2013-10-22 bis 2026-11-13), 61.637 Reden, 45.991 Beiträge, 100 zurückgehaltene Reden, 736 namentliche Abstimmungen mit 502.697 Einzelstimmen.
 
@@ -48,14 +48,14 @@ Umfang am 2026-11-22: 806 Sitzungen (2013-10-22 bis 2026-11-13), 61.637 Reden, 4
 | GitHub (Repository, Releases, Issues) | Quellcode, Testdaten, Datenstände | GitHub Inc., USA. OFFEN: Der Betreiber prüft Zertifizierung unter dem EU-US Data Privacy Framework oder Standardvertragsklauseln und trägt das Ergebnis ein |
 | Zenodo (CERN) | geprüfte Datenstände mit DOI; **vorgesehen, noch nicht gebaut** (TODOS.md, „A DOI per release“) | CERN, Schweiz. OFFEN: Angemessenheitsbeschluss für die Schweiz bestätigen |
 | Hoster der Website | Seiten; Zugriffe | Deutschland geplant (TODOS.md). OFFEN: Anbieter, Auftragsverarbeitungsvertrag (Art. 28) |
-| Quellen (DIP, bundestag.de, abgeordnetenwatch.de) | nur Abrufe durch das Projekt; keine personenbezogenen Daten von Betroffenen | – |
+| Quellen (DIP, bundestag.de, abgeordnetenwatch.de) | Abrufe durch das Projekt. Die Suche bei abgeordnetenwatch.de schickt Vor- und Nachname einer Person als Suchparameter in der Adresse (`scripts/abgeordnetenwatch.py`, `_resolve_by_name`, `_get`) | – |
 
 Auch das öffentliche Repository enthält Daten: 88 XML-Dateien unter `tests/fixtures/`, davon 85 mit Plenarprotokoll-Wurzel (viele gekürzt oder bearbeitet, um einen Fall zu testen; ob und wie viele Namen echter Dritter darin stehen, ist nicht geprüft) und Namen mit Protokoll-URLs in `scripts/person_corrections.json` (öffentlich seit 2026-11-06). Was das für Löschverlangen heißt, steht in `04-takedown-verfahren.md`, „Was fehlt“, Punkt 6.
 
 ## Fristen für die Löschung (Abs. 1 lit. f)
 
 - Datenstände: unbefristet, als versioniertes Archiv, damit Zitate nachprüfbar bleiben (`datenschutz.html`; `docs/release-policy.md`: „A release never changes“). Das ist die Rechtfertigung nach Art. 17 Abs. 3 lit. a DSGVO, die die Clinic prüfen soll.
-- Lokaler Bestand des Betreibers (Store und Cache, einschließlich des Protokoll-XML): bleibt, solange das Projekt läuft; wird bei jedem Neuaufbau ersetzt.
+- Lokaler Bestand des Betreibers: Der Store wird bei einem Neuaufbau aus dem Cache neu geschrieben. Der Cache (Protokoll-XML und Zwischenergebnisse) bleibt, solange das Projekt läuft; er ist die Quelle jedes Neuaufbaus (`04-takedown-verfahren.md`, „Was fehlt“, Punkt 6).
 - E-Mails von Betroffenen: [OFFEN: Vorschlag des Entwurfs: drei Jahre nach Abschluss des Falls, weil Löschungen nachweisbar sein müssen; der Betreiber entscheidet].
 - Hoster-Logs: [OFFEN: Die Dauer nennt der Hoster; im Betreiberdatei-Feld `hosting.log_retention`].
 - Einzelne Reden auf begründetes Verlangen: nach `04-takedown-verfahren.md`.
