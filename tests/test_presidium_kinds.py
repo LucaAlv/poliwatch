@@ -276,7 +276,7 @@ class LoaderTests(unittest.TestCase):
         with _support.shipped_reviewed_units() as units:
             kinds = [e['kind'] for entries in units.values() for e in entries]
         self.assertEqual((kinds.count('procedural'), kinds.count('ansprache'), kinds.count('sitzungsleitung'),
-                          kinds.count('withhold')), (113, 14, 9, 15))  # withhold: 5 N7 + 10 N8
+                          kinds.count('withhold')), (117, 14, 9, 15))  # withhold: 5 N7 + 10 N8
 
     def test_a_broken_list_stops_the_entry_points_before_any_work(self):
         import build_dip_pulse_site as build
@@ -415,6 +415,82 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(text=text[:40]):
                 top = top_of(parse(rede('ID1', MEMBER_A, f'<p>{text}</p>')))
                 self.assertEqual(len(top['speeches']), 1)
+
+
+KAUDER = redner('11001074', 'Kauder', 'CDU/CSU', first='Volker')
+LAMMERT_MDB = redner('11001274', 'Lammert', 'CDU/CSU', first='Norbert', title='Dr.')
+NOMINATION_REASON = ("a Fraktion's nomination (Wahlvorschlag) for the Präsident's election, printed as the "
+                     "nominating MdB's own <rede>: a motion in the election, not a Rede (ADR 0004 amendment "
+                     "2026-11-21, O13)")
+O13_UNITS = [('18/1', 'ID1800100100', '11001074'), ('19/1', 'ID19100900', '11001074'),
+             ('20/1', 'ID20100700', '11003599'), ('21/1', 'ID21101200', '11002735')]
+
+
+class NominationTests(unittest.TestCase):
+    """O13: a Fraktion's nomination printed as the nominating MdB's own <rede> is procedural
+    (ADR 0004 amendment 2026-11-21, docs/plans/o13-nominations.md)."""
+
+    def statuses(self, body, entries, **kwargs):
+        statuses = {}
+        original = dip.reconcile_reden
+
+        def capture(sitting_, inventory, recorded, split_parts):
+            statuses.update(recorded)
+            return original(sitting_, inventory, recorded, split_parts)
+
+        with unittest.mock.patch.object(dip, 'reconcile_reden', capture):
+            parsed = parse(body, entries, heading='Wahl des Präsidenten', **kwargs)
+        return parsed, statuses
+
+    def test_a_listed_nomination_is_procedural_and_no_rede(self):
+        # 19/1 TOP 3's shape: the nomination, then the Alterspräsident's own <rede>.
+        body = (rede('ID19100900', KAUDER,
+                     '<p>Die CDU/CSU-Bundestagsfraktion schlägt Herrn Dr. Wolfgang Schäuble vor.</p>'
+                     '<kommentar>(Beifall bei der CDU/CSU)</kommentar>')
+                + rede('ID19101000', SOLMS, '<p>Weitere Vorschläge sehe ich nicht. Wir kommen zur Wahl.</p>'))
+        parsed, statuses = self.statuses(body, [entry('ID19100900', '11001074', 'procedural', reason=NOMINATION_REASON),
+                                                entry('ID19101000', '11002190', 'sitzungsleitung')])
+        top = top_of(parsed)
+        self.assertEqual((top['speeches'], top['contributions'], top['withheld']), ([], [], []))
+        self.assertEqual([(d['source_rede_id'], d['treatment'], d['evidence'], d['text'])
+                          for d in top['xml_turn_diagnostics'] if d['source_rede_id'] == 'ID19100900'],
+                         [('ID19100900', 'procedural', 'procedural (reviewed): ' + NOMINATION_REASON,
+                           'Die CDU/CSU-Bundestagsfraktion schlägt Herrn Dr. Wolfgang Schäuble vor.')])
+        self.assertEqual(statuses['ID19100900'], 'procedural')
+        # Unlisted, the same nomination is a Rede.
+        self.assertEqual([s['rede_id'] for s in top_of(parse(body, [entry('ID19101000', '11002190', 'sitzungsleitung')],
+                                                             heading='Wahl des Präsidenten'))['speeches']],
+                         ['ID19100900'])
+
+    def test_a_listed_nomination_holding_the_whole_election_stores_nothing_else(self):
+        # 18/1 TOP 2's shape (H5): the chair's turns and the elected MdB's nested
+        # acceptance are printed inside the nominating MdB's <rede>.
+        chair = '<name>Alterspräsident Dr. Heinz Riesenhuber: </name>'
+        body = rede('ID1800100100', KAUDER,
+                    '<p>Herr Alterspräsident, ich schlage im Namen der CDU/CSU-Bundestagsfraktion unseren Kollegen '
+                    'Professor Dr. Norbert Lammert vor.</p><kommentar>(Beifall im ganzen Hause)</kommentar>'
+                    + chair + '<p>Ich sehe keine weiteren Vorschläge. Ich eröffne die Wahl.</p>'
+                    + chair + '<p>Dr. Norbert Lammert ist gewählt.</p>'
+                    '<p>Herr Dr. Lammert, ich frage Sie: Nehmen Sie die Wahl an?</p>'
+                    + LAMMERT_MDB + '<p>Herr Alterspräsident, lieber Kollege Riesenhuber, ich nehme die Wahl gerne an.</p>'
+                    + chair + '<p>Herr Präsident, ich gratuliere Ihnen herzlich.</p>')
+        parsed, statuses = self.statuses(body, [entry('ID1800100100', '11001074', 'procedural', '18/1',
+                                                      NOMINATION_REASON)], wp=18)
+        top = top_of(parsed)
+        self.assertEqual((top['speeches'], top['contributions'], top['withheld']), ([], [], []))
+        self.assertEqual(statuses, {'ID1800100100': 'procedural'})
+        self.assertEqual({d['treatment'] for d in top['xml_turn_diagnostics']}, {'procedural'})
+        self.assertIn('election acceptance: Herr Dr. Lammert, ich frage Sie: Nehmen Sie die Wahl an?',
+                      [d['evidence'] for d in top['xml_turn_diagnostics']])
+
+    def test_the_shipped_list_holds_the_four_nominations(self):
+        entries = json.loads((Path(__file__).resolve().parents[1] / 'scripts' / 'reviewed_units.json')
+                             .read_text(encoding='utf-8'))['entries']
+        listed = {(e['sitting'], e['rede_id'], e['redner_id']): e for e in entries}
+        for unit in O13_UNITS:
+            with self.subTest(unit=unit):
+                self.assertIn(unit, listed)
+                self.assertEqual((listed[unit]['kind'], listed[unit]['reason']), ('procedural', NOMINATION_REASON))
 
 
 class OathTests(unittest.TestCase):
@@ -629,10 +705,10 @@ class SiteTests(unittest.TestCase):
         self.assertNotIn('0 von 0', page)
         self.assertNotIn('Redeanteil <strong>', page)
         self.assertIn('Keine Reden in dieser Sitzung: Was das Protokoll als Rede druckt, sind Verfahrensschritte '
-                      '(Annahme einer Wahl, Eid, Sitzungsleitung) – kein Ranking möglich.', page)
+                      '(Wahlvorschlag, Annahme einer Wahl, Eid, Sitzungsleitung) – kein Ranking möglich.', page)
         self.assertIn('Keine Reden in dieser Sitzung, daher kein Rede- und kein Textanteil.', page)
         self.assertIn('Keine Reden: Was das Protokoll hier als Rede druckt, sind Verfahrensschritte '
-                      '(Annahme einer Wahl, Eid, Sitzungsleitung), die nicht als Rede zählen.', page)
+                      '(Wahlvorschlag, Annahme einer Wahl, Eid, Sitzungsleitung), die nicht als Rede zählen.', page)
         for recipe_id in ('r2-textanteil-fraktion', 'r5-vorgaenge-meiste-reden'):  # r1 needs the export's mp_canonical
             recipe = build.RECIPES_BY_ID[recipe_id]
             with self.subTest(recipe=recipe_id):
@@ -722,7 +798,9 @@ class CensusReplayTests(unittest.TestCase):
                     for row in sitting_rows:
                         if row['marker']:
                             continue  # a nested turn (Zwischenfrage), unchanged by this rule
-                        if row['proposed_kind'] == 'procedural':
+                        # The census left the nominations open as 'nomination'; O13 (ADR 0004
+                        # amendment 2026-11-21) made them procedural.
+                        if row['proposed_kind'] in ('procedural', 'nomination'):
                             self.assertIn(row['rede_id'], procedural, row['rede_id'])
                             self.assertNotIn(row['rede_id'], speeches, row['rede_id'])
                         elif row['parser_today'] == 'Rede':

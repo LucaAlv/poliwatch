@@ -1,6 +1,6 @@
 # O13: a nomination printed as a `<rede>` is procedural
 
-**Status (2026-11-22):** plan, not built. The owner decided O13 on 2026-11-21 (option B): a Fraktion's nomination for the Präsident's election that the protocol prints as the nominating MdB's own `<rede>` is procedural and no Rede (ADR 0004, "Amendment 2026-11-21: a nomination printed as a `<rede>` is procedural"; TODOS.md "ADR 0004 follow-ups", O13). Main is `49f4ec2`, v0.46.40.0: store schema 15, export format 21, speech rule 10.
+**Status (2026-11-22):** built on branch `claude/o13-nominations-da1e12`; the replay matched section 3 exactly. The owner decided O13 on 2026-11-21 (option B): a Fraktion's nomination for the Präsident's election that the protocol prints as the nominating MdB's own `<rede>` is procedural and no Rede (ADR 0004, "Amendment 2026-11-21: a nomination printed as a `<rede>` is procedural"; TODOS.md "ADR 0004 follow-ups", O13). Main is `49f4ec2`, v0.46.40.0: store schema 15, export format 21, speech rule 10.
 
 Every figure below was measured on a `cp -cR` copy of the reference store (806 sittings, replayed on `49f4ec2`) after an `--offline --repersist` with the four entries of section 2 applied as an uncommitted scratch edit, against a second untouched copy (`scripts/compare_store_values.py`). The copies are deleted.
 

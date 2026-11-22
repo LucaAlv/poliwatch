@@ -1944,7 +1944,7 @@ def render_top_withheld(item: dict[str, Any]) -> str:
 #: The parser's evidence on a reviewed procedural or Sitzungsleitung <rede> (ADR 0004).
 REVIEWED_PROCEDURAL_EVIDENCE = ("procedural (reviewed)", "Sitzungsleitung (reviewed)")
 NO_REDEN_PROCEDURAL = ("Keine Reden: Was das Protokoll hier als Rede druckt, sind Verfahrensschritte "
-                       "(Annahme einer Wahl, Eid, Sitzungsleitung), die nicht als Rede zählen.")
+                       "(Wahlvorschlag, Annahme einer Wahl, Eid, Sitzungsleitung), die nicht als Rede zählen.")
 
 
 def reviewed_procedural(item: dict[str, Any]) -> bool:
@@ -3199,7 +3199,7 @@ def render_html(
         ranking_body = '<p class="ranking-empty">Keine Tagesordnungspunkte im XML-Protokoll gefunden.</p>'
     elif not has_ranking and any(reviewed_procedural(item) for item in items):
         ranking_body = ('<p class="ranking-empty">Keine Reden in dieser Sitzung: Was das Protokoll als Rede druckt, '
-                        'sind Verfahrensschritte (Annahme einer Wahl, Eid, Sitzungsleitung) – kein Ranking möglich.</p>')
+                        'sind Verfahrensschritte (Wahlvorschlag, Annahme einer Wahl, Eid, Sitzungsleitung) – kein Ranking möglich.</p>')
     elif not has_ranking:
         ranking_body = '<p class="ranking-empty">Keine Reden im XML extrahiert – kein Ranking möglich.</p>'
     else:

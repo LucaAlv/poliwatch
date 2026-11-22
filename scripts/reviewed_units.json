@@ -2,6 +2,13 @@
   "entries": [
     {
       "sitting": "18/1",
+      "rede_id": "ID1800100100",
+      "redner_id": "11001074",
+      "kind": "procedural",
+      "reason": "a Fraktion's nomination (Wahlvorschlag) for the Präsident's election, printed as the nominating MdB's own <rede>: a motion in the election, not a Rede (ADR 0004 amendment 2026-11-21, O13)"
+    },
+    {
+      "sitting": "18/1",
       "rede_id": "ID1800100600",
       "redner_id": "11000907",
       "kind": "procedural",
@@ -352,6 +359,13 @@
     },
     {
       "sitting": "19/1",
+      "rede_id": "ID19100900",
+      "redner_id": "11001074",
+      "kind": "procedural",
+      "reason": "a Fraktion's nomination (Wahlvorschlag) for the Präsident's election, printed as the nominating MdB's own <rede>: a motion in the election, not a Rede (ADR 0004 amendment 2026-11-21, O13)"
+    },
+    {
+      "sitting": "19/1",
       "rede_id": "ID19101000",
       "redner_id": "11002190",
       "kind": "sitzungsleitung",
@@ -653,6 +667,13 @@
     },
     {
       "sitting": "20/1",
+      "rede_id": "ID20100700",
+      "redner_id": "11003599",
+      "kind": "procedural",
+      "reason": "a Fraktion's nomination (Wahlvorschlag) for the Präsident's election, printed as the nominating MdB's own <rede>: a motion in the election, not a Rede (ADR 0004 amendment 2026-11-21, O13)"
+    },
+    {
+      "sitting": "20/1",
       "rede_id": "ID20100800",
       "redner_id": "11004006",
       "kind": "procedural",
@@ -853,6 +874,13 @@
       "redner_id": "999990146",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "21/1",
+      "rede_id": "ID21101200",
+      "redner_id": "11002735",
+      "kind": "procedural",
+      "reason": "a Fraktion's nomination (Wahlvorschlag) for the Präsident's election, printed as the nominating MdB's own <rede>: a motion in the election, not a Rede (ADR 0004 amendment 2026-11-21, O13)"
     },
     {
       "sitting": "21/1",
