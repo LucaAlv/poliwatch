@@ -339,26 +339,22 @@ def github_repository(url: str) -> str | None:
     return f"{match[1]}/{match[2]}"
 
 
+# The remote URL forms that name a github.com repository, matched literally: no
+# percent-encoding, query or fragment, so no URL that git resolves to another host
+# can match. https may carry plain credentials (user or user:token).
+_GITHUB_REMOTE = re.compile(
+    r"(?:https://(?:[A-Za-z0-9._~-]+(?::[A-Za-z0-9._~-]+)?@)?github\.com/"
+    r"|git@github\.com:"
+    r"|ssh://git@github\.com/)"
+    r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?"
+)
+
+
 def remote_github_repository(url: str) -> str | None:
-    """owner/name of a git remote URL on github.com (https with any credentials,
-    git@github.com:… or ssh://git@github.com/…, a trailing .git dropped), or None.
-    An https URL is parsed, so only a host of exactly github.com counts."""
-    url = url.strip()
-    scp = re.fullmatch(r"git@github\.com:([^?#\s]+)", url)
-    if scp:
-        return github_repository(f"https://github.com/{scp[1]}")
-    try:
-        parts = urllib.parse.urlsplit(url)
-        port = parts.port
-    except ValueError:
-        return None
-    if (parts.scheme, parts.hostname, port, parts.query, parts.fragment) == ("https", "github.com", None, "", "") or (
-        parts.scheme == "ssh" and parts.hostname == "github.com" and parts.username == "git" and port is None and not parts.query and not parts.fragment
-    ):
-        if "#" in url or "?" in url:
-            return None
-        return github_repository(f"https://github.com{parts.path}")
-    return None
+    """owner/name of a git remote URL on github.com (https with plain credentials,
+    git@github.com:… or ssh://git@github.com/…, a trailing .git dropped), or None."""
+    match = _GITHUB_REMOTE.fullmatch(url.strip())
+    return github_repository(f"https://github.com/{match[1]}") if match else None
 
 
 def _url_host(url: str) -> str:
