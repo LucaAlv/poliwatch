@@ -100,7 +100,8 @@
     "tests/_registry_fixture.py": ["tests/test_registry_contracts.py", "tests/test_registry_evidence.py", "tests/test_registry_invariants.py", "tests/test_shared_redner_ids.py", "tests/test_private_staging.py"],
     "scripts/**/*.py": ["tests/test_code_rules.py"],
     "scripts/sqlite_open.py": ["tests/test_code_rules.py", "tests/test_daten_export.py", "tests/test_facts.py", "tests/test_compare_store_values.py"],
-    "tests/code_rules_baseline.json": ["tests/test_code_rules.py"]
+    "tests/code_rules_baseline.json": ["tests/test_code_rules.py"],
+    "docs/plans/name-tag-speakers/make_entries.py": ["tests/test_name_speakers.py"]
   },
   "empty_lanes": ["docs/plans/**/*.json", "docs/plans/**/*.txt", "docs/plans/**/*.tsv", "docs/plans/**/*.patch"]
 }

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.42.0] - 2026-11-22
+
+Speeches and questions that the WP 18 and 19 protocols print in the chair's element, although someone else speaks, are now stored for the person who spoke. Before, these 170 turns in 51 sittings (80,381 words) were read as chair text and counted nowhere. Reden go from 61,555 to 61,637 (WP 18 +80 with 73,265 words, WP 19 +2), Beiträge from 45,928 to 45,991, and withheld Reden from 102 to 100. Fact values move in 330 of 1,944 (period, metric) pairs, and 2 more weeks become publishable (211 → 213). A store built before this version owes one `--offline --repersist`; the speech rule goes from 10 to 11 and the export format from 21 to 22.
+
+### Changed
+
+- **A speaker the protocol prints like the chair is counted as who they are.** Sylvia Pantel's, Gülistan Yüksel's and Alois Rainer's first Reden in 18/30, Alexander S. Neu's Rede in 18/10, Johanna Wanka's Befragung reports and answers, and 160 more turns now count as the Reden, Zwischenfragen, Befragung questions and answers or Fragestunde questions they are. Each one is listed by person and kind in the reviewed list (145 entries). Oath answers stay procedural steps, Wolf Biermann's address at the 18/64 Gedenkstunde is stored as an Ansprache with no Redner-ID, and Dietmar Bartsch's remark in 18/181 is stored nowhere.
+- **Two Reden are no longer withheld.** 18/6 `ID1800602300` and 18/36 `ID1803601400` were held back because a turn inside them was lost; they now count (3,054 words). 18/104 `ID1810402200`, stored before as an empty Rede with no speaker, now holds Christian Kühn's Rede.
+- **Ids that move.** Converting a tag into a speaker marker shifts the marker numbers after it, which renames 6 nested Beiträge and the withheld unit `ID1802902700:2`, now `ID1802902700:2:2:2`. A Rede printed outside any `<rede>` gets the id `N` plus its tag's position in the sitting, for example `N39` in 18/10.
+- **A speaker printed this way that the list does not name is never counted unread.** Inside a Rede it withholds that Rede with the new reason `unreviewed_name_speaker`; outside any Rede it stops the sitting, and the build and the fetch now say to add a reviewed-list entry instead of calling the XML corrupt. None of the 806 held sittings has one.
+- Blankau-Rosenfeldt, whom the Bundestag gave no Redner-ID, is bound to her DIP person (1828). The method, ADR 0004's amendment and the source error (E13) describe the rule.
+
 ## [0.46.41.0] - 2026-11-22
 
 A Fraktion's nomination for the Bundestagspräsident's election no longer counts as a Rede where the protocol prints it as the nominating MdB's own speech. Four nominations leave the Reden: Volker Kauder's in 18/1 and 19/1, Rolf Mützenich's in 20/1 and Friedrich Merz's in 21/1. Reden go from 61,559 to 61,555 (CDU/CSU −3, SPD −1) and speech characters drop by 474. A store built before this version owes one `--offline --repersist`, which re-reads these four sittings from their cached XML.

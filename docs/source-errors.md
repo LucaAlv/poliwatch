@@ -182,6 +182,15 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** in the 806 sittings of WP 18–21 held (the reference store, with 18/62, 18/90 and 21/107 to 21/109), this is the only `<name>` whose whole text stands in parentheses. Counted 2026-11-21.
 - **Our side:** read as a `<kommentar>` by `mark_stage_direction_names` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-20, stage directions; approved by the owner on 2026-11-21). Without the rule her last two paragraphs (52 words) were read as chair text and stored nowhere.
 
+### E13. WP 18/19: speakers who are not the chair are printed in the chair's element
+
+- **Status:** verified 2026-11-20 (census of [name-tag-speakers.md](plans/name-tag-speakers.md)), on the XML of the reference store; rule built 2026-11-22.
+- **Source:** for example `https://dserver.bundestag.de/btp/18/18030.xml`, Einzelplan 15, inside `<rede id="ID1803002900">` (Sönke Rix, SPD): after "Jetzt hat als nächste Rednerin die Kollegin Sylvia Pantel das Wort." the source prints `<name>Sylvia Pantel (CDU/CSU) : </name>` and her whole first Rede, then Gülistan Yüksel's and Alois Rainer's the same way. In 18/10, Tagesordnungspunkt 3, Alexander S. Neu's Rede stands as `<name>Dr. Alexander S. Neu (DIE LINKE) : </name>` outside any `<rede>`.
+- **What is wrong:** `<name>` holds the label of a chair turn ("Vizepräsidentin Edelgard Bulmahn:"). These tags name a speaker who does not chair. Elsewhere the source prints such a speaker with a speaker marker, `<p klasse="redner"><redner id="…">`, and a Rede given the floor separately as a `<rede>` of its own.
+- **What it should be:** a speaker marker with the person's Redner-ID, and for a whole Rede a `<rede>` of its own.
+- **Scale:** 170 turns, 80,381 words, in 51 sittings: 167 in WP 18 (18/3 to 18/223), and 19/99, 19/104 and 19/125. WP 20 and 21 print none. Counted 2026-11-20 over 803 files and again 2026-11-22 over the 806 held.
+- **Our side:** each turn is listed in `scripts/reviewed_units.json` (kinds `name_*`) and rewritten into a speaker marker by `mark_name_speakers` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-22). Before the rule, the words were stored nowhere, 18/6 `ID1800602300` and 18/36 `ID1803601400` were withheld, and 18/104 `ID1810402200` was an empty Rede with no speaker.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)

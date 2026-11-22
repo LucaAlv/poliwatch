@@ -731,6 +731,9 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     name = redner.find("name")
     if name is None:
         return {"xml_redner_id": redner.attrib.get("id"), "display_name": elem_text(redner)}
+    # A speaker printed as <name> whom the Bundestag gave no Redner-ID is bound
+    # by a DIP Personenkennung (mark_name_speakers, "dip:<n>").
+    dip_person = (redner.attrib.get("id") or "").partition("dip:")[2] or None
 
     title = child_text(name, "titel")
     first = child_text(name, "vorname")
@@ -752,8 +755,8 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
         fraction = derive.printed_fraktion(fraction, role_long or role_short)
     except derive.UnknownFraktionError as exc:
         raise derive.UnknownFraktionError(f"{exc} at redner {redner.attrib.get('id')}") from None
-    return {
-        "xml_redner_id": redner.attrib.get("id"),
+    speaker = {
+        "xml_redner_id": None if dip_person else redner.attrib.get("id"),
         "display_name": display_name,
         "first_name": first or None,
         "last_name": last or None,
@@ -761,6 +764,9 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
         "role": role_long,
         "role_short": role_short,
     }
+    if dip_person:
+        speaker["dip_person_id"] = dip_person
+    return speaker
 
 
 def parse_toc(root: ET.Element) -> list[dict[str, Any]]:
@@ -807,7 +813,10 @@ class SpeechText(NamedTuple):
 
 
 # Whoever a ``<name>`` element introduces is the Sitzungsleitung ("Präsidentin
-# Julia Klöckner:"): the XML uses it for nobody else. Compared by identity.
+# Julia Klöckner:"). WP 18/19 print some other speakers there too; each is
+# listed and rewritten into a speaker marker before this is read
+# (``mark_name_speakers``), and an unlisted one withholds its unit, so a
+# ``<name>`` still read here is the chair's. Compared by identity.
 _SITZUNGSLEITUNG = object()
 # ponytail: reviewed grant wording only; extend with source-backed regressions.
 NESTED_GRANT_EVIDENCE = re.compile(
@@ -999,6 +1008,221 @@ def mark_stage_direction_names(root: ET.Element) -> None:
             name.tag = "kommentar"
 
 
+# ADR 0004 amendment (2026-11-22, docs/plans/name-tag-speakers.md): a <name>
+# tag is the chair's when it opens with a presidium role, when it ends with the
+# name of someone a presidium tag of this sitting names, or when it stands in
+# parentheses (a stage direction; mark_stage_direction_names has renamed those
+# by now). Any other <name> prints a speaker who is not the chair.
+NAME_TAG_CHAIR_ROLE = re.compile(r"^(?:Alters|Vize)?[Pp]räsident(?:in)?\b")
+_NAME_TAG_CHAIR_NAME = re.compile(r"^(?:Alters|Vize)?[Pp]räsident(?:in)?\s+(?:Dr\.\s+)?(?P<name>.+)$")
+# The Beitrag kinds a listed speaker marker must be given by the rules.
+NAME_KIND_CONTRIBUTION = {
+    "name_zwischenfrage": speech_kinds.ZWISCHENFRAGE,
+    "name_befragung_frage": speech_kinds.BEFRAGUNG_FRAGE,
+    "name_befragung_antwort": speech_kinds.BEFRAGUNG_ANTWORT,
+    "name_fragestunde_frage": speech_kinds.FRAGESTUNDE_FRAGE,
+}
+#: Where each name kind may stand: inside a source <rede>, or outside any.
+NAME_KINDS_IN_REDE = frozenset({"name_rede", "name_zwischenfrage", "name_befragung_frage", "name_befragung_antwort",
+                                "name_own_words", "name_procedural"})
+NAME_KINDS_OUTSIDE = frozenset({"name_rede", "name_fragestunde_frage", "name_procedural", "name_ansprache", "name_remark"})
+#: What to do when a sitting is refused for an unlisted speaker printed as
+#: ``<name>`` outside any ``<rede>``: a re-fetch returns the same XML.
+UNLISTED_NAME_SPEAKER_FIX = ("list the speaker in scripts/reviewed_units.json with a name_* kind, rede_id N<ordinal> "
+                             "(ADR 0004 amendment 2026-11-22, docs/plans/name-tag-speakers.md), then re-run")
+
+
+class UnlistedNameSpeakerError(ValueError):
+    """A speaker printed as ``<name>`` outside any ``<rede>`` with no reviewed
+    entry: there is no unit to withhold, so the sitting is refused. The XML is
+    valid; the reviewed list lacks the entry (``UNLISTED_NAME_SPEAKER_FIX``)."""
+
+
+def name_tag(name: ET.Element) -> str:
+    """A ``<name>`` element's printed tag without its colon: "Sylvia Pantel (CDU/CSU)"."""
+    return elem_text(name).strip(" :")
+
+
+def name_tags(root: ET.Element) -> list[ET.Element]:
+    """The Sitzungsverlauf's ``<name>`` elements in source order: the tag
+    elements, not a structured name inside ``<redner>``. An entry outside any
+    ``<rede>`` names one by its 1-based position here, ``N<ordinal>``."""
+    verlauf = root.find("sitzungsverlauf")
+    return [name for name in verlauf.iter("name") if len(name) == 0] if verlauf is not None else []
+
+
+def chair_tag(tag: str, chairs: set[str]) -> bool:
+    return bool(NAME_TAG_CHAIR_ROLE.match(tag)) or tag.startswith("(") or any(tag.endswith(chair) for chair in chairs)
+
+
+def sitting_chairs(tags: list[ET.Element]) -> set[str]:
+    """The names a presidium tag of this sitting prints ("Edelgard Bulmahn")."""
+    return {match.group("name") for match in (_NAME_TAG_CHAIR_NAME.match(name_tag(name)) for name in tags) if match}
+
+
+def name_tag_marker(tag: str, redner_id: str, tail: str | None) -> ET.Element:
+    """A speaker marker for a tag printed as ``<name>``, as the source prints one:
+    the name fields read from the tag, the tag itself as the label. A role after
+    the comma ("Heiko Maas, Bundesminister der Justiz …") stays in the label,
+    where ``speech_kinds.effective_role`` reads printed roles; a Fraktion in
+    parentheses ends a tag without one."""
+    rest, fraktion = tag, None
+    if "," not in tag:
+        match = re.fullmatch(r"(?P<rest>.*?)\s*\(\s*(?P<fraktion>[^()]*?)\s*\)", tag)
+        if match:
+            rest, fraktion = match.group("rest"), match.group("fraktion")
+    rest = rest.split(",", 1)[0]
+    place = re.fullmatch(r"(?P<rest>.*?)\s*\(\s*(?P<ort>[^()]*?)\s*\)", rest)
+    if place:
+        rest = place.group("rest")
+    title = re.match(r"(?:(?:Dr\.|Prof\.)\s*)+", rest)
+    words = rest[title.end() if title else 0:].split()
+    if not words:
+        raise ValueError(f"<name> {tag!r} names no person")
+    name = ET.Element("name")
+    for field, value in (("titel", title.group().strip() if title else ""), ("vorname", " ".join(words[:-1])),
+                         ("nachname", words[-1]), ("ortszusatz", f"({place.group('ort')})" if place else ""),
+                         ("fraktion", fraktion or "")):
+        if value:
+            ET.SubElement(name, field).text = value
+    marker = ET.Element("p", {"klasse": "redner"})
+    redner = ET.SubElement(marker, "redner", {"id": redner_id})
+    redner.append(name)
+    redner.tail = f"{tag}: "
+    marker.tail = tail
+    return marker
+
+
+def mark_name_speakers(root: ET.Element, entries: list[dict[str, str]], created: set[str]) -> tuple[
+        dict[int, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """ADR 0004 amendment (2026-11-22): rewrite each ``<name>`` that prints a
+    speaker who is not the chair, by its entry in ``scripts/reviewed_units.json``.
+
+    Inside a ``<rede>`` (an entry names the host ``<rede>`` and the tag), a Rede,
+    Beitrag or own-words tag becomes a speaker marker of the entry's Redner-ID,
+    in place; a Rede's marker carries ``listed_kind="rede"``, so
+    ``split_nested_reden`` splits there. Outside any ``<rede>`` (an entry
+    ``N<ordinal>``), a Rede is wrapped into ``<rede id="N<ordinal>">`` up to the
+    next tag, marker or ``<rede>`` (its id goes into ``created``), and a
+    Fragestunde question becomes a flat marker. An oath answer becomes a
+    procedural diagnostic, an invited guest's address an Ansprache with no
+    Redner-ID, and a remark nothing.
+
+    An unlisted tag inside a ``<rede>`` is marked ``unreviewed_name``, so the
+    unit that holds it is withheld; one outside any ``<rede>`` refuses the
+    sitting (``ValueError``). An entry no tag matches, or one whose kind cannot
+    stand where its tag stands, stops the run (``ReviewedUnitsError``).
+
+    Returns the procedural diagnostics by TOP (``id`` of the element) and the
+    Ansprachen, one per guest and parent element.
+    """
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    tags = name_tags(root)
+    chairs = sitting_chairs(tags)
+    listed = {(entry["rede_id"], entry["name"]): entry for entry in entries}
+    matched: set[tuple[str, str]] = set()
+    parents = {child: parent for parent in root.iter() for child in parent}
+    diagnostics: dict[int, list[dict[str, Any]]] = {}
+    ansprachen: dict[tuple[int, str], dict[str, Any]] = {}
+    wraps: list[tuple[ET.Element, str]] = []
+
+    def turn_after(element: ET.Element) -> list[str]:
+        parent = parents[element]
+        children = list(parent)
+        paragraphs = []
+        for following in children[children.index(element) + 1:]:
+            if following.tag in ("name", "rede") or following.get("klasse") == "redner":
+                break
+            if following.tag == "p" and elem_text(following):
+                paragraphs.append(elem_text(following))
+        return paragraphs
+
+    for ordinal, element in enumerate(tags, 1):
+        tag = name_tag(element)
+        if chair_tag(tag, chairs):
+            continue
+        host, node = None, parents.get(element)
+        while node is not None and host is None:
+            host = node if node.tag == "rede" else None
+            node = parents.get(node)
+        key = (host.get("id") if host is not None else f"N{ordinal}", tag)
+        entry = listed.get(key)
+        where = f"{sitting} {key[0]} <name>{tag}</name>"
+        if entry is None:
+            if host is None:
+                raise UnlistedNameSpeakerError(f"{where}: a speaker printed as <name> outside any <rede> has no entry in "
+                                 "scripts/reviewed_units.json (ADR 0004)")
+            element.set("unreviewed_name", tag)
+            continue
+        matched.add(key)
+        kind = entry["kind"]
+        if kind not in (NAME_KINDS_IN_REDE if host is not None else NAME_KINDS_OUTSIDE):
+            raise reviewed_units.ReviewedUnitsError(
+                f"scripts/reviewed_units.json: {where}: a {kind} entry cannot stand "
+                + ("inside a <rede>" if host is not None else "outside any <rede>"))
+        top = next((node for node in (parents.get(element), parents.get(parents.get(element)))
+                    if node is not None and node.tag == "tagesordnungspunkt"), None)
+        if kind == "name_remark":
+            continue
+        if kind == "name_procedural":
+            diagnostics.setdefault(id(top), []).append({
+                "source_rede_id": key[0] if host is not None else None, "marker_ordinal": ordinal,
+                "speaker": {"xml_redner_id": None, "display_name": tag}, "text": clean_text(" ".join(turn_after(element))),
+                "evidence": "procedural (reviewed <name> speaker): " + entry["reason"], "treatment": "procedural"})
+            continue
+        if kind == "name_ansprache":
+            parent = parents[element]
+            paragraphs = turn_after(element)
+            unit = ansprachen.get((id(parent), tag))
+            if unit is None:
+                ansprachen[(id(parent), tag)] = contribution_unit(
+                    speech_kinds.ANSPRACHE, f"N{ordinal}", None, 0, {"xml_redner_id": None, "display_name": tag},
+                    paragraphs, None)
+            else:
+                ansprachen[(id(parent), tag)] = contribution_unit(
+                    speech_kinds.ANSPRACHE, unit["rede_id"], None, 0, unit["speaker"], unit["paragraphs"] + paragraphs, None)
+            continue
+        redner_id = entry["redner_id"]
+        if kind == "name_own_words":
+            owner = redner_key(host.find("./p[@klasse='redner']/redner"))
+            if owner != redner_id:
+                raise reviewed_units.ReviewedUnitsError(
+                    f"scripts/reviewed_units.json: {where}: own words of Redner-ID {redner_id}, "
+                    f"but the <rede> is owned by {owner}; the entry is stale or misapplied")
+        marker = name_tag_marker(tag, redner_id, element.tail)
+        if kind == "name_rede":
+            marker.find("redner").set("listed_kind", "rede")
+        elif kind in NAME_KIND_CONTRIBUTION:
+            marker.find("redner").set("listed_kind", NAME_KIND_CONTRIBUTION[kind])
+        parent = parents[element]
+        parent.insert(list(parent).index(element), marker)
+        parent.remove(element)
+        parents[marker] = parent
+        if kind == "name_rede" and host is None:
+            if parent.tag != "tagesordnungspunkt":
+                raise reviewed_units.ReviewedUnitsError(
+                    f"scripts/reviewed_units.json: {where}: a Rede outside any <rede> must stand in a TOP, not <{parent.tag}>")
+            wraps.append((marker, f"N{ordinal}"))
+    for marker, rid in wraps:
+        parent = parents[marker]
+        children = list(parent)
+        start = children.index(marker)
+        end = next((index for index in range(start + 1, len(children))
+                    if children[index].tag in ("name", "rede") or children[index].get("klasse") == "redner"), len(children))
+        rede = ET.Element("rede", {"id": rid})
+        for moved in children[start:end]:
+            parent.remove(moved)
+            rede.append(moved)
+        parent.insert(start, rede)
+        created.add(rid)
+    stale = sorted(set(listed) - matched)
+    if stale:
+        raise reviewed_units.ReviewedUnitsError(
+            f"scripts/reviewed_units.json: {sitting} lists " + "; ".join(f"{rid} <name>{tag}</name>" for rid, tag in stale)
+            + ", which no speaker printed as <name> in this sitting's XML matches; the entry is stale or misapplied")
+    return diagnostics, list(ansprachen.values())
+
+
 def mark_presidium_fraktionsreden(root: ET.Element) -> None:
     """ADR 0004: a Vizepräsident(in) who owns a ``<rede>`` and is printed with a
     ``<fraktion>`` gives that Fraktion's Rede (18/46 Pau). The presidium
@@ -1168,13 +1392,16 @@ def split_nested_reden(top: ET.Element, created: set[str] | None = None) -> None
                 chair = clean_text((redner.tail or "").partition(":")[2])
                 continue
             last_name = (parse_redner(redner) or {}).get("last_name") or ""
-            if (key not in (own, None) and chair and last_name and NESTED_REDE_FLOOR.search(chair)
-                    and not NESTED_REDE_NOT_FLOOR.search(chair)
-                    and re.search(rf"(?<![\w-]){re.escape(last_name)}(?![\w-])", chair)):
+            # A Rede printed under <name> (ADR 0004 amendment 2026-11-22) is
+            # listed: it splits whatever words give the floor or open it.
+            listed = key not in (own, None) and redner.get("listed_kind") == "rede"
+            if listed or (key not in (own, None) and chair and last_name and NESTED_REDE_FLOOR.search(chair)
+                          and not NESTED_REDE_NOT_FLOOR.search(chair)
+                          and re.search(rf"(?<![\w-]){re.escape(last_name)}(?![\w-])", chair)):
                 tail = clean_text((redner.tail or "").partition(":")[2])
                 following = next((c for c in children[index + 1:] if c.tag == "p"), None)
                 opening = tail or (elem_text(following) if following is not None and following.get("klasse") != "redner" else "")
-                if REDE_SALUTATION.match(opening):
+                if listed or REDE_SALUTATION.match(opening):
                     split = ET.Element("rede", {"id": f"{rid}:{marker}"})
                     if created is not None:
                         created.add(split.get("id"))
@@ -1297,6 +1524,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                         else:
                             grant_context = pending_nested_announcement
                         segment = {"speaker": candidate, "marker": marker, "paragraphs": [], "prompt": last_text,
+                                   "listed_kind": redner.get("listed_kind"),
                                    "grant_epoch": grant_epoch, "refused": refused, "exchange": exchange,
                                    "recipient_mismatch": bool(recipient_mismatch),
                                    "granted": consent_turn is not None and nested_consent(consent_turn),
@@ -1800,8 +2028,9 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     # Withhold entries name a unit as emitted; ADR 0004's kinds a whole source
     # <rede>, marked before classification (mark_reviewed_units).
     reviewed_entries = {entry["rede_id"]: entry for entry in sitting_entries
-                        if entry["kind"] not in reviewed_units.PRESIDIUM_KINDS}
+                        if entry["kind"] == reviewed_units.WITHHOLD}
     presidium_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.PRESIDIUM_KINDS]
+    name_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.NAME_KINDS]
     matched_entries: set[str] = set()
     inventory = raw_rede_inventory(root)
     statuses: dict[str, str] = {}
@@ -1820,6 +2049,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
     mark_reviewed_units(root, presidium_entries)
+    name_diagnostics, name_ansprachen = mark_name_speakers(root, name_entries, split_parts)
     mark_presidium_fraktionsreden(root)
     mark_presidium_markers_outside_reden(root)
     try:
@@ -1867,7 +2097,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         pages: list[dict[str, Any]] = []
         nested_units: list[dict[str, Any]] = []
         withheld: list[dict[str, Any]] = []
-        diagnostics: list[dict[str, Any]] = []
+        diagnostics: list[dict[str, Any]] = list(name_diagnostics.pop(id(top), []))
         attachments: dict[str, list[str]] = {}
         procedural_reden = set()
         # Located refusals pass 1 finds (an ADR 0004 unit no entry names, O6; another
@@ -1889,6 +2119,11 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             rid = rede.get("id")
             own_text, nested = parsed_turns[i]
             where = f"{sitting} {top.get('top-id')}"
+            unlisted = rede.find(".//name[@unreviewed_name]")
+            if unlisted is not None:
+                refused[rid] = LocatedRefusal(
+                    f"{where}: a speaker printed as <name>, {unlisted.get('unreviewed_name')!r}, at {rid} has no entry in "
+                    "scripts/reviewed_units.json (ADR 0004)", rede_id=rid, marker=1, reason="unreviewed_name_speaker")
             if label.kind == speech_kinds.UNREVIEWED_PRESIDIUM:
                 refused[rid] = UnreviewedUnitError(
                     f"{where}: presidium Rede at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
@@ -2068,6 +2303,10 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                         raise LocatedRefusal(
                             f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}",
                             rede_id=rid, marker=segment["marker"], reason="refused_nested_contribution")
+                    if segment.get("listed_kind") and segment["listed_kind"] != nested_kind:
+                        raise reviewed_units.ReviewedUnitsError(
+                            f"scripts/reviewed_units.json: {sitting} {top.get('top-id')}: the speaker printed as <name> at {rid} "
+                            f"marker {segment['marker']} is listed as {segment['listed_kind']}, but the rules read a {nested_kind}")
                     granted_nested_speaker = speaker_id if nested_kind == speech_kinds.ZWISCHENFRAGE else None
                     exchange_identity = (speaker_id, segment.get("exchange")) if nested_kind == speech_kinds.ZWISCHENFRAGE else None
                     if exchange_identity and exchange_identity == open_exchange:
@@ -2115,6 +2354,10 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                 raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {markers} Fragestunde markers, {counts['markers']} turns")
             for flat_index, turn in enumerate(turns, start=1):
                 text = clean_text(" ".join(turn.paragraphs))
+                if turn.redner is not None and turn.redner.get("listed_kind") not in (None, turn.kind):
+                    raise reviewed_units.ReviewedUnitsError(
+                        f"scripts/reviewed_units.json: {sitting} {top.get('top-id')}: the speaker printed as <name> "
+                        f"{elem_text(turn.redner)!r} is listed as {turn.redner.get('listed_kind')}, but the Fragestunde reads a {turn.kind}")
                 if turn.redner is not None:
                     speaker = parse_redner(turn.redner)
                 else:
@@ -2167,7 +2410,13 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting} lists {', '.join(unmatched)}, which names no Rede of a TOP in "
             "this sitting's XML (an annex Rede or a Fragestunde turn cannot be listed); the entry is stale or misapplied")
+    if any(name_diagnostics.values()):
+        raise reviewed_units.ReviewedUnitsError(
+            f"scripts/reviewed_units.json: {sitting}: a name_procedural entry outside any TOP; it has nowhere to be recorded")
     sitting_contributions = written_contributions(root, agenda_items, rid_pages, statuses)
+    for ansprache in name_ansprachen:
+        ansprache["sequence"] = len(sitting_contributions) + 1
+        sitting_contributions.append(ansprache)
     reconcile_reden(sitting, inventory, statuses, split_parts)
     return {
         "xml_sha256": xml_source_sha256(xml_text),
@@ -4595,6 +4844,9 @@ def build_report(
         parsed_xml = parse_protocol_xml(xml_text)
     except derive.UnknownFraktionError as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}; {derive.UNKNOWN_FRAKTION_FIX}",
+                       source_rejected=True) from exc
+    except UnlistedNameSpeakerError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_NAME_SPEAKER_FIX}",
                        source_rejected=True) from exc
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc

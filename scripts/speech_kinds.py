@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 10
+VERSION = 11
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -92,6 +92,12 @@ WITHHELD_REASONS: dict[str, tuple[str, str]] = {
         "Eine Rede des Präsidiums oder eines Gastes, oder eine kurze Rede, die wie ein Eid oder die Annahme "
         "einer Wahl liest, steht noch nicht auf der geprüften Liste (scripts/reviewed_units.json, ADR 0004); "
         "sie wird zurückgehalten, bis sie als Ansprache, Sitzungsleitung oder Verfahrensschritt eingeordnet ist.",
+    ),
+    "unreviewed_name_speaker": (
+        "Redner wie die Sitzungsleitung gedruckt, noch nicht geprüft",
+        "In der Rede steht ein Beitrag, den die Quelle wie einen Satz der Sitzungsleitung druckt, obwohl ihn "
+        "jemand anderes spricht; er steht noch nicht auf der geprüften Liste (scripts/reviewed_units.json, "
+        "ADR 0004), daher wird die Rede zurückgehalten, bis er einer Person und Art zugeordnet ist.",
     ),
 }
 #: The status of a ``<rede>`` the parser withholds (ADR 0005): stored in

@@ -270,7 +270,8 @@ class RealSittingTests(unittest.TestCase):
         count = 0
         for path, text in protocol_fixtures():
             with self.subTest(fixture=str(path.relative_to(FIXTURES))):
-                dip.parse_protocol_xml(text)
+                # The 18/10 excerpt needs its own entry for the Rede printed as <name>.
+                dip.parse_protocol_xml(text, reviewed=_support.NAME_ENTRIES_18_10_TOP3 if path.name == "18-10-top3.xml" else None)
                 count += 1
         self.assertGreaterEqual(count, 75)
 
