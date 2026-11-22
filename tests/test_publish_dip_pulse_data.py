@@ -37,6 +37,10 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True).stdout.strip()
 
 
+# The repository CITATION.cff names, which the release DATA.md cites: every gh call is pinned to it.
+REPOSITORY = "LucaAlv/poliwatch"
+
+
 class Runner:
     """Runs git for real in the temporary repository, answers gh from a script, and records everything."""
 
@@ -478,6 +482,22 @@ class RefusalTests(ReleaseTestCase):
         self.assertFalse(hashed.exists())
 
 
+class ReleaseRepositoryTests(unittest.TestCase):
+    # Value: protects=the release is published to the GitHub repository CITATION.cff names, the one a release DATA.md cites, whatever GH_REPO or gh's default says; fails_when=a non-GitHub or malformed repository-code yields a --repo value, or a GitHub URL is not reduced to owner/name; why_new=gh release create resolved its repository itself, so a DATA.md could cite a repository the release is not in (Codex, ship of the release-citation change); seam=none; no_claim=gh's own --repo handling (mocked)
+    def test_github_repository_reads_owner_and_name(self) -> None:
+        for url, expected in (
+            ("https://github.com/LucaAlv/poliwatch", "LucaAlv/poliwatch"),
+            ("https://github.com/a-b/c.d.git", "a-b/c.d"),
+            ("https://gitlab.com/a/b", None),
+            ("https://github.com/a", None),
+            ("https://github.com/a/b/c", None),
+            ("https://github.com.evil.example/a/b", None),
+            ("https://github.com/../b", None),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(publish.github_repository(url), expected)
+
+
 class LineEndingTests(unittest.TestCase):
     # Value: protects=a core.autocrlf=true checkout (CRLF working tree, LF commit) hashes its authored inputs exactly as the release script hashes the committed blobs; fails_when=the exporter hashes CRLF bytes, so a clean checkout builds an export the release script refuses as "differs from commit"; why_new=release item 10d (P1); seam=_read_codebook_inputs vs build_revision.blob_sha256; no_claim=other git filters (eol attributes, smudge)
     def test_autocrlf_checkout_hashes_the_inputs_like_the_committed_blobs(self) -> None:
@@ -559,7 +579,8 @@ class PublishTests(ReleaseTestCase):
         release = self.out / f"data-{VERSION}"
         self.assertTrue((release / self.manifest["generation"] / "LICENSE-DATA.md").is_file())
         self.assertIn(f"{self.manifest['generation']}/LICENSE-DATA.md", (release / "SHA256SUMS").read_text(encoding="utf-8"))
-        self.assertEqual(len(self.runner.gh("release", "list")), 1)
+        (listing,) = self.runner.gh("release", "list")
+        self.assertEqual(listing[listing.index("--repo") + 1], REPOSITORY)
         (create,) = self.runner.gh("release", "create")
         files = sorted(
             [str(path) for path in release.rglob("*") if path.is_file()],
@@ -568,7 +589,7 @@ class PublishTests(ReleaseTestCase):
         self.assertEqual(create[:4], ["gh", "release", "create", f"data-{VERSION}"])
         self.assertEqual(sorted(create[4 : create.index("--title")]), sorted(files))
         tail = create[create.index("--title") :]
-        self.assertEqual(tail, ["--title", f"Daten {VERSION}", "--notes-file", str(release / "CHANGES.md"), "--target", self.head])
+        self.assertEqual(tail, ["--title", f"Daten {VERSION}", "--notes-file", str(release / "CHANGES.md"), "--target", self.head, "--repo", REPOSITORY])
         self.assertNotIn("dry run", stdout)
         for call in self.runner.calls:
             self.assertNotEqual(call[:2], ["git", "push"])

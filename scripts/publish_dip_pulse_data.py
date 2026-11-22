@@ -45,6 +45,7 @@ import csv
 import gzip
 import hashlib
 import json
+import re
 import os
 import shlex
 import shutil
@@ -328,8 +329,33 @@ def local_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
     return {version for tag in result.stdout.split() if (version := release_version.version_of(tag))}
 
 
-def remote_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
-    result = run(["gh", "release", "list", "--json", "tagName", "--limit", "1000"], cwd=repo_root, capture_output=True, text=True)
+def github_repository(url: str) -> str | None:
+    """owner/name of a https://github.com/<owner>/<name> URL (a trailing .git
+    dropped), or None for any other URL."""
+    match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?", url)
+    if match is None or {match[1], match[2]} & {".", ".."}:
+        return None
+    return f"{match[1]}/{match[2]}"
+
+
+def release_repository(repo_root: Path, full_commit: str) -> str:
+    """The repository a release DATA.md cites (CITATION.cff's repository-code at
+    the export's commit), as owner/name for gh --repo: the release goes there,
+    not to whatever GH_REPO or gh's default names."""
+    site = _site()
+    relative = site.CODEBOOK_INPUT_FILES["citation"]
+    try:
+        url = site.citation_repository_url(build_revision.blob_text(repo_root, full_commit, relative) or "")
+    except RuntimeError as exc:
+        raise ReleaseError(str(exc)) from exc
+    repository = github_repository(url)
+    if repository is None:
+        raise ReleaseError(f"the repository-code {url} of {relative} at commit {full_commit[:12]} is not a GitHub repository (https://github.com/<owner>/<name>); gh cannot publish the release there")
+    return repository
+
+
+def remote_versions(repo_root: Path, run: Callable[..., Any], repository: str) -> set[str]:
+    result = run(["gh", "release", "list", "--json", "tagName", "--limit", "1000", "--repo", repository], cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:
         raise ReleaseError(f"cannot ask gh for existing releases (gh release list failed: {result.stderr.strip() or 'no message'}); not publishing blind")
     try:
@@ -570,7 +596,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         shown = "; ".join(unreviewed[:12]) + ("; …" if len(unreviewed) > 12 else "")
         raise ReleaseError(f"--publish refused: {vote_link_review_text(unreviewed)}: {shown}")
     tag = release_version.tag_for(version)
-    released = remote_versions(repo_root, run) if args.publish else set()
+    repository = release_repository(repo_root, full_commit)
+    released = remote_versions(repo_root, run, repository) if args.publish else set()
     known = local_versions(repo_root, run) | released
     if version in known:
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
@@ -580,8 +607,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     on_origin = origin_versions(repo_root, run) if args.previous_manifest else set()
     newest = max(known | on_origin, key=release_version.version_key) if known | on_origin else None
     # The latest release a --previous-manifest must be: origin's tags, and under
-    # --publish also gh's releases (gh may publish to another repository than
-    # origin); never a local tag (owner decision 2026-11-17).
+    # --publish also gh's releases (gh publishes to CITATION.cff's repository,
+    # which may differ from origin); never a local tag (owner decision 2026-11-17).
     published = on_origin | released
     searched = "origin's tags and gh's releases" if args.publish else "origin's tags"
     if newest and release_version.version_key(version) < release_version.version_key(newest):
@@ -625,6 +652,7 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     command = [
         "gh", "release", "create", tag, *map(str, files),
         "--title", f"Daten {version}", "--notes-file", str(release_dir / "CHANGES.md"), "--target", full_commit,
+        "--repo", repository,
     ]
     out(f"version: {version}")
     out(f"tag: {tag}")

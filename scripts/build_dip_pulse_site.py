@@ -4624,7 +4624,7 @@ def _license_notice(text: str) -> str:
     return _demote_headings(text[start.start():])
 
 
-def _repository_url(citation: str) -> str:
+def citation_repository_url(citation: str) -> str:
     """The `repository-code` of CITATION.cff: the repository whose releases hold the data."""
     match = re.search(r'^repository-code:\s*"?(https://[^"\s]+?)/?"?\s*$', citation, flags=re.MULTILINE)
     if match is None:
@@ -4821,7 +4821,7 @@ def _citation_reference(manifest: dict[str, Any], citation: str) -> list[str]:
     if manifest["tag"] == "local":
         return ["Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI."]
     tag = release_version.tag_for(manifest["tag"])
-    return [f"Referenz: der Git-Tag `{tag}` im Repository {_repository_url(citation)}. Dieser Export ist für das Release „Daten {manifest['tag']}“ dieses Tags bestimmt, "
+    return [f"Referenz: der Git-Tag `{tag}` im Repository {citation_repository_url(citation)}. Dieser Export ist für das Release „Daten {manifest['tag']}“ dieses Tags bestimmt, "
             "das seine Dateien veröffentlicht; nach der Regel des Projekts wird ein Release nicht nachträglich geändert (die Plattform erzwingt das nicht). "
             "Dieser Export besitzt keinen Versions-DOI."]
 
