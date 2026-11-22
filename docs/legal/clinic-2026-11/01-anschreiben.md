@@ -34,7 +34,7 @@ Eine Veröffentlichung (Datenstand) wird nie geändert. Jede Fassung erhält ein
 
 1. Tragen diese drei Grundlagen die Veröffentlichung? Wo sehen Sie die größte Schwäche? Mir ist besonders unsicher, ob Art. 85 DSGVO / § 23 MStV einen Volltext-Datensatz des amtlichen Protokolls trägt, den eine Privatperson mit nur wenig eigener Bearbeitung bereitstellt (Mindestmaß eigener inhaltlicher Bearbeitung), und ob die eigenen Berechnungen (Abweichung von der Fraktionslinie) von Art. 9 Abs. 2 lit. e gedeckt sind.
 2. Fehlt eine Grundlage oder eine Pflicht? Insbesondere Art. 10 DSGVO bei Straftatbezügen Dritter in Reden.
-3. Genügt das Löschverfahren (Anlage `04-takedown-verfahren.md`; ein Vorschlag, der Teil davon ist noch nicht umgesetzt): auf begründetes Verlangen eine einzelne Rede mit Begründung zurückhalten, im nächsten Datenstand berichtigen, bei Zenodo die betroffene Fassung beschränken lassen? Trägt Art. 17 Abs. 3 lit. a DSGVO, dass unveränderliche, zitierte Fassungen bis dahin stehen bleiben?
+3. Genügt das Löschverfahren (Anlage `04-takedown-verfahren.md`; ein Vorschlag, der Teil davon ist noch nicht umgesetzt): auf begründetes Verlangen eine einzelne Rede mit Begründung zurückhalten, im nächsten Datenstand berichtigen, bei Zenodo die betroffene Fassung aus der öffentlichen Ansicht nehmen lassen (ob Zenodo das für eine veröffentlichte Fassung erlaubt, ist noch nicht geklärt)? Trägt Art. 17 Abs. 3 lit. a DSGVO, dass unveränderliche, zitierte Fassungen bis dahin stehen bleiben?
 4. Reichen Verzeichnis der Verarbeitungstätigkeiten und Schwellenwertprüfung für die Datenschutz-Folgenabschätzung (Anlagen `02` und `03`)? Wo irre ich?
 
 **Anlagen** (alle als Entwurf des Projekts, zur Prüfung durch Sie):

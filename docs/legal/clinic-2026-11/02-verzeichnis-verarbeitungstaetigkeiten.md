@@ -22,13 +22,13 @@
 | T5 | Fehlermeldungen über GitHub Issues | Datenfehler beheben | Art. 6 Abs. 1 lit. f; GitHub ist für die Plattform selbst verantwortlich |
 | T6 | Server-Logs beim Hoster der Website | technischer Betrieb | Sache des Hosters; Auftragsverarbeitung nach Art. 28 vor dem Start der Website. OFFEN: Hoster steht noch nicht fest (TODOS.md, „Site hosting plan“) |
 
-Die Website setzt keine Cookies, enthält keine Analyse- oder Tracking-Werkzeuge und lädt nichts von fremden Servern; sie schreibt nur auf Klick die Wahl des Farbschemas in den `sessionStorage` des Browsers (`datenschutz.html`; Rechtsgrundlage dort § 25 Abs. 2 Nr. 2 TDDDG).
+Die Website setzt keine Cookies, enthält keine Analyse- oder Tracking-Werkzeuge und lädt nichts von fremden Servern; sie schreibt nur auf Klick die Wahl des Farbschemas in den `sessionStorage` des Browsers, und auf Seiten mit einer KI-Zusammenfassung deren Ein- oder Ausklappzustand (`datenschutz.html` nennt beide Schlüssel; Rechtsgrundlage dort § 25 Abs. 2 Nr. 2 TDDDG). Die KI-Zusammenfassungen sind nicht Teil von v1, der Referenzbau enthält keine (`PRODUCT.md`).
 
 ## Kategorien von Betroffenen und Daten (Abs. 1 lit. c)
 
 | Betroffene | Daten | Herkunft | Besondere Kategorie |
 |---|---|---|---|
-| Abgeordnete des Bundestages der 18. bis 21. Wahlperiode (6.429 Personenaufzeichnungen im Bestand, darunter Ehemalige und Redner ohne Mandat) | Name, Titelzeile und Funktion (DIP), Redner-ID, Fraktion zur Zeit der Rede, Zugehörigkeitszeiträume (MdB-Stammdaten) | DIP, Plenarprotokoll-XML, Bundestag | Fraktion lässt politische Meinung erkennen (Art. 9) |
+| Abgeordnete des Bundestages der 18. bis 21. Wahlperiode (6.430 Personenaufzeichnungen im Bestand, darunter Ehemalige und Redner ohne Mandat) | Name, Titelzeile und Funktion (DIP), Redner-ID, Fraktion zur Zeit der Rede, Zugehörigkeitszeiträume (MdB-Stammdaten) | DIP, Plenarprotokoll-XML, Bundestag | Fraktion lässt politische Meinung erkennen (Art. 9) |
 | dieselben | Geburtsjahr, Geschlecht, Beruf, Wahlkreis, Bundesland, abgeordnetenwatch-ID und Profil-URL | abgeordnetenwatch.de API (CC0) | nein |
 | dieselben | Volltext ihrer Reden und Beiträge (eigene Worte), Seitenangabe | Plenarprotokoll-XML | ja: politische Meinung (Art. 9) |
 | dieselben | Einzelstimme je namentlicher Abstimmung (Ja, Nein, Enthalten, nicht abgegeben), berechnete Fraktionsabweichung | bundestag.de (Abstimmungslisten), Berechnung des Projekts | ja: politische Meinung (Art. 9) |
@@ -50,7 +50,7 @@ Umfang am 2026-11-22: 806 Sitzungen (2013-10-22 bis 2026-11-13), 61.637 Reden, 4
 | Hoster der Website | Seiten; Zugriffe | Deutschland geplant (TODOS.md). OFFEN: Anbieter, Auftragsverarbeitungsvertrag (Art. 28) |
 | Quellen (DIP, bundestag.de, abgeordnetenwatch.de) | nur Abrufe durch das Projekt; keine personenbezogenen Daten von Betroffenen | – |
 
-Auch das öffentliche Repository enthält Daten: 14 vollständige Plenarprotokoll-XML-Dateien unter `tests/fixtures/` und Namen mit Protokoll-URLs in `scripts/person_corrections.json` (öffentlich seit 2026-11-06). Was das für Löschverlangen heißt, steht in `04-takedown-verfahren.md`, „Was fehlt“, Punkt 6.
+Auch das öffentliche Repository enthält Daten: 88 XML-Dateien unter `tests/fixtures/`, davon 85 mit Plenarprotokoll-Wurzel (viele gekürzt oder bearbeitet, um einen Fall zu testen; ob und wie viele Namen echter Dritter darin stehen, ist nicht geprüft) und Namen mit Protokoll-URLs in `scripts/person_corrections.json` (öffentlich seit 2026-11-06). Was das für Löschverlangen heißt, steht in `04-takedown-verfahren.md`, „Was fehlt“, Punkt 6.
 
 ## Fristen für die Löschung (Abs. 1 lit. f)
 
