@@ -687,7 +687,19 @@ class PublishTests(ReleaseTestCase):
                 self.assertEqual(runner.gh("release", "create"), [])
                 self.assertEqual([call for call in runner.calls if call[:2] == ["git", "ls-remote"]], [])
                 shutil.rmtree(self.out, ignore_errors=True)
-        for origin in ("git@github.com:LucaAlv/poliwatch.git", "ssh://git@github.com/lucaalv/poliwatch", "https://github.com/LucaAlv/poliwatch"):
+        # An origin URL with credentials: the token never reaches the message, and a matching one is accepted.
+        runner = Runner(origin_url="https://x-access-token:SECRET123@github.com/someone/fork.git")
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assert_refused(code, stderr, "someone/fork")
+        self.assertNotIn("SECRET123", stderr)
+        self.assertNotIn("x-access-token", stderr)
+        shutil.rmtree(self.out, ignore_errors=True)
+        runner = Runner(origin_url="https://user:SECRET123@gitlab.example/x")
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assert_refused(code, stderr, "origin")
+        self.assertNotIn("SECRET123", stderr)
+        shutil.rmtree(self.out, ignore_errors=True)
+        for origin in ("git@github.com:LucaAlv/poliwatch.git", "ssh://git@github.com/lucaalv/poliwatch", "https://github.com/LucaAlv/poliwatch", "https://x-access-token:SECRET123@github.com/LucaAlv/poliwatch.git"):
             with self.subTest(origin=origin):
                 runner = Runner(origin_url=origin)
                 code, _, stderr = self.run_script("--initial", "--publish", runner=runner)

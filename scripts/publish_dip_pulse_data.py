@@ -52,6 +52,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
@@ -341,11 +342,20 @@ def github_repository(url: str) -> str | None:
 def remote_github_repository(url: str) -> str | None:
     """owner/name of a git remote URL on github.com (https, git@github.com:… or
     ssh://git@github.com/…, a trailing .git dropped), or None."""
-    for pattern in (r"https://github\.com/(.+)", r"git@github\.com:(.+)", r"ssh://git@github\.com/(.+)"):
+    for pattern in (r"https://(?:[^@/\s]*@)?github\.com/(.+)", r"git@github\.com:(.+)", r"ssh://git@github\.com/(.+)"):
         match = re.fullmatch(pattern, url.strip())
         if match:
             return github_repository(f"https://github.com/{match[1]}")
     return None
+
+
+def _url_host(url: str) -> str:
+    """The host of a remote URL for a message, without its credentials or path."""
+    try:
+        host = urllib.parse.urlsplit(url).hostname if "://" in url else None
+    except ValueError:
+        host = None
+    return host or "a URL that names no GitHub repository"
 
 
 def origin_problem(repo_root: Path, run: Callable[..., Any], repository: str) -> str | None:
@@ -357,7 +367,9 @@ def origin_problem(repo_root: Path, run: Callable[..., Any], repository: str) ->
     url = result.stdout.strip()
     named = remote_github_repository(url)
     if named is None or named.lower() != repository.lower():
-        return (f"origin ({url}) is not {repository}, the repository CITATION.cff names and the release goes to; "
+        # Never echo the URL: an https origin may carry a token (user:token@host).
+        shown = f"github.com/{named}" if named else _url_host(url)
+        return (f"origin ({shown}) is not {repository}, the repository CITATION.cff names and the release goes to; "
                 "the tag checks ask origin, so run from a clone whose origin is that repository")
     return None
 
