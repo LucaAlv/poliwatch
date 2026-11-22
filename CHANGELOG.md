@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.40.0] - 2026-11-22
+
+A reviewed vote link can now be removed or marked as unsure one case at a time, and the vote's panel on its sitting page says so. The shipped review list has no such case yet, so no stored figure, vote link or export row changes.
+
+### Added
+
+- **A single wrong vote link can be removed, and an unsure one marked, by a dated review entry.** An entry with `action: drop` in `scripts/reviewed_vote_links.json` takes the vote off that agenda item: a vote left with no agenda item becomes a sitting vote with `top_link_step = none`, and leaves the bill page of that item's Vorgang. An entry with `action: flag` keeps the link and stores its note in `agenda_item_votes.review_note`. Each applied entry is kept in `vote_link_reviews` with its note and review date.
+- **The vote's panel on the sitting page names each such review**: "Ein Abgleich verband diese Abstimmung (auch) mit TOP …; die Prüfung vom … ergab, dass sie nicht dazu gehört: …" for a removed link, "Die Zuordnung zu TOP … ist nicht sicher geprüft (Prüfung vom …): …" for a marked one.
+
+### Changed
+
+- **An entry that no longer fits its sitting stops the run** with the entry and the fix named: its vote or agenda item is gone, the item's heading or first page differs, or the link rule no longer makes the link. An online refresh whose vote list was skipped or could not be fetched checks the entries only once the cached votes are back.
+- **The store check and the release check cover removed and marked links**: a removed link must be absent and recorded, a marked one present with the entry's note, both with the entry's note and review date, and a note or record no entry names is refused. A removed link on one of a vote's two agenda items leaves the other link under review.
+
 ## [0.46.39.0] - 2026-11-22
 
 The owner's ten open decisions before the first data release are recorded, and three legal gaps the research on ADR 0003 found are closed. No stored figure, vote link or export row changes.
