@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.43.0] - 2026-11-22
+
+The comparison with CPP-BT in the data notes is restated on the reference store replayed with v0.46.42.0. No stored value or export changes; only documented figures move.
+
+### Changed
+
+- **The CPP-BT figures match the current store.** 81,446 Rede-IDs are on both sides (was 81,444) and 2,313 only in CPP-BT (was 2,315), because the two Reden released in v0.46.42.0 are no longer withheld (withheld 95 → 93). Split Reden (`ID…:N`) in `speeches` go from 65 to 131 rows, `nested:` ids from 4,000 to 4,056, Fragestunde rows from 19,893 to 19,899, surnames compared from 81,438 to 81,440 and Fraktionen from 71,346 to 71,348. The Redner-ID agreement now reads 81,372 of 81,430, 58 differing; it is counted over shared ids without `:N` with an id on both sides, which gives 81,428 rather than the 81,429 counted by hand on the store before.
+- **The record of the speaker rule's effect is exact.** ADR 0004 now says that stored rows change in 48 sittings, as planned, and that the 50 it counted before includes 18/4 and 18/223, where only an oath answer's diagnostic changes.
+
 ## [0.46.42.0] - 2026-11-22
 
 Speeches and questions that the WP 18 and 19 protocols print in the chair's element, although someone else speaks, are now stored for the person who spoke. Before, these 170 turns in 51 sittings (80,381 words) were read as chair text and counted nowhere. Reden go from 61,555 to 61,637 (WP 18 +80 with 73,265 words, WP 19 +2), Beiträge from 45,928 to 45,991, and withheld Reden from 102 to 100. Fact values move in 330 of 1,944 (period, metric) pairs, and 2 more weeks become publishable (211 → 213). A store built before this version owes one `--offline --repersist`; the speech rule goes from 10 to 11 and the export format from 21 to 22.
