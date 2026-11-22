@@ -11,6 +11,16 @@ The DATA.md of a release export now says which release it is and where it is pub
 - **A release export's DATA.md names its release.** Under „Diesen Export zitieren“ it names the Git tag `data-<version>`, the repository from `CITATION.cff`'s `repository-code` and the release „Daten <version>“ this export is meant for. Before, it said no immutable reference had been given, which would have been false for the first release. It says that a release is not changed afterwards by the project's rule, which the platform does not enforce. A local export keeps its old sentence.
 - **`CITATION.cff` is a codebook input.** Its hash is in `datenstand.json` and DATA.md, and the release script checks it against the export's commit like the other inputs, so any edit to `CITATION.cff` needs a new export. A release export refuses a `CITATION.cff` without an `https://` repository-code.
 - **The release goes to the repository its DATA.md cites.** Every `gh` call of `scripts/publish_dip_pulse_data.py` carries `--repo github.com/<owner>/<name>` from `CITATION.cff`, so `GH_REPO`, `GH_HOST` or a gh default cannot send it elsewhere. A run that asks origin for tags (`--publish`, `--previous-manifest`) refuses unless origin is that repository, and the recovery commands it prints are pinned to it.
+## [0.46.45.0] - 2026-11-22
+
+The release review's comparison with CPP-BT now counts the Redner-ID agreement itself and says what it left out, instead of leaving both to a hand count. No stored value, export or page changes; the figures in the data notes stand.
+
+### Changed
+
+- **The Redner-ID agreement is printed on every run.** `scripts/compare_cpp_bt.py` counts, over the Rede-IDs both sides hold, how often our person's Redner-ID equals CPP-BT's: 81,372 of 81,430 on the reference store, 58 differing, 4 of them with CPP-BT's shared id 10000. It counts only the row that carries the element's own speaker (not a split-off `:N` part) and not withheld units, and lists each differing id for reading. On that store, 14 ids where our person has no Redner-ID, 1 whose only stored row is a split-off part and 1 where CPP-BT prints `NA` are left out and counted by reason. The hand count of 59 differing most likely took that split-off part's speaker for the element's.
+- **What was not compared is counted, zero included.** The summary now prints how many shared ids had no surname or no Fraktion to compare (6 and 10,098 of 81,446) next to how many were compared. The release review asks for these counts beside the last stable release's and an explanation when one rises.
+- **A return of the old 18/222 Fraktion label would now be read by hand.** v0.46.9.0 cleaned that label, so its entry in the comparison's known differences matched nothing and is removed; a label that came back would no longer pass as known.
+- The release-review record template's parts now match the review's steps one to one, and part 6 holds both the findings and the verdict.
 
 ## [0.46.44.0] - 2026-11-22
 

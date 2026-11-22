@@ -20,7 +20,7 @@ from _support import ROOT
 import compare_cpp_bt as cmp  # noqa: E402
 import validate_dip_protocol  # noqa: E402
 
-HEADER = ["doc_id", "protokoll_nr", "rede_id", "redner_nachname", "redner_fraktion", "redner_rolle_kurz", "tokens"]
+HEADER = ["doc_id", "protokoll_nr", "rede_id", "redner_id", "redner_nachname", "redner_fraktion", "redner_rolle_kurz", "tokens"]
 
 XML_18_1 = """<?xml version="1.0" encoding="UTF-8"?>
 <dbtplenarprotokoll>
@@ -54,14 +54,15 @@ def build_export(path: Path, extra_tables: bool = True) -> None:
     db = sqlite3.connect(path)
     db.executescript("""
         CREATE TABLE protocols (id TEXT, document_number TEXT);
-        CREATE TABLE mps (id TEXT, display_name TEXT);
+        CREATE TABLE mps (id TEXT, display_name TEXT, xml_redner_id TEXT);
         CREATE TABLE speeches (protocol_id TEXT, rede_id TEXT, mp_id TEXT, fraktion TEXT, text TEXT);
         CREATE TABLE contributions (protocol_id TEXT, rede_id TEXT, mp_id TEXT, speaker_name TEXT, fraktion TEXT);
         CREATE TABLE withheld_units (protocol_id TEXT, rede_id TEXT, speaker_name TEXT, fraktion TEXT);
     """)
     db.executemany("INSERT INTO protocols VALUES (?, ?)", [("1", "18/1"), ("2", "18/2")])
-    db.executemany("INSERT INTO mps VALUES (?, ?)", [
-        ("m1", "Dr. Anna Muster, MdB, SPD"), ("m2", "Sevim Dagdelen, MdB, DIE LINKE"), ("m3", "Karl Dritter, MdB, AfD")])
+    db.executemany("INSERT INTO mps VALUES (?, ?, ?)", [
+        ("m1", "Dr. Anna Muster, MdB, SPD", "11001001"), ("m2", "Sevim Dagdelen, MdB, DIE LINKE", "11001002"),
+        ("m3", "Karl Dritter, MdB, AfD", "11001003")])
     db.executemany("INSERT INTO speeches VALUES (?, ?, ?, ?, ?)", [
         ("1", "ID1800100100", "m1", "SPD", words(100)),
         ("1", "ID1800100200", "m2", "Die Linke", words(100)),
@@ -82,17 +83,18 @@ def build_export(path: Path, extra_tables: bool = True) -> None:
 
 
 def cpp_rows() -> list[list[str]]:
+    # columns: doc_id, protokoll_nr, rede_id, redner_id, nachname, fraktion, rolle, tokens
     return [
-        ["a", "18/1", "ID1800100100", "Muster", "SPD", "NA", "115"],
-        ["b", "18/1 (neu)", "ID1800100200", "Dağdelen", "DIE LINKE.", "NA", "115"],
-        ["c", "18/1", "ID1800100300", "Präsident", "NA", "Präsident", "10"],
-        ["d", "18/1", "ID1800100400", "Dritter", "AfD", "NA", "115"],
-        ["e", "18/1", "ID1800100500", "Muster", "SPD", "NA", "300"],
-        ["f", "18/1", "ID1800100900", "Out", "NA", "NA", "70"],
-        ["g", "18/1", "ID1800101000", "Xx", "NA", "NA", "70"],
-        ["h", "18/1", "ID1800101100", "Yy", "NA", "NA", "70"],
-        ["i", "18/1", "ID1800109999", "Gone", "NA", "NA", "70"],
-        ["j", "18/3", "ID1800300100", "Only", "SPD", "NA", "70"],
+        ["a", "18/1", "ID1800100100", "11001001", "Muster", "SPD", "NA", "115"],
+        ["b", "18/1 (neu)", "ID1800100200", "11001002", "Dağdelen", "DIE LINKE.", "NA", "115"],
+        ["c", "18/1", "ID1800100300", "11001004", "Präsident", "NA", "Präsident", "10"],
+        ["d", "18/1", "ID1800100400", "10000", "Dritter", "AfD", "NA", "115"],
+        ["e", "18/1", "ID1800100500", "11009999", "Muster", "SPD", "NA", "300"],
+        ["f", "18/1", "ID1800100900", "NA", "Out", "NA", "NA", "70"],
+        ["g", "18/1", "ID1800101000", "11001005", "Xx", "NA", "NA", "70"],
+        ["h", "18/1", "ID1800101100", "11001006", "Yy", "NA", "NA", "70"],
+        ["i", "18/1", "ID1800109999", "11001007", "Gone", "NA", "NA", "70"],
+        ["j", "18/3", "ID1800300100", "11001008", "Only", "SPD", "NA", "70"],
     ]
 
 
@@ -209,8 +211,8 @@ class CompareCppBtTests(unittest.TestCase):
     def test_surname_and_fraktion_differences_and_the_known_file(self) -> None:
         cpp = self.dir / "cpp.csv"
         rows = cpp_rows()
-        rows[0][3] = "Anderer"          # surname we have not listed
-        rows[3][4] = "CDU/CSU"          # Fraktion we have not listed
+        rows[0][4] = "Anderer"          # surname we have not listed
+        rows[3][5] = "CDU/CSU"          # Fraktion we have not listed
         write_cpp(cpp, rows)
         self.run_main(cpp)
         diffs = {(row["kind"], row["rede_id"]): row for row in self.sections()["differences"]}
@@ -233,7 +235,7 @@ class CompareCppBtTests(unittest.TestCase):
     def test_token_ratio_outliers(self) -> None:
         cpp = self.dir / "cpp.csv"
         rows = cpp_rows()
-        rows[1][6] = "100"   # 100 words / 100 tokens = 1.0 against a median near 0.87 -> outlier
+        rows[1][7] = "100"   # 100 words / 100 tokens = 1.0 against a median near 0.87 -> outlier
         write_cpp(cpp, rows)
         self.run_main(cpp)
         outliers = [row for row in self.sections()["differences"] if row["kind"] == "ratio"]
@@ -242,6 +244,60 @@ class CompareCppBtTests(unittest.TestCase):
         self.assertNotIn("ID1800100400", ids)        # 60 + 40 words against 115 tokens
         self.assertNotIn("ID1800100300", ids)        # 10 tokens, under the floor
 
+    # Value: protects=the Redner-ID agreement the review used to count by hand: over shared ids without :N in speeches and contributions, with a non-empty, non-NA id on both sides, how many agree, differ, and carry CPP-BT's 10000; fails_when=the definition drifts (a :N part's speaker counted, 10000 not separated, withheld units counted) or a differing row is not listed; why_new=the hand counts disagreed by one (81,429 / 59 against 81,428 / 58) because no code fixed the definition; seam=none; no_claim=which side is right when they differ
+    def test_redner_id_agreement(self) -> None:
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        self.assertEqual(self.run_main(cpp)[0], 0)
+        sections = self.sections()
+        summary = {row["item"]: row["value"] for row in sections["summary"]}
+        # shared ids 100, 200, 400, 500: 100 and 200 agree; 400 differs and carries 10000; 500 differs
+        # (the :1 part of 400 has another speaker, m1, and must not count; 300 is withheld and not shared)
+        self.assertEqual((summary["redner_id_compared"], summary["redner_id_agree"], summary["redner_id_differ"],
+                          summary["redner_id_differ_theirs_10000"]), ("4", "2", "2", "1"))
+        for name in ("redner_id_not_compared_ours_empty", "redner_id_not_compared_ours_no_own_row",
+                     "redner_id_not_compared_theirs_empty"):
+            self.assertEqual(summary[name], "0", name)
+        self.assertIn("without :N", summary["redner_id_definition"])
+        diffs = {row["rede_id"]: row for row in sections["differences"] if row["kind"] == "redner_id"}
+        self.assertEqual(sorted(diffs), ["ID1800100400", "ID1800100500"])
+        self.assertEqual((diffs["ID1800100400"]["ours"], diffs["ID1800100400"]["theirs"], diffs["ID1800100400"]["status"]),
+                         ("11001003", "10000", "reported"))
+        self.assertEqual(diffs["ID1800100500"]["theirs"], "11009999")
+
+    # Value: protects=the three reasons a shared id is left out of the Redner-ID count (our side has no id, our side has no row of its own because only a :N part exists, CPP-BT prints NA or nothing), each counted under its own name, and contributions counting like speeches; fails_when=an excluded row is counted as agreeing or differing, two reasons merge, or a contribution is ignored; why_new=the first definition lived in a hand count; seam=none; no_claim=why the id is missing
+    def test_redner_id_exclusions_are_counted_by_reason(self) -> None:
+        db = sqlite3.connect(self.export)
+        db.execute("UPDATE mps SET xml_redner_id = NULL WHERE id = 'm1'")                      # 100, 500: ours has none
+        db.execute("INSERT INTO speeches VALUES ('1', 'ID1800100800:1', 'm2', 'SPD', 'a b')")  # only a part: no own row
+        db.execute("INSERT INTO contributions VALUES ('1', 'ID1800100700', 'm2', NULL, NULL)")  # a contribution counts
+        db.execute("INSERT INTO contributions VALUES ('1', 'ID1800101200', 'm3', NULL, NULL)")  # CPP-BT prints NA
+        db.commit()
+        db.close()
+        rows = cpp_rows() + [
+            ["k", "18/1", "ID1800100800", "11001002", "Z", "NA", "NA", "70"],
+            ["l", "18/1", "ID1800100700", "11001002", "Dagdelen", "NA", "NA", "70"],
+            ["m", "18/1", "ID1800101200", "NA", "Dritter", "NA", "NA", "70"]]
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, rows)
+        self.assertEqual(self.run_main(cpp)[0], 0)
+        summary = {row["item"]: row["value"] for row in self.sections()["summary"]}
+        self.assertEqual(summary["redner_id_not_compared_ours_empty"], "2")
+        self.assertEqual(summary["redner_id_not_compared_ours_no_own_row"], "1")
+        self.assertEqual(summary["redner_id_not_compared_theirs_empty"], "1")
+        # compared: 200 (agrees), 400 (differs, 10000), 700 (a contribution, agrees)
+        self.assertEqual((summary["redner_id_compared"], summary["redner_id_agree"], summary["redner_id_differ"],
+                          summary["redner_id_differ_theirs_10000"]), ("3", "2", "1", "1"))
+
+    # Value: protects=the two not-compared counts of docs/release-review.md step 4 are printed on every run, zero included; fails_when=a count is absent from the summary when nothing was left out; why_new=a Counter prints only what it counted, so a clean run showed no line to compare with the last stable; seam=none; no_claim=how many a real store leaves out
+    def test_not_compared_counts_are_always_printed(self) -> None:
+        cpp = self.dir / "cpp.csv"
+        write_cpp(cpp, cpp_rows())
+        self.assertEqual(self.run_main(cpp)[0], 0)
+        summary = {row["item"]: row["value"] for row in self.sections()["summary"]}
+        self.assertEqual((summary["surname_not_compared"], summary["fraktion_not_compared"]), ("0", "0"))
+        self.assertEqual((summary["surname_compared"], summary["fraktion_compared"]), ("4", "4"))
+
     # Value: protects=a hostile CSV (review checklist classes 8 and 9): a BOM, a 1 MB field, an unbalanced quote, a missing column and a bad zip each end in a clear exit 2 or a correct read, never a traceback; fails_when=the script crashes with a traceback or reads a BOM header wrongly; why_new=the script reads a 71 MB file it does not own; seam=none; no_claim=other malformed inputs
     def test_hostile_csv(self) -> None:
         bom = self.dir / "bom.csv"
@@ -249,12 +305,12 @@ class CompareCppBtTests(unittest.TestCase):
         self.assertEqual(self.run_main(bom)[0], 0)
         big = self.dir / "big.csv"
         rows = cpp_rows()
-        rows[0][3] = "M" * 1_000_000
+        rows[0][4] = "M" * 1_000_000
         write_cpp(big, rows)
         self.assertEqual(self.run_main(big)[0], 0)
         unbalanced = self.dir / "unbalanced.csv"
-        unbalanced.write_text('"doc_id","protokoll_nr","rede_id","redner_nachname","redner_fraktion",'
-                              '"redner_rolle_kurz","tokens"\n"a","18/1","ID1800100100","Mu"ster","SPD","NA","5"\n'
+        unbalanced.write_text('"doc_id","protokoll_nr","rede_id","redner_id","redner_nachname","redner_fraktion",'
+                              '"redner_rolle_kurz","tokens"\n"a","18/1","ID1800100100","1","Mu"ster","SPD","NA","5"\n'
                               + '"x' + "y" * (cmp.CSV_FIELD_LIMIT + 10) + "\n", encoding="utf-8")
         code, message = self.run_main(unbalanced)
         self.assertEqual(code, 2)
@@ -320,7 +376,7 @@ class CompareCppBtTests(unittest.TestCase):
             XML_18_1.replace("    </tagesordnungspunkt>", '      <rede id="ID1800100600"><p klasse="redner">Chair</p></rede>\n    </tagesordnungspunkt>'),
             encoding="utf-8")
         cpp = self.dir / "cpp.csv"
-        write_cpp(cpp, cpp_rows() + [["k", "18/1", "ID1800100600", "Chair", "NA", "Präsident", "20"]])
+        write_cpp(cpp, cpp_rows() + [["k", "18/1", "ID1800100600", "NA", "Chair", "NA", "Präsident", "20"]])
         self.assertEqual(self.run_main(cpp)[0], 0)
         row = next(r for r in self.sections()["differences"] if r["rede_id"] == "ID1800100600")
         self.assertEqual((row["kind"], row["status"]), ("only_theirs:in_top_presidium", "read_by_hand"))
@@ -333,7 +389,7 @@ class CompareCppBtTests(unittest.TestCase):
     def test_ratio_rows_are_ordered_and_runs_repeat(self) -> None:
         cpp = self.dir / "cpp.csv"
         rows = cpp_rows()
-        rows[0][6], rows[1][6], rows[4][6] = "400", "60", "300"
+        rows[0][7], rows[1][7], rows[4][7] = "400", "60", "300"
         write_cpp(cpp, rows)
         self.run_main(cpp)
         first = self.out.read_text(encoding="utf-8")
@@ -423,7 +479,7 @@ class CompareCppBtTests(unittest.TestCase):
 
     # Value: protects=a run whose join found nothing to compare ends in exit 2 instead of a vacuous pass: unreadable CPP-BT protocol numbers, unreadable tokens; fails_when=such a run exits 0 with ids_only_ours 0; why_new=a changed CPP-BT format would satisfy the written pass rule with no sitting compared; seam=none; no_claim=other format changes
     def test_a_comparison_that_compared_nothing_is_refused(self) -> None:
-        for column, value, needle in ((1, "181", "no sitting is held by both"), (6, "115.0", "token count")):
+        for column, value, needle in ((1, "181", "no sitting is held by both"), (7, "115.0", "token count")):
             rows = cpp_rows()
             for row in rows:
                 row[column] = value
@@ -443,6 +499,22 @@ class CompareCppBtTests(unittest.TestCase):
             self.assertIn(row["field"], {"surname", "fraktion", "only_theirs"})
             self.assertTrue(row["reason"].strip(), row)
         self.assertEqual(len(cmp.known_differences(path)), len(rows))
+
+    # Value: protects=the Fraktion rows of the shipped file are exactly the one source defect that remains (20/94, source-errors C5); 18/222's row was removed because a row matching the old wrong label would mark its return as known; fails_when=a Fraktion row is added or the 18/222 row comes back without the review text changing with it; why_new=docs/release-review.md step 4 names the rows by count; seam=none; no_claim=that C5 is still in the source
+    def test_shipped_file_holds_one_fraktion_row(self) -> None:
+        path = ROOT / "scripts" / "cpp_bt_known_differences.tsv"
+        with path.open(encoding="utf-8", newline="") as handle:
+            rows = [row for row in csv.DictReader(handle, delimiter="\t") if row["field"] == "fraktion"]
+        self.assertEqual([row["rede_id"] for row in rows], ["ID209407600"])
+        self.assertIn("C5 for the one Fraktion row", (ROOT / "docs" / "release-review.md").read_text(encoding="utf-8"))
+
+    # Value: protects=the review record's numbered parts map one to one to the steps of docs/release-review.md, so a step has one place in the record; fails_when=a step or a record part is added, renamed or split on one side only; why_new=the record had "6. Findings" and an unnumbered "Verdict" where the checklist has one step 6; seam=none; no_claim=the wording inside a part
+    def test_review_template_parts_match_the_review_steps(self) -> None:
+        import re
+        steps = re.findall(r"^\*\*(\d)\. ([^.*]+)\.\*\*", (ROOT / "docs" / "release-review.md").read_text(encoding="utf-8"), re.M)
+        parts = re.findall(r"^## (\d)\. (.+)$", (ROOT / "docs" / "release-reviews" / "TEMPLATE.md").read_text(encoding="utf-8"), re.M)
+        self.assertEqual(len(steps), 6)
+        self.assertEqual([(n, t.strip()) for n, t in steps], [(n, t.strip()) for n, t in parts])
 
 
 if __name__ == "__main__":
