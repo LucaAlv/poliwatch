@@ -200,6 +200,16 @@ A list of places where an official source file says something wrong or files con
 - **Scale:** 74 markers, 19,686 words, in 31 sittings: 23 whole Reden in 11 WP 18 sittings, and short turns next to a `<rede>` in WP 18 to 21 (19/114 holds 18 markers). Counted 2026-11-22 over the 806 held files.
 - **Our side:** each marker is listed in `scripts/reviewed_units.json` (kinds `loose_*`) and placed by `mark_loose_markers` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-22 on markers outside any `<rede>`). Before the rule, the words were stored nowhere.
 
+### E15. WP 19 and 20: an MdB who joined mid-period is printed under a provisional Redner-ID first
+
+- **Status:** verified 2026-11-23, on the 806 XML files of the reference store, scanning every `<redner>`, against the MdB-Stammdaten (Stand 2026-04-29).
+- **Source:** `https://dserver.bundestag.de/btp/<WP>/`, for example `https://dserver.bundestag.de/btp/19/19194.xml`: `<redner id="999990105">` for Dr. Janosch Dahmen (BÜNDNIS 90/DIE GRÜNEN), whose mandate began on 2020-11-12. From 19/226 on he is `<redner id="11004962">`, his id in the MdB-Stammdaten.
+- **What is wrong:** `<redner id>` is meant to be one id per person. These 14 MdBs have two: an id starting with 99999 (Manderla: 999980200) after joining, for one sitting (Bartz, Vontz) up to the rest of the Wahlperiode (Rinkert, 20/79 to 20/191), and the id of the MdB-Stammdaten afterwards. 999980200 stands for Gisela Manderla on her return to the Bundestag in WP 19; in WP 18 and from 19/89 on she is 11004348.
+- **Which:** Manderla 999980200 → 11004348; Bubendorfer-Licht 999990089 → 11004956; Weingarten 999990085 → 11004950; Lehmann 999990088 → 11004953; Bach 999990092 → 11004957; Nölke 999990096 → 11004958; Schneidewind-Hartnagel 999990084 → 11004951; Ludwig 999990087 → 11004954; Martin 999990097 → 11004959; Dahmen 999990105 → 11004962; Bünger 999990123 → 11005289; Bartz 999990130 → 11005301; Rinkert 999990129 → 11005300; Vontz 999990132 → 11005302. The sittings of each are in `scripts/person_corrections.json` (`same_person`).
+- **What it should be:** the id of the MdB-Stammdaten from the first sitting on.
+- **Scale:** these 14 are the MdBs whose DIP roster record the second id kept apart. The other Redner-IDs of this form (government members, Bundesrat members and guests) were not checked here (TODOS.md "Placeholder Redner ids put one speaker on two Personenseiten").
+- **Our side:** joined since 2026-11-23: a reviewed `same_person` entry makes the two ids one Personenkennung. `mps.xml_redner_id` keeps the printed id on each record.
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)
