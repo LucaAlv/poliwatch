@@ -1,0 +1,107 @@
+sitting	rede_id	verdict	confidence	note	parent
+18/11	ID1801100500	erwiderung	high	Chair: "Zu einer direkten Erwiderung erhält der Bundeswirtschaftsminister das Wort."	Gabriel
+18/21	ID1802103000	own_continuation	high	Chair "gestatten Sie eine –" interrupted; Schmidt answers "Nein." and goes on	
+18/30	ID1803004900	own_continuation	high	Answers Petzold's Zwischenfrage after own Rede; chair asks Brandl to respond	
+18/42	ID1804202100	own_continuation	high	Chair asks about Zwischenfrage mid-Rede; Buchholz continues "nächsten Satz", then thanks	
+18/42	ID1804205400	own_continuation	high	Chair warns of time ("Rote Karte"); Kekeritz "Jawohl. Ich bin gleich fertig."	
+18/46	ID1804612900	zu_protokoll	medium	No salutation or reactions; neighbouring speeches written too; DIP zu_protokoll	
+18/46	ID1804613900	zu_protokoll	medium	No salutation or reactions; neighbouring text also written; DIP zu_protokoll	
+18/54	ID1805401600	rede	high	Next speaker in debate, salutation, full Rede; chair announces him as Redner	
+18/54	ID1805401800	erwiderung	high	Answers Höhn's Kurzintervention to his Rede; "Frau Kollegin, erstens..."	Tauber
+18/60	ID1806011200	zu_protokoll	high	Chair: "Auch hierzu sollen die Reden zu Protokoll gegeben werden."	
+18/66	ID1806605700	zu_protokoll	medium	No salutation or reactions; Sterbehilfe debate with written speeches; DIP zu_protokoll	
+18/85	ID1808506100	kurzintervention	high	Chair: "Kollege Gehrcke für eine Kurzintervention das Wort"; answers Lorenz	Lorenz
+18/85	ID1808503000	erwiderung	medium	Chair: "gebe dem Kollegen Sarrazin das Wort zur Erwiderung" after Weinberg's Kurzintervention; his own prior input was a Zwischenfrage	Sarrazin
+18/88	ID1808801600	own_continuation	high	Chair: "Die Redezeit ist abgelaufen"; Lange "Ja. – Das sage ich zügig" and closes	
+18/91	ID1809105000	rede	medium	Chair "Herr Kauder, Sie haben das Wort" after Ordnungsruf; argued statement on immunity, no § named	
+18/97	ID1809705700	erwiderung	high	Chair: "Ich erteile dem Kollegen Kiesewetter das Wort zu einer Erwiderung" after Neu's § 30 Erklärung	Kiesewetter
+18/110	ID1811004300	own_continuation	high	Chair: "Sie sind jetzt schon eine Minute über Ihrer Redezeit"; Hahn "ich komme zum Schluss"	
+18/112	ID1811209900	kurzintervention	low	Chair "Herr Ströbele, bitte" after Oellers answered Ströbele's Kurzintervention; second round, argues against Oellers' Rede	Oellers
+18/124	ID1812411300	rede	high	Chair: "Jetzt hat der Kollege Volker Beck ... das Wort"; salutation, full Rede	
+18/133	ID1813308200	erwiderung	medium	Chair: "Herr Schmidt, möchten Sie darauf erwidern?" after Staatsminister answered him	Schmidt
+18/149	ID1814909500	kurzintervention	high	Chair: "Eine Kurzintervention muss man anmelden... Wenn Sie das wollen, erhalten Sie dafür das Wort"; answers Schipanski	Schipanski
+18/197	ID1819702000	kurzintervention	high	Chair: "Kollege Birkwald die Gelegenheit zu einer Kurzintervention"; answers Linnemann	Linnemann
+18/231	ID1823100600	kurzintervention	high	Chair: "Kollegin Hänsel bekommt jetzt die Möglichkeit zu einer Kurzintervention"; answers Kauder	Kauder
+18/242	ID1824208000	kurzintervention	medium	Chair: "Die war nicht angemeldet. Dann jetzt Frau Kollegin Keul"; comments on preceding CDU speaker's facts; speaker name not visible	unknown (preceding CDU/CSU speaker)
+18/245	ID1824502200	kurzintervention	medium	Chair: "Wort für eine Kurzintervention dem Kollegen Dr. Gysi"; content is farewell thanks to Lammert, not an answer	Oppermann
+19/7	ID19709200	motion	high	One-sentence doubt of quorum under § 45 GO after salutation; chair then runs Hammelsprung	
+19/18	ID191803000	own_continuation	high	Chair: "Sie möchten antworten"; Hirte answers De Masi's Zwischenfrage in his own Rede	
+19/26	ID192611700	kurzintervention	high	Chair: "Das Wort zu einer Kurzintervention ... hat Dr. Spaniel"; answers Weisgerber	Weisgerber
+19/26	ID192611800	erwiderung	high	Chair: "Frau Dr. Weisgerber zur Erwiderung" after Spaniel's Kurzintervention	Weisgerber
+19/26	ID192612400	rede	high	Chair: "Nächster Redner in der Debatte: Stefan Rouenhoff"; salutation, 5794-char Rede	
+19/26	ID192615400	rede	high	Chair gives floor for her first Rede; salutation, full speech	
+19/33	ID193303300	motion	high	Chair: "Wort zur Geschäftsordnung"; one sentence asking to read the Einspruch aloud	
+19/37	ID193700200	rede	medium	Chair: "Nächster Redner: Thomas Seitz"; argues against adding items in GO debate, chair says "wir gerade zur Geschäftsordnung reden"	
+19/43	ID194309000	motion	high	One-sentence doubt of quorum; chair then applies § 45 GO	
+19/56	ID195609400	motion	high	Chair: "Zur Geschäftsordnung der Abgeordnete Braun"; one-sentence quorum doubt	
+19/59	ID195901100	rede	high	Chair: "erteile ich jetzt das Wort Christian Kühn"; salutation, full Rede (not Zwischenbemerkung); next "Nächste Rednerin"	
+19/61	ID196105100	rede	high	Chair: "Nächster Redner in der Debatte: Dr. Marcus Faber"; full Rede, Kurzinterventionen follow	
+19/63	ID196306000	erwiderung	high	Chair: "Herr Minister Seehofer, Sie können von Ihrem Platz aus antworten" to Kurzintervention (Hess)	Seehofer
+19/64	ID196403500	erwiderung	high	Answers Hänsel's and Müller-Rosentritt's interventions on his Rede; chair "Herr Minister, bitte schön"	Maas
+19/72	ID197202600	motion	high	One-sentence doubt of quorum § 45 GO after Aussprache closed	
+19/80	ID198002200	motion	high	Chair: "Antrag zur Geschäftsordnung"; asks to summon Finanzminister under § 42, no argument beyond one line	
+19/80	ID198002300	rede	medium	Chair "Herr Kollege Schneider"; short reasoned objection to Korte's § 42 motion ("Wir widersprechen... Staatssekretärinnen sind da")	
+19/94	ID199408800	rede	medium	Chair: "Gibt es dagegen eine andere Auffassung?"; speaks against FDP motion with reasons ("Rede und Gegenrede")	
+19/98	ID199800100	motion	high	"Die AfD wünscht eine Geschäftsordnungsdebatte zur Tagesordnung nach § 29"; bare request	
+19/104	ID1910412200	motion	high	"zur Geschäftsordnung" one-sentence quorum doubt before the vote	
+19/107	ID1910711700	erwiderung	high	Chair: "Wenn Herr Lange antworten möchte, kann er das tun" after Kurzintervention	Lange
+19/124	ID1912415800	motion	high	"meine Fraktion zweifelt die Beschlussfähigkeit des Plenums an"; one sentence	
+19/124	ID1912415900	motion	high	Requests namentliche Abstimmung under the GO; one sentence	
+19/149	ID1914906600	erklaerung	high	Chair: "nach § 30 unserer Geschäftsordnung ... Erklärung zur Aussprache. Ich gebe Frau Jelpke das Wort"	
+19/160	ID1916005700	erwiderung	medium	Chair "Kollege Weinberg, wollen Sie antworten?" after Müller's intervention on his Rede; debate then continues with next Redner	Weinberg
+19/161	ID1916105600	erwiderung	high	Chair: "Frau Kollegin Zeulner, Sie haben das Recht, darauf zu antworten" after intervention	Zeulner
+19/165	ID1916507900	kurzintervention	high	Chair: "Der Kollege Bystron erhält Gelegenheit zu einer Kurzintervention"; addresses Pau's Rede	Pau
+19/179	ID1917902100	kurzintervention	high	Chair: "Der Kollege Dehm erhält die Gelegenheit zu einer Kurzintervention"; addresses Grütters	Grütters
+19/191	ID1919101700	kurzintervention	high	Chair: "zu zwei Zwischenbemerkungen zunächst dem Kollegen Bystron"; answers Fechner's Rede	Fechner
+19/192	ID1919213100	motion	high	One-sentence reply on his Antrag to summon the minister (Staatssekretär can represent government)	
+19/200	ID1920002900	kurzintervention	high	Chair: "Abgeordneten Spaniel ... für eine Kurzintervention"; addresses "Kollegin" on Herdenschutzesel; her name not shown	unknown (preceding speaker, a woman)
+20/17	ID201708100	erwiderung	high	Chair: "Herr Kollege Altenkamp, Sie haben die Möglichkeit zum Antworten" after Kollegin's intervention	Altenkamp
+20/20	ID202000200	motion	high	Chair: "Zur Geschäftsordnung"; demands summoning the minister under § 42, one brief reason	
+20/20	ID202000300	rede	medium	Chair: "Gibt es dazu eine Wortmeldung, Frau Mast?"; short statement speaking on Frei's motion	
+20/22	ID202201100	kurzintervention	medium	Chair: "bei persönlicher Ansprache auch eine Kurzintervention möglich ... Herr Lauterbach jetzt das Wort"; Brandner then may "erwidern"	Brandner
+20/31	ID203106300	other	medium	Protest against chair's Ordnungsruf, asks to withdraw it; chair: "Dazu gibt es keine Aussprache"	
+20/32	ID203201500	erklaerung	high	Chair: "Herr Gnauck das Wort zu einer persönlichen Erklärung"	
+20/46	ID204606200	motion	high	Chair: "Wortmeldung zur Geschäftsordnung"; one-sentence § 42 motion to summon the Chancellor	
+20/54	ID205410500	other	medium	Chair: "um ein Wort gebeten, ... obwohl es in der Geschäftsordnung so nicht vorgesehen ist"; statement after election results	
+20/54	ID205410600	other	medium	Chair: "auch der Kollege Ulrich hat jetzt das Wort für eine kurze Stellungnahme"; unscheduled statement on election	
+20/57	ID205704600	rede	high	Chair: "nächste Rednerin in der Debatte ... Sonja Eichwede"; salutation, full Rede	
+20/92	ID209202200	erwiderung	high	Chair: "Herr Frei ... auf drei Kurzinterventionen antworten ... Herr Frei hat das Wort"	Frei
+20/99	ID209909600	motion	high	Chair: "zur Geschäftsordnung"; moves summoning of minister under § 42 GO, no debate	
+20/112	ID2011206800	motion	high	Chair: "Wort zur Geschäftsordnung"; one-sentence § 42 motion to summon Finanzminister	
+20/114	ID2011409300	rede	medium	Chair: "Dazu kann Stellung genommen werden"; Fechner argues against Brandner's motion ("weisen diesen Antrag zurück")	
+20/132	ID2013206600	motion	high	Chair: "Meldung zur Geschäftsordnung?"; one-sentence § 45 motion on quorum	
+20/134	ID2013406900	motion	high	Chair: "Wort zu einem Geschäftsordnungsantrag"; one-sentence § 42 motion to summon minister	
+20/134	ID2013407000	rede	medium	Short statement on the pending motion ("Wir würden die Ministerin so schnell wie möglich herholen"); argues for continuing	
+20/143	ID2014313200	motion	high	Chair: "Wort für einen Geschäftsordnungsantrag des Abgeordneten Brandner"; § 42 motion to summon minister	
+20/147	ID2014705500	erklaerung	high	Chair: "Herr Moosdorf wünscht nach § 30 ... das Wort für eine Erklärung zur Aussprache"	
+20/154	ID2015418200	rede	medium	Chair "Herr Thomae, bitte" after Brandner's motion; speaks against it with a short reason	
+20/159	ID2015915700	motion	high	Chair: "zur Geschäftsordnung"; asks that the Agrarminister be summoned, a bare request	
+20/163	ID2016308600	erklaerung	high	Chair: "Nach § 30 unserer Geschäftsordnung erteile ich jetzt das Wort dem Abgeordneten Keuter für eine Erklärung"	
+20/163	ID2016308700	erwiderung	high	Chair: "Herr von Notz, Sie sind direkt angesprochen worden. Sie dürfen erwidern" after Keuter's Erklärung	von Notz
+20/165	ID2016514900	erwiderung	medium	Chair: "Sie möchten antworten? ... ich gestatte das"; answers statement addressed to him; questioner not clear	Irlstorfer
+20/165	ID2016515500	erwiderung	high	Chair: "Herr Pantazis, möchten Sie antworten?" after Ziegler's persönliche Erklärung about his Rede	Pantazis
+20/195	ID2019500500	rede	medium	Chair: "Da Sie Herrn Vogel direkt angesprochen haben, ... Stellung zu nehmen"; short statement in GO debate on Absetzungsantrag	
+20/195	ID2019507400	motion	high	Chair: "Herr Brandner, was kann ich für Sie tun?"; one-sentence § 45 quorum doubt	
+20/195	ID2019507500	other	medium	Procedural question to chair ("Wie lange ist eröffnet?") in GO exchange; no motion or argument	
+20/195	ID2019507600	motion	high	One-sentence request: "würden wir eine namentliche Abstimmung beantragen"	
+20/196	ID2019610200	motion	medium	Chair notes "Wortmeldung dazu"; one-sentence proposal to ask where ministers are and interrupt the sitting	
+20/210	ID2021003900	kurzintervention	medium	Chair: "von Ihnen, Herr Steiniger, persönlich angesprochen ... Möglichkeit, darauf zu reagieren"; Steiniger later calls it Kurzintervention	Steiniger
+20/210	ID2021004800	erklaerung	high	Chair: "Herr Hess, eine kurze persönliche Erklärung"	
+20/210	ID2021004900	erwiderung	high	Chair: "Ich erlaube noch eine Antwort auf diese persönliche Erklärung"; Fiedler answers Hess	Fiedler
+20/211	ID2021102400	motion	high	Chair: "zur Geschäftsordnung"; moves 30-minute interruption for Fraktionssitzung	
+21/4	ID21406800	rede	high	Chair: "Ich darf jetzt aufrufen ... Frau Dr. Kirsten Kappert-Gonther"; salutation, full Rede	
+21/4	ID21411400	erklaerung	medium	Chair: "Bitte um Abgabe einer kurzen Erklärung im Anschluss an die vorherige Rede"; "Das war die Erklärung dazu"	
+21/7	ID21707000	erklaerung	high	Chair: "persönliche Erklärung zur Aussprache ... erteile ich das Wort dem Abgeordneten Köstering"	
+21/14	ID211413700	motion	high	One-sentence request for 20-minute interruption of the sitting	
+21/18	ID211806500	motion	medium	Chair: "Es gibt eine Wortmeldung"; objects to the declared majority, effectively asks for a count; chair then offers Gegenprobe	
+21/43	ID214302800	erklaerung	high	Chair: "Personen, die persönlich angesprochen worden sind, persönliche Erklärungen abgeben ... Helferich"	
+21/47	ID214706800	erklaerung	high	Chair: "Zu einer persönlichen Erklärung darf ich das Wort erteilen dem Abgeordneten Matthias Helferich"	
+21/48	ID214801900	erklaerung	high	Chair: "Möglichkeit für eine persönliche Erklärung hat der Abgeordnete Herr Dirk Brandes"	
+21/51	ID215101800	erklaerung	high	Chair: Gottschalk "bat darum, eine persönliche Erklärung abgeben zu dürfen. Bitte sehr."	
+21/54	ID215403000	erwiderung	high	Answers Bachmann's Kurzintervention ("Frau Bachmann..."); chair had called Bachmann's turn a Kurzintervention	Kreiser
+21/59	ID215902600	erwiderung	high	Answers Hilse's Kurzintervention to his Rede; chair then "Nun geht es weiter in der regulären Debatte"	Wiener
+21/59	ID215907500	other	medium	Zwischenfrage in König's Rede: "dass Sie die Frage zulassen"; chair "Herr König, Sie können antworten"; DIP says kurzintervention	
+21/81	ID218101500	erwiderung	high	Chair: "Frau Kollegin Wittmann, Sie haben die Möglichkeit, zu antworten" after Kurzintervention	Wittmann
+21/81	ID218107100	kurzintervention	medium	Chair: addressed repeatedly, "Möglichkeit, darauf zu reagieren"; Komning calls it "Ihre Kurzintervention"; Komning then answers	Komning
+21/100	ID2110008000	erwiderung	high	Chair: "Frau Lemke, möchten Sie erwidern?" after Müller's intervention on her Rede	Lemke
+21/103	ID2110306300	rede	high	Chair: "abschließenden Redner in dieser Debatte: ... Marc Bernhard"; salutation, full Rede	

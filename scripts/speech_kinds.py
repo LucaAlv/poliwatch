@@ -14,6 +14,7 @@ Pure functions over ``ElementTree`` elements; the parser builds the row dicts.
 from __future__ import annotations
 
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from typing import Any, NamedTuple
 
@@ -21,7 +22,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 12
+VERSION = 13
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -34,10 +35,15 @@ FRAGESTUNDE_ANTWORT = "fragestunde_antwort"
 #: ADR 0004: an address that is no contribution to a debate, by the presidium or
 #: a guest; shown, counted in no Reden figure.
 ANSPRACHE = "ansprache"
+#: ADR 0002, amendment 2026-11-23: an oral Erklärung zur Aussprache (§ 30), zur
+#: Abstimmung (§ 31) or außerhalb der Tagesordnung (§ 32 GO-BT), only where the
+#: reviewed list names it.
+ERKLAERUNG = "erklaerung"
 
 CONTRIBUTION_KINDS = (
     KURZINTERVENTION,
     ERWIDERUNG,
+    ERKLAERUNG,
     ZWISCHENFRAGE,
     ZU_PROTOKOLL,
     BEFRAGUNG_FRAGE,
@@ -63,6 +69,7 @@ REDE_STATUS = {
     None: "speech",
     KURZINTERVENTION: "beitrag",
     ERWIDERUNG: "beitrag",
+    ERKLAERUNG: "beitrag",
     BEFRAGUNG_FRAGE: "beitrag",
     BEFRAGUNG_ANTWORT: "beitrag",
     ZU_PROTOKOLL: "zu_protokoll",
@@ -111,6 +118,7 @@ NOT_REDE_KINDS = frozenset({ZWISCHENFRAGE, FRAGESTUNDE_FRAGE, FRAGESTUNDE_ANTWOR
 KIND_LABELS = {
     KURZINTERVENTION: ("Kurzintervention", "Kurzinterventionen"),
     ERWIDERUNG: ("Erwiderung", "Erwiderungen"),
+    ERKLAERUNG: ("Mündliche Erklärung", "Mündliche Erklärungen"),
     ZWISCHENFRAGE: ("Zwischenfrage", "Zwischenfragen"),
     ZU_PROTOKOLL: ("Zu Protokoll gegebener Beitrag", "Zu Protokoll gegebene Beiträge"),
     BEFRAGUNG_FRAGE: ("Frage in der Befragung der Bundesregierung", "Fragen in der Befragung der Bundesregierung"),
@@ -147,6 +155,60 @@ def dip_mismatches(counts: dict[str, int], activities: Any) -> list[dict[str, An
         for kind in DIP_ACTIVITY_KINDS.values()
         if counts.get(kind, 0) != dip.get(kind, 0)
     ]
+
+
+#: ``aktivitaetsart`` of DIP whose turn is no Rede (ADR 0002 and its
+#: amendment of 2026-11-23), and the Kind it names.
+DIP_UNIT_KINDS = {
+    "Kurzintervention": KURZINTERVENTION,
+    "Erwiderung": ERWIDERUNG,
+    "Erklärung zur Aussprache gem. § 30 Geschäftsordnung BT": ERKLAERUNG,
+    "Mündliche Erklärung gem. § 31 Geschäftsordnung BT": ERKLAERUNG,
+    "Persönliche Erklärung gem. § 32 Geschäftsordnung BT": ERKLAERUNG,
+}
+
+
+def _last_word(name: str | None) -> str:
+    """The last word of a printed name without its comma and bracketed parts
+    ("Volker Beck (Köln), MdB, …" is "beck"), as DIP and the Plenarprotokoll
+    both end it."""
+    words = re.sub(r"\([^)]*\)", " ", name or "").split(",")[0].split()
+    # DIP prints some names without their marks (Dagdelen for Dağdelen).
+    plain = unicodedata.normalize("NFKD", words[-1].casefold()) if words else ""
+    return "".join(char for char in plain if not unicodedata.combining(char))
+
+
+def dip_typed_reden(report: dict[str, Any], listed: Any = frozenset()) -> list[dict[str, Any]]:
+    """The stored Reden of one cached report that DIP types as a Kurzintervention,
+    an Erwiderung or an oral Erklärung, and that no reviewed entry (``listed``, the
+    ids listed as ``rede``) says are Reden.
+
+    A Rede and an Aktivität belong together by surname, page and quadrant. DIP's
+    other Aktivitäten of the same person at the same place explain that many Reden;
+    only when more are stored than those explain is each of them named. DIP is a
+    lead, not the verdict: the entry in ``reviewed_units.json`` is.
+    """
+    places: dict[tuple[str, int, str], list[str]] = {}
+    for activity in (report.get("api_records") or {}).get("aktivitaeten") or []:
+        page = re.fullmatch(r"(\d+)\s*([A-D])", str((activity.get("fundstelle") or {}).get("seite") or ""))
+        surname = _last_word(activity.get("titel"))
+        if page and surname:
+            places.setdefault((surname, int(page.group(1)), page.group(2)), []).append(str(activity.get("aktivitaetsart")))
+    stored: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+    for item in report.get("agenda_items") or []:
+        for speech in item.get("xml_speakers") or []:
+            ref = speech.get("source_page") or {}
+            surname = _last_word((speech.get("speaker") or {}).get("last_name"))
+            if surname and ref.get("page") is not None and ref.get("quadrant") and speech.get("rede_id") not in listed:
+                stored.setdefault((surname, int(ref["page"]), ref["quadrant"]), []).append(speech)
+    rows = []
+    for place, speeches in stored.items():
+        arts = places.get(place, [])
+        kinds = sorted({DIP_UNIT_KINDS[art] for art in arts if art in DIP_UNIT_KINDS})
+        if kinds and len(speeches) > sum(art not in DIP_UNIT_KINDS for art in arts):
+            rows += [{"rede_id": s.get("rede_id"), "speaker": (s.get("speaker") or {}).get("display_name"),
+                      "page": f"{place[1]}{place[2]}", "dip": kinds} for s in speeches]
+    return rows
 
 
 # --- Question formats ---------------------------------------------------------
@@ -464,6 +526,16 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
     an Antwort (official). Elsewhere a ``<rede>`` is a Kurzintervention when the
     Sitzungsleitung announced one before it, and the Erwiderung when it follows a
     Kurzintervention and comes from the Redner the Kurzintervention answered.
+
+    A ``<rede>`` the parser marked ``listed_unit`` (a ``reviewed_units.UNIT_KINDS``
+    entry) is that kind whatever the wording says. It takes its place in the
+    running state: a listed Kurzintervention is answered by the next ``<rede>`` of
+    the main Redner, and only a Rede becomes the Rede the next one answers. A
+    listed Erwiderung belongs to its Redner's own last Rede of the agenda item
+    (where there is none, to the last Rede if it answers a Kurzintervention, else to
+    none), and so do the Kurzinterventionen right before it when no Erwiderung of
+    another Rede follows them too: the Redner they answered spoke before someone
+    else did (19/3, 19/61). In a Befragung only an Erklärung can be listed.
     """
     labels: list[RedeLabel] = []
     befragung = BEFRAGUNG in formats
@@ -474,6 +546,8 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
     previous: str | None = None  # kind of the previous <rede>
     seen_rede = False
     previous_rede = None
+    own_reden: dict[str, str | None] = {}  # each Redner's last Rede
+    listed_replies: set[int] = set()
     for child in top:
         if child.tag == "p" and seen_rede and child.attrib.get("klasse") != "redner":
             between += " " + _text(child)
@@ -495,7 +569,12 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
             continue
         redner = _rede_redner(child)
         who = speaker_class(redner)
-        if befragung:
+        listed = child.get("listed_unit")
+        if befragung and listed:
+            # Only an Erklärung is listed there (mark_listed_units): neither a Frage nor
+            # an Antwort, and it ends no opening reports (19/191, 20/105).
+            label = RedeLabel(listed)
+        elif befragung:
             if who is None:
                 raise ValueError(f"unresolved Befragung turn {child.get('id')} redner {redner.get('id') if redner is not None else None}")
             if opening and who == OFFICIAL:
@@ -530,7 +609,16 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
                     and names_asker(redner, between)
                     and re.search(r"Sind Sie einverstanden, dass der Abgeordnete .* antwortet\? [–-] Gut\.", between)
                     and delegation_requested)
-            if previous == KURZINTERVENTION and (same_person or delegated_reply):
+            if listed:
+                parent = main_id if listed == KURZINTERVENTION else None
+                if listed == ERWIDERUNG:
+                    listed_replies.add(len(labels))
+                    # Without a Rede of its own it answers what the Kurzintervention before it
+                    # does (18/85); with neither, no Rede is known (20/196).
+                    answered = main_id if previous in (KURZINTERVENTION, ERWIDERUNG) else None
+                    parent = own_reden.get(_redner_key(redner) or "", answered)
+                label = RedeLabel(None if listed == "rede" else listed, parent)
+            elif previous == KURZINTERVENTION and (same_person or delegated_reply):
                 label = RedeLabel(ERWIDERUNG, main_id)
             elif (main_id and names_asker(redner, intervention_exchange)
                   and re.search(r"Herr [^.]+, Sie können eine Kurzintervention machen, eine einzige\.", intervention_exchange)
@@ -545,10 +633,25 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
         labels.append(label)
         if label.kind is None:
             main_id, main_key = child.attrib.get("id"), _redner_key(redner)
+            if main_key:
+                own_reden[main_key] = main_id
         previous = label.kind
         seen_rede = True
         between = trailing_sitzungsleitung_text(child)
         previous_rede = child
+    # The Kurzinterventionen a listed Erwiderung answers.
+    index = 0
+    while index < len(labels):
+        start = index
+        while index < len(labels) and labels[index].kind == KURZINTERVENTION:
+            index += 1
+        replies = index
+        while replies < len(labels) and labels[replies].kind == ERWIDERUNG:
+            replies += 1
+        parents = {label.parent_rede_id for label in labels[index:replies]}
+        if len(parents) == 1 and listed_replies & set(range(index, replies)):
+            labels[start:index] = [label._replace(parent_rede_id=min(parents, key=str)) for label in labels[start:index]]
+        index = max(replies, start + 1)
     return labels
 
 

@@ -712,7 +712,7 @@ An online build, like `--offline --repersist`, always stages a fresh `data/bunde
 - `documents`
 - `agenda_item_documents`
 - `speeches` (Reden only)
-- `contributions` (Beiträge that are no Rede: Zwischenfragen, explicitly typed written submissions, Kurzinterventionen, Erwiderungen, questions/answers of a Befragung or Fragestunde, and Ansprachen of the presidium or a guest (a reviewed list names them), typed by `kind`; classified by `scripts/speech_kinds.py`)
+- `contributions` (Beiträge that are no Rede: Zwischenfragen, written submissions, Kurzinterventionen, Erwiderungen, mündliche Erklärungen, questions/answers of a Befragung or Fragestunde, and Ansprachen of the presidium or a guest (a reviewed list names them), typed by `kind`; classified by `scripts/speech_kinds.py`)
 - `speech_rule_inputs` (the counting-rule version actually persisted for each protocol; consumers reject missing or stale versions)
 - `votes`
 - `agenda_item_votes`

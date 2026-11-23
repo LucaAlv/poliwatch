@@ -157,11 +157,11 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden; forderung ist bei Anträgen, die eine namentliche Abstimmung ohne DIP-Zusammenfassung betreffen, der wörtliche Forderungsteil aus dem DIP-Volltext der Drucksache (nur Layout bereinigt), forderung_state sagt, ob er gefunden wurde (extracted), fehlt (no_passage) oder der Text nicht abgerufen ist (not_fetched), forderung_version ist die Version der Extraktionsregel.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
-    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
+    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen, mündliche Erklärungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
     "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005). Nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
-    "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
+    "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, mündliche Erklärung (erklaerung), Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten, mit dem Grund jeder Verknüpfung (basis).",
     "vote_link_reviews": "Geprüfte Verknüpfungen von Abstimmungen und Tagesordnungspunkten, die ein Einzelfalleintrag entfernt oder als unsicher markiert.",
@@ -2324,6 +2324,29 @@ def validate_cached_kinds(entries: list[dict[str, Any]]) -> None:
             raise CachedReportError(f"{_entry_label(entry)}: {exc}") from exc
 
 
+def unlisted_dip_typed_reden(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every stored Rede DIP types as another Kind and no entry of
+    scripts/reviewed_units.json lists (``speech_kinds.dip_typed_reden``)."""
+    rows = []
+    for entry in entries:
+        report = entry["report"]
+        number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer")) or ""
+        listed = {unit["rede_id"] for unit in reviewed_units.for_sitting(number) if unit["kind"] == "rede"}
+        rows += [{"document_number": number, **row} for row in speech_kinds.dip_typed_reden(report, listed)]
+    return sorted(rows, key=lambda row: (_document_number_order(row["document_number"]), row["rede_id"] or ""))
+
+
+def refuse_release_with_unlisted_dip_typed_reden(tag: str, entries: list[dict[str, Any]]) -> None:
+    rows = unlisted_dip_typed_reden(entries) if tag != "local" else []
+    if rows:
+        shown = "; ".join(f"{row['document_number']} {row['rede_id']} ({', '.join(row['dip'])})" for row in rows[:20])
+        raise RuntimeError(
+            f"export: release {tag} holds {len(rows)} Reden that DIP types as another Kind: {shown}"
+            f"{' ...' if len(rows) > 20 else ''}. Fix: read each and list it in scripts/reviewed_units.json "
+            "(kurzintervention, erwiderung, erklaerung, or rede where DIP is wrong), then run --offline --repersist"
+        )
+
+
 def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
     details = []
     for entry in entries:
@@ -2332,13 +2355,18 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
             speech_kinds.validate_kind(mismatch["kind"])
             details.append({"document_number": (report.get("protocol") or {}).get("dokumentnummer"), **mismatch})
     details.sort(key=lambda row: (row["document_number"] or "", row["kind"]))
-    audit = {"speech_kinds_version": speech_kinds.VERSION, "mismatches": details}
+    typed = unlisted_dip_typed_reden(entries)
+    audit = {"speech_kinds_version": speech_kinds.VERSION, "mismatches": details, "reden_dip_types_otherwise": typed}
     path = output_dir / "data" / "a1-classification-diagnostics.json"
     dip.write_text_atomic(path, json.dumps(audit, ensure_ascii=False, indent=2) + "\n")
     if details:
         sittings = len({row["document_number"] for row in details})
         print(f"warning: [classification] {len(details)} sitting/kind differences against DIP across {sittings} sittings. "
               f"Inspect source turns in {path}; disagreement alone does not reject a parse.", file=sys.stderr)
+    if typed:
+        print(f"warning: [classification] {len(typed)} stored Reden are Kurzinterventionen, Erwiderungen or Erklärungen in DIP. "
+              f"Read each ({path}, reden_dip_types_otherwise) and list it in scripts/reviewed_units.json; a release export refuses them.",
+              file=sys.stderr)
     return audit
 
 
@@ -3652,7 +3680,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 23
+EXPORT_FORMAT = 24
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -10201,7 +10229,7 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     return (
         '<section class="panel">'
         "<h2>Weitere Beiträge (keine Reden)</h2>"
-        "<p>Zwischenfragen, schriftliche Beiträge, Kurzinterventionen, Erwiderungen, Ansprachen sowie Fragen und Antworten zählen gesondert.</p>"
+        "<p>Zwischenfragen, schriftliche Beiträge, Kurzinterventionen, Erwiderungen, mündliche Erklärungen, Ansprachen sowie Fragen und Antworten zählen gesondert.</p>"
         f'<div class="field-grid">{fields}</div><ul>{links}</ul>'
         "</section>"
     )
@@ -11174,14 +11202,15 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
         Thema bestimmen lässt - sonst würde die Karte nur sagen, dass irgendein
         Tagesordnungspunkt lang war.</span></li>
         <li><strong>Was als Rede zählt</strong><span>Alle Kennzahlen über Reden, Zeichen und Redner
-        zählen nur Reden. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der
+        zählen nur Reden. Kurzinterventionen, Erwiderungen, mündliche Erklärungen nach §§ 30 bis 32
+        der Geschäftsordnung sowie die Fragen und Antworten der
         Befragung der Bundesregierung und der Fragestunde sind keine Reden; sie werden als eigene
         Beiträge erfasst und in keiner dieser Kennzahlen mitgezählt. Die Eingangsberichte einer
         Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden
         oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion.
         Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso
-        wenig der Wahlvorschlag einer Fraktion, die Annahme einer Wahl und die Antwort auf einen
-        Eid.</span></li>
+        wenig der Wahlvorschlag einer Fraktion, die Annahme einer Wahl, die Antwort auf einen
+        Eid und eine Wortmeldung, die nur einen Antrag zur Geschäftsordnung stellt.</span></li>
       </ol>
     </section>
     <section>
@@ -12977,7 +13006,7 @@ def render_sources_page(
         <h2>Wie die Seite sie nutzt</h2>
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
-          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion. Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso wenig der Wahlvorschlag einer Fraktion, die Annahme einer Wahl und die Antwort auf einen Eid. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
+          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen, mündliche Erklärungen nach §§ 30 bis 32 der Geschäftsordnung sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Ansprachen des Präsidiums oder von Gästen, etwa bei Gedenkstunden oder zur Eröffnung einer Wahlperiode, sind keine Reden und zählen für keine Fraktion. Sitzungsleitung zählt nie, auch wenn das Protokoll sie als eigene Rede druckt; ebenso wenig der Wahlvorschlag einer Fraktion, die Annahme einer Wahl, die Antwort auf einen Eid und eine Wortmeldung, die nur einen Antrag zur Geschäftsordnung stellt. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
           <li><strong>Meiste Reden</strong><span>Tagesordnungspunkte nach Anzahl der extrahierten Reden sortiert. Die Balken zeigen Redeanteil und Textanteil an der gesamten Sitzung. Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
@@ -14827,6 +14856,7 @@ def run_data_pipeline(
     tag = getattr(args, "data_tag", None) or "local"
     # Before the facts engine writes its tables: a refusal here wastes nothing.
     refuse_release_beside_manifest_override(tag, manifest_raw)
+    refuse_release_with_unlisted_dip_typed_reden(tag, entries)
     bills = collect_bill_pages(entries, mp_lookup)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))

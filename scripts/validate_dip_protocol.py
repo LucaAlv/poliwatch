@@ -994,6 +994,33 @@ def mark_reviewed_units(root: ET.Element, entries: list[dict[str, str]]) -> None
         found[0].set("reviewed_reason", entry["reason"])
 
 
+def mark_listed_units(redes: list[ET.Element], entries: dict[str, dict[str, str]], formats: frozenset[str],
+                      matched: set[str], sitting: str) -> None:
+    """ADR 0002, amendment 2026-11-23: mark each ``<rede>`` of one TOP, as it
+    stands after ``split_nested_reden``, that one of ``entries`` (the sitting's
+    ``reviewed_units.UNIT_KINDS`` entries by id) lists, for
+    ``speech_kinds.classify_reden`` (``listed_unit``). An entry of another owner,
+    or on a ``<rede>`` whose kind is decided elsewhere (a presidium ``<rede>``;
+    in a Befragung, whose question format decides, all but an Erklärung), stops
+    the run."""
+    for rede in redes:
+        entry = entries.get(rede.get("id") or "")
+        if entry is None:
+            continue
+        matched.add(entry["rede_id"])
+        where = f"scripts/reviewed_units.json: {sitting} {entry['rede_id']} ({entry['kind']})"
+        first = rede.find("./p[@klasse='redner']/redner")
+        owner = derive.first_redner_id(first.get("id")) if first is not None else None
+        if owner != entry["redner_id"]:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: owned by Redner-ID {owner}, the entry says {entry['redner_id']}; the entry is stale or misapplied")
+        if rede.get("reviewed_kind") or speech_kinds.presidium_owner(rede):
+            raise reviewed_units.ReviewedUnitsError(f"{where}: a presidium <rede> takes one of ADR 0004's kinds")
+        if speech_kinds.BEFRAGUNG in formats and entry["kind"] != speech_kinds.ERKLAERUNG:
+            raise reviewed_units.ReviewedUnitsError(f"{where}: a Befragung's question format decides its kinds")
+        rede.set("listed_unit", entry["kind"])
+
+
 def mark_stage_direction_names(root: ET.Element) -> None:
     """ADR 0004 (20/25): a ``<name>`` whose whole text stands in parentheses is a
     stage direction the source printed in the chair's element, not a chair turn:
@@ -2209,6 +2236,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     presidium_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.PRESIDIUM_KINDS]
     name_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.NAME_KINDS]
     loose_entries = {entry["rede_id"]: entry for entry in sitting_entries if entry["kind"] in reviewed_units.LOOSE_KINDS}
+    unit_entries = {entry["rede_id"]: entry for entry in sitting_entries if entry["kind"] in reviewed_units.UNIT_KINDS}
     matched_loose: set[str] = set()
     matched_entries: set[str] = set()
     inventory = raw_rede_inventory(root)
@@ -2269,6 +2297,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             outer = raw_rede_id(rede.get("id") or "")
             if outer != rede.get("id") and outer in rid_pages:
                 rid_pages.setdefault(rede.get("id"), rid_pages[outer])
+        mark_listed_units(redes, unit_entries, top_format.formats, matched_entries, sitting)
         try:
             labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
         except ValueError as exc:
@@ -2588,7 +2617,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             }
         )
 
-    unmatched = sorted(set(reviewed_entries) - matched_entries)
+    unmatched = sorted((set(reviewed_entries) | set(unit_entries)) - matched_entries)
     if unmatched:
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting} lists {', '.join(unmatched)}, which names no Rede of a TOP in "
