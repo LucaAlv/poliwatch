@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.50.0] - 2026-11-23
+
+The text of a Rede now has the paragraphs the Bundestag prints, and the quotes speakers read out in WP 18 are part of it. Figures below come from a replay of the store (806 sittings); no Rede, Beitrag, Kind, speaker or vote moves. Export format 25, speech rule 15; a store needs one `--offline --repersist`.
+
+### Added
+
+- **Paragraphs in the text.** `speeches.text`, `contributions.text` and the wording of withheld Reden and turns separate two printed paragraphs with one line feed and hold no other; before, all paragraphs were joined with spaces. 61,137 Reden hold 596,844 of them and 46,499 Beiträge 72,232. Where the protocol interrupts a paragraph for applause or a Zwischenruf and goes on without an indent, it stays one paragraph. A break at every element of the XML would have made 862,202, about 48,000 of them before a lower-case letter. 864 paragraphs of Reden still open with a lower-case letter and are unread. `char_count` is the length of the text as before, and the paragraph breaks alone move none.
+
+### Changed
+
+- **`paragraph_count` counts printed paragraphs.** It is the number of line feeds in the text plus one (0 for an empty text); the sum over all Reden falls from 923,339 to 657,980.
+- **`snippet` stays one line.** Its length is unchanged; 110 snippets move because a quote stands in their first 240 characters.
+
+### Fixed
+
+- **Block quotes of WP 18 are in the text.** The WP 18 protocols wrap 1,939 of their 3,893 block-quote paragraphs in an element the parser skipped, so a Rede could say „ich zitiere“ and go on after the quote (18/91 `ID1809102400`). The rest, and all quotes of WP 19 to 21, were read. 1,028 Reden of WP 18 gain 302,012 characters (78,486,429 to 78,788,441, 0.4%) and 41,335 words, 110 Beiträge gain 39,630 characters, six withheld Reden gain 1,005 and one turn in a withheld Rede 819. Of the characters of WP 18 Reden, by the Fraktion the protocol names, CDU/CSU has 38.700% (was 38.721), SPD 26.038% (26.048), the Grünen 14.755% (14.759) and Die Linke 14.029% (13.973). 53 quote paragraphs stay outside the stored texts, as the chair's words, written annexes and openings do.
+- **Fakten of WP 18 follow.** 31 of 1,944 rows move, and 590 become 589 publishable: week 7 of 2016 loses its longest debate, whose value stays and whose percentile falls from 0.531 to 0.469.
+- The licence note on the site no longer says the paragraphs of a Rede are joined.
+
 ## [0.46.49.0] - 2026-11-23
 
 Turns the protocol prints like a Rede but that are something else no longer count as Reden. The stored Reden were compared with the type DIP gives the same person at the same place (1,055 of 61,660 could not be matched), each difference was read, and 514 turns are now listed by name with what they are. Reden go from 61,660 to 61,137 (806 sittings), Beiträge from 45,999 to 46,499, withheld Reden from 100 to 99. No text changes, and no Fraktion's share of all Reden moves by more than 0.1 points; 351 persons' Reden move, at most by 8. 38 of the 1,944 stored Fakt values move, and publishable weeks go from 213 to 212, months from 63 to 62. Stores need one `--offline --repersist` (speech rule 13); the export format goes from 23 to 24.
