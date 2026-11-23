@@ -73,6 +73,13 @@
       "attach": "wrap"
     },
     {
+      "sitting": "18/2",
+      "rede_id": "M1",
+      "redner_id": "11003848",
+      "kind": "erklaerung",
+      "reason": "Sitte's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
       "sitting": "18/3",
       "rede_id": "N81",
       "redner_id": "11004429",
@@ -291,6 +298,13 @@
       "name": "Dr. Karl-Heinz Brunner (SPD)"
     },
     {
+      "sitting": "18/8",
+      "rede_id": "ID1800805400",
+      "redner_id": "11002273",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 466B); read 2026-11-23 (Chair asks if he has a question after Aussprache closed; reads as late Kurzintervention)"
+    },
+    {
       "sitting": "18/10",
       "rede_id": "N39",
       "redner_id": "11004361",
@@ -369,6 +383,20 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 11)",
       "name": "Manuela Schwesig, Bundesministerin für Familie, Senioren, Frauen und Jugend"
+    },
+    {
+      "sitting": "18/11",
+      "rede_id": "ID1801100500",
+      "redner_id": "11003755",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 676D); read twice, readers differed, adjudicated, 2026-11-23: the addressed minister answers right after the Rede; Krischer then replies; DIP decides"
+    },
+    {
+      "sitting": "18/11",
+      "rede_id": "ID1801100600",
+      "redner_id": "11004081",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 677A); read 2026-11-23 (Answers a minister's remark about his own record; prior speaker's remark not visible)"
     },
     {
       "sitting": "18/12",
@@ -562,6 +590,48 @@
       "attach": "wrap"
     },
     {
+      "sitting": "18/23",
+      "rede_id": "ID1802301400",
+      "redner_id": "11002667",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1779B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "ID1802303600",
+      "redner_id": "11002273",
+      "kind": "erklaerung",
+      "reason": "DIP lists persönliche Erklärung (§ 32) (p. 1816A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M1",
+      "redner_id": "11003786",
+      "kind": "erklaerung",
+      "reason": "Kipping's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M2",
+      "redner_id": "11004182",
+      "kind": "erklaerung",
+      "reason": "Wadephul's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M3",
+      "redner_id": "11003764",
+      "kind": "erklaerung",
+      "reason": "Haßelmann's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "M4",
+      "redner_id": "11000756",
+      "kind": "erklaerung",
+      "reason": "Gysi's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
       "sitting": "18/24",
       "rede_id": "ID1802402200",
       "redner_id": "11004079",
@@ -741,8 +811,8 @@
       "sitting": "18/29",
       "rede_id": "ID1802902700:2:2:2",
       "redner_id": "11004047",
-      "kind": "withhold",
-      "reason": "Annette Groth's part is a Mündliche Erklärung gem. § 31 GO (DIP 2384D), not a Rede; split off as one (a3-wp18-19-round2-result.md:104, N7)"
+      "kind": "erklaerung",
+      "reason": "Annette Groth's mündliche Erklärung gem. § 31 GO (DIP 2384D), split off as a part; withheld until the Kind existed (N7), owner decision 2026-11-23"
     },
     {
       "sitting": "18/29",
@@ -1065,6 +1135,20 @@
       "name": "Steffen Kanitz (CDU/CSU)"
     },
     {
+      "sitting": "18/30",
+      "rede_id": "ID1803004900",
+      "redner_id": "11004018",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 2534D); read twice, readers differed, adjudicated, 2026-11-23: answers a question asked after the Rede had ended; the chair: wollen Sie dazu noch einmal Stellung nehmen?"
+    },
+    {
+      "sitting": "18/32",
+      "rede_id": "ID1803203200",
+      "redner_id": "11004361",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 2665B); read 2026-11-23"
+    },
+    {
       "sitting": "18/33",
       "rede_id": "N147",
       "redner_id": "11004252",
@@ -1241,6 +1325,174 @@
       "name": "Dr. Jochim Pfeiffer (CDU/CSU)"
     },
     {
+      "sitting": "18/39",
+      "rede_id": "ID1803911400",
+      "redner_id": "11003893",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3460D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803911500",
+      "redner_id": "11003596",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3461C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803911600",
+      "redner_id": "11003705",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3462B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803911700",
+      "redner_id": "11003738",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3462D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803911800",
+      "redner_id": "11003604",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3463B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803911900",
+      "redner_id": "11004155",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3464B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912000",
+      "redner_id": "11004427",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3466A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912100",
+      "redner_id": "11004247",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3466D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912200",
+      "redner_id": "11004270",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3467D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912300",
+      "redner_id": "11004185",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3468D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912400",
+      "redner_id": "11002273",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3469C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912500",
+      "redner_id": "11003507",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3470D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912600",
+      "redner_id": "11004282",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3471D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912700",
+      "redner_id": "11001023",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3473A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912800",
+      "redner_id": "11004353",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3474A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803912900",
+      "redner_id": "999990112",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3474C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913000",
+      "redner_id": "11003544",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3475D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913100",
+      "redner_id": "11004407",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3476C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913200",
+      "redner_id": "11004129",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3477D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913300",
+      "redner_id": "11004127",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3478C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913400",
+      "redner_id": "11004364",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3479A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913500",
+      "redner_id": "11003659",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3481A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913600",
+      "redner_id": "11004144",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3482B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/39",
+      "rede_id": "ID1803913700",
+      "redner_id": "11004037",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 3482D); read 2026-11-23"
+    },
+    {
       "sitting": "18/42",
       "rede_id": "ID1804201700",
       "redner_id": "11003836",
@@ -1249,12 +1501,530 @@
       "name": "Annette Schavan (CDU/CSU)"
     },
     {
+      "sitting": "18/42",
+      "rede_id": "ID1804202100",
+      "redner_id": "11004022",
+      "kind": "rede",
+      "reason": "DIP lists Erwiderung (p. 3727D); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: Finishes her running Rede after Zwischenfrage request; Otte's Kurzintervention comes after"
+    },
+    {
+      "sitting": "18/42",
+      "rede_id": "ID1804205400",
+      "redner_id": "11004066",
+      "kind": "rede",
+      "reason": "DIP lists Erwiderung (p. 3778D); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: Closing sentences after overtime warning 'Ich bin gleich fertig'; Pfeiffer's Kurzintervention follows"
+    },
+    {
+      "sitting": "18/42",
+      "rede_id": "ID1804205700",
+      "redner_id": "11003547",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 3782D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/44",
+      "rede_id": "ID1804401200",
+      "redner_id": "11003755",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 3944C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804609600",
+      "redner_id": "11004277",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4239C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804609700",
+      "redner_id": "11003631",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4240A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804609800",
+      "redner_id": "11004173",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4241A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804609900",
+      "redner_id": "11003759",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4241D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804610000",
+      "redner_id": "11004390",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4242D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804610500",
+      "redner_id": "11004342",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4248D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804610600",
+      "redner_id": "11004437",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4249D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804610700",
+      "redner_id": "11003249",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4250C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804610800",
+      "redner_id": "11001023",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4251C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804610900",
+      "redner_id": "11004243",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4252B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611000",
+      "redner_id": "11003544",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4253B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611100",
+      "redner_id": "11004340",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4254B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611200",
+      "redner_id": "11004407",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4255A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611300",
+      "redner_id": "11004129",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4256C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611400",
+      "redner_id": "11004127",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4257B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611500",
+      "redner_id": "11003706",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4258C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611600",
+      "redner_id": "11004168",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4259D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611700",
+      "redner_id": "11004313",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4261A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611800",
+      "redner_id": "11003853",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4262A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804611900",
+      "redner_id": "11003604",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4263A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612000",
+      "redner_id": "11004054",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4263D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612100",
+      "redner_id": "11002808",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4265C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612200",
+      "redner_id": "11003846",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4266D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612300",
+      "redner_id": "11004047",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4267D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612400",
+      "redner_id": "11003881",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4268D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612500",
+      "redner_id": "11004277",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4270A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612600",
+      "redner_id": "11004335",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4271A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612700",
+      "redner_id": "11004254",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4271D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612800",
+      "redner_id": "11004321",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4272D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804612900",
+      "redner_id": "11003869",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4273C); read twice, readers agree, 2026-11-23: Chair: Reden 'sollen zu Protokoll gegeben werden'; no salutation, no reactions, XML class J_Rede throughout"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613000",
+      "redner_id": "11004395",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4274B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613100",
+      "redner_id": "11004268",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4275B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613200",
+      "redner_id": "11002667",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4276B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613300",
+      "redner_id": "11003199",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4277C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613400",
+      "redner_id": "11003130",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4278D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613500",
+      "redner_id": "11002624",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4279C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613600",
+      "redner_id": "11003537",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4280C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613700",
+      "redner_id": "11004406",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4281D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613800",
+      "redner_id": "11004426",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4283B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804613900",
+      "redner_id": "11004449",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4284A); read twice, readers agree, 2026-11-23: Chair: Reden zu Protokoll; no salutation, no reactions, XML class J_Rede throughout"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614000",
+      "redner_id": "11002720",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4284D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614100",
+      "redner_id": "11003847",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4285D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614200",
+      "redner_id": "11004292",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4286D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614300",
+      "redner_id": "11004084",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4287D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614400",
+      "redner_id": "11004407",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4289A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614500",
+      "redner_id": "11003857",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4289D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614600",
+      "redner_id": "11003837",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4291A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614700",
+      "redner_id": "11004054",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4292B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614800",
+      "redner_id": "11004327",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4293C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614900",
+      "redner_id": "11004266",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4294A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804615000",
+      "redner_id": "11004296",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4295B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804615100",
+      "redner_id": "11004114",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4296D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804615200",
+      "redner_id": "11004066",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4298A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/51",
+      "rede_id": "ID1805108300",
+      "redner_id": "11003065",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 4782A); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Chair says erwidern after Pronold's Rede end; Kurzintervention or §30 reply unclear)"
+    },
+    {
       "sitting": "18/53",
       "rede_id": "ID1805302300",
       "redner_id": "11004266",
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 101)",
       "name": "Michaela Engelmeier (SPD)"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805402600",
+      "redner_id": "11003858",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 4920C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805410100",
+      "redner_id": "11004417",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5025A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805410200",
+      "redner_id": "11004440",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5026B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805410300",
+      "redner_id": "11004270",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5027B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805410400",
+      "redner_id": "11004129",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5028B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805410500",
+      "redner_id": "11004067",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5028D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805411100",
+      "redner_id": "11004152",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5035B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805411200",
+      "redner_id": "11004270",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5036D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805411300",
+      "redner_id": "11004129",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5037C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805411400",
+      "redner_id": "11004333",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5038B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805411500",
+      "redner_id": "11003168",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5039A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805412100",
+      "redner_id": "11004342",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5045C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805412200",
+      "redner_id": "11004367",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5046A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805412300",
+      "redner_id": "11004403",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5046D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805412400",
+      "redner_id": "11003790",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5047D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/54",
+      "rede_id": "ID1805412500",
+      "redner_id": "11004123",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5049C); read 2026-11-23"
     },
     {
       "sitting": "18/57",
@@ -1271,6 +2041,125 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 103)",
       "name": "Michaela Engelmeier (SPD)"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806002200",
+      "redner_id": "11003755",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 5522D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806002300",
+      "redner_id": "11004123",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 5523C); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Answers Gabriel's Erklärung, restricted to that matter)"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806002800",
+      "redner_id": "11003517",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5527C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010200",
+      "redner_id": "11004269",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5626C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010300",
+      "redner_id": "11004384",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5627B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010400",
+      "redner_id": "11003611",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5627D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010500",
+      "redner_id": "11003853",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5628D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010600",
+      "redner_id": "11003604",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5629C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010700",
+      "redner_id": "11003727",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5630C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010800",
+      "redner_id": "11004257",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5631A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806010900",
+      "redner_id": "11004022",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5632A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806011000",
+      "redner_id": "11002625",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5632C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806011100",
+      "redner_id": "999990112",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5633B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806011200",
+      "redner_id": "11004054",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5634C); read twice, readers agree, 2026-11-23: Chair: 'Auch hierzu sollen die Reden zu Protokoll gegeben werden'; written text, no reactions"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806011300",
+      "redner_id": "11003614",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5635B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806011400",
+      "redner_id": "11003763",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5636B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/60",
+      "rede_id": "ID1806011500",
+      "redner_id": "11004066",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 5637B); read 2026-11-23"
     },
     {
       "sitting": "18/63",
@@ -1303,6 +2192,118 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 105)",
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806604700",
+      "redner_id": "11004244",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6162D); read 2026-11-23 (First of written-speech chain; no chair announcement visible in excerpt)"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806604800",
+      "redner_id": "11003734",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6163B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806604900",
+      "redner_id": "11004019",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6164C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605000",
+      "redner_id": "11003527",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6165C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605100",
+      "redner_id": "11003783",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6166D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605200",
+      "redner_id": "11003499",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6167A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605300",
+      "redner_id": "11003801",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6168A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605400",
+      "redner_id": "11004348",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6168D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605500",
+      "redner_id": "11003645",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6169C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605600",
+      "redner_id": "11004370",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6170C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605700",
+      "redner_id": "11004396",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6170C); read twice, readers agree, 2026-11-23: Mixed TOP (Sterbebegleitung debate); this one written: no salutation, no chair, no reactions, XML class J_Rede"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605800",
+      "redner_id": "11004405",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6171C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806605900",
+      "redner_id": "11004153",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6172C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806606000",
+      "redner_id": "11004155",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6173A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806606100",
+      "redner_id": "11003255",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6173C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/66",
+      "rede_id": "ID1806606200",
+      "redner_id": "11002829",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 6175D); read 2026-11-23"
     },
     {
       "sitting": "18/68",
@@ -1359,6 +2360,13 @@
       "kind": "loose_procedural",
       "reason": "a procedural turn printed outside any <rede>: accepts the election as Wehrbeauftragter (loose-speaker-markers.tsv)",
       "attach": "none"
+    },
+    {
+      "sitting": "18/82",
+      "rede_id": "ID1808200600",
+      "redner_id": "11003755",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 7765A); read 2026-11-23 (Chair names §30 though calls it Erwiderung)"
     },
     {
       "sitting": "18/83",
@@ -1439,6 +2447,62 @@
       "attach": "wrap"
     },
     {
+      "sitting": "18/85",
+      "rede_id": "ID1808503100",
+      "redner_id": "11002280",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8061B); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Replies to a preceding Kurzintervention (Hunko), then Hunko replies; not a Kurzintervention)"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808503200",
+      "redner_id": "11004060",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8062A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808506100",
+      "redner_id": "11003130",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8099D); read twice, readers agree, 2026-11-23: Chair: 'hat der Kollege Gehrcke für eine Kurzintervention das Wort'; answers Lorenz"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808506200",
+      "redner_id": "11004343",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8100B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808506400",
+      "redner_id": "11004361",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8102B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808506500",
+      "redner_id": "11004226",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8102B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808508100",
+      "redner_id": "11002812",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8117C); read 2026-11-23 (Answers Beck's preceding remark as last speaker)"
+    },
+    {
+      "sitting": "18/85",
+      "rede_id": "ID1808503000",
+      "redner_id": "11003889",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8060); read twice, readers agree, 2026-11-23: Chair: 'gebe ich dem Kollegen Sarrazin das Wort zur Erwiderung' (to Weinberg's Kurzintervention after Hunko's Rede)"
+    },
+    {
       "sitting": "18/87",
       "rede_id": "ID1808700900",
       "redner_id": "11004613",
@@ -1469,6 +2533,20 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 112)",
       "name": "Angelika Glöckner (SPD)"
+    },
+    {
+      "sitting": "18/88",
+      "rede_id": "ID1808801600",
+      "redner_id": "11004087",
+      "kind": "rede",
+      "reason": "DIP lists Erwiderung (p. 8283B); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: Last sentences after 'Die Redezeit ist abgelaufen'; Wilms's Kurzintervention follows"
+    },
+    {
+      "sitting": "18/89",
+      "rede_id": "ID1808901000",
+      "redner_id": "11000756",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8422C); read 2026-11-23 (Right after Kahrs' Rede, addresses him)"
     },
     {
       "sitting": "18/91",
@@ -1503,12 +2581,33 @@
       "attach": "wrap"
     },
     {
+      "sitting": "18/91",
+      "rede_id": "M1",
+      "redner_id": "11004001",
+      "kind": "erklaerung",
+      "reason": "van Aken's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/92",
+      "rede_id": "ID1809203400",
+      "redner_id": "11004089",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8789C); read 2026-11-23"
+    },
+    {
       "sitting": "18/94",
       "rede_id": "ID1809405300",
       "redner_id": "11004613",
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 114)",
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/97",
+      "rede_id": "ID1809705700",
+      "redner_id": "11004068",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 9229D); read twice, readers agree, 2026-11-23: Chair: 'Kollegen Kiesewetter das Wort zu einer Erwiderung' after Neu's § 30 Erklärung"
     },
     {
       "sitting": "18/101",
@@ -1558,6 +2657,48 @@
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
     },
     {
+      "sitting": "18/109",
+      "rede_id": "ID1810907500",
+      "redner_id": "11003738",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 10481D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/109",
+      "rede_id": "ID1810907600",
+      "redner_id": "11003514",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 10482B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/110",
+      "rede_id": "ID1811004300",
+      "redner_id": "11004288",
+      "kind": "rede",
+      "reason": "DIP lists Erwiderung (p. 10625B); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: ich komme zum Schluss ending own Rede after time warning; Schwabe's Kurzintervention follows"
+    },
+    {
+      "sitting": "18/112",
+      "rede_id": "ID1811200700",
+      "redner_id": "11001074",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 10705A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/112",
+      "rede_id": "ID1811209800",
+      "redner_id": "11004365",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 10824C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/112",
+      "rede_id": "ID1811209900",
+      "redner_id": "11002273",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 10824C); read twice, readers differed, adjudicated, 2026-11-23: answers Oellers's Kurzintervention"
+    },
+    {
       "sitting": "18/115",
       "rede_id": "M1",
       "redner_id": "11004324",
@@ -1572,6 +2713,111 @@
       "kind": "loose_rede",
       "reason": "a whole Rede printed outside any <rede>: mündliche Erklärung nach § 31 (loose-speaker-markers.tsv)",
       "attach": "wrap"
+    },
+    {
+      "sitting": "18/115",
+      "rede_id": "M2",
+      "redner_id": "11004309",
+      "kind": "erklaerung",
+      "reason": "Hupach's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/121",
+      "rede_id": "ID1812100400",
+      "redner_id": "11003755",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 11710C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/121",
+      "rede_id": "ID1812100500",
+      "redner_id": "11003065",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 11710D); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Answers Gabriel's §30 Erklärung; chair gives no §30 announcement)"
+    },
+    {
+      "sitting": "18/121",
+      "rede_id": "ID1812105300",
+      "redner_id": "11004215",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11790C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/121",
+      "rede_id": "ID1812105400",
+      "redner_id": "11004040",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11790D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/124",
+      "rede_id": "ID1812411300",
+      "redner_id": "11002625",
+      "kind": "rede",
+      "reason": "DIP lists Kurzintervention (p. 12095A); read twice, readers agree, 2026-11-23: Chair 'Jetzt hat der Kollege Volker Beck ... das Wort'; salutation, regular debate turn"
+    },
+    {
+      "sitting": "18/127",
+      "rede_id": "ID1812704700",
+      "redner_id": "11003249",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 12343D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/133",
+      "rede_id": "ID1813308100",
+      "redner_id": "11003213",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 13000C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/133",
+      "rede_id": "ID1813308200",
+      "redner_id": "11004145",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 13000D); read twice, readers agree, 2026-11-23: Chair 'möchten Sie darauf erwidern?' after Roth's § 30 Erklärung addressing him"
+    },
+    {
+      "sitting": "18/137",
+      "rede_id": "ID1813701200",
+      "redner_id": "11004244",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 13431C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/146",
+      "rede_id": "ID1814602000",
+      "redner_id": "11002624",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 14363D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/149",
+      "rede_id": "ID1814909500",
+      "redner_id": "11004053",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 14752D); read twice, readers agree, 2026-11-23: Chair: 'Eine Kurzintervention muss man anmelden'; addresses Schipanski, who then answers"
+    },
+    {
+      "sitting": "18/149",
+      "rede_id": "ID1814909600",
+      "redner_id": "11004143",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 14753A); read 2026-11-23 (Answers preceding remark; chair gives bare name)"
+    },
+    {
+      "sitting": "18/150",
+      "rede_id": "ID1815004300",
+      "redner_id": "11002625",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 14824C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/150",
+      "rede_id": "ID1815004400",
+      "redner_id": "11004427",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 14824D); read 2026-11-23"
     },
     {
       "sitting": "18/158",
@@ -1637,11 +2883,95 @@
       "reason": "Swap: the XML prints Sibylle Pfeiffer's Zwischenfrage in Uwe Kekeritz's Rede as its own <rede>, and Uwe Kekeritz's answer and the rest of the Rede are nested inside it, so the question would count as a Rede and the Rede as a Zwischenfrage (N8, the review of the restored sittings, 2026-11-15)"
     },
     {
+      "sitting": "18/167",
+      "rede_id": "ID1816703400",
+      "redner_id": "11003715",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 16400C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/167",
+      "rede_id": "ID1816703500",
+      "redner_id": "11004081",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 16401D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/167",
+      "rede_id": "ID1816703600",
+      "redner_id": "11004449",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 16402D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/168",
+      "rede_id": "ID1816802700",
+      "redner_id": "11004324",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 16603D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/170",
+      "rede_id": "ID1817001000",
+      "redner_id": "11004138",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 16702D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/170",
+      "rede_id": "ID1817002900",
+      "redner_id": "11000365",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 16730C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/170",
+      "rede_id": "ID1817003000",
+      "redner_id": "11004276",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 16730D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/170",
+      "rede_id": "ID1817008800",
+      "redner_id": "11004389",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 16816D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/170",
+      "rede_id": "ID1817008900",
+      "redner_id": "11003578",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 16817A); read 2026-11-23"
+    },
+    {
       "sitting": "18/173",
       "rede_id": "ID1817301900",
       "redner_id": "11001274",
       "kind": "ansprache",
       "reason": "Lammert's statement opening the Armenia resolution debate: welcomes the Armenian and Turkish embassies, states the Bundestag's position on threats against MdBs, then opens the Aussprache"
+    },
+    {
+      "sitting": "18/173",
+      "rede_id": "ID1817308400",
+      "redner_id": "11004361",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 17107A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/173",
+      "rede_id": "ID1817308500",
+      "redner_id": "11004048",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 17107C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/173",
+      "rede_id": "ID1817310000",
+      "redner_id": "11004053",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 17121D); read 2026-11-23"
     },
     {
       "sitting": "18/178",
@@ -1659,11 +2989,109 @@
       "name": "Dr. Dietmar Bartsch (DIE LINKE)"
     },
     {
+      "sitting": "18/185",
+      "rede_id": "ID1818500800",
+      "redner_id": "11003584",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 18326B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/187",
+      "rede_id": "ID1818703400",
+      "redner_id": "11004012",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 18562D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/187",
+      "rede_id": "ID1818703500",
+      "redner_id": "11003839",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 18563B); read 2026-11-23"
+    },
+    {
       "sitting": "18/193",
       "rede_id": "ID1819300700",
       "redner_id": "11001274",
       "kind": "ansprache",
       "reason": "Lammert's farewell to Peer Steinbrück on behalf of the Bundestag, ending with the floor to the next Redner (one chair sentence, O2 grain)"
+    },
+    {
+      "sitting": "18/197",
+      "rede_id": "ID1819702000",
+      "redner_id": "11004012",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 19640A); read twice, readers agree, 2026-11-23: Chair: 'die Gelegenheit zu einer Kurzintervention'; Linnemann may erwidern"
+    },
+    {
+      "sitting": "18/197",
+      "rede_id": "ID1819702100",
+      "redner_id": "11004098",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 19641B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/203",
+      "rede_id": "ID1820303300",
+      "redner_id": "11003826",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 20317D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/203",
+      "rede_id": "ID1820303400",
+      "redner_id": "11003746",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 20318D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/203",
+      "rede_id": "ID1820303500",
+      "redner_id": "11004258",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 20319C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/203",
+      "rede_id": "ID1820303600",
+      "redner_id": "11003764",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 20321B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/206",
+      "rede_id": "ID1820609400",
+      "redner_id": "11003889",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 20619D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/210",
+      "rede_id": "ID1821006000",
+      "redner_id": "11003576",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21131A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/210",
+      "rede_id": "ID1821006100",
+      "redner_id": "11004049",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21131B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/210",
+      "rede_id": "ID1821006200",
+      "redner_id": "11004360",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21131C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/210",
+      "rede_id": "ID1821006300",
+      "redner_id": "11003727",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21131D); read 2026-11-23"
     },
     {
       "sitting": "18/212",
@@ -1680,11 +3108,32 @@
       "reason": "Bulmahn (Vizepräsidentin, no Fraktion printed) thanks Außenminister Steinmeier after his last speech, on behalf of the Bundestag"
     },
     {
+      "sitting": "18/215",
+      "rede_id": "ID1821508200",
+      "redner_id": "11004068",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 21571C); read 2026-11-23 (Chair: directly addressed, may react; no §30 named)"
+    },
+    {
       "sitting": "18/216",
       "rede_id": "ID1821601200",
       "redner_id": "11003870",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "18/221",
+      "rede_id": "ID1822110900",
+      "redner_id": "11004424",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 22229D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/221",
+      "rede_id": "ID1822111000",
+      "redner_id": "11004091",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 22230A); read 2026-11-23"
     },
     {
       "sitting": "18/223",
@@ -1731,11 +3180,95 @@
       "name": "Bundespräsident Dr. Frank-Walter Steinmeier"
     },
     {
+      "sitting": "18/231",
+      "rede_id": "ID1823111800",
+      "redner_id": "11004091",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 23345C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/232",
+      "rede_id": "ID1823201700",
+      "redner_id": "999990051",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 23448A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/232",
+      "rede_id": "ID1823201800",
+      "redner_id": "11003132",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 23448B); read 2026-11-23 (Reacts to being addressed by Hendricks; chair gives no §30 announcement)"
+    },
+    {
+      "sitting": "18/232",
+      "rede_id": "ID1823201900",
+      "redner_id": "11002672",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 23449A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/237",
+      "rede_id": "ID1823702000",
+      "redner_id": "11004190",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 24014C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/237",
+      "rede_id": "ID1823707500",
+      "redner_id": "11004245",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 24122C); read 2026-11-23"
+    },
+    {
       "sitting": "18/238",
       "rede_id": "ID1823801500",
       "redner_id": "11004247",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "18/239",
+      "rede_id": "ID1823904300",
+      "redner_id": "11003764",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 24416D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/239",
+      "rede_id": "ID1823906100",
+      "redner_id": "11003763",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 24437B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/239",
+      "rede_id": "ID1823906200",
+      "redner_id": "11004018",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 24437C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/240",
+      "rede_id": "ID1824005200",
+      "redner_id": "11003576",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 24559A); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Answers Mützenich's Rede ('vorhin gesagt'); no Kurzintervention announcement visible)"
+    },
+    {
+      "sitting": "18/240",
+      "rede_id": "ID1824007500",
+      "redner_id": "11004155",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 24594B); read 2026-11-23"
+    },
+    {
+      "sitting": "18/242",
+      "rede_id": "ID1824208000",
+      "redner_id": "11004067",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 24860C); read twice, readers agree, 2026-11-23: Keul calls 'Ich wollte eine Kurzintervention!', chair then admits her; 'Kollegin Obermeier möchte nicht antworten'"
     },
     {
       "sitting": "18/245",
@@ -1750,6 +3283,13 @@
       "redner_id": "11002800",
       "kind": "ansprache",
       "reason": "Singhammer (Vizepräsident, no Fraktion): reopens the sitting and announces the result of the Verfassungsrichter election (about 600 characters of Sitzungsleitung), then the closing address of the 18th Wahlperiode (names the deceased members, thanks, 'Möge Gott unser Vaterland behüten') and closes the sitting"
+    },
+    {
+      "sitting": "18/245",
+      "rede_id": "ID1824502200",
+      "redner_id": "11000756",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 25302A); read twice, readers agree, 2026-11-23: Chair: 'das Wort für eine Kurzintervention'; content is farewell to Lammert, not an answer to Heil"
     },
     {
       "sitting": "19/1",
@@ -1843,6 +3383,34 @@
       "reason": "Schäuble chairs the third ballot of the Vizepräsidenten election (result, procedure)"
     },
     {
+      "sitting": "19/3",
+      "rede_id": "ID19300800",
+      "redner_id": "11004022",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 149D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/4",
+      "rede_id": "ID19407900",
+      "redner_id": "11003753",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 300A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/4",
+      "rede_id": "ID19408000",
+      "redner_id": "11004098",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 300B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/7",
+      "rede_id": "ID19709200",
+      "redner_id": "11004680",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 619B; read twice, 2026-11-23, readers agree; owner decision of that day): Bare § 45 doubt of Beschlussfähigkeit; chair 'Antrag zur Geschäftsordnung'"
+    },
+    {
       "sitting": "19/9",
       "rede_id": "ID19900100",
       "redner_id": "11001938",
@@ -1865,11 +3433,46 @@
       "attach": "none"
     },
     {
+      "sitting": "19/15",
+      "rede_id": "ID191504500",
+      "redner_id": "11004106",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 1284C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/17",
+      "rede_id": "ID191703100",
+      "redner_id": "11004149",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1415D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/17",
+      "rede_id": "ID191708700",
+      "redner_id": "11004454",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 1480B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/17",
+      "rede_id": "ID191708800",
+      "redner_id": "11004311",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1480C); read 2026-11-23"
+    },
+    {
       "sitting": "19/18",
       "rede_id": "ID191802600",
       "redner_id": "11003753",
       "kind": "withhold",
       "reason": "Holds Katharina Dröge's whole Rede counted as one Zwischenfrage in Klaus Ernst's Rede: the chair's 'Als Nächstes für Bündnis 90/Die Grünen die Kollegin Katharina Dröge' is outside the split's floor forms (N8, the review of the restored sittings, 2026-11-15)"
+    },
+    {
+      "sitting": "19/18",
+      "rede_id": "ID191803000",
+      "redner_id": "11004302",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1546C); read twice, readers differed, adjudicated, 2026-11-23: answers De Masi's Kurzintervention; the chair: Sie möchten antworten, Herr Hirte?"
     },
     {
       "sitting": "19/19",
@@ -2019,11 +3622,214 @@
       "reason": "the sworn person's answer to the chair's oath prompt"
     },
     {
+      "sitting": "19/23",
+      "rede_id": "ID192301400",
+      "redner_id": "11003856",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 1974A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/23",
+      "rede_id": "ID192301500",
+      "redner_id": "11003050",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1974C); read 2026-11-23"
+    },
+    {
       "sitting": "19/25",
       "rede_id": "ID192507100",
       "redner_id": "11004067",
       "kind": "withhold",
       "reason": "The XML gives this <rede> to Katja Keul, whose Zwischenfrage opens it; Norbert Röttgen's Rede (4,459 chars) is nested inside, so the two are swapped (a3-wp18-19-round2-result.md:111, N7)"
+    },
+    {
+      "sitting": "19/25",
+      "rede_id": "ID192507200",
+      "redner_id": "11003881",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 2279A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/25",
+      "rede_id": "ID192507400",
+      "redner_id": "11002765",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 2279D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/26",
+      "rede_id": "ID192606100",
+      "redner_id": "11004217",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 2373B); read 2026-11-23 (Chair lets those addressed answer Nolte; not a Kurzintervention)"
+    },
+    {
+      "sitting": "19/26",
+      "rede_id": "ID192606200",
+      "redner_id": "11004022",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 2373C); read 2026-11-23 (Same: answer to Nolte's remark)"
+    },
+    {
+      "sitting": "19/26",
+      "rede_id": "ID192611700",
+      "redner_id": "11004899",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 2429C); read twice, readers agree, 2026-11-23: Chair: 'Das Wort zu einer Kurzintervention ... hat Dr. Spaniel', to Weisgerber"
+    },
+    {
+      "sitting": "19/26",
+      "rede_id": "ID192611800",
+      "redner_id": "11004440",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 2429D); read twice, readers agree, 2026-11-23: Chair: 'Frau Dr. Weisgerber zur Erwiderung'"
+    },
+    {
+      "sitting": "19/32",
+      "rede_id": "ID193205600",
+      "redner_id": "11004217",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 3053C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/32",
+      "rede_id": "ID193205700",
+      "redner_id": "11004036",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 3053D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/32",
+      "rede_id": "ID193204000",
+      "redner_id": "11004092",
+      "kind": "erwiderung",
+      "reason": "DIP lists no such turn at its place; read 2026-11-23: answers Neu's Kurzintervention; the chair: Frau Ministerin, bitte"
+    },
+    {
+      "sitting": "19/33",
+      "rede_id": "ID193303300",
+      "redner_id": "11004680",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 3125D; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence request to read out the Einspruch; chair 'das Wort zur Geschäftsordnung'"
+    },
+    {
+      "sitting": "19/40",
+      "rede_id": "ID194003900",
+      "redner_id": "11003869",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 3974A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/40",
+      "rede_id": "ID194004000",
+      "redner_id": "11004443",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 3974C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/43",
+      "rede_id": "ID194304800",
+      "redner_id": "11004093",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 4479C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/43",
+      "rede_id": "ID194304900",
+      "redner_id": "11004801",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 4479D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/43",
+      "rede_id": "ID194305000",
+      "redner_id": "11004302",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 4480A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/43",
+      "rede_id": "ID194309000",
+      "redner_id": "11004897",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 4523B; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence doubt of Beschlussfähigkeit"
+    },
+    {
+      "sitting": "19/45",
+      "rede_id": "ID194506300",
+      "redner_id": "11003800",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 4758A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/53",
+      "rede_id": "ID195308700",
+      "redner_id": "11004907",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 5780D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/53",
+      "rede_id": "ID195308800",
+      "redner_id": "11004671",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5781A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/56",
+      "rede_id": "ID195606000",
+      "redner_id": "11004229",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 6207A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/56",
+      "rede_id": "ID195606100",
+      "redner_id": "11004184",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6207B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/56",
+      "rede_id": "ID195609400",
+      "redner_id": "11004680",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 6239B; read twice, 2026-11-23, readers agree; owner decision of that day): Bare doubt of Beschlussfähigkeit; chair 'Zur Geschäftsordnung'"
+    },
+    {
+      "sitting": "19/59",
+      "rede_id": "ID195901100",
+      "redner_id": "11004333",
+      "kind": "rede",
+      "reason": "DIP lists Rede (p. 6596); read twice, readers agree, 2026-11-23: Chair 'erteile ich jetzt das Wort Christian Kühn'; announced Zwischenbemerkung was a misunderstanding and not granted"
+    },
+    {
+      "sitting": "19/61",
+      "rede_id": "ID196105300",
+      "redner_id": "11003763",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 6857C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/61",
+      "rede_id": "ID196105400",
+      "redner_id": "11004826",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6857C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/61",
+      "rede_id": "ID196112700",
+      "redner_id": "11004678",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 6960D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/61",
+      "rede_id": "ID196105100",
+      "redner_id": "11004712",
+      "kind": "rede",
+      "reason": "DIP lists Rede (p. 6856); read twice, readers agree, 2026-11-23: Chair 'Nächster Redner in der Debatte: Dr. Marcus Faber'; Kurzinterventionen deferred until after him"
     },
     {
       "sitting": "19/62",
@@ -2034,11 +3840,53 @@
       "attach": "prev"
     },
     {
+      "sitting": "19/63",
+      "rede_id": "ID196305900",
+      "redner_id": "11004749",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7258D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/63",
+      "rede_id": "ID196306000",
+      "redner_id": "999990075",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7259A); read twice, readers agree, 2026-11-23: Chair: 'Sie können von Ihrem Platz aus antworten ... Antworten auf Kurzinterventionen'; answers Hess"
+    },
+    {
+      "sitting": "19/64",
+      "rede_id": "ID196403400",
+      "redner_id": "11004834",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7351D); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Zwischenfrage inside minister's Rede (chair: second question, then answer together), not Kurzintervention)"
+    },
+    {
+      "sitting": "19/64",
+      "rede_id": "ID196403500",
+      "redner_id": "11004809",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7351D); read twice, readers agree, 2026-11-23: Answers Hänsel's and Müller-Rosentritt's Kurzinterventionen together; chair 'Dann können Sie im Zusammenhang antworten'"
+    },
+    {
       "sitting": "19/65",
       "rede_id": "ID196503400",
       "redner_id": "11004049",
       "kind": "procedural",
       "reason": "acceptance of an election just announced (<rede> form)"
+    },
+    {
+      "sitting": "19/65",
+      "rede_id": "ID196507900",
+      "redner_id": "11003756",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7504D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/65",
+      "rede_id": "ID196508000",
+      "redner_id": "11004323",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7505B); read 2026-11-23"
     },
     {
       "sitting": "19/68",
@@ -2048,11 +3896,102 @@
       "reason": "acceptance of an election just announced (<rede> form)"
     },
     {
+      "sitting": "19/68",
+      "rede_id": "ID196809000",
+      "redner_id": "11004811",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 7815A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/69",
+      "rede_id": "ID196903700",
+      "redner_id": "11004672",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 8049C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/72",
+      "rede_id": "ID197203900",
+      "redner_id": "11004905",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 8487D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/72",
+      "rede_id": "ID197202600",
+      "redner_id": "11004680",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 8472B; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence doubt of Beschlussfähigkeit under § 45"
+    },
+    {
       "sitting": "19/73",
       "rede_id": "ID197300100",
       "redner_id": "11001938",
       "kind": "ansprache",
       "reason": "Schäuble opens the first sitting of 2019 with a statement on the attack on Frank Magnitz and on violence and language in politics, on behalf of the Bundestag (4,616 characters), ending with a birthday greeting"
+    },
+    {
+      "sitting": "19/80",
+      "rede_id": "ID198009000",
+      "redner_id": "11004842",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 9377C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/80",
+      "rede_id": "ID198010400",
+      "redner_id": "11004303",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 9391D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/80",
+      "rede_id": "ID198002200",
+      "redner_id": "11003790",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 9302B; read twice, 2026-11-23, readers agree; owner decision of that day): § 42 Herbeirufung motion; only reason 'eine Missachtung des Parlaments'. Chair 'Antrag zur Geschäftsordnung'"
+    },
+    {
+      "sitting": "19/84",
+      "rede_id": "ID198403000",
+      "redner_id": "11004692",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 9951D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/90",
+      "rede_id": "ID199002000",
+      "redner_id": "11004899",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 10750A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/90",
+      "rede_id": "ID199002100",
+      "redner_id": "11004059",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 10750C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/95",
+      "rede_id": "ID199508300",
+      "redner_id": "11004874",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11396D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/95",
+      "rede_id": "ID199508400",
+      "redner_id": "11003742",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11397A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/98",
+      "rede_id": "ID199800100",
+      "redner_id": "11004662",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 11708B; read twice, 2026-11-23, readers agree; owner decision of that day): Only asks for a § 29 Geschäftsordnung debate and names Brandner as speaker"
     },
     {
       "sitting": "19/99",
@@ -2071,6 +4010,13 @@
       "name": "Dr. Dietmar Woidke, Ministerpräsident (Brandenburg)"
     },
     {
+      "sitting": "19/104",
+      "rede_id": "ID1910412200",
+      "redner_id": "11004738",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 12738D; read twice, 2026-11-23, readers agree; owner decision of that day): Bare doubt of Beschlussfähigkeit before the vote"
+    },
+    {
       "sitting": "19/107",
       "rede_id": "ID1910700100",
       "redner_id": "11003167",
@@ -2078,11 +4024,46 @@
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
     },
     {
+      "sitting": "19/107",
+      "rede_id": "ID1910711600",
+      "redner_id": "11004740",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13240C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/107",
+      "rede_id": "ID1910711700",
+      "redner_id": "11004087",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13241A); read twice, readers agree, 2026-11-23: Answers Hebner's Kurzintervention; chair 'Wenn Herr Lange antworten möchte'"
+    },
+    {
+      "sitting": "19/107",
+      "rede_id": "ID1910712100",
+      "redner_id": "11004304",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13245C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/107",
+      "rede_id": "ID1910712200",
+      "redner_id": "11004833",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13245D); read 2026-11-23"
+    },
+    {
       "sitting": "19/109",
       "rede_id": "ID1910900100",
       "redner_id": "999990083",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "19/113",
+      "rede_id": "ID1911301000",
+      "redner_id": "11004173",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13838D); read 2026-11-23"
     },
     {
       "sitting": "19/114",
@@ -2229,12 +4210,103 @@
       "attach": "next"
     },
     {
+      "sitting": "19/118",
+      "rede_id": "ID1911805700",
+      "redner_id": "11004678",
+      "kind": "erklaerung",
+      "reason": "DIP lists persönliche Erklärung (§ 32) (p. 14454C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/118",
+      "rede_id": "ID1911807200",
+      "redner_id": "11002720",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 14475D); read 2026-11-23 (PGF's correction of voting error; chair gives no §31 citation)"
+    },
+    {
+      "sitting": "19/124",
+      "rede_id": "ID1912404300",
+      "redner_id": "11003218",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 15344D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/124",
+      "rede_id": "ID1912404400",
+      "redner_id": "11003764",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 15345A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/124",
+      "rede_id": "ID1912415800",
+      "redner_id": "11004722",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 15475B; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence doubt of Beschlussfähigkeit"
+    },
+    {
+      "sitting": "19/124",
+      "rede_id": "ID1912415900",
+      "redner_id": "11004781",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 15475C; read twice, 2026-11-23, readers agree; owner decision of that day): Bare request for namentliche Abstimmung"
+    },
+    {
       "sitting": "19/125",
       "rede_id": "ID1912505800",
       "redner_id": "11004854",
       "kind": "name_own_words",
       "reason": "the host Rede's own speaker printed under <name> (name-tag-speakers.tsv entry 120)",
       "name": "Dr. Christoph Ploß (CDU/CSU)"
+    },
+    {
+      "sitting": "19/130",
+      "rede_id": "ID1913005200",
+      "redner_id": "11004361",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 16348A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/145",
+      "rede_id": "ID1914511100",
+      "redner_id": "11004807",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 18117A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/145",
+      "rede_id": "ID1914511200",
+      "redner_id": "11004048",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 18117A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/149",
+      "rede_id": "ID1914906600",
+      "redner_id": "11001023",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 18627D); read twice, readers agree, 2026-11-23: Chair: 'nach § 30 unserer Geschäftsordnung den Wunsch nach einer Erklärung zur Aussprache'"
+    },
+    {
+      "sitting": "19/151",
+      "rede_id": "ID1915108400",
+      "redner_id": "11004727",
+      "kind": "erklaerung",
+      "reason": "DIP lists persönliche Erklärung (§ 32) (p. 18869D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/154",
+      "rede_id": "ID1915401400",
+      "redner_id": "11004891",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 19137C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/154",
+      "rede_id": "ID1915401500",
+      "redner_id": "11004155",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 19138B); read 2026-11-23"
     },
     {
       "sitting": "19/158",
@@ -2244,11 +4316,151 @@
       "reason": "acceptance of an election just announced (<rede> form)"
     },
     {
+      "sitting": "19/159",
+      "rede_id": "ID1915909300",
+      "redner_id": "11004799",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 19744B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/159",
+      "rede_id": "ID1915909400",
+      "redner_id": "11004362",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 19744C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/160",
+      "rede_id": "ID1916003400",
+      "redner_id": "11000365",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 19831B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/160",
+      "rede_id": "ID1916005500",
+      "redner_id": "11004613",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 19865A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/160",
+      "rede_id": "ID1916005600",
+      "redner_id": "11004652",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 19865B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/160",
+      "rede_id": "ID1916005700",
+      "redner_id": "11003861",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 19865C); read twice, readers agree, 2026-11-23: Answers two Kurzinterventionen; chair 'Kollege Weinberg, wollen Sie antworten?'"
+    },
+    {
+      "sitting": "19/161",
+      "rede_id": "ID1916105600",
+      "redner_id": "11004452",
+      "kind": "erwiderung",
+      "reason": "DIP lists nothing (p. None); read twice, readers agree, 2026-11-23: Chair 'Sie haben das Recht, darauf zu antworten', to an AfD Kurzintervention after her Rede"
+    },
+    {
+      "sitting": "19/161",
+      "rede_id": "ID1916105500",
+      "redner_id": "11004731",
+      "kind": "kurzintervention",
+      "reason": "DIP lists no such turn at its place; read 2026-11-23: the chair: ob die AfD-Fraktion eine Kurzintervention möchte ... dann lasse ich das jetzt zu; Zeulner answers"
+    },
+    {
+      "sitting": "19/162",
+      "rede_id": "ID1916209000",
+      "redner_id": "11004757",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 20181C); read 2026-11-23"
+    },
+    {
       "sitting": "19/163",
       "rede_id": "ID1916300100",
       "redner_id": "11003896",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "19/163",
+      "rede_id": "ID1916305900",
+      "redner_id": "11004731",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 20317C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/168",
+      "rede_id": "ID1916801800",
+      "redner_id": "11004817",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 21013B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/168",
+      "rede_id": "ID1916801900",
+      "redner_id": "11004258",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 21013C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/170",
+      "rede_id": "ID1917006700",
+      "redner_id": "11004288",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 21227B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/171",
+      "rede_id": "ID1917103300",
+      "redner_id": "11004409",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 21430B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/171",
+      "rede_id": "ID1917103400",
+      "redner_id": "11004776",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 21430D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/171",
+      "rede_id": "ID1917107400",
+      "redner_id": "11004675",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21474C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/191",
+      "rede_id": "ID1919101700",
+      "redner_id": "11004692",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 24063B); read twice, readers agree, 2026-11-23: Chair: 'zu zwei Zwischenbemerkungen zunächst dem Kollegen Bystron'; Fechner answers both"
+    },
+    {
+      "sitting": "19/191",
+      "rede_id": "ID1919101800",
+      "redner_id": "11004874",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 24063C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/191",
+      "rede_id": "ID1919101900",
+      "redner_id": "11004270",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 24063D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/191",
+      "rede_id": "ID1919108700",
+      "redner_id": "11004678",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 24093B); read 2026-11-23: the chair: eine Erklärung zur Abstimmung nach § 31 der Geschäftsordnung; printed in the Befragung's TOP after it was closed"
     },
     {
       "sitting": "19/195",
@@ -2266,12 +4478,173 @@
       "attach": "prev"
     },
     {
+      "sitting": "19/202",
+      "rede_id": "ID1920207200",
+      "redner_id": "11003763",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 25408D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/202",
+      "rede_id": "ID1920207300",
+      "redner_id": "11004337",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 25409A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/203",
+      "rede_id": "ID1920312600",
+      "redner_id": "11004672",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 25582D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/203",
+      "rede_id": "ID1920312700",
+      "redner_id": "11004081",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 25583A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/203",
+      "rede_id": "ID1920312800",
+      "redner_id": "11004327",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 25583C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/207",
+      "rede_id": "ID1920702900",
+      "redner_id": "11004678",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 26133C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/209",
+      "rede_id": "ID1920901300",
+      "redner_id": "11003516",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 26331B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/212",
+      "rede_id": "ID1921209400",
+      "redner_id": "11004088",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 26781B); read 2026-11-23"
+    },
+    {
+      "sitting": "19/212",
+      "rede_id": "ID1921209500",
+      "redner_id": "11004365",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 26781C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/212",
+      "rede_id": "ID1921210800",
+      "redner_id": "11004796",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 26791C); read 2026-11-23 (Answers Scheer's remark; chair asks who wants to reply)"
+    },
+    {
+      "sitting": "19/212",
+      "rede_id": "ID1921210900",
+      "redner_id": "11004795",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 26792C); read 2026-11-23 (Second reply to Scheer's remark)"
+    },
+    {
+      "sitting": "19/214",
+      "rede_id": "ID1921408200",
+      "redner_id": "11004852",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 26950C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/216",
+      "rede_id": "ID1921602600",
+      "redner_id": "11004072",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 27240C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/216",
+      "rede_id": "ID1921602700",
+      "redner_id": "11004879",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 27240D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/221",
+      "rede_id": "ID1922101200",
+      "redner_id": "11004778",
+      "kind": "erklaerung",
+      "reason": "DIP lists persönliche Erklärung (§ 32) (p. 27927C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/221",
+      "rede_id": "ID1922105900",
+      "redner_id": "11004727",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 27984A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/224",
+      "rede_id": "ID1922406300",
+      "redner_id": "11004678",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 28477C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/224",
+      "rede_id": "ID1922406400",
+      "redner_id": "11003764",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 28478D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/228",
+      "rede_id": "ID1922805600",
+      "redner_id": "11004752",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 29175D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/229",
+      "rede_id": "ID1922913100",
+      "redner_id": "11004905",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 29320B); read 2026-11-23 (Chair asks if AfD wants to react to accusations; Kurzintervention not announced)"
+    },
+    {
+      "sitting": "19/230",
+      "rede_id": "ID1923003000",
+      "redner_id": "11004699",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 29431C); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Banter reply to chair about her constituency; no Erklärung announced)"
+    },
+    {
       "sitting": "19/233",
       "rede_id": "M1",
       "redner_id": "11003646",
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede>: starts before the chair's remark; her Rede follows (loose-speaker-markers.tsv)",
       "attach": "next"
+    },
+    {
+      "sitting": "19/234",
+      "rede_id": "ID1923401100",
+      "redner_id": "11004721",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 30262A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/237",
+      "rede_id": "ID1923702200",
+      "redner_id": "11004727",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 30903A); read 2026-11-23"
     },
     {
       "sitting": "20/1",
@@ -2321,6 +4694,20 @@
       "redner_id": "11003206",
       "kind": "procedural",
       "reason": "acceptance of an election just announced (<rede> form)"
+    },
+    {
+      "sitting": "20/1",
+      "rede_id": "ID20100900",
+      "redner_id": "11004767",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 18D); read 2026-11-23 (Delayed floor after vote; Erklärung zur Abstimmung not explicitly announced)"
+    },
+    {
+      "sitting": "20/3",
+      "rede_id": "ID20302400",
+      "redner_id": "11004100",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 140A); read 2026-11-23 (Chair: directly addressed by Rottmann, gives word; no §30 or Kurzintervention named)"
     },
     {
       "sitting": "20/5",
@@ -2464,6 +4851,20 @@
       "attach": "next"
     },
     {
+      "sitting": "20/10",
+      "rede_id": "ID201006300",
+      "redner_id": "11004288",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 494B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/10",
+      "rede_id": "ID201006400",
+      "redner_id": "999990119",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 494C); read 2026-11-23"
+    },
+    {
       "sitting": "20/17",
       "rede_id": "M1",
       "redner_id": "11004905",
@@ -2480,11 +4881,67 @@
       "attach": "next"
     },
     {
+      "sitting": "20/17",
+      "rede_id": "ID201706100",
+      "redner_id": "11003584",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1155C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/17",
+      "rede_id": "ID201708000",
+      "redner_id": "11003848",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 1173B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/17",
+      "rede_id": "ID201708100",
+      "redner_id": "11004655",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1173C); read twice, readers agree, 2026-11-23: Chair 'Sie haben die Möglichkeit zum Antworten' after a Kurzintervention to his Rede"
+    },
+    {
+      "sitting": "20/20",
+      "rede_id": "ID202000200",
+      "redner_id": "11004276",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 1393D; read twice, 2026-11-23, readers agree; owner decision of that day): § 42 Herbeirufung of Lauterbach; only the stated occasion as reason. Chair 'Zur Geschäftsordnung'"
+    },
+    {
+      "sitting": "20/28",
+      "rede_id": "ID202803200",
+      "redner_id": "11002735",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 2359B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/28",
+      "rede_id": "ID202805800",
+      "redner_id": "11004845",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 2397D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/28",
+      "rede_id": "ID202805900",
+      "redner_id": "11005008",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 2398A); read 2026-11-23"
+    },
+    {
       "sitting": "20/30",
       "rede_id": "ID203000100",
       "redner_id": "11004127",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "20/32",
+      "rede_id": "ID203201500",
+      "redner_id": "11005066",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 2895A); read twice, readers agree, 2026-11-23: Chair: 'hat Herr Gnauck das Wort zu einer persönlichen Erklärung'"
     },
     {
       "sitting": "20/44",
@@ -2493,6 +4950,90 @@
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede>: announces his Geschäftsordnungsantrag (loose-speaker-markers.tsv)",
       "attach": "next"
+    },
+    {
+      "sitting": "20/46",
+      "rede_id": "ID204606200",
+      "redner_id": "11004437",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 4752A; read twice, 2026-11-23, readers agree; owner decision of that day): Bare § 42 motion to summon Scholz"
+    },
+    {
+      "sitting": "20/47",
+      "rede_id": "ID204708600",
+      "redner_id": "11004072",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 4933C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/48",
+      "rede_id": "ID204801600",
+      "redner_id": "11005053",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 5111C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/48",
+      "rede_id": "ID204801700",
+      "redner_id": "11005018",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 5112B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/54",
+      "rede_id": "ID205404900",
+      "redner_id": "11005232",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 5819C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/57",
+      "rede_id": "ID205704600",
+      "redner_id": "11005049",
+      "kind": "rede",
+      "reason": "DIP lists Rede (p. 6264); read twice, readers agree, 2026-11-23: Chair 'die nächste Rednerin in der Debatte'; Höferlin declined the Kurzintervention"
+    },
+    {
+      "sitting": "20/70",
+      "rede_id": "ID207004200",
+      "redner_id": "11004413",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8167D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/70",
+      "rede_id": "ID207004300",
+      "redner_id": "11004113",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8167D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/71",
+      "rede_id": "ID207105000",
+      "redner_id": "11004781",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 8347A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/73",
+      "rede_id": "ID207303900",
+      "redner_id": "11004697",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 8495A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/73",
+      "rede_id": "ID207304300",
+      "redner_id": "11003566",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 8498D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/77",
+      "rede_id": "ID207707800",
+      "redner_id": "11005018",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 9280A); read 2026-11-23"
     },
     {
       "sitting": "20/79",
@@ -2508,6 +5049,62 @@
       "kind": "loose_procedural",
       "reason": "a procedural turn printed outside any <rede>: thanks after the oath (loose-speaker-markers.tsv)",
       "attach": "none"
+    },
+    {
+      "sitting": "20/80",
+      "rede_id": "ID208008000",
+      "redner_id": "11004752",
+      "kind": "erklaerung",
+      "reason": "DIP lists no such turn at its place; read 2026-11-23: opens: dass Sie mir Gelegenheit geben, diese persönliche Erklärung abzugeben"
+    },
+    {
+      "sitting": "20/81",
+      "rede_id": "ID208107700",
+      "redner_id": "11005053",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 9687B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/91",
+      "rede_id": "ID209102900",
+      "redner_id": "11003638",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 10853B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/91",
+      "rede_id": "ID209103000",
+      "redner_id": "11005016",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 10853C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/92",
+      "rede_id": "ID209201600",
+      "redner_id": "11004806",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11036D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/92",
+      "rede_id": "ID209201700",
+      "redner_id": "11004683",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11037A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/92",
+      "rede_id": "ID209202100",
+      "redner_id": "11005219",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11039B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/92",
+      "rede_id": "ID209202200",
+      "redner_id": "11004276",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11039); read twice, readers agree, 2026-11-23: Chair: Frei 'auf drei Kurzinterventionen antworten muss'"
     },
     {
       "sitting": "20/94",
@@ -2542,12 +5139,54 @@
       "attach": "next"
     },
     {
+      "sitting": "20/99",
+      "rede_id": "ID209909600",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 11916C; read twice, 2026-11-23, readers agree; owner decision of that day): § 42 motion to summon the Wirtschaftsminister; one sentence of reason"
+    },
+    {
+      "sitting": "20/103",
+      "rede_id": "ID2010310300",
+      "redner_id": "11004792",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 12473D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/105",
+      "rede_id": "ID2010504300",
+      "redner_id": "11004305",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 12675A); read 2026-11-23, decided by the owner the same day; the chair's words name no kind that decides it, DIP's does (complains in the Befragung that the minister overruns)"
+    },
+    {
+      "sitting": "20/105",
+      "rede_id": "ID2010517600",
+      "redner_id": "11004752",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 12751C); read 2026-11-23"
+    },
+    {
       "sitting": "20/106",
       "rede_id": "M1",
       "redner_id": "11004100",
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede>: remark before his Rede (loose-speaker-markers.tsv)",
       "attach": "next"
+    },
+    {
+      "sitting": "20/109",
+      "rede_id": "ID2010907700",
+      "redner_id": "11004409",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 13261B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/112",
+      "rede_id": "ID2011206800",
+      "redner_id": "11004437",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 13715D; read twice, 2026-11-23, readers agree; owner decision of that day): § 42 motion to summon the Finanzminister"
     },
     {
       "sitting": "20/115",
@@ -2566,12 +5205,68 @@
       "attach": "next"
     },
     {
+      "sitting": "20/123",
+      "rede_id": "ID2012304300",
+      "redner_id": "11004781",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 15373A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/123",
+      "rede_id": "ID2012304400",
+      "redner_id": "11005263",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 15373B); read 2026-11-23"
+    },
+    {
       "sitting": "20/124",
       "rede_id": "M61",
       "redner_id": "11005096",
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede>: remark before her Rede (loose-speaker-markers.tsv)",
       "attach": "next"
+    },
+    {
+      "sitting": "20/128",
+      "rede_id": "ID2012810300",
+      "redner_id": "11004678",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 15996C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/128",
+      "rede_id": "ID2012810400",
+      "redner_id": "11005141",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 15996D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/132",
+      "rede_id": "ID2013201300",
+      "redner_id": "11005036",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 16601C); read 2026-11-23 (Chair asks directly addressed speaker to reply; preceding item type not visible)"
+    },
+    {
+      "sitting": "20/132",
+      "rede_id": "ID2013206600",
+      "redner_id": "11004905",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 16656A; read twice, 2026-11-23, readers agree; owner decision of that day): § 45 Absatz 2 doubt of Beschlussfähigkeit, with head count"
+    },
+    {
+      "sitting": "20/134",
+      "rede_id": "ID2013417400",
+      "redner_id": "11005100",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 16969C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/134",
+      "rede_id": "ID2013406900",
+      "redner_id": "11004662",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 16866B; read twice, 2026-11-23, readers agree; owner decision of that day): Bare § 42 motion to summon the minister"
     },
     {
       "sitting": "20/136",
@@ -2582,11 +5277,172 @@
       "attach": "next"
     },
     {
+      "sitting": "20/136",
+      "rede_id": "ID2013612400",
+      "redner_id": "11004801",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 17216D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/136",
+      "rede_id": "ID2013612700",
+      "redner_id": "11004905",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 17218C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/137",
+      "rede_id": "ID2013706700",
+      "redner_id": "11004859",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 17313B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/143",
+      "rede_id": "ID2014313200",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 18147A; read twice, 2026-11-23, readers agree; owner decision of that day): § 42 motion to summon Stark-Watzinger, with a brief taunt; chair 'Geschäftsordnungsantrag'"
+    },
+    {
+      "sitting": "20/144",
+      "rede_id": "ID2014405200",
+      "redner_id": "11005019",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 18280D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/144",
+      "rede_id": "ID2014408100",
+      "redner_id": "11004721",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 18314C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/147",
+      "rede_id": "ID2014705500",
+      "redner_id": "11005157",
+      "kind": "erklaerung",
+      "reason": "DIP lists Kurzintervention (p. 18667C); read twice, readers agree, 2026-11-23: Chair: 'nach § 30 unserer Geschäftsordnung das Wort für eine Erklärung zur Aussprache'"
+    },
+    {
+      "sitting": "20/147",
+      "rede_id": "ID2014705600",
+      "redner_id": "11005002",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 18668C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/149",
+      "rede_id": "ID2014907600",
+      "redner_id": "11004289",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 19056C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/149",
+      "rede_id": "ID2014907700",
+      "redner_id": "11004087",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 19057A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/151",
+      "rede_id": "ID2015106900",
+      "redner_id": "11004848",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 19320C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/152",
+      "rede_id": "ID2015202600",
+      "redner_id": "11004710",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 19434C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/152",
+      "rede_id": "ID2015202700",
+      "redner_id": "11004286",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 19434D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/157",
+      "rede_id": "ID2015707100",
+      "redner_id": "11004848",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 20143B); read 2026-11-23"
+    },
+    {
       "sitting": "20/159",
       "rede_id": "ID2015900100",
       "redner_id": "11004282",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "20/159",
+      "rede_id": "ID2015915700",
+      "redner_id": "11004662",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 20409B; read twice, 2026-11-23, readers agree; owner decision of that day): Asks that Agrarminister attend, short reasons; chair: 'die AfD beantragt die Herbeizitierung'"
+    },
+    {
+      "sitting": "20/163",
+      "rede_id": "ID2016306800",
+      "redner_id": "11004731",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 20921D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/163",
+      "rede_id": "ID2016308600",
+      "redner_id": "11004778",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 20945A); read twice, readers agree, 2026-11-23: Chair: 'Nach § 30 unserer Geschäftsordnung ... für eine Erklärung'"
+    },
+    {
+      "sitting": "20/163",
+      "rede_id": "ID2016308700",
+      "redner_id": "11004123",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 20946A); read twice, readers agree, 2026-11-23: Chair: 'Sie sind direkt angesprochen worden. Sie dürfen erwidern' to Keuter's § 30 Erklärung"
+    },
+    {
+      "sitting": "20/163",
+      "rede_id": "ID2016308800",
+      "redner_id": "11005249",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 20946B); read 2026-11-23 (Chair gives only her name; responds to accusations, unclear if Erklärung or Kurzintervention)"
+    },
+    {
+      "sitting": "20/165",
+      "rede_id": "ID2016514800",
+      "redner_id": "11004764",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21251D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/165",
+      "rede_id": "ID2016514900",
+      "redner_id": "11004311",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21252A); read twice, readers agree, 2026-11-23: Answers Huber's intervention on his Rede; chair 'Sie möchten antworten?'"
+    },
+    {
+      "sitting": "20/165",
+      "rede_id": "ID2016515400",
+      "redner_id": "11005265",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21255D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/165",
+      "rede_id": "ID2016515500",
+      "redner_id": "11005174",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21256C); read twice, readers agree, 2026-11-23: Answers Ziegler's persönliche Erklärung; chair 'Herr Pantazis, möchten Sie antworten?'"
     },
     {
       "sitting": "20/169",
@@ -2595,6 +5451,146 @@
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede>: remark before his Berichterstattung (loose-speaker-markers.tsv)",
       "attach": "next"
+    },
+    {
+      "sitting": "20/172",
+      "rede_id": "ID2017203700",
+      "redner_id": "11005095",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 22175A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/172",
+      "rede_id": "ID2017203800",
+      "redner_id": "11004917",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 22175D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/173",
+      "rede_id": "ID2017306300",
+      "redner_id": "11004905",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 22426B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/173",
+      "rede_id": "ID2017306400",
+      "redner_id": "11004152",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 22426D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/175",
+      "rede_id": "ID2017501300",
+      "redner_id": "11004072",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 22565D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/177",
+      "rede_id": "ID2017716300",
+      "redner_id": "11004801",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 22924A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/178",
+      "rede_id": "ID2017807700",
+      "redner_id": "11003638",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 23070C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/181",
+      "rede_id": "ID2018106500",
+      "redner_id": "11005123",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 23489C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/182",
+      "rede_id": "ID2018203800",
+      "redner_id": "11003576",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 23680B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/182",
+      "rede_id": "ID2018206800",
+      "redner_id": "11004829",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 23709A); read 2026-11-23 (Chair: directly addressed, may react; no §30 named; Wegge then replies)"
+    },
+    {
+      "sitting": "20/182",
+      "rede_id": "ID2018206900",
+      "redner_id": "11005251",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 23709C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/191",
+      "rede_id": "ID2019105100",
+      "redner_id": "11004850",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 24833C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/194",
+      "rede_id": "ID2019405700",
+      "redner_id": "11004922",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 25265C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/194",
+      "rede_id": "ID2019407700",
+      "redner_id": "11005123",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 25294C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/195",
+      "rede_id": "ID2019507400",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 25564B; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence § 45 doubt of Beschlussfähigkeit"
+    },
+    {
+      "sitting": "20/195",
+      "rede_id": "ID2019507600",
+      "redner_id": "11005187",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 25564C; read twice, 2026-11-23, readers agree; owner decision of that day): Bare request for namentliche Abstimmung"
+    },
+    {
+      "sitting": "20/196",
+      "rede_id": "ID2019611800",
+      "redner_id": "11004304",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 25668A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/196",
+      "rede_id": "ID2019613000",
+      "redner_id": "11004181",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 25677A); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Reacts to Wollmann's remark ('angesprochen, reagieren'); no §30 named; Wollmann answers back)"
+    },
+    {
+      "sitting": "20/196",
+      "rede_id": "ID2019613100",
+      "redner_id": "11005262",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 25677B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/196",
+      "rede_id": "ID2019610200",
+      "redner_id": "11005187",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 25649A; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence proposal to ask for the ministers and interrupt the sitting"
     },
     {
       "sitting": "20/197",
@@ -2610,6 +5606,69 @@
       "kind": "loose_procedural",
       "reason": "a procedural turn printed outside any <rede>: thanks after the oath (loose-speaker-markers.tsv)",
       "attach": "none"
+    },
+    {
+      "sitting": "20/205",
+      "rede_id": "ID2020502000",
+      "redner_id": "11005018",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 26532C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/207",
+      "rede_id": "ID2020708500",
+      "redner_id": "11005148",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 26771B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/210",
+      "rede_id": "ID2021003900",
+      "redner_id": "11004731",
+      "kind": "kurzintervention",
+      "reason": "DIP lists nothing (p. None); read twice, readers agree, 2026-11-23: persönlich angesprochen ... darauf zu reagieren after Steiniger's Rede; no § 30; Steiniger calls it Kurzintervention"
+    },
+    {
+      "sitting": "20/210",
+      "rede_id": "ID2021004800",
+      "redner_id": "11004749",
+      "kind": "erklaerung",
+      "reason": "DIP lists nothing (p. None); read twice, readers agree, 2026-11-23: Chair: 'Herr Hess, eine kurze persönliche Erklärung.'"
+    },
+    {
+      "sitting": "20/210",
+      "rede_id": "ID2021004900",
+      "redner_id": "11005056",
+      "kind": "erwiderung",
+      "reason": "DIP lists nothing (p. None); read twice, readers agree, 2026-11-23: Chair: 'Ich erlaube noch eine Antwort auf diese persönliche Erklärung.'"
+    },
+    {
+      "sitting": "20/211",
+      "rede_id": "ID2021103000",
+      "redner_id": "11004276",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 27525C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/211",
+      "rede_id": "ID2021103100",
+      "redner_id": "11004245",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 27526A); read 2026-11-23"
+    },
+    {
+      "sitting": "20/211",
+      "rede_id": "ID2021102400",
+      "redner_id": "11004276",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 27514D; read twice, 2026-11-23, readers agree; owner decision of that day): Motion to interrupt the sitting for a Fraktionssitzung"
+    },
+    {
+      "sitting": "20/214",
+      "rede_id": "ID2021404500",
+      "redner_id": "11003834",
+      "kind": "erklaerung",
+      "reason": "DIP lists mündliche Erklärung (§ 31) (p. 27787A); read 2026-11-23"
     },
     {
       "sitting": "21/1",
@@ -2787,6 +5846,27 @@
       "reason": "the sworn person's answer to the chair's oath prompt"
     },
     {
+      "sitting": "21/4",
+      "rede_id": "ID21410400",
+      "redner_id": "11004858",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 276A); read 2026-11-23 (Chair says Erklärung zur Aussprache; speaker calls it Kurzintervention)"
+    },
+    {
+      "sitting": "21/4",
+      "rede_id": "ID21410500",
+      "redner_id": "11005131",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 276B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/4",
+      "rede_id": "ID21411400",
+      "redner_id": "11005145",
+      "kind": "erklaerung",
+      "reason": "DIP lists Zwischenfrage (p. 285A); read twice, readers agree, 2026-11-23: Chair: 'Bitte um die Abgabe einer kurzen Erklärung', 'Das war die Erklärung dazu'; no § named"
+    },
+    {
       "sitting": "21/6",
       "rede_id": "ID21616000",
       "redner_id": "11003821",
@@ -2794,11 +5874,74 @@
       "reason": "acceptance of an election just announced (<rede> form)"
     },
     {
+      "sitting": "21/7",
+      "rede_id": "ID21707000",
+      "redner_id": "11005511",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 539C); read twice, readers agree, 2026-11-23: Chair: 'persönliche Erklärung zur Aussprache und keine Kurzintervention'"
+    },
+    {
       "sitting": "21/10",
       "rede_id": "ID211000100",
       "redner_id": "11003821",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "21/10",
+      "rede_id": "ID211006000",
+      "redner_id": "11005198",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 806D; read twice, 2026-11-23, readers agree; owner decision of that day): Moves that TOP 12 be taken off the agenda, with one clause of reason; the chair puts it to the vote at once"
+    },
+    {
+      "sitting": "21/14",
+      "rede_id": "ID211411400",
+      "redner_id": "11005404",
+      "kind": "erklaerung",
+      "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 1223C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/14",
+      "rede_id": "ID211413700",
+      "redner_id": "11005123",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 1247A; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence request for a 20-minute interruption"
+    },
+    {
+      "sitting": "21/15",
+      "rede_id": "ID211501900",
+      "redner_id": "11005132",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 1375C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/15",
+      "rede_id": "ID211502000",
+      "redner_id": "11005536",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1376A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/16",
+      "rede_id": "ID211609900",
+      "redner_id": "11005131",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 1546D); read 2026-11-23 (Chair: directly addressed, gets word after Badum's Rede; no §30 named)"
+    },
+    {
+      "sitting": "21/16",
+      "rede_id": "ID211610000",
+      "redner_id": "11004659",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 1547A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/20",
+      "rede_id": "ID212018300",
+      "redner_id": "11005507",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 2011C); read 2026-11-23"
     },
     {
       "sitting": "21/24",
@@ -2817,6 +5960,468 @@
       "attach": "next"
     },
     {
+      "sitting": "21/31",
+      "rede_id": "ID213109200",
+      "redner_id": "11005543",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 3318C); read 2026-11-23 (Answers a preceding question; no chair line visible)"
+    },
+    {
+      "sitting": "21/33",
+      "rede_id": "ID213318300",
+      "redner_id": "11005073",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 3607B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/33",
+      "rede_id": "ID213318400",
+      "redner_id": "11004825",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 3607C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/34",
+      "rede_id": "ID213402300",
+      "redner_id": "11005407",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 3666C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/34",
+      "rede_id": "ID213402400",
+      "redner_id": "11005501",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 3666D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/36",
+      "rede_id": "ID213615100",
+      "redner_id": "11004752",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 4007D); read 2026-11-23 (Chair: directly addressed, may speak again after minister's Rede; no §30 named)"
+    },
+    {
+      "sitting": "21/37",
+      "rede_id": "ID213701700",
+      "redner_id": "11004444",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 4062B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/37",
+      "rede_id": "ID213701800",
+      "redner_id": "11005616",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 4062D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/37",
+      "rede_id": "ID213702900",
+      "redner_id": "11005481",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 4074A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/37",
+      "rede_id": "ID213703000",
+      "redner_id": "11005515",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 4074B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/43",
+      "rede_id": "ID214302800",
+      "redner_id": "11005079",
+      "kind": "erklaerung",
+      "reason": "DIP lists Kurzintervention (p. 4996A); read twice, readers agree, 2026-11-23: Chair: addressed persons may give 'persönliche Erklärungen'; Helferich asked for it"
+    },
+    {
+      "sitting": "21/43",
+      "rede_id": "ID214302900",
+      "redner_id": "11005077",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 4996C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/45",
+      "rede_id": "ID214502800",
+      "redner_id": "11005221",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 5231C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/45",
+      "rede_id": "ID214502900",
+      "redner_id": "11004041",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5231D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/47",
+      "rede_id": "ID214706800",
+      "redner_id": "11005079",
+      "kind": "erklaerung",
+      "reason": "DIP lists Kurzintervention (p. 5468A); read twice, readers agree, 2026-11-23: Chair: 'Zu einer persönlichen Erklärung darf ich das Wort erteilen'"
+    },
+    {
+      "sitting": "21/47",
+      "rede_id": "ID214706900",
+      "redner_id": "11005551",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5468B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/47",
+      "rede_id": "ID214707000",
+      "redner_id": "11005514",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 5468C); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Answers Helferich's remarks after being addressed; Helferich's own remark came earlier)"
+    },
+    {
+      "sitting": "21/47",
+      "rede_id": "ID214707100",
+      "redner_id": "11005079",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5469A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/48",
+      "rede_id": "ID214801900",
+      "redner_id": "11005031",
+      "kind": "erklaerung",
+      "reason": "DIP lists Kurzintervention (p. 5630C); read twice, readers agree, 2026-11-23: Chair: 'Die Möglichkeit für eine persönliche Erklärung hat ... Dirk Brandes'"
+    },
+    {
+      "sitting": "21/48",
+      "rede_id": "ID214802000",
+      "redner_id": "11005134",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5631A); read 2026-11-23 (Chair explains rule, gives word; unclear whether Kurzintervention or reply)"
+    },
+    {
+      "sitting": "21/50",
+      "rede_id": "ID215014800",
+      "redner_id": "11004853",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 5998A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/51",
+      "rede_id": "ID215101800",
+      "redner_id": "11004731",
+      "kind": "erklaerung",
+      "reason": "DIP lists Kurzintervention (p. 6093C); read twice, readers agree, 2026-11-23: Chair: 'bat darum, eine persönliche Erklärung abgeben zu dürfen'"
+    },
+    {
+      "sitting": "21/51",
+      "rede_id": "ID215101900",
+      "redner_id": "11004881",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6094B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/51",
+      "rede_id": "ID215106200",
+      "redner_id": "11005462",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 6138B); read 2026-11-23; the chair's words name no kind that decides it, DIP's does (Chair: wanted to reject something; he calls it Erklärung to Dr. Plum)"
+    },
+    {
+      "sitting": "21/51",
+      "rede_id": "ID215106700",
+      "redner_id": "11004721",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 6144D); read 2026-11-23 (Chair says richtigstellen, later calls it his question; Stegner replies)"
+    },
+    {
+      "sitting": "21/51",
+      "rede_id": "ID215106800",
+      "redner_id": "11005229",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6145A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/52",
+      "rede_id": "ID215213300",
+      "redner_id": "11004749",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 6224D); read 2026-11-23 (Chair says ganz kurze Klarstellung; no §30 named)"
+    },
+    {
+      "sitting": "21/53",
+      "rede_id": "ID215305600",
+      "redner_id": "11005204",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6320D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/54",
+      "rede_id": "ID215401500",
+      "redner_id": "11005476",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 6475D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/54",
+      "rede_id": "ID215401600",
+      "redner_id": "11005138",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6476A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/54",
+      "rede_id": "ID215403000",
+      "redner_id": "11005115",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 6489D); read twice, readers agree, 2026-11-23: Answers Bachmann; chair: 'als Kurzintervention angezeigt worden, und so rufe ich es auch auf'"
+    },
+    {
+      "sitting": "21/59",
+      "rede_id": "ID215902500",
+      "redner_id": "11004752",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7045A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/59",
+      "rede_id": "ID215902600",
+      "redner_id": "11005257",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7045A); read twice, readers agree, 2026-11-23: Answers Hilse's Kurzintervention; chair then 'weiter in der regulären Debatte'"
+    },
+    {
+      "sitting": "21/59",
+      "rede_id": "ID215907500",
+      "redner_id": "11004639",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7100A); read twice, readers differed, adjudicated, 2026-11-23: a question put after the Rede had ended, given the floor by the chair and answered by König"
+    },
+    {
+      "sitting": "21/59",
+      "rede_id": "ID215907600",
+      "redner_id": "11004788",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7100B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/60",
+      "rede_id": "ID216001100",
+      "redner_id": "11005111",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7245A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/60",
+      "rede_id": "ID216001200",
+      "redner_id": "11005056",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7245A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/62",
+      "rede_id": "ID216205200",
+      "redner_id": "11004443",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7477D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/62",
+      "rede_id": "ID216211300",
+      "redner_id": "11005411",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7545B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/62",
+      "rede_id": "ID216211400",
+      "redner_id": "11004267",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7545B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/63",
+      "rede_id": "ID216300900",
+      "redner_id": "11005073",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7600B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/63",
+      "rede_id": "ID216301000",
+      "redner_id": "11005174",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7600B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/65",
+      "rede_id": "ID216505400",
+      "redner_id": "11004792",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7825C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/65",
+      "rede_id": "ID216505500",
+      "redner_id": "11003218",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7825D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/65",
+      "rede_id": "ID216512100",
+      "redner_id": "11004859",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 7891A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/65",
+      "rede_id": "ID216512200",
+      "redner_id": "11005088",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 7891B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/68",
+      "rede_id": "ID216800700",
+      "redner_id": "11005011",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8132D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/68",
+      "rede_id": "ID216800800",
+      "redner_id": "11005257",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8133B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/68",
+      "rede_id": "ID216806900",
+      "redner_id": "11005289",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8195C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/68",
+      "rede_id": "ID216807000",
+      "redner_id": "11005406",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8195D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/69",
+      "rede_id": "ID216902400",
+      "redner_id": "11005437",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8356D); read 2026-11-23 (Chair gives word without naming type; answers Kuban's attack after his Rede)"
+    },
+    {
+      "sitting": "21/69",
+      "rede_id": "ID216902500",
+      "redner_id": "11005118",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8357A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/71",
+      "rede_id": "ID217101100",
+      "redner_id": "11005248",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8531A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/71",
+      "rede_id": "ID217101200",
+      "redner_id": "11004424",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8531A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/75",
+      "rede_id": "ID217501200",
+      "redner_id": "11004731",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 8972B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/75",
+      "rede_id": "ID217501300",
+      "redner_id": "11005077",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 8972D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/76",
+      "rede_id": "ID217615800",
+      "redner_id": "11005539",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 9121D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/76",
+      "rede_id": "ID217615900",
+      "redner_id": "11004749",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 9122C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/76",
+      "rede_id": "ID217616500",
+      "redner_id": "11005539",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 9126D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/76",
+      "rede_id": "ID217616600",
+      "redner_id": "11005536",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 9127A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/80",
+      "rede_id": "ID218001600",
+      "redner_id": "11004305",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 9525A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/81",
+      "rede_id": "ID218101400",
+      "redner_id": "11004731",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 9731A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/81",
+      "rede_id": "ID218101500",
+      "redner_id": "11005261",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 9731C); read twice, readers agree, 2026-11-23: Danke für diese Kurzintervention; chair 'Sie haben die Möglichkeit, zu antworten'"
+    },
+    {
+      "sitting": "21/81",
+      "rede_id": "ID218107100",
+      "redner_id": "11004656",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 9787A); read twice, readers agree, 2026-11-23: mehrfach angesprochen ... darauf zu reagieren; no § or Erklärung named; Komning calls it Kurzintervention and answers"
+    },
+    {
+      "sitting": "21/81",
+      "rede_id": "ID218107200",
+      "redner_id": "11004787",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 9787D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/83",
+      "rede_id": "ID218312200",
+      "redner_id": "11005026",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 10064C); read 2026-11-23 (Chair grants exception to react to being addressed; not §30)"
+    },
+    {
       "sitting": "21/91",
       "rede_id": "ID219100100",
       "redner_id": "11004011",
@@ -2831,11 +6436,165 @@
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
     },
     {
+      "sitting": "21/94",
+      "rede_id": "ID219400200",
+      "redner_id": "11005505",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11609B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/94",
+      "rede_id": "ID219400300",
+      "redner_id": "11004006",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11609C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/95",
+      "rede_id": "ID219500500",
+      "redner_id": "11004662",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11688C); read 2026-11-23 (Reacts to being named after a Rede; chair gives no §30 or Kurzintervention label)"
+    },
+    {
+      "sitting": "21/95",
+      "rede_id": "ID219500600",
+      "redner_id": "11004444",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11688D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/96",
+      "rede_id": "ID219602300",
+      "redner_id": "11004752",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 11808D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/96",
+      "rede_id": "ID219602400",
+      "redner_id": "11005410",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 11809A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/100",
+      "rede_id": "ID2110008000",
+      "redner_id": "11002720",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 12620C); read twice, readers agree, 2026-11-23: Chair 'Frau Lemke, möchten Sie erwidern?' to Müller's intervention on her Rede"
+    },
+    {
       "sitting": "21/101",
       "rede_id": "ID2110100100",
       "redner_id": "999990149",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "21/101",
+      "rede_id": "ID2110114100",
+      "redner_id": "11005065",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 12707D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/101",
+      "rede_id": "ID2110114200",
+      "redner_id": "11003218",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 12708B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/101",
+      "rede_id": "ID2110115100",
+      "redner_id": "11005572",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 12718C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/101",
+      "rede_id": "ID2110115200",
+      "redner_id": "11005138",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 12718D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/102",
+      "rede_id": "ID2110206800",
+      "redner_id": "11005512",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 12845B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/102",
+      "rede_id": "ID2110206900",
+      "redner_id": "11004152",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 12845C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/103",
+      "rede_id": "ID2110306000",
+      "redner_id": "11005099",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13093D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/103",
+      "rede_id": "ID2110306100",
+      "redner_id": "11005437",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13094A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/107",
+      "rede_id": "ID2110713800",
+      "redner_id": "11005095",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13545D); read 2026-11-23"
+    },
+    {
+      "sitting": "21/107",
+      "rede_id": "ID2110713900",
+      "redner_id": "11004905",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13546A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/108",
+      "rede_id": "ID2110809800",
+      "redner_id": "11004243",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13718A); read 2026-11-23"
+    },
+    {
+      "sitting": "21/108",
+      "rede_id": "ID2110809900",
+      "redner_id": "11005411",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13718C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/108",
+      "rede_id": "ID2110810000",
+      "redner_id": "11005044",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13718C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/108",
+      "rede_id": "ID2110812900",
+      "redner_id": "11005476",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 13750C); read 2026-11-23"
+    },
+    {
+      "sitting": "21/108",
+      "rede_id": "ID2110813000",
+      "redner_id": "11003586",
+      "kind": "erwiderung",
+      "reason": "DIP lists Erwiderung (p. 13751B); read 2026-11-23"
     }
   ]
 }

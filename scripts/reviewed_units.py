@@ -30,6 +30,14 @@ entry with a ``kind``:
   is the marker's printed Redner-ID. The entry adds ``attach``: ``wrap`` (into
   the Rede a ``loose_rede`` marker of the same run opens), ``prev`` or
   ``next`` (into the ``<rede>`` just before or after the run), or ``none``.
+- ``rede``, ``kurzintervention``, ``erwiderung``, ``erklaerung``,
+  ``zu_protokoll`` (ADR 0002, amendment 2026-11-23): what a whole unit is,
+  where the wording rules of ``speech_kinds.classify_reden`` would read it as
+  something else (``docs/plans/beitraege-as-reden.md``). Like ``withhold`` it
+  names a unit as the parser emits it: a ``<rede>`` id, a split part
+  ``<id>:<marker>``, or the ``N<ordinal>`` or ``M<ordinal>`` a ``name_rede`` or
+  ``loose_rede`` entry makes a Rede of. ``rede`` says that a unit DIP types as
+  one of the others is a Rede after all.
 
 ``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
 unit the sitting does not hold, or whose owner differs, stops the run
@@ -87,7 +95,10 @@ LOOSE_ATTACH = {
 }
 #: Name kinds that bind no speaker: their ``redner_id`` is empty.
 NAME_KINDS_WITHOUT_SPEAKER = frozenset({"name_procedural", "name_ansprache", "name_remark"})
-KINDS = frozenset({WITHHOLD}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS
+#: What a whole unit as emitted is (ADR 0002, amendment 2026-11-23); every one
+#: but ``rede`` is a ``speech_kinds.CONTRIBUTION_KINDS`` value.
+UNIT_KINDS = frozenset({"rede", "kurzintervention", "erwiderung", "erklaerung", "zu_protokoll"})
+KINDS = frozenset({WITHHOLD}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
 ENTRY_KEYS = frozenset({"sitting", "rede_id", "redner_id", "kind", "reason"})
 NAME_ENTRY_KEYS = ENTRY_KEYS | {"name"}
 LOOSE_ENTRY_KEYS = ENTRY_KEYS | {"attach"}
@@ -152,8 +163,12 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         if name_kind and entry["name"] != entry["name"].strip(" :"):
             raise ReviewedUnitsError(f"{label}: name {entry['name']!r} is the printed tag without its colon or outer spaces")
         # One source <rede> can hold several speakers printed as <name>, and
-        # carry a reviewed kind or a withhold entry of its own besides.
-        key = (entry["sitting"], entry["rede_id"], entry["name"]) if name_kind else (entry["sitting"], entry["rede_id"])
+        # carry a reviewed kind or a withhold entry of its own besides. A loose
+        # marker's entry says where it goes; what the Rede it opens is, or that
+        # it is withheld, is a second entry under the same M<ordinal>.
+        key = ((entry["sitting"], entry["rede_id"], entry["name"]) if name_kind
+               else (entry["sitting"], entry["rede_id"], "loose marker") if loose_kind
+               else (entry["sitting"], entry["rede_id"]))
         if key in seen:
             raise ReviewedUnitsError(f"{label}: {' '.join(key)} is listed twice")
         seen.add(key)

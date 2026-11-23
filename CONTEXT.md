@@ -101,11 +101,11 @@ A Sitzung this project has a Dossier for. Every count this project publishes —
 _Avoid_: erfasste Sitzung ("erfasst" already names Presentation states and incomplete Fakt periods), implying a count covers every Sitzung held
 
 **Rede**:
-One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung; the Plenarprotokoll records the first three and the Befragung's Fragen and Antworten as `<rede>` elements like Reden, and the Fragestunde's as flat turns. Nor are an Ansprache, a Fraktion's nomination in an election, the acceptance of an election, the answer to an oath or Sitzungsleitung, even where the Plenarprotokoll XML prints one as a `<rede>` of its own (ADR 0004).
+One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention, the Erwiderung to it and a mündliche Erklärung are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung; the Plenarprotokoll records the first three and the Befragung's Fragen and Antworten as `<rede>` elements like Reden, and the Fragestunde's as flat turns. Nor are an Ansprache, a Fraktion's nomination in an election, the acceptance of an election, the answer to an oath, a turn that only moves a motion zur Geschäftsordnung (each named in the reviewed list) or Sitzungsleitung, even where the Plenarprotokoll XML prints one as a `<rede>` of its own (ADR 0004).
 _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text, counting every recorded contribution as a Rede
 
 **Beitrag**:
-Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Zwischenfrage, a written submission, a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde, or an Ansprache. Each has a Kind (`zwischenfrage`, `zu_protokoll`, `kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`, `ansprache`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
+Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Zwischenfrage, a written submission, a Kurzintervention, an Erwiderung, a mündliche Erklärung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde, or an Ansprache. Each has a Kind (`zwischenfrage`, `zu_protokoll`, `kurzintervention`, `erwiderung`, `erklaerung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`, `ansprache`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
 _Avoid_: Wortmeldung, counting a Beitrag as a Rede, adding Beiträge to a Person's Reden
 
 **Zurückgehaltene Rede**:
@@ -117,7 +117,7 @@ A question or remark another MdB makes during a Rede with the Redner's consent. 
 _Avoid_: counting it as part of the Rede
 
 **Zu Protokoll gegebener Beitrag**:
-A written submission explicitly identified in a typed annex as a zu Protokoll gegebene Rede. It is stored as `zu_protokoll`, displayed and counted separately, and adds to no Rede total, share or term series (decision 2026-09-30). A source-supported TOP is attached; uncertain associations remain sitting-level and missing source pages stay null. Declarations under §31 are a different source type and are excluded.
+A written submission explicitly identified in a typed annex as a zu Protokoll gegebene Rede, or printed inside its Tagesordnungspunkt and named in a reviewed list (18/39, 18/46, 18/54, 18/60, 18/66; decision 2026-11-23). It is stored as `zu_protokoll`, displayed and counted separately, and adds to no Rede total, share or term series (decision 2026-09-30). A source-supported TOP is attached; uncertain associations remain sitting-level and missing source pages stay null. Written declarations under §31 are a different source type and are excluded.
 _Avoid_: treating every annex `<rede>` as a written submission, counting it as a delivered Rede
 
 **Kurzintervention**:
@@ -125,8 +125,12 @@ A remark of at most two minutes that an MdB is given the floor for right after a
 _Avoid_: Zwischenfrage (that is asked during the Rede, with the Redner's consent), counting it as a Rede
 
 **Erwiderung**:
-The brief reply of the Redner whose Rede a Kurzintervention referred to. Like the Kurzintervention, it is not a Rede and is counted on its own.
+The brief reply of the Redner whose Rede a Kurzintervention referred to, or of the one a mündliche Erklärung answered. Like the Kurzintervention, it is not a Rede and is counted on its own.
 _Avoid_: counting it as a second Rede of the same Redner
+
+**Mündliche Erklärung**:
+A statement outside the debate that a Redner is given the floor for: an Erklärung zur Aussprache (§ 30 GO-BT), mostly by someone attacked or addressed in it, an oral Erklärung zur Abstimmung (§ 31) or an Erklärung außerhalb der Tagesordnung (§ 32), whatever the Sitzungsleitung calls it („persönliche Erklärung“). It is a Beitrag of Kind `erklaerung`: no Rede, its text kept, counted on its own. The answer to one, where the Sitzungsleitung gives the floor for an Erwiderung, is an Erwiderung. Each is named in the reviewed list (ADR 0002, amendment 2026-11-23). A written Erklärung nach § 31 is excluded.
+_Avoid_: counting it as a Rede, schriftliche Erklärung, calling an Erklärung zum Vermittlungsverfahren one (the Fraktionen speak in turn: those are Reden)
 
 **Befragung der Bundesregierung**:
 A Tagesordnungspunkt in which someone speaking for the Bundesregierung first reports on a subject and MdBs then put Fragen that the Bundesregierung answers. The opening report is a Rede (there can be two, when two members of the Bundesregierung report); each Frage and each Antwort after it is a Beitrag, counted on its own.
@@ -395,4 +399,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 15 / export format 23 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 15 / export format 24 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

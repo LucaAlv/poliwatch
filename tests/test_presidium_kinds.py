@@ -276,7 +276,7 @@ class LoaderTests(unittest.TestCase):
         with _support.shipped_reviewed_units() as units:
             kinds = [e['kind'] for entries in units.values() for e in entries]
         self.assertEqual((kinds.count('procedural'), kinds.count('ansprache'), kinds.count('sitzungsleitung'),
-                          kinds.count('withhold')), (117, 14, 9, 15))  # withhold: 5 N7 + 10 N8
+                          kinds.count('withhold')), (141, 14, 9, 14))  # withhold: 4 N7 (18/29's fifth is an erklaerung now) + 10 N8
 
     def test_a_broken_list_stops_the_entry_points_before_any_work(self):
         import build_dip_pulse_site as build
@@ -669,7 +669,7 @@ class SiteTests(unittest.TestCase):
         schaeuble = next(p for p in people if (p.get('contribution_counts') or {}).get('ansprache'))
         panel = build.render_contributions_panel(schaeuble)
         self.assertIn('<span>Ansprachen</span><strong>1</strong>', panel)
-        self.assertIn('Erwiderungen, Ansprachen sowie Fragen und Antworten zählen gesondert.', panel)
+        self.assertIn('Erwiderungen, mündliche Erklärungen, Ansprachen sowie Fragen und Antworten zählen gesondert.', panel)
         # The role printed with the name (18/178) is shown without it.
         import render_dip_pulse_html as html
         card = html.render_contribution_details({'index': 1, 'xml_contributions': [{
@@ -795,6 +795,8 @@ class CensusReplayTests(unittest.TestCase):
                     procedural = {d['source_rede_id'] for t in parsed['agenda_items'] for d in t['xml_turn_diagnostics']
                                   if d['evidence'].startswith(('procedural (reviewed)', 'Sitzungsleitung (reviewed)'))}
                     kinds = {c['rede_id']: c['kind'] for t in parsed['agenda_items'] for c in t['contributions']}
+                    # A row the census read as a Rede and the review of 2026-11-23 as another Kind (ADR 0002).
+                    listed = {e['rede_id']: e['kind'] for e in reviewed_units.for_sitting(number) if e['kind'] in reviewed_units.UNIT_KINDS}
                     for row in sitting_rows:
                         if row['marker']:
                             continue  # a nested turn (Zwischenfrage), unchanged by this rule
@@ -803,6 +805,8 @@ class CensusReplayTests(unittest.TestCase):
                         if row['proposed_kind'] in ('procedural', 'nomination'):
                             self.assertIn(row['rede_id'], procedural, row['rede_id'])
                             self.assertNotIn(row['rede_id'], speeches, row['rede_id'])
+                        elif listed.get(row['rede_id'], 'rede') != 'rede':
+                            self.assertEqual(kinds.get(row['rede_id']), listed[row['rede_id']], row['rede_id'])
                         elif row['parser_today'] == 'Rede':
                             self.assertIn(row['rede_id'], speeches, row['rede_id'])
                         else:

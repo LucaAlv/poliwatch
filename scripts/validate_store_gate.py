@@ -36,6 +36,10 @@ checks, in order:
    keys matching by heading and first page). The release condition over the
    store (every contested vote reviewed, docs/plans/vote-pr-c.md section 5) is
    reported, not failed: it stops ``--publish``, never a build.
+7. The Kinds (ADR 0002, amendment 2026-11-23): no stored Rede is a
+   Kurzintervention, an Erwiderung or an oral Erklärung in DIP unless the
+   reviewed list says it is a Rede (``dip_typed_reden``, which a tagged export
+   refuses too).
 
 The receipt (JSON) records each check, the store counts, the timings and the
 fingerprints. Exit codes: 0 every check passed, 1 a check failed, 2 bad input.
@@ -377,6 +381,15 @@ def reviewed_vote_link_check(database_path: Path, entries: list[reviewed_vote_li
                         "refusal_count": len(release["refusals"])}}
 
 
+def dip_typed_reden(output_dir: Path) -> list[dict[str, Any]]:
+    """Check 7, over the cached reports as the replay left them."""
+    import build_dip_pulse_site as site
+
+    entries = [{"report": json.loads(path.read_text(encoding="utf-8"))}
+               for path in sorted((output_dir / "data").glob("plenarprotokoll-[0-9]*-[0-9]*.json"))]
+    return site.unlisted_dip_typed_reden(entries)
+
+
 def _store_identity(database_path: Path) -> dict[str, Any]:
     status = database_path.stat()
     return {"sha256": _sha256(database_path), "bytes": status.st_size, "mtime_ns": status.st_mtime_ns, "inode": status.st_ino}
@@ -643,6 +656,8 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         checks["abweichler_count_matches_members"] = not receipt["abweichler_count_mismatches"]
         receipt["reviewed_vote_links"] = reviewed_vote_link_check(database_path, reviewed_vote_links.load())
         checks["reviewed_vote_links_hold"] = receipt["reviewed_vote_links"]["stale_count"] == 0
+        receipt["dip_typed_reden"] = dip_typed_reden(output_dir)
+        checks["no_unlisted_dip_typed_rede"] = not receipt["dip_typed_reden"]
         receipt["counts"] = store_counts(database_path)
         receipt["counts_vs_2026_10_05"] = {
             key: {"old": old, "new": receipt["counts"][key], "delta": receipt["counts"][key] - old}

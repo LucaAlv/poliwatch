@@ -84,8 +84,8 @@
     "scripts/build_demo_site.py": ["tests/test_demo_site.py"],
     "scripts/features/facts.py": ["tests/test_features.py", "tests/test_build_dip_pulse_site.py"],
     "tests/_site_store_fixture.py": ["tests/test_build_dip_pulse_site.py"],
-    "scripts/reviewed_units.py": ["tests/test_withholding.py", "tests/test_loose_markers.py"],
-    "scripts/reviewed_units.json": ["tests/test_withholding.py", "tests/test_loose_markers.py", "tests/test_rede_reconciliation.py"],
+    "scripts/reviewed_units.py": ["tests/test_withholding.py", "tests/test_loose_markers.py", "tests/test_listed_units.py"],
+    "scripts/reviewed_units.json": ["tests/test_withholding.py", "tests/test_loose_markers.py", "tests/test_rede_reconciliation.py", "tests/test_listed_units.py"],
     "scripts/check_withhold_one.py": ["tests/test_withholding.py"],
     "scripts/stable_ids.py": ["tests/test_stable_ids.py", "tests/test_withholding.py"],
     "scripts/extract_demo_fixture.py": ["tests/test_demo_site.py"],
@@ -102,7 +102,8 @@
     "scripts/sqlite_open.py": ["tests/test_code_rules.py", "tests/test_daten_export.py", "tests/test_facts.py", "tests/test_compare_store_values.py"],
     "tests/code_rules_baseline.json": ["tests/test_code_rules.py"],
     "docs/plans/name-tag-speakers/make_entries.py": ["tests/test_name_speakers.py"],
-    "docs/plans/loose-speaker-markers/make_entries.py": ["tests/test_loose_markers.py"]
+    "docs/plans/loose-speaker-markers/make_entries.py": ["tests/test_loose_markers.py"],
+    "docs/plans/beitraege-as-reden/census.py": ["tests/test_listed_units.py"]
   },
   "empty_lanes": ["docs/plans/**/*.json", "docs/plans/**/*.txt", "docs/plans/**/*.tsv", "docs/plans/**/*.patch"]
 }
