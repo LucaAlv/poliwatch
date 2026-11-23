@@ -16,7 +16,7 @@ Anlass: ADR 0003, Änderung 2026-11-21, Frage 4. Die Rechtsgrundlagen für perso
 1. In allen vier Dateien jede Zeile mit `OFFEN:` lesen, entscheiden oder ausfüllen und streichen. Danach `grep -n "OFFEN" docs/legal/clinic-2026-11/0[1-4]-*.md` ohne Treffer (diese README nennt das Wort selbst und bleibt außen vor).
 2. Platzhalter `[KONTAKT: …]`, `[DATUM]`, `[Land: …]` in der **versandten** Fassung füllen. Anschrift und E-Mail-Adresse des Betreibers stehen nie in einer Datei des Repositories. Die gefüllte Fassung bleibt außerhalb des Repositories.
 3. Zahlen im Anschreiben und im Verzeichnis (Stand Referenzbestand 2026-11-22) neu lesen oder gerundet lassen.
-4. Entscheiden, ob `04-takedown-verfahren.md` als gebaut oder als Vorschlag gilt. Heute ist es ein Vorschlag: ein Löschverlangen kann mit dem Code von 0.46.43.0 nicht erfüllt werden, weil zurückgehaltene Reden ihren Text im Export behalten (dort, „Was fehlt“, Punkt 1).
+4. ~~Entscheiden, ob `04-takedown-verfahren.md` als gebaut oder als Vorschlag gilt.~~ Entschieden am 2026-11-23: Das Schreiben geht vor dem Bau hinaus und nennt ihn als geplant, vor dem ersten `--publish`. Heute ist das Verfahren ein Vorschlag: ein Löschverlangen kann mit dem Code von 0.46.43.0 nicht erfüllt werden, weil zurückgehaltene Reden ihren Text im Export behalten (dort, „Was fehlt“, Punkt 1).
 5. Die Antwort der Clinic (oder, bei Ablehnung, der Landesdatenschutzbeauftragten des Landes des Betreibers) in ADR 0003 eintragen.
 
 Die Anlagen 02 bis 04 gehen der Clinic als Anlage zum Anschreiben mit. Das Anschreiben nennt sie.
