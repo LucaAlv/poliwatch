@@ -347,7 +347,7 @@ _GITHUB_REMOTE = re.compile(
     r"|git@github\.com:"
     r"|ssh://git@github\.com/)"
     r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?",
-    re.IGNORECASE,  # host and scheme compare case-insensitively; owner/name keep their case
+    re.IGNORECASE | re.ASCII,  # ASCII case folding only: gıthub.com is another host
 )
 
 
