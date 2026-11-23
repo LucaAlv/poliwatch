@@ -7,9 +7,11 @@ page quadrant, and prints one TSV row per disagreement with the evidence a
 reader needs: what the Sitzungsleitung said just before, how the turn opens, and
 who spoke before it. DIP is a lead, not the verdict.
 
-The person is DIP's person id, or else the surname the Protokoll prints or the
-store shows: a person who changed their name is shown under the later one, so the
-stored name alone missed their turns (18/46 Jantz, 21/10 dos Santos-Wintz).
+The person is DIP's person id, or else the surname and a given name the Protokoll
+prints or the store shows. The id alone does not do: DIP lists one person under
+two ids (Otte 615 and 8226) and the store lacks some. The stored name alone missed
+persons shown under a later one (18/46 Jantz, 21/10 dos Santos-Wintz), and the
+surname alone paired two persons (18/17 Dirk Wiese, Heinz Wiese).
 
 Usage: census.py <site output dir> > docs/plans/beitraege-as-reden.tsv
 """
@@ -101,6 +103,13 @@ def surname(name: str | None) -> str:
     return fold(words[-1]) if words else ""
 
 
+def full_name(name: str | None) -> tuple[str, frozenset[str]]:
+    """The surname and the given names; titles and initials end in a point."""
+    words = re.sub(r"\(.*?\)", "", name or "").split(",")[0].split()
+    given = {fold(part) for word in words[:-1] if not word.endswith(".") for part in word.split("-")}
+    return surname(name), frozenset(given - {""})
+
+
 def page_of(value: object) -> tuple[int | None, str]:
     found = re.match(r"(\d+)\s*([A-D]?)", str(value or ""))
     return (int(found.group(1)), found.group(2)) if found else (None, "")
@@ -124,15 +133,16 @@ def stored_units(db: sqlite3.Connection) -> dict[str, list[dict]]:
     return units
 
 
-def printed_surnames(report: dict) -> dict[str, str]:
-    """Per stored unit: the surname the Protokoll prints."""
-    return {unit["rede_id"]: surname((unit.get("speaker") or {}).get("last_name"))
+def printed_names(report: dict) -> dict[str, tuple[str, frozenset[str]]]:
+    """Per stored unit: the name the Protokoll prints."""
+    return {unit["rede_id"]: full_name(" ".join((unit.get("speaker") or {}).get(part) or "" for part in ("first_name", "last_name")))
             for item in report["agenda_items"]
             for unit in [*(item.get("xml_speakers") or []), *(item.get("xml_contributions") or [])] if unit.get("rede_id")}
 
 
 def same_person(unit: dict, act: dict) -> bool:
-    return act["person_id"] in unit["dip_ids"] or bool(act["surname"]) and act["surname"] in unit["surnames"]
+    last, given = act["name"]
+    return act["person_id"] in unit["dip_ids"] or any(last and last == name and given & names for name, names in unit["names"])
 
 
 def chair_context(xml: Path) -> dict[str, tuple[str, str]]:
@@ -180,11 +190,11 @@ def main(output: Path) -> None:
         for act in report["api_records"]["aktivitaeten"]:
             kind = DIP_KIND.get(act["aktivitaetsart"])
             if kind:
-                acts.append({"kind": kind, "surname": surname(act["titel"]), "person_id": str(act.get("person_id") or ""), "used": False,
+                acts.append({"kind": kind, "name": full_name(act["titel"]), "person_id": str(act.get("person_id") or ""), "used": False,
                              "page": page_of(act["fundstelle"].get("seite"))})
-        printed = printed_surnames(report)
+        printed = printed_names(report)
         for unit in units[sitting]:
-            unit["surnames"] = {surname(unit["speaker"]), printed.get(unit["rede_id"], "")}
+            unit["names"] = {full_name(unit["speaker"]), printed.get(unit["rede_id"], full_name(""))}
         # An exact page and quadrant first; then, for what is left over on both
         # sides, the same person within one page.
         for wide in (False, True):

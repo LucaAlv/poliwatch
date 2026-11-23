@@ -242,18 +242,24 @@ def load_census():
 
 
 class CensusTests(unittest.TestCase):
-    # Value: protects=a person shown under a later name is matched by DIP's person id or the printed surname, another person is not;
-    #   fails_when=a name change hides a turn again (18/46 Jantz, 21/10 dos Santos-Wintz); why_new=found by the ship review; seam=none
-    def test_a_changed_name_still_matches(self):
+    # Value: protects=a person shown under a later name or listed under a second DIP id is matched, another person of the surname is not;
+    #   fails_when=a name change hides a turn again (18/46 Jantz, 21/10 dos Santos-Wintz), or two persons of one surname are paired
+    #   (18/17 Wiese, 20/79 Hahn without a stored id); why_new=found by the ship review and on PR 214; seam=none
+    def test_the_same_person_is_matched_and_a_namesake_is_not(self):
         census = load_census()
-        jantz = {'dip_ids': {'1691'}, 'surnames': {census.surname('Christina Jantz-Herrmann'), census.surname('Jantz')}}
-        for act, expected in (({'person_id': '1691', 'surname': census.surname('Christina Anders, MdB, SPD')}, True),
-                              ({'person_id': '', 'surname': census.surname('Christina Jantz, MdB, SPD')}, True),
-                              ({'person_id': '7', 'surname': census.surname('Dieter Stier, MdB, CDU/CSU')}, False)):
-            with self.subTest(act=act):
-                self.assertEqual(census.same_person(jantz, act), expected)
-        nameless = {'dip_ids': set(), 'surnames': {''}}
-        self.assertFalse(census.same_person(nameless, {'person_id': '', 'surname': ''}))
+        for dip_ids, shown, printed, person_id, titel, expected in (
+                ({'1691'}, 'Christina Jantz-Herrmann', 'Christina Jantz', '1691', 'Christina Anders, MdB, SPD', True),
+                (set(), 'Christina Jantz-Herrmann', 'Christina Jantz', '', 'Christina Jantz, MdB, SPD', True),
+                ({'615'}, 'Henning Otte', 'Henning Otte', '8226', 'Henning Otte, MdB, CDU/CSU', True),
+                (set(), 'Matthias W. Birkwald', 'Matthias W. Birkwald', '', 'Matthias W. Birkwald, MdB, DIE LINKE', True),
+                ({'1792'}, 'Dirk Wiese', 'Dirk Wiese', '1651', 'Heinz Wiese (Ehingen), MdB, CDU/CSU', False),
+                (set(), 'Florian Hahn', 'Florian Hahn', '7811', 'Dr. André Hahn, MdB, DIE LINKE', False),
+                ({'7471'}, 'Dr. Till Steffen', 'Dr. Till Steffen', '8188', 'Dr. Thomas Steffen, Staatssekr.', False),
+                (set(), '', '', '', '', False)):
+            with self.subTest(shown=shown, titel=titel):
+                unit = {'dip_ids': dip_ids, 'names': {census.full_name(shown), census.full_name(printed)}}
+                act = {'person_id': person_id, 'name': census.full_name(titel)}
+                self.assertEqual(census.same_person(unit, act), expected)
 
     # Value: protects=the census proposes DIP's decided kind, flags a row a reader must read, and proposes nothing for a kind the owner left
     #   a Rede; fails_when=a later census (a new sitting) lists doubtful rows as clear; why_new=new script; seam=none
