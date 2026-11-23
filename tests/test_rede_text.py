@@ -9,6 +9,8 @@ import unittest
 import xml.etree.ElementTree as ET
 
 import _support  # noqa: F401
+import persist_dip_pulse_store as store
+import speech_kinds
 import validate_dip_protocol as dip
 from _support import FIXTURES
 
@@ -152,6 +154,115 @@ class UndeterminableSpeakerTests(unittest.TestCase):
         )
         self.assertEqual(result.paragraphs, ["Text."])
         self.assertEqual(result.unattributed_chars, 0)
+
+
+class PrintedParagraphTests(unittest.TestCase):
+    """The stored wording breaks where the print does: a flush ``<p klasse="O">``
+    after a Zwischenruf goes on in the paragraph the Zwischenruf interrupted."""
+
+    KOMMENTAR = "<kommentar>(Beifall)</kommentar>"
+
+    def paragraphs(self, *body: str) -> list[str]:
+        return dip.speech_text_and_paragraphs(rede(marker("100"), *body)).paragraphs
+
+    # Value: protects=a sentence a Zwischenruf interrupts stays one paragraph, and an indented <p> after it opens one;
+    #   fails_when=every <p> is a paragraph (48,440 breaks inside a sentence on 806 sittings); why_new=new rule; seam=none
+    def test_a_flush_paragraph_after_a_kommentar_continues(self) -> None:
+        self.assertEqual(
+            self.paragraphs('<p klasse="J_1">Wir wollen,</p>', self.KOMMENTAR, '<p klasse="O">dass es gelingt.</p>',
+                            self.KOMMENTAR, self.KOMMENTAR, '<p klasse="O">Ja, wirklich.</p>',
+                            self.KOMMENTAR, '<p klasse="J">Ein neuer Absatz.</p>'),
+            ["Wir wollen, dass es gelingt. Ja, wirklich.", "Ein neuer Absatz."])
+
+    def test_a_page_anchor_or_an_empty_paragraph_does_not_end_the_interruption(self) -> None:
+        self.assertEqual(
+            self.paragraphs('<p klasse="J_1">Wir wollen,</p>', self.KOMMENTAR, '<a id="S1"/>', '<p klasse="J"></p>',
+                            '<p klasse="O">dass es gelingt.</p>'),
+            ["Wir wollen, dass es gelingt."])
+
+    def test_a_flush_paragraph_after_anything_else_opens_one(self) -> None:
+        quote = '<p klasse="Z">Zitat.</p>'
+        for between in ("", quote, self.KOMMENTAR + quote, quote + self.KOMMENTAR):
+            with self.subTest(between=between):
+                self.assertEqual(self.paragraphs('<p klasse="J_1">Vorher.</p>', between, '<p klasse="O">Nachher.</p>')[-1],
+                                 "Nachher.")
+
+    # Value: protects=words are never joined across another speaker's turn; fails_when=an O paragraph after the chair's
+    #   or a new marker's turn is glued to what its speaker said before; why_new=new rule; seam=none
+    def test_another_turn_always_ends_the_paragraph(self) -> None:
+        self.assertEqual(
+            self.paragraphs('<p klasse="J_1">Eins.</p>', "<name>Präsidentin Julia Klöckner:</name>",
+                            '<p klasse="J_1">Bitte zum Schluss.</p>', marker("100"), self.KOMMENTAR, '<p klasse="O">Zwei.</p>'),
+            ["Eins.", "Zwei."])
+        self.assertEqual(
+            self.paragraphs('<p klasse="J_1">Eins.</p>', self.KOMMENTAR, marker("100"), '<p klasse="O">Zwei.</p>'),
+            ["Eins.", "Zwei."])
+
+    def test_the_wording_joins_paragraphs_with_one_line_feed(self) -> None:
+        result = dip.speech_text_and_paragraphs(
+            rede(marker("100"), '<p klasse="J_1">Erster\n  Absatz.</p>', '<p klasse="J">Zweiter\u00a0Absatz.</p>'))
+        self.assertEqual(result.text, "Erster Absatz.\nZweiter Absatz.")
+
+    # Value: protects=a question of the Fragestunde keeps the print's paragraphs too; fails_when=its walk reads every <p>
+    #   as a paragraph; why_new=second walk; seam=none
+    def test_a_fragestunde_turn_keeps_the_printed_paragraphs(self) -> None:
+        top = ET.fromstring(
+            '<tagesordnungspunkt><p klasse="redner"><redner id="7"><name><vorname>A</vorname><nachname>B</nachname>'
+            '<fraktion>SPD</fraktion></name></redner></p><p klasse="J_1">Warum,</p><kommentar>(Zuruf)</kommentar>'
+            '<p klasse="O">frage ich.</p><p klasse="J">Und wann?</p></tagesordnungspunkt>')
+        turns, _ = speech_kinds.fragestunde_turns(top)
+        self.assertEqual([turn.paragraphs for turn in turns], [["Warum, frage ich.", "Und wann?"]])
+
+    # Value: protects=the store keeps the breaks and only those; fails_when=persist collapses them again (clean) or lets
+    #   other whitespace through; why_new=new cleaner; seam=none
+    def test_the_store_keeps_the_breaks(self) -> None:
+        self.assertEqual(store.clean_wording(" Eins\u00a0 zwei.\n\n Drei. \n"), "Eins zwei.\nDrei.")
+        self.assertIsNone(store.clean_wording(None))
+        self.assertIsNone(store.clean_wording(" \n "))
+
+
+class BlockQuoteTests(unittest.TestCase):
+    """WP 18 wraps about half of its block quotes in <zitat>; whoever is speaking reads it out."""
+
+    def parse(self, body: str, wrap: bool = True, top: str = "Tagesordnungspunkt 1") -> dict:
+        quote = '<zitat><a id="S2"/><p klasse="Z">Das Zitat.</p></zitat>' if wrap else '<a id="S2"/><p klasse="Z">Das Zitat.</p>'
+        return dip.parse_protocol_xml(
+            '<dbtplenarprotokoll wahlperiode="18" sitzung-nr="1"><sitzungsverlauf>'
+            f'<tagesordnungspunkt top-id="{top}">{body.replace("QUOTE", quote)}</tagesordnungspunkt>'
+            "</sitzungsverlauf></dbtplenarprotokoll>", reviewed=[])["agenda_items"][0]
+
+    REDE = ('<rede id="R"><p klasse="redner"><redner id="1"><name><vorname>A</vorname><nachname>B</nachname><fraktion>SPD</fraktion>'
+            '</name></redner></p><p klasse="J_1">Ich zitiere:</p>QUOTE<kommentar>(Zuruf)</kommentar><p klasse="O">Zitat Ende.</p>'
+            '<name>Präsident Dr. Norbert Lammert:</name><p klasse="J_1">Frau Kollegin.</p></rede>')
+
+    # Value: protects=a quote the Redner reads out is stored; fails_when=<zitat> is skipped (41,335 words
+    #   in 1,028 stored WP 18 Reden); why_new=was dropped; seam=none
+    def test_a_quote_is_the_redners_and_its_own_paragraph(self) -> None:
+        [speech] = self.parse(self.REDE)["speeches"]
+        self.assertEqual(speech["text"], "Ich zitiere:\nDas Zitat.\nZitat Ende.")
+
+    def test_both_spellings_of_a_quote_read_the_same(self) -> None:
+        self.assertEqual(self.parse(self.REDE)["speeches"], self.parse(self.REDE, wrap=False)["speeches"])
+
+    # Value: protects=a quote the chair reads out never becomes the Redner's; fails_when=the unwrapped quote ignores who
+    #   speaks; why_new=26 of 1,814 follow the chair; seam=none
+    def test_a_quote_the_chair_reads_out_is_not_the_redners(self) -> None:
+        body = self.REDE.replace("QUOTE", "").replace("Frau Kollegin.</p>", "Frau Kollegin, es heißt:</p>QUOTE")
+        [speech] = self.parse(body)["speeches"]
+        self.assertEqual(speech["text"], "Ich zitiere: Zitat Ende.")
+
+    def test_a_second_quote_after_the_first_is_kept_in_order(self) -> None:
+        root = ET.fromstring('<rede><p>Vor.</p><zitat><p klasse="Z">1</p></zitat><zitat><p klasse="Z">2</p><p klasse="Z">3</p></zitat>'
+                             "<zitat><zitat><p>4</p></zitat></zitat><zitat/><p>Nach.</p></rede>")
+        dip.unwrap_quotes(root)
+        self.assertEqual([child.text for child in root], ["Vor.", "1", "2", "3", "4", "Nach."])
+
+    # Value: protects=no quoted words are dropped unseen; fails_when=text directly in a <zitat> is lost; why_new=new
+    #   rewrite of the tree; seam=none
+    def test_text_outside_a_quotes_paragraphs_refuses_the_sitting(self) -> None:
+        for quote in ("<zitat>Lose Worte</zitat>", '<zitat><p klasse="Z">1</p> lose </zitat>'):
+            with self.subTest(quote=quote), self.assertRaisesRegex(ValueError, "outside a paragraph"):
+                dip.unwrap_quotes(ET.fromstring(f"<rede>{quote}</rede>"))
 
 
 class ParsedProtocolTests(unittest.TestCase):

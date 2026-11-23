@@ -29,14 +29,14 @@ Checked against main (v0.46.43.0). The decisions are in ADR 0003, "Amendment 202
 **Done since the note was written:**
 - **Q1:** the owner chose the home address for the Impressum. That settles the question; a c/o service would reopen it.
 - **Q2, public repository:** the root `LICENSE` names the source and terms of the Bundestag material held in `tests/fixtures/`, `scripts/` and `docs/`, and says the DIP terms apply as conditions of the source, not as terms the project adds.
-- **Q7, omissions:** `LICENSE-DATA.md` ("What we changed") and the codebook entry for `text` in `scripts/data_dictionary.json` say that `speeches.text` and `contributions.text` hold only the speaker's own words. The paragraph breaks are not kept, and that is stated too.
+- **Q7, omissions:** `LICENSE-DATA.md` ("What we changed") and the codebook entry for `text` in `scripts/data_dictionary.json` say that `speeches.text` and `contributions.text` hold only the speaker's own words. The paragraph breaks are not kept, and that is stated too (*Update 2026-11-23:* they are kept now).
 - **Q8:** the theme and AI-summary collapse state are stored in `sessionStorage` (`scripts/render_dip_pulse_html.py`). `datenschutz.html`, built by `render_datenschutz_page` in `scripts/build_dip_pulse_site.py`, names § 25 Abs. 2 Nr. 2 TDDDG and says the values live in the tab's session storage.
 - **Q4, text:** `datenschutz.html` ("Personen in den Daten") now names Art. 6 Abs. 1 lit. f, Art. 9 Abs. 2 lit. e and Art. 85 with § 23 MStV, the recipients, the archive, and the right to object (Art. 21).
 
 **Still open, as the note says:**
 - **Q4:** the written inquiry to the Cyber Law Clinic of Universität Hamburg (or, if it declines, to the Landesdatenschutzbeauftragte), the Art. 30 record with the Art. 35 threshold note, and the takedown and erasure process. `TODOS.md`, "ADR 0003 legal questions: what the research leaves to do", tracks them. The owner decided this route on 2026-11-21; it is not yet sent.
 - **Q2:** the sentence in `LICENSE-DATA.md` „The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP layer“ is unchanged, and so is the layer note for the quoting columns (`documents.forderung` and `votes.inversion_excerpt`; `vote_passages` holds only links, see the *Update* under question 2).
-- **Q7:** the paragraph breaks are still joined with single spaces. The note's cost estimate stands, with one correction: `clean(` appears on 86 lines of `scripts/persist_dip_pulse_store.py` on main (99 occurrences), not 85.
+- **Q7:** the paragraph breaks are still joined with single spaces. *Update 2026-11-23: kept, one line feed between the printed paragraphs (ADR 0003, amendment of that date).* The note's cost estimate stands, with one correction: `clean(` appears on 86 lines of `scripts/persist_dip_pulse_store.py` on main (99 occurrences), not 85.
 - **Q8:** `datenschutz.html` still lists the AI-summary key (see above). Its wording about the tab (a duplicated tab copies `sessionStorage`) is tracked in `TODOS.md`.
 - **Q6:** unchanged. The Impressum names the operator as Verantwortlicher under § 18 Abs. 2 MStV (ADR 0003 D4).
 - **Hosting:** the Art. 28 DSGVO agreement with the host stays open with the hosting decision.

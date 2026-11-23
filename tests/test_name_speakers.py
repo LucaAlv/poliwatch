@@ -139,7 +139,7 @@ class NotStoredTests(unittest.TestCase):
                        [listed('N2', 'Wolf Biermann', 'name_ansprache', ''), listed('N4', 'Wolf Biermann', 'name_ansprache', '')],
                        beginn=beginn)
         self.assertEqual([(c['kind'], c['rede_id'], c['speaker'], c['text']) for c in parsed['sitting_contributions']],
-                         [(sk.ANSPRACHE, 'N2', {'xml_redner_id': None, 'display_name': 'Wolf Biermann'}, 'Erster Teil. Zweiter Teil.')])
+                         [(sk.ANSPRACHE, 'N2', {'xml_redner_id': None, 'display_name': 'Wolf Biermann'}, 'Erster Teil.\nZweiter Teil.')])
 
     def test_a_remark_is_stored_nowhere(self):
         body = CHAIR + '<p>Das Wort hat Bartsch.</p>' + name('Dr. Dietmar Bartsch (DIE LINKE)') + '<p>Ein Zuruf.</p>' + rede('ID1', HOST, SPEECH)
