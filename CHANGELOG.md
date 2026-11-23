@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.49.0] - 2026-11-23
+
+Turns the protocol prints like a Rede but that are something else no longer count as Reden. The stored Reden were compared with the type DIP gives the same person at the same place (1,047 of 61,660 could not be matched), each difference was read, and 514 turns are now listed by name with what they are. Reden go from 61,660 to 61,137 (806 sittings), Beiträge from 45,999 to 46,499, withheld Reden from 100 to 99. No text changes, and no Fraktion's share of all Reden moves by more than 0.1 points; 351 persons' Reden move, at most by 8. 38 of the 1,944 stored Fakt values move, and publishable weeks go from 213 to 212, months from 63 to 62. Stores need one `--offline --repersist` (speech rule 13); the export format goes from 23 to 24.
+
+### Added
+
+- **Mündliche Erklärungen are a kind of their own.** An oral Erklärung nach § 30, § 31 or § 32 of the Geschäftsordnung is stored as a Beitrag of kind `erklaerung`, with its text, and counts in no Rede figure. There are 121: 118 counted as Reden before, among them the seven that 0.46.47.0 stored from speaker markers outside any Rede; two given in a Befragung der Bundesregierung (19/191, 20/105) counted as Fragen; and one, Annette Groth's in 18/29, was withheld.
+- **A release refuses a Rede that DIP types otherwise.** The store gate and an export with a release tag name every stored Rede that DIP lists as a Kurzintervention, an Erwiderung or a mündliche Erklärung at the same page and quadrant, unless the reviewed list says it is a Rede. On the store before this change that names 355 Reden, on the new one none. A local build warns and writes them to `data/a1-classification-diagnostics.json`.
+
+### Changed
+
+- **Kurzinterventionen and Erwiderungen the chair's wording did not reveal leave the Reden.** 118 Reden are Kurzinterventionen and 144 are Erwiderungen; two Kurzinterventionen are Erwiderungen, and three turns read as Kurzinterventionen (19/59, 19/61, 20/57) are Reden after all.
+- **Reden zu Protokoll printed inside their agenda item count as `zu_protokoll`.** 122 in 18/39, 18/46, 18/54, 18/60 and 18/66 were counted as delivered.
+- **A turn that only moves a motion zur Geschäftsordnung is no Rede.** 24 such turns of WP 19 to 21, for example 19/7 `ID19709200`, are kept as procedural steps in the report and stored as neither Rede nor Beitrag. Other Wortmeldungen zur Geschäftsordnung and the Erklärungen zum Vermittlungsverfahren stay Reden, also where DIP gives them a type of their own.
+- **`parent_rede_id` of a listed Erwiderung names the Rede of the person who answers.** It names their own last Rede in the agenda item even where someone else spoke in between, and so does the Kurzintervention right before it, unless two persons answer it. 29 Beiträge change their parent.
+- The data notes, the codebook and the figures against CPP-BT (81,422 shared Rede-IDs, 2,337 only in CPP-BT) follow the new counts, and the notes say which Reden the comparison could not reach: 453 without a page and 594 where DIP names no activity of the person, 203 of those in 20/80, 21/109 and 19/118.
+
 ## [0.46.48.0] - 2026-11-23
 
 The DATA.md of a release export now says which release it is and where it is published, and the release script publishes to exactly that repository. No stored value, table or figure changes; the export format goes from 22 to 23 because DATA.md and the codebook inputs change.
