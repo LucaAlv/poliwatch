@@ -108,10 +108,11 @@ class ParserTests(unittest.TestCase):
         parsed = dip.parse_protocol_xml((_support.ROOT / "tests/fixtures/withholding/18-10-top3.xml").read_text(encoding="utf-8"),
                                         reviewed=_support.NAME_ENTRIES_18_10_TOP3)
         top = parsed["agenda_items"][0]
-        # N4 is Neu's Rede, which the source prints as <name> outside any <rede>.
-        self.assertEqual([s["rede_id"] for s in top["speeches"]], ["N4", "ID1801002600"])
+        # N4 is Neu's Rede, which the source prints as <name> outside any <rede>;
+        # M1 (Annen) and M6 (Beyer) are printed as speaker markers outside any <rede>.
+        self.assertEqual([s["rede_id"] for s in top["speeches"]], ["M1", "N4", "M6", "ID1801002600"])
         [held] = top["withheld"]
-        self.assertEqual((held["rede_id"], held["sequence"], held["reason"]), ("ID1801002600:2", 3, "refused_nested_contribution"))
+        self.assertEqual((held["rede_id"], held["sequence"], held["reason"]), ("ID1801002600:2", 5, "refused_nested_contribution"))
         self.assertEqual((held["word_count"], held["nested_word_count"]), (608, 123))
         # The part is the main speaker's text after the split; the Kurzintervention inside it stays apart.
         self.assertEqual(held["speaker"]["last_name"], "Bartz")
@@ -266,7 +267,7 @@ class ReviewedListTests(unittest.TestCase):
     def test_a_cached_report_under_other_reviewed_entries_is_reread(self):
         def cached(number, digest, version=sk.VERSION):
             return {"report": {"protocol": {"dokumentnummer": number, "reviewed_digest": digest}, "validation_summary": {"speech_kinds_version": version, "vote_inputs_version": vote_links.INPUTS_VERSION}}}
-        listed, unlisted = "18/2", "18/7"
+        listed, unlisted = "18/2", "18/9"
         fresh = [cached(listed, reviewed_units.sitting_digest(listed)), cached(unlisted, reviewed_units.digest([]))]
         self.assertEqual(build.unparsed_reports(fresh), [])
         stale = [cached(listed, reviewed_units.digest([])), cached(unlisted, reviewed_units.digest([entry("R1")])),
