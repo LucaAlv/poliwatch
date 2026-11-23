@@ -2,13 +2,13 @@
 
 Plan of 2026-11-23 for the owner's decisions 1 to 3 of that day (TODOS.md, "Owner decisions of 2026-11-23"). **Built the same day;** section 6 says what came out and where the build departs from the plan.
 
-Files: [`beitraege-as-reden.tsv`](beitraege-as-reden.tsv) (921 rows) and [`beitraege-as-reden/census.py`](beitraege-as-reden/census.py), which writes it read-only from a site output directory.
+Files: [`beitraege-as-reden.tsv`](beitraege-as-reden.tsv) (927 rows) and [`beitraege-as-reden/census.py`](beitraege-as-reden/census.py), which writes it read-only from a site output directory.
 
 ## 1. What is wrong
 
 `speeches` holds contributions that `CONTEXT.md` says are not Reden. The detector reads the chair's wording and prefers precision (ADR 0002), so a grant it does not know leaves a Kurzintervention as a Rede. Two kinds were never ruled on: oral Erklärungen, and Reden zu Protokoll printed inside a Tagesordnungspunkt (TOP).
 
-**Evidence.** DIP types each contribution (`aktivitaetsart`) with its person, page and quadrant, and every cached report keeps the list. The census matches each stored Rede, Kurzintervention and Erwiderung to it by surname, page and quadrant, then, for what is left over, within one page. Store: the v0.46.47.0 replay clone `.context/qa-after`, 806 sittings, 61,660 Reden. 59,496 stored Reden match a DIP Rede. 1,261 match nothing.
+**Evidence.** DIP types each contribution (`aktivitaetsart`) with its person, page and quadrant, and every cached report keeps the list. The census matches each stored Rede, Kurzintervention and Erwiderung to it by surname, page and quadrant, then, for what is left over, within one page. Store: the v0.46.47.0 replay clone `.context/qa-after`, 806 sittings, 61,660 Reden. 59,704 stored Reden match a DIP Rede. 1,047 match nothing (453 without a page, 594 with one). The census first matched the name the store shows and missed persons who have since changed theirs; it was corrected in the /ship review (end of section 6), and the figures here are the corrected ones.
 
 The parser compares these counts per sitting today and only warns (`speech_kinds.dip_mismatches`). It never compares row by row.
 
@@ -21,8 +21,8 @@ Rows the decisions cover, as `proposed` in the TSV. "Clear" means DIP and the su
 | `kurzintervention` | 106 | 18 | all four Wahlperioden |
 | `erwiderung` | 122 | 23 | all four Wahlperioden |
 | `erklaerung` (§ 30, § 31, § 32) | 99 | 12 | WP 18–20, two in WP 21 |
-| `zu_protokoll` | 116 | 4 | 18/39, 18/46, 18/54, 18/60, 18/66 |
-| **Together** | **443** | **57** | |
+| `zu_protokoll` | 118 | 4 | 18/39, 18/46, 18/54, 18/60, 18/66 |
+| **Together** | **445** | **57** | |
 
 How sure the clear rows are:
 - 126 of the 327 clear rows that are not `zu_protokoll` carry no grant wording in the XML before the turn, often because the chair's words are missing there. A random 30 of those were read (seed 3): all 30 were right by their opening words.
@@ -35,8 +35,8 @@ How sure the clear rows are:
 
 ## 3. Two more groups, answered by the owner on 2026-11-23: both stay Reden
 
-1. **Wortmeldungen zur Geschäftsordnung: 284 rows** stored as Reden, DIP "Zur Geschäftsordnung BT". They stay Reden. They are speeches for and against a motion, held in turn by the Fraktionen. 21/43 `ID214301700`, a bare motion ruled procedural, stays as it is; motions as short as it (21/14 Latendorf, 126 characters) are read one by one.
-2. **Erklärungen zum Vermittlungsverfahren: 61 rows** (§ 90 GO-BT, § 10 GO-VermA). They stay Reden. DIP names them Erklärungen, but the Fraktionen speak in turn on the result, as in a debate. They do not explain one Member's own vote or person, which is what decision 2 rests on.
+1. **Wortmeldungen zur Geschäftsordnung: 287 rows** stored as Reden, DIP "Zur Geschäftsordnung BT". They stay Reden. They are speeches for and against a motion, held in turn by the Fraktionen. 21/43 `ID214301700`, a bare motion ruled procedural, stays as it is; motions as short as it (21/14 Latendorf, 126 characters) are read one by one.
+2. **Erklärungen zum Vermittlungsverfahren: 62 rows** (§ 90 GO-BT, § 10 GO-VermA). They stay Reden. DIP names them Erklärungen, but the Fraktionen speak in turn on the result, as in a debate. They do not explain one Member's own vote or person, which is what decision 2 rests on.
 
 `berichterstattung` (61 rows) stays a Rede: the Berichterstatter opens the debate. `erklaerung_plenarprotokoll` (2), `wortbeitrag` (1) and the one Rede DIP calls a Zwischenfrage (21/4 Mayer) are read in the build.
 
@@ -60,7 +60,7 @@ How sure the clear rows are:
 
 ## 5. Found on the way, not part of this build
 
-**About 438 Reden zu Protokoll that DIP lists and the store lacks,** in 39 sittings, mostly WP 20 and 21 (21/83: DIP 38, stored 1; 20/178: 24 and 0; 21/99: 32 and 1). Three sittings were looked at: the Protokoll XML of 21/83, 20/178 and 21/99 has no annex that holds them, though DIP gives each a printed page. Likely the XML leaves the annex out and the PDF prints it, but no PDF was read. If so, it is a source gap DATA.md must name. See TODOS.md.
+**About 435 Reden zu Protokoll that DIP lists and the store lacks,** net, in 40 sittings with a difference, mostly WP 20 and 21 (21/83: DIP 38, stored 1; 20/178: 24 and 0; 21/99: 32 and 1). Three sittings were looked at: the Protokoll XML of 21/83, 20/178 and 21/99 has no annex that holds them, though DIP gives each a printed page. Likely the XML leaves the annex out and the PDF prints it, but no PDF was read. If so, it is a source gap DATA.md must name. See TODOS.md.
 
 ## 6. Outcome of the build
 
@@ -75,7 +75,9 @@ Measured on a clone of the 806-sitting store, v0.46.47.0 before, `--offline --re
 
 **After the review (2026-11-23):** two Erklärungen given in a Befragung are listed (19/191 `ID1919108700`, 20/105 `ID2010504300`; the second by the owner), so there are 512 entries and 121 Erklärungen; Befragung questions 7,900 → 7,898. Section 1's census never compared Befragung turns. 20/196 `ID2019611800` names no parent: its Redner holds no Rede in the TOP and answers no Kurzintervention. Replayed on a clone: these three rows change and nothing else.
 
-**The readings.** Verdicts as given: [A](beitraege-as-reden/reading-A.tsv) and [B](beitraege-as-reden/reading-B.tsv) (doubtful rows), [C](beitraege-as-reden/reading-C.tsv) (clear rows). The 327 clear rows and the 116 clear `zu_protokoll` rows were read once, 106 doubtful ones (the 57, the 11, the odd types and the Geschäftsordnung rows under 400 characters) twice, independently. The two readers agreed on 95. The 11 others and the 13 rows the single reader doubted were read again. Where the chair's words name no kind, DIP's type stands.
+**After the /ship review (2026-11-23):** the census join by the shown name hid turns of persons who changed theirs. Corrected, it adds six rows: two Reden zu Protokoll of 18/46 (`ID1804611700`, `ID1804614900`; the chair says of both TOPs that the Reden go zu Protokoll), listed as such; 21/10 `ID211006000`, a bare motion (two blind readings), `procedural`; and 21/33, 21/95 and 21/97 of the same person, which stay Reden. So there are 514 entries and 24 motions: Reden 61,140 → 61,137, Beiträge 46,497 → 46,499, zu Protokoll 4,162 → 4,164.
+
+**The readings.** Verdicts as given: [A](beitraege-as-reden/reading-A.tsv) and [B](beitraege-as-reden/reading-B.tsv) (doubtful rows), [C](beitraege-as-reden/reading-C.tsv) (clear rows). The rows the /ship review added (18/46 ×2 in C, 21/10 in A and B) stand at the end of the files and are not in the counts that follow. The 327 clear rows and the 116 clear `zu_protokoll` rows were read once, 106 doubtful ones (the 57, the 11, the odd types and the Geschäftsordnung rows under 400 characters) twice, independently. The two readers agreed on 95. The 11 others and the 13 rows the single reader doubted were read again. Where the chair's words name no kind, DIP's type stands.
 
 **Departures from the plan:**
 - The entry kinds are the Kind names themselves (`kurzintervention`, not `rede_kurzintervention`), and an entry names a unit as emitted, as `withhold` does, so a split part or an `M<ordinal>` can be listed.

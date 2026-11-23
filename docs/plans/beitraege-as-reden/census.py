@@ -2,10 +2,14 @@
 """Census of stored Reden that DIP types as another kind of contribution.
 
 Read-only. For each sitting it matches every stored Rede, Kurzintervention and
-Erwiderung to DIP's Aktivitäten (kept in the cached report) by surname, page and
+Erwiderung to DIP's Aktivitäten (kept in the cached report) by person, page and
 page quadrant, and prints one TSV row per disagreement with the evidence a
 reader needs: what the Sitzungsleitung said just before, how the turn opens, and
 who spoke before it. DIP is a lead, not the verdict.
+
+The person is DIP's person id, or else the surname the Protokoll prints or the
+store shows: a person who changed their name is shown under the later one, so the
+stored name alone missed their turns (18/46 Jantz, 21/10 dos Santos-Wintz).
 
 Usage: census.py <site output dir> > docs/plans/beitraege-as-reden.tsv
 """
@@ -104,16 +108,31 @@ def page_of(value: object) -> tuple[int | None, str]:
 
 def stored_units(db: sqlite3.Connection) -> dict[str, list[dict]]:
     units = collections.defaultdict(list)
+    # A person's records are separate where the sources name them differently.
+    dip_ids = collections.defaultdict(set)
+    for person, dip in db.execute("select person_id, dip_person_id from mps where dip_person_id is not null"):
+        dip_ids[person].add(str(dip))
     for row in db.execute(
         "select p.document_number sitting, s.rede_id, s.page, s.page_quadrant quadrant, s.char_count chars, "
-        "m.display_name speaker, m.xml_redner_id redner_id, 'rede' stored, s.text "
+        "m.display_name speaker, m.xml_redner_id redner_id, m.person_id, 'rede' stored, s.text "
         "from speeches s join protocols p on p.id = s.protocol_id left join mps m on m.id = s.mp_id "
         "union all select p.document_number, c.rede_id, c.page, null, c.char_count, "
-        "coalesce(m.display_name, c.speaker_name), m.xml_redner_id, c.kind, c.text "
+        "coalesce(m.display_name, c.speaker_name), m.xml_redner_id, m.person_id, c.kind, c.text "
         "from contributions c join protocols p on p.id = c.protocol_id left join mps m on m.id = c.mp_id "
         "where c.kind in ('kurzintervention', 'erwiderung')"):
-        units[row["sitting"]].append(dict(row))
+        units[row["sitting"]].append({**dict(row), "dip_ids": dip_ids.get(row["person_id"], set())})
     return units
+
+
+def printed_surnames(report: dict) -> dict[str, str]:
+    """Per stored unit: the surname the Protokoll prints."""
+    return {unit["rede_id"]: surname((unit.get("speaker") or {}).get("last_name"))
+            for item in report["agenda_items"]
+            for unit in [*(item.get("xml_speakers") or []), *(item.get("xml_contributions") or [])] if unit.get("rede_id")}
+
+
+def same_person(unit: dict, act: dict) -> bool:
+    return act["person_id"] in unit["dip_ids"] or bool(act["surname"]) and act["surname"] in unit["surnames"]
 
 
 def chair_context(xml: Path) -> dict[str, tuple[str, str]]:
@@ -161,15 +180,18 @@ def main(output: Path) -> None:
         for act in report["api_records"]["aktivitaeten"]:
             kind = DIP_KIND.get(act["aktivitaetsart"])
             if kind:
-                acts.append({"kind": kind, "surname": surname(act["titel"]), "used": False,
+                acts.append({"kind": kind, "surname": surname(act["titel"]), "person_id": str(act.get("person_id") or ""), "used": False,
                              "page": page_of(act["fundstelle"].get("seite"))})
+        printed = printed_surnames(report)
+        for unit in units[sitting]:
+            unit["surnames"] = {surname(unit["speaker"]), printed.get(unit["rede_id"], "")}
         # An exact page and quadrant first; then, for what is left over on both
         # sides, the same person within one page.
         for wide in (False, True):
             for unit in units[sitting]:
                 if unit.get("act") or unit["page"] is None:
                     continue
-                hits = [a for a in acts if not a["used"] and a["surname"] == surname(unit["speaker"])
+                hits = [a for a in acts if not a["used"] and same_person(unit, a)
                         and a["page"][0] is not None
                         and (abs(a["page"][0] - unit["page"]) <= 1 if wide else a["page"][0] == unit["page"])
                         and (wide or not unit["quadrant"] or not a["page"][1] or a["page"][1] == unit["quadrant"])]

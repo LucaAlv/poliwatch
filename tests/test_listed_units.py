@@ -232,15 +232,33 @@ class DipTypedRedenTests(unittest.TestCase):
             self.assertEqual(gate.dip_typed_reden(Path(tmp)), audit['reden_dip_types_otherwise'])
 
 
+def load_census():
+    import importlib.util
+    path = _support.ROOT / 'docs' / 'plans' / 'beitraege-as-reden' / 'census.py'
+    spec = importlib.util.spec_from_file_location('beitraege_census', path)
+    census = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(census)
+    return census
+
+
 class CensusTests(unittest.TestCase):
+    # Value: protects=a person shown under a later name is matched by DIP's person id or the printed surname, another person is not;
+    #   fails_when=a name change hides a turn again (18/46 Jantz, 21/10 dos Santos-Wintz); why_new=found by the ship review; seam=none
+    def test_a_changed_name_still_matches(self):
+        census = load_census()
+        jantz = {'dip_ids': {'1691'}, 'surnames': {census.surname('Christina Jantz-Herrmann'), census.surname('Jantz')}}
+        for act, expected in (({'person_id': '1691', 'surname': census.surname('Christina Anders, MdB, SPD')}, True),
+                              ({'person_id': '', 'surname': census.surname('Christina Jantz, MdB, SPD')}, True),
+                              ({'person_id': '7', 'surname': census.surname('Dieter Stier, MdB, CDU/CSU')}, False)):
+            with self.subTest(act=act):
+                self.assertEqual(census.same_person(jantz, act), expected)
+        nameless = {'dip_ids': set(), 'surnames': {''}}
+        self.assertFalse(census.same_person(nameless, {'person_id': '', 'surname': ''}))
+
     # Value: protects=the census proposes DIP's decided kind, flags a row a reader must read, and proposes nothing for a kind the owner left
     #   a Rede; fails_when=a later census (a new sitting) lists doubtful rows as clear; why_new=new script; seam=none
     def test_the_proposal_flags_what_must_be_read(self):
-        import importlib.util
-        path = _support.ROOT / 'docs' / 'plans' / 'beitraege-as-reden' / 'census.py'
-        spec = importlib.util.spec_from_file_location('beitraege_census', path)
-        census = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(census)
+        census = load_census()
         unit = {'stored': 'rede', 'match': 'exact', 'chars': 900, 'speaker': 'Petra Sitte', 'text': 'Herr Kollege, nein.'}
         grant = 'Zu einer Kurzintervention hat Frau Sitte das Wort.'
         self.assertEqual(census.proposal(unit, 'kurzintervention', grant, 'Hirte'), ('kurzintervention', ''))

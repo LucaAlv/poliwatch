@@ -1649,6 +1649,13 @@
     },
     {
       "sitting": "18/46",
+      "rede_id": "ID1804611700",
+      "redner_id": "11004313",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4261A); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
       "rede_id": "ID1804611800",
       "redner_id": "11003853",
       "kind": "zu_protokoll",
@@ -1863,6 +1870,13 @@
       "redner_id": "11004327",
       "kind": "zu_protokoll",
       "reason": "DIP lists Rede zu Protokoll (p. 4293C); read 2026-11-23"
+    },
+    {
+      "sitting": "18/46",
+      "rede_id": "ID1804614900",
+      "redner_id": "11004266",
+      "kind": "zu_protokoll",
+      "reason": "DIP lists Rede zu Protokoll (p. 4294A); read 2026-11-23"
     },
     {
       "sitting": "18/46",
@@ -5872,6 +5886,13 @@
       "redner_id": "11003821",
       "kind": "procedural",
       "reason": "the sworn person's answer to the chair's oath prompt (full Art"
+    },
+    {
+      "sitting": "21/10",
+      "rede_id": "ID211006000",
+      "redner_id": "11005198",
+      "kind": "procedural",
+      "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 806D; read twice, 2026-11-23, readers agree; owner decision of that day): Moves that TOP 12 be taken off the agenda, with one clause of reason; the chair puts it to the vote at once"
     },
     {
       "sitting": "21/14",
