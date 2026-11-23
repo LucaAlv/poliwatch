@@ -346,7 +346,8 @@ _GITHUB_REMOTE = re.compile(
     r"(?:https://(?:[A-Za-z0-9._~-]+(?::[A-Za-z0-9._~-]+)?@)?github\.com/"
     r"|git@github\.com:"
     r"|ssh://git@github\.com/)"
-    r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?"
+    r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?",
+    re.IGNORECASE,  # host and scheme compare case-insensitively; owner/name keep their case
 )
 
 
@@ -354,7 +355,10 @@ def remote_github_repository(url: str) -> str | None:
     """owner/name of a git remote URL on github.com (https with plain credentials,
     git@github.com:… or ssh://git@github.com/…, a trailing .git dropped), or None."""
     match = _GITHUB_REMOTE.fullmatch(url.strip())
-    return github_repository(f"https://github.com/{match[1]}") if match else None
+    # One .git is dropped, by the pattern; owner/name go out as matched.
+    if match is None or {match[1], match[2]} & {".", ".."}:
+        return None
+    return f"{match[1]}/{match[2]}"
 
 
 def _url_host(url: str) -> str:

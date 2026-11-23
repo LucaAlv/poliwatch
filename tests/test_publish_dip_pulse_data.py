@@ -524,6 +524,11 @@ class ReleaseRepositoryTests(unittest.TestCase):
             ("https://tok%40evil.example%2f@github.com/LucaAlv/poliwatch.git", None),
             ("https://github.com/LucaAlv%2fx/poliwatch", None),
             ("git@github.com:LucaAlv/poliwatch.git?x", None),
+            ("https://github.com/LucaAlv/poliwatch.git.git", "LucaAlv/poliwatch.git"),
+            ("git@github.com:LucaAlv/poliwatch.git.git", "LucaAlv/poliwatch.git"),
+            ("https://GITHUB.COM/LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("git@GitHub.com:LucaAlv/poliwatch", "LucaAlv/poliwatch"),
+            ("https://github.com/./poliwatch", None),
         ):
             with self.subTest(url=url):
                 self.assertEqual(publish.remote_github_repository(url), expected)
