@@ -77,7 +77,7 @@ The text is in the XML, without a `<rede>` of its own (`docs/source-errors.md`, 
 4. **Do not** fill in Reden from DIP without text: a Rede without words would enter Reden counts and leave characters, share and search wrong.
 5. **WP 18:** the ten are a parser task of their own (E17), small, and two of them are a wrong attribution, so they belong before the release. Effort S.
 
-My pick: 1 and 5 before the first release, 2 now, 3 after it.
+Owner, 2026-11-23: 1 before the first release (planned in [cut-protocols.md](cut-protocols.md)), 3 after it. 2 and 5 are open; my pick is 5 before the release and 2 now.
 
 ## Not read
 

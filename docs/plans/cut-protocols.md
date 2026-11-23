@@ -12,11 +12,11 @@ No stored Rede, Beitrag, vote or vote link changes: 61,137 Reden and 4,164 `zu_p
 
 ## Decisions for the owner
 
-**D1. Mark and keep the sitting.** Rejected: excluding the 33 as `source_defect`, which drops 4,555 stored Reden and the 70 votes held on those days and leaves a larger hole; and naming them in DATA.md only, which leaves Fakten that claim completeness.
+**D1. Mark and keep the sitting. Decided 2026-11-23** ("Yes, plan it"). Rejected: excluding the 33 as `source_defect`, which drops 4,555 stored Reden and the 70 votes held on those days and leaves a larger hole; and naming them in DATA.md only, which leaves Fakten that claim completeness.
 
-**D2. `laengste-sitzung` gets a Completeness basis of its own (recommended).** It reads only the start and end times, which a cut file prints. Under the speeches basis the longest days would leave its own comparison: its published Fakten would fall from 92 to 67 over WP 19 to 21, and the remaining ones would compare with shorter weeks. Proposed basis `times`: the XML is parsed and has both times. Two end times need a reading first. 20/178 prints 23:11 in the XML and 23.12 in the PDF. 20/210 prints 02:19 in its head and 02:15 at its end. 20/147, 21/40, 21/83 and 21/99 agree with their PDFs. The other 27 (20/210 aside) were not compared: step 0 does it, and needs a go for 28 more PDFs (about 67 MB).
+**D2 (open). `laengste-sitzung` gets a Completeness basis of its own (recommended).** It reads only the start and end times, which a cut file prints. Under the speeches basis the longest days would leave its own comparison: its published Fakten would fall from 92 to 67 over WP 19 to 21, and the remaining ones would compare with shorter weeks. Proposed basis `times`: the XML is parsed and has both times. Two end times need a reading first. 20/178 prints 23:11 in the XML and 23.12 in the PDF. 20/210 prints 02:19 in its head and 02:15 at its end. 20/147, 21/40, 21/83 and 21/99 agree with their PDFs. The other 27 (20/210 aside) were not compared: step 0 does it, and needs a go for 28 more PDFs (about 67 MB).
 
-**D3. The PDF pilot before or after the release.** Under D1 and D2 published Fakten fall from 590 to about 531, and WP 21 loses the most:
+**D3. The PDF pilot comes after the release. Decided 2026-11-23.** Under D1 and D2 published Fakten fall from 590 to about 531, and WP 21 loses the most:
 
 | | complete periods now | after | published now | after |
 |---|---|---|---|---|
@@ -31,7 +31,7 @@ No stored Rede, Beitrag, vote or vote link changes: 61,137 Reden and 4,164 `zu_p
 | `aktivste-abgeordnete`, WP 20 months | 38 of 39 | 31 | 21 | 17 |
 | `meistdiskutierter-vorgang`, WP 20 months | 38 | 31 | 25 | 20 |
 
-31 weeks and 20 months stop being complete. WP 21 gets no monthly Fakt at all. The withheld figures were not right to begin with, so this plan does not wait for the PDFs. Recommended: build this plan, release, then the pilot on 20/147, 20/178, 21/40, 21/83 and 21/99. If a WP 21 without monthly Fakten is not worth releasing, the pilot comes first. Numbers: simulated with `facts.compute` on the unchanged store, `today` = 2026-11-23, without step 4.
+31 weeks and 20 months stop being complete. WP 21 gets no monthly Fakt at all. The withheld figures were not right to begin with, so this plan does not wait for the PDFs. The order is: build this plan, release, then the pilot on 20/147, 20/178, 21/40, 21/83 and 21/99. So the first release has no monthly Fakt for WP 21. Numbers: simulated with `facts.compute` on the unchanged store, `today` = 2026-11-23, without step 4.
 
 ## Detection
 
