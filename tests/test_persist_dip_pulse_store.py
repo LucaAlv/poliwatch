@@ -474,6 +474,25 @@ class StoredCountTests(unittest.TestCase):
         })
 
 
+class StoredWordingTests(unittest.TestCase):
+    # Value: protects=the paragraph breaks of a Rede, a Beitrag, a withheld Rede and a turn in it reach the store;
+    #   fails_when=a persist call goes back to `clean`, which collapses them; why_new=only the helper was tested; seam=none
+    def test_each_wording_keeps_its_paragraph_breaks(self) -> None:
+        report = _report_with_every_counted_unit()
+        for block, (unit_of, _keys) in StoredCountTests.LOOKUPS.items():
+            unit_of(report)["text"] = f"{block}:\u00a0  eins.\nZwei."
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                stored = [row[0] for query in (
+                    "SELECT text FROM speeches WHERE rede_id = 'R1'", "SELECT text FROM contributions",
+                    "SELECT text FROM withheld_units", "SELECT text FROM withheld_turns") for row in conn.execute(query)]
+            finally:
+                conn.close()
+        self.assertEqual(sorted(stored), sorted(f"{block}: eins.\nZwei." for block in StoredCountTests.LOOKUPS))
+
+
 class ParserCountContractTests(unittest.TestCase):
     # Value: protects=every parser path that makes a Rede, Beitrag or withheld unit sets each count persist reads, as an int;
     #   fails_when=a producer drops a count, which persist now refuses (StoredCountTests); why_new=the direct lookups rest on it; seam=none
