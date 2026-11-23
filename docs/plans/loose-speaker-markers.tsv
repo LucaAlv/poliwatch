@@ -1,0 +1,75 @@
+sitting	top	marker	run	redner_id	speaker	prev_owner	next_owner	words	words_to_first_kommentar	in_store	first_words	kind	attach	note
+18/2	Zusatztagesordnungspunkt 2	M1	18/2#1	11003848	Petra Sitte			30	19	no	Frau Präsidentin, ich hatte bereits zu Beginn der Sitzung angekündigt, dass ich	rede	wrap	asks for the floor for an Erklärung nach § 31 at the end of the sitting
+18/2	Zusatztagesordnungspunkt 2	M2	18/2#1	11003848	Petra Sitte			558	16	no	Danke. – Ich möchte gerne etwas zu den Abstimmungen sagen, die eben	own_words	wrap	the Erklärung nach § 31
+18/6	Tagesordnungspunkt 16	M1	18/6#1	11003759	Diana Golze		Dagmar Ziegler	851	17	no	Vielen Dank. – Herr Präsident! Sehr geehrte Damen und Herren! Es wäre	rede	wrap	first Rede of the debate
+18/6	Tagesordnungspunkt 16	M2	18/6#1	11003586	Dorothee Bär		Dagmar Ziegler	1442	88	no	Sehr geehrter Herr Präsident! Liebe Kolleginnen und Kollegen! Ich spreche als MdB	rede	wrap	
+18/6	Tagesordnungspunkt 16	M3	18/6#1	11004255	Franziska Brantner		Dagmar Ziegler	670	72	no	Sehr geehrter Herr Präsident! Liebe Kolleginnen! Liebe Kollegen! Was wollte die SPD	rede	wrap	
+18/7	Zusatztagesordnungspunkt 1	M159	18/7#1	11003790	Jan Korte		Günter Krings	885	86	no	Frau Präsidentin! Liebe Kolleginnen und Kollegen! Seit Juni vergangenen Jahres haben wir	rede	wrap	opens the Aktuelle Stunde
+18/10	Tagesordnungspunkt 3	M1	18/10#1	11003732	Niels Annen		Tobias Lindner	635	95	no	Frau Präsidentin, vielen Dank, dass Sie so wacker für Aufmerksamkeit gekämpft haben.	rede	wrap	first Rede of the debate
+18/10	Tagesordnungspunkt 3	M2	18/10#1	11003732	Niels Annen		Tobias Lindner	4	4	no	Das tue ich gerne.	own_words	wrap	consents to Ströbele's Zwischenfrage
+18/10	Tagesordnungspunkt 3	M3	18/10#1	11002273	Hans-Christian Ströbele		Tobias Lindner	124	124	no	Danke, Herr Kollege. – Ihnen ist wahrscheinlich wie mir bekannt, dass in	zwischenfrage	wrap	
+18/10	Tagesordnungspunkt 3	M4	18/10#1	11003732	Niels Annen		Tobias Lindner	284	242	no	Herr Kollege Ströbele, ich danke Ihnen für die Frage. Ich glaube, dass	own_words	wrap	answers the Zwischenfrage
+18/10	Tagesordnungspunkt 3	M5	18/10#1	11003732	Niels Annen		Tobias Lindner	208	105	no	Das war keine Verabredung. – Ich komme auch gleich zum Schluss meiner	own_words	wrap	continues after a chair remark
+18/10	Tagesordnungspunkt 3	M6	18/10#1	11004010	Peter Beyer		Tobias Lindner	674	236	no	Frau Präsidentin! Meine sehr geehrten Kolleginnen und Kollegen! Sehr geehrte Damen und	rede	wrap	after Neu's Rede (name_rede N39)
+18/23	Zusatztagesordnungspunkt 4	M1	18/23#1	11003786	Katja Kipping		Hans-Christian Ströbele	779	93	no	Frau Präsidentin! Ich möchte eine persönliche Erklärung abgeben, warum ich gegen die	rede	wrap	Erklärung nach § 31
+18/23	Zusatztagesordnungspunkt 4	M2	18/23#1	11004182	Johann Wadephul		Hans-Christian Ströbele	231	231	no	Frau Präsidentin! Meine sehr verehrten Damen und Herren! Wir hatten eigentlich vereinbart,	rede	wrap	Erklärung nach § 31 Abs. 1
+18/23	Zusatztagesordnungspunkt 4	M3	18/23#1	11003764	Britta Haßelmann		Hans-Christian Ströbele	358	67	no	Vielen Dank, Frau Präsidentin. – Da ich an der Abstimmung mitgewirkt habe,	rede	wrap	Erklärung zur Abstimmung nach § 31 Abs. 1
+18/23	Zusatztagesordnungspunkt 4	M4	18/23#1	11000756	Gregor Gysi		Hans-Christian Ströbele	81	30	no	Frau Präsidentin! Meine Damen und Herren! Ganz kurz: Im Fall André Hahn,	rede	wrap	persönliche Erklärung in the same series
+18/26	Tagesordnungspunkt 5	M1	18/26#1	11004053	Rosemarie Hein		Stefan Müller	1200	63	no	Vielen Dank. – Frau Präsidentin! Liebe Kolleginnen und Kollegen! Sicherlich nicht nur	rede	wrap	first Rede of the debate
+18/26	Zusatztagesordnungspunkt 2	M2	18/26#2	11003507	Clemens Binninger		Ulla Jelpke	1159	248	no	Frau Präsidentin! Verehrte Kolleginnen und Kollegen! Dass wir heute über die Evaluierung	rede	wrap	first Rede of the debate
+18/26	Tagesordnungspunkt 12	M3	18/26#3	11002625	Volker Beck		Olav Gutting	552	137	no	Frau Präsidentin! Meine Damen und Herren! Ein Bankkonto ist der Schlüssel zur	rede	wrap	first Rede of the debate
+18/26	Tagesordnungspunkt 12	M4	18/26#3	11002625	Volker Beck		Olav Gutting	22	22	no	Das wäre gesellschaftspolitisch ein wichtiger Schritt hin zur Integration, den wir gemeinsam	own_words	wrap	continues after a chair remark
+18/33	Tagesordnungspunkt 4	M1	18/33#1	11003755	Sigmar Gabriel		Caren Lay	2194	214	no	Sehr geehrter Herr Präsident! Liebe Kolleginnen und Kollegen! Mit der Reform des	rede	wrap	the minister opens the debate
+18/74	Tagesordnungspunkt 29	M1	18/74#1	11004391	Susann Rüthrich		Marcus Weinberg	824	152	no	Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Geburtstage, zumal runde, sind	rede	wrap	first Rede of the debate
+18/76	Tagesordnungspunkt 6	M1	18/76#1	11003031	Hans-Peter Bartels			6	6	no	Jawohl, ich nehme die Wahl an.	procedural	none	accepts the election as Wehrbeauftragter
+18/83	Tagesordnungspunkt 20	M1	18/83#1	11003861	Marcus Weinberg		Katja Dörner	894	178	no	Vielen Dank, Frau Präsidentin. – Werte Kolleginnen und Kollegen! Es sind nicht	rede	wrap	first Rede of the debate
+18/83	Tagesordnungspunkt 20	M2	18/83#1	11004391	Susann Rüthrich		Katja Dörner	687	296	no	Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Vor allem liebe Gäste!	rede	wrap	after Müller's Rede (name_rede N54)
+18/83	Tagesordnungspunkt 21	M3	18/83#2	11004088	Caren Lay		Oliver Krischer	777	73	no	Frau Präsidentin! Meine sehr verehrten Damen und Herren! Die Privatisierungswelle, die sich	rede	wrap	first Rede of the debate
+18/83	Tagesordnungspunkt 21	M4	18/83#2	11003789	Jens Koeppen		Oliver Krischer	934	60	no	Vielen Dank. – Frau Präsidentin! Liebe Kolleginnen und Kollegen! Wir reden über	rede	wrap	
+18/83	Tagesordnungspunkt 21	M5	18/83#2	11003789	Jens Koeppen		Oliver Krischer	2	2	yes	Bitte schön.	own_words	wrap	consents to Lay's Zwischenfrage
+18/83	Tagesordnungspunkt 21	M6	18/83#2	11004088	Caren Lay		Oliver Krischer	145	145	no	Verehrter Herr Kollege Koeppen, ich möchte Sie erstens fragen, ob Sie zur	zwischenfrage	wrap	
+18/83	Tagesordnungspunkt 21	M7	18/83#2	11003789	Jens Koeppen		Oliver Krischer	443	12	no	Ich habe die Position natürlich verstanden; aber ich kann ihr nicht zustimmen.	own_words	wrap	answers the Zwischenfrage
+18/91	Zusatztagesordnungspunkt 2	M1	18/91#1	11004001	Jan Aken		Volker Kauder	200	57	no	Frau Präsidentin! Meine Damen und Herren! Ich möchte ganz kurz begründen, warum	rede	wrap	Erklärung nach § 31
+18/91	Zusatztagesordnungspunkt 2	M2	18/91#1	11004001	Jan Aken		Volker Kauder	223	8	no	Ich würde gerne meine Rede zu Ende führen.	own_words	wrap	continues after a chair remark
+18/115	Zusatztagesordnungspunkt 4	M1	18/115#1	11004324	Kerstin Kassner			346	292	no	Vielen Dank. – Herr Präsident! Werte Kolleginnen und Kollegen! Namens des Petitionsausschusses	rede	wrap	Berichterstatterin of the Petitionsausschuss
+18/115	Tagesordnungspunkt 7	M2	18/115#2	11004309	Sigrid Hupach			236	182	no	Sehr geehrter Herr Präsident! Liebe Kolleginnen und Kollegen! Ich stimme beiden vorliegenden	rede	wrap	mündliche Erklärung nach § 31
+19/14	Tagesordnungspunkt 8	M1	19/14#1	11003820	Vizepräsident Thomas Oppermann:	Stephan Stracke		296	289	no	Damit ist die Aussprache beendet.	sitzungsleitung	none	the chair printed as a speaker marker
+19/62	Tagesordnungspunkt 24	M1	19/62#1	11004334	Roy Kühne	Roy Kühne		407	54	no	Ja, genau.	own_words	prev	continues his Rede after a chair remark
+19/114	Tagesordnungspunkt 1	M1	19/114#1	11004778	Stefan Keuter	Olaf Scholz	Stefan Keuter	2	2	yes	Ja, gerne.	own_words	next	accepts the offer of a Nachfrage
+19/114	Tagesordnungspunkt 1	M2	19/114#2	11004426	Carsten Träger	Olaf Scholz	Carsten Träger	9	9	no	Herr Präsident, ich nehme die Entschuldigung sehr gern an.	own_words	next	accepts the chair's apology
+19/114	Tagesordnungspunkt 1	M3	19/114#3	11004877	Stefan Schmidt	Olaf Scholz	Stefan Schmidt	9	9	no	Ich freue mich sehr über Ihren Optimismus, Herr Scholz.	own_words	next	remark before his Zusatzfrage
+19/114	Tagesordnungspunkt 1	M4	19/114#3	11003231	Olaf Scholz	Olaf Scholz	Stefan Schmidt	5	5	no	Ich setze ganz auf Sie.	befragung_antwort	next	the minister's reply to that remark
+19/114	Tagesordnungspunkt 1	M5	19/114#4	11004877	Stefan Schmidt	Stefan Schmidt	Olaf Scholz	2	2	yes	Vielen Dank.	own_words	prev	thanks after his own Frage
+19/114	Tagesordnungspunkt 1	M6	19/114#5	11004727	Albrecht Glaser	Olaf Scholz	Albrecht Glaser	6	6	no	Doch, er mag. Danke, Herr Präsident.	own_words	next	accepts the floor
+19/114	Tagesordnungspunkt 1	M7	19/114#6	11004727	Albrecht Glaser	Olaf Scholz	Albrecht Glaser	6	6	no	Ja, eine Zusatzfrage, wenn ich darf.	remark	none	asks for a Zusatzfrage; the Frage is M8 (changed in the build from befragung_frage, which counted the request as a Frage of its own)
+19/114	Tagesordnungspunkt 1	M8	19/114#6	11004727	Albrecht Glaser	Olaf Scholz	Albrecht Glaser	21	21	no	Ich bewundere in der Tat Ihren Optimismus, aber wir werden das vielleicht	befragung_frage	prev	the Zusatzfrage
+19/114	Tagesordnungspunkt 1	M9	19/114#6	11003231	Olaf Scholz	Olaf Scholz	Albrecht Glaser	8	8	no	Unsere Gesellschaft funktioniert nur, wenn wir einander vertrauen.	own_words	prev	the minister answers
+19/114	Tagesordnungspunkt 1	M10	19/114#7	11004902	Bettina Stark-Watzinger	Olaf Scholz	Bettina Stark-Watzinger	2	2	yes	Ja, gerne.	remark	none	accepts the offer of a Zusatzfrage; the Frage is M11 (changed in the build from befragung_frage, as M7)
+19/114	Tagesordnungspunkt 1	M11	19/114#7	11004902	Bettina Stark-Watzinger	Olaf Scholz	Bettina Stark-Watzinger	18	14	no	Herr Minister, ich möchte der Aussage, dass nur Einkommensmillionäre den Solidaritätszuschlag weiter	befragung_frage	prev	the Zusatzfrage
+19/114	Tagesordnungspunkt 1	M12	19/114#7	11003231	Olaf Scholz	Olaf Scholz	Bettina Stark-Watzinger	7	5	no	Das habe ich nicht gesagt.	own_words	prev	the minister answers
+19/114	Tagesordnungspunkt 1	M13	19/114#8	11003231	Olaf Scholz	Olaf Scholz	Matthias Miersch	2	2	yes	Schönen Dank.	own_words	prev	thanks the chair
+19/114	Tagesordnungspunkt 1	M14	19/114#9	11003856	Florian Toncar	Olaf Scholz	Florian Toncar	20	20	no	Ja, sehr gerne, Herr Präsident. – Diese Erläuterungen wären vor der Bundestagswahl	befragung_frage	prev	the Zusatzfrage
+19/114	Tagesordnungspunkt 1	M15	19/114#9	11003231	Olaf Scholz	Olaf Scholz	Florian Toncar	10	10	no	Auch das stand schon in dem Wahlprogramm und war nachzulesen.	own_words	prev	the minister answers
+19/114	Tagesordnungspunkt 1	M16	19/114#9	11003856	Florian Toncar	Olaf Scholz	Florian Toncar	4	4	no	Das ist das Kleingedruckte.	befragung_frage	prev	reply to the answer
+19/114	Tagesordnungspunkt 1	M17	19/114#10	11004732	Timon Gremmels	Olaf Scholz	Jörg Cezanne	1	1	no	Nein.	remark	none	"declines a Nachfrage: ""Nein."""
+19/114	Tagesordnungspunkt 1	M18	19/114#11	11004905	Beatrix von Storch	Olaf Scholz	Beatrix von Storch	9	9	no	Ich habe eine Nachfrage. Das wird Sie nicht überraschen.	own_words	next	announces her Nachfrage
+19/201	Tagesordnungspunkt 1	M1	19/201#1	11001478	Angela Merkel	Susann Rüthrich	Reinhard Houben	18	18	no	Manchmal, Herr Präsident, hat vielleicht die Opposition auch Interesse, einen Einblick in	befragung_antwort	prev	the chancellor's reply after Rüthrich's Frage
+19/233	Zusatzpunkt 15	M1	19/233#1	11003646	Antje Tillmann		Antje Tillmann	20	20	no	Wir sind, glaube ich, alle ein bisschen irritiert, weil es so schnell	own_words	next	starts before the chair's remark; her Rede follows
+20/9	Tagesordnungspunkt 7	M1	20/9#1	11004752	Karsten Hilse	Stefan Wenzel	Karsten Hilse	8	8	no	Wenn Sie gestatten, würde ich sie gerne machen.	own_words	next	asks to make his Kurzintervention
+20/17	Tagesordnungspunkt 8	M1	20/17#1	11004905	Beatrix von Storch	Britta Haßelmann	Beatrix von Storch	16	9	no	Ich bin gerade in einer Weise persönlich angegriffen worden,	own_words	next	asks for the floor; her Kurzintervention follows
+20/17	Tagesordnungspunkt 8	M2	20/17#1	11004905	Beatrix von Storch	Britta Haßelmann	Beatrix von Storch	8	3	no	Ja, möchte ich.	own_words	next	
+20/44	Tagesordnungspunkt 11	M1	20/44#1	11004678	Stephan Brandner		Stephan Brandner	6	6	no	Der Antrag geht zur Geschäftsordnung, selbstverständlich.	own_words	next	announces his Geschäftsordnungsantrag
+20/79	Zusatzpunkt 3	M1	20/79#1	999990093	Boris Pistorius	Boris Pistorius		3	3	yes	Vielen herzlichen Dank.	procedural	none	thanks after the oath
+20/94	Tagesordnungspunkt 27	M1	20/94#1	11004270	Johannes Fechner		Johannes Fechner	1	1	no	Genau.	own_words	next	"""Genau."" before his Rede"
+20/94	Tagesordnungspunkt 27	M2	20/94#1	11004270	Johannes Fechner		Johannes Fechner	7	7	no	Die SPD ist noch in der Koalition.	own_words	next	
+20/97	Zusatzpunkt 5	M1	20/97#1	11004678	Stephan Brandner		Stephan Brandner	3	3	no	Das Wasser fehlt.	own_words	next	"""Das Wasser fehlt."" before his Rede"
+20/97	Zusatzpunkt 6	M2	20/97#2	11004448	Gülistan Yüksel	Alexander Hoffmann	Gülistan Yüksel	14	14	no	Sehr schön. Jetzt wird es wieder ruhiger. – Sehr geehrte Frau Präsidentin	own_words	next	opening words before the chair's remark
+20/106	Tagesordnungspunkt 23	M1	20/106#1	11004100	Jan-Marco Luczak		Jan-Marco Luczak	23	14	no	Ja. Man beachte aber: Es sind schwarze Krücken; nicht wie die von	own_words	next	remark before his Rede
+20/115	Tagesordnungspunkt 10	M1	20/115#1	11004799	Ulrich Lechte	Sevim Dağdelen	Ulrich Lechte	13	13	no	Nach der Märchenstunde der Linken nun wieder zurück zu den Fakten der	own_words	next	his Rede's first sentence, before the chair's remark
+20/115	Tagesordnungspunkt 10	M2	20/115#1	11004799	Ulrich Lechte	Sevim Dağdelen	Ulrich Lechte	6	6	no	Ja, das wollte ich ja auch.	own_words	next	
+20/124	Tagesordnungspunkt 6	M61	20/124#1	11005096	Macit Karaahmetoğlu	Dirk Brandes	Macit Karaahmetoğlu	2	2	no	Ein Kollege!	own_words	next	remark before her Rede
+20/136	Tagesordnungspunkt 3	M60	20/136#1	11004041	Nicole Gohlke	Kai Gehring	Nicole Gohlke	4	4	no	Was gibt es Schöneres!	own_words	next	remark before her Rede
+20/169	Tagesordnungspunkt 32	M1	20/169#1	11005029	Gereon Bollmann		Gereon Bollmann	21	21	no	Frau Präsidentin, könnten Sie eine Sekunde warten, bis ein bisschen Ruhe eingekehrt	own_words	next	remark before his Berichterstattung
+20/197	Zusatzpunkt 10	M1	20/197#1	999990146	Jörg Kukies	Jörg Kukies		2	2	yes	Vielen Dank.	procedural	none	thanks after the oath
+21/24	Einzelplan 23	M1	21/24#1	11005602	Johannes Volkmann	Maximilian Kneller	Johannes Volkmann	3	3	no	Ja, sehr gerne.	own_words	next	accepts the floor for his Erwiderung
+21/27	Einzelplan 04	M1	21/27#1	11005558	Philipp Rottwilm	Kerstin Radomski	Philipp Rottwilm	6	6	no	Ich würde die Redezeit ja nehmen.	own_words	next	remark before his Rede

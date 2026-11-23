@@ -145,13 +145,15 @@ def compare(base: dict[str, Any], forced: dict[str, Any], withheld: dict[int, st
 
 def check_sitting(xml_text: str, names: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """All pick sets for one sitting: {pick set: {"withheld": n, "problems": [...]}}.
-    ``names``: the reviewed entries for speakers printed as ``<name>``, which
-    both parses apply (a sitting with an unlisted one outside any ``<rede>`` is
-    refused); by default those of ``scripts/reviewed_units.json``."""
+    ``names``: the reviewed entries for speakers printed as ``<name>`` and for
+    speaker markers outside any ``<rede>``, which both parses apply (a sitting
+    with an unlisted one outside any ``<rede>`` is refused); by default those of
+    ``scripts/reviewed_units.json``."""
     root = dip.ET.fromstring(xml_text)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     if names is None:
-        names = [e for e in reviewed_units.for_sitting(sitting) if e["kind"] in reviewed_units.NAME_KINDS]
+        names = [e for e in reviewed_units.for_sitting(sitting)
+                 if e["kind"] in reviewed_units.NAME_KINDS | reviewed_units.LOOSE_KINDS]
     base = dip.parse_protocol_xml(xml_text, reviewed=list(names))
     result = {}
     for pick_set in PICK_SETS:

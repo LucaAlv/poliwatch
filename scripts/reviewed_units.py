@@ -20,6 +20,16 @@ entry with a ``kind``:
   ``dip:<n>``, a DIP Personenkennung, for a speaker the Bundestag gave no
   Redner-ID, and is empty for ``name_procedural``, ``name_ansprache`` and
   ``name_remark``.
+- ``loose_*`` (ADR 0004, amendment "speaker markers outside any ``<rede>``",
+  2026-11-22): a speaker marker that stands directly in a Tagesordnungspunkt
+  that is not a Fragestunde, outside any ``<rede>``
+  (``docs/plans/loose-speaker-markers.md``). ``rede_id`` is
+  ``M<ordinal>``: the marker's 1-based position among all speaker markers
+  standing directly in the sitting's TOPs, Fragestunde TOPs included, in the
+  source XML (``validate_dip_protocol.loose_marker_ordinals``). ``redner_id``
+  is the marker's printed Redner-ID. The entry adds ``attach``: ``wrap`` (into
+  the Rede a ``loose_rede`` marker of the same run opens), ``prev`` or
+  ``next`` (into the ``<rede>`` just before or after the run), or ``none``.
 
 ``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
 unit the sitting does not hold, or whose owner differs, stops the run
@@ -54,17 +64,40 @@ NAME_KINDS = frozenset({
     "name_rede", "name_zwischenfrage", "name_befragung_frage", "name_befragung_antwort",
     "name_fragestunde_frage", "name_own_words", "name_procedural", "name_ansprache", "name_remark",
 })
+#: A speaker marker outside any ``<rede>`` in a TOP that is not a Fragestunde
+#: (ADR 0004, amendment of 2026-11-22 on markers outside any ``<rede>``). A
+#: ``rede`` opens a Rede of its own; own words join a Rede of the same speaker;
+#: a Beitrag kind joins a Rede as a speaker marker the existing rules must give
+#: that kind; ``procedural`` is a diagnostic; ``sitzungsleitung`` and ``remark``
+#: are stored nowhere.
+LOOSE_KINDS = frozenset({
+    "loose_rede", "loose_own_words", "loose_zwischenfrage", "loose_befragung_frage", "loose_befragung_antwort",
+    "loose_procedural", "loose_sitzungsleitung", "loose_remark",
+})
+#: Where each loose kind's turn may go.
+LOOSE_ATTACH = {
+    "loose_rede": frozenset({"wrap"}),
+    "loose_own_words": frozenset({"wrap", "prev", "next"}),
+    "loose_zwischenfrage": frozenset({"wrap", "prev", "next"}),
+    "loose_befragung_frage": frozenset({"wrap", "prev", "next"}),
+    "loose_befragung_antwort": frozenset({"wrap", "prev", "next"}),
+    "loose_procedural": frozenset({"none"}),
+    "loose_sitzungsleitung": frozenset({"none"}),
+    "loose_remark": frozenset({"none"}),
+}
 #: Name kinds that bind no speaker: their ``redner_id`` is empty.
 NAME_KINDS_WITHOUT_SPEAKER = frozenset({"name_procedural", "name_ansprache", "name_remark"})
-KINDS = frozenset({WITHHOLD}) | PRESIDIUM_KINDS | NAME_KINDS
+KINDS = frozenset({WITHHOLD}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS
 ENTRY_KEYS = frozenset({"sitting", "rede_id", "redner_id", "kind", "reason"})
 NAME_ENTRY_KEYS = ENTRY_KEYS | {"name"}
+LOOSE_ENTRY_KEYS = ENTRY_KEYS | {"attach"}
 SITTING_RE = re.compile(r"^\d{2}/\d{1,3}$")
 REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+(?::\d+)*$")
 WHOLE_REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
 REDNER_ID_RE = re.compile(r"^\d+$")
 NAME_REDNER_ID_RE = re.compile(r"^(?:\d+|dip:[1-9]\d*)$")
 NAME_REDE_ID_RE = re.compile(r"^(?:[A-Za-z0-9]+|N[1-9]\d*)$")
+LOOSE_REDE_ID_RE = re.compile(r"^M[1-9]\d*$")
 
 _cache: dict[Path, dict[str, list[dict[str, str]]]] = {}
 #: Entries ``use`` installed in place of the shipped file (tests), or None.
@@ -85,7 +118,8 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
     for position, entry in enumerate(data["entries"], 1):
         label = f"{where} entry {position}"
         name_kind = isinstance(entry, dict) and entry.get("kind") in NAME_KINDS
-        keys = NAME_ENTRY_KEYS if name_kind else ENTRY_KEYS
+        loose_kind = isinstance(entry, dict) and entry.get("kind") in LOOSE_KINDS
+        keys = NAME_ENTRY_KEYS if name_kind else LOOSE_ENTRY_KEYS if loose_kind else ENTRY_KEYS
         if not isinstance(entry, dict) or set(entry) != keys:
             raise ReviewedUnitsError(f"{label} must have exactly the keys {', '.join(sorted(keys))}")
         for key in keys:
@@ -95,7 +129,13 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
                 raise ReviewedUnitsError(f"{label}: {key} must be a nonempty string")
         if not SITTING_RE.fullmatch(entry["sitting"]):
             raise ReviewedUnitsError(f"{label}: sitting {entry['sitting']!r} is not WP/NR, e.g. 18/2")
-        if not REDE_ID_RE.fullmatch(entry["rede_id"]) and not (name_kind and NAME_REDE_ID_RE.fullmatch(entry["rede_id"])):
+        if loose_kind:
+            if not LOOSE_REDE_ID_RE.fullmatch(entry["rede_id"]):
+                raise ReviewedUnitsError(f"{label}: a {entry['kind']} entry names a marker as M<ordinal>, not {entry['rede_id']!r}")
+            if entry["attach"] not in LOOSE_ATTACH[entry["kind"]]:
+                raise ReviewedUnitsError(f"{label}: {entry['attach']!r} is no place for a {entry['kind']} entry; "
+                                         f"its attach must be one of {', '.join(sorted(LOOSE_ATTACH[entry['kind']]))}")
+        elif not REDE_ID_RE.fullmatch(entry["rede_id"]) and not (name_kind and NAME_REDE_ID_RE.fullmatch(entry["rede_id"])):
             raise ReviewedUnitsError(f"{label}: rede_id {entry['rede_id']!r} is not a <rede> id or a split part <id>:<n>")
         if entry["kind"] not in KINDS:
             raise ReviewedUnitsError(f"{label}: kind {entry['kind']!r} is not one of {', '.join(sorted(KINDS))}")

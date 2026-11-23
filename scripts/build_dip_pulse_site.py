@@ -2243,6 +2243,10 @@ def reparse_cached_xml(
             # Not a corrupt file: the reviewed list lacks an entry, so a re-fetch cannot help.
             raise CachedReportError(f"{path} of {document_number}: {exc}", [document_number],
                                     fix=f"Fix: {dip.UNLISTED_NAME_SPEAKER_FIX}.") from exc
+        except dip.UnlistedLooseMarkerError as exc:
+            # The same: a speaker marker outside any <rede> that the reviewed list does not name.
+            raise CachedReportError(f"{path} of {document_number}: {exc}", [document_number],
+                                    fix=f"Fix: {dip.UNLISTED_LOOSE_MARKER_FIX}.") from exc
         except dip.ReconciliationError as exc:
             # Not a corrupt file: the <rede> elements of a valid XML do not reconcile with the parse.
             raise CachedReportError(

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.46.47.0] - 2026-11-22
+## [0.46.48.0] - 2026-11-23
 
 The DATA.md of a release export now says which release it is and where it is published, and the release script publishes to exactly that repository. No stored value, table or figure changes; the export format goes from 22 to 23 because DATA.md and the codebook inputs change.
 
@@ -11,6 +11,22 @@ The DATA.md of a release export now says which release it is and where it is pub
 - **A release export's DATA.md names its release.** Under „Diesen Export zitieren“ it names the Git tag `data-<version>`, the repository from `CITATION.cff`'s `repository-code` and the release „Daten <version>“ this export is meant for. Before, it said no immutable reference had been given, which would have been false for the first release. It says that a release is not changed afterwards by the project's rule, which the platform does not enforce. A local export keeps its old sentence.
 - **`CITATION.cff` is a codebook input.** Its hash is in `datenstand.json` and DATA.md, and the release script checks it against the export's commit like the other inputs, so any edit to `CITATION.cff` needs a new export. A release export refuses a `CITATION.cff` without an `https://` repository-code.
 - **The release goes to the repository its DATA.md cites.** Every `gh` call of `scripts/publish_dip_pulse_data.py` carries `--repo github.com/<owner>/<name>` from `CITATION.cff`, so `GH_REPO`, `GH_HOST` or a gh default cannot send it elsewhere. A run that asks origin for tags (`--publish`, `--previous-manifest`) refuses unless origin is that repository, and the recovery commands it prints are pinned to it.
+
+## [0.46.47.0] - 2026-11-22
+
+Speakers the protocol prints with a speaker marker directly in an agenda item, outside any Rede, are now counted. Before, these 74 markers in 31 sittings (19,686 words) were read by nothing, among them 23 whole WP 18 Reden. Reden go from 61,637 to 61,660 (all WP 18, 18,383 words), Beiträge from 45,991 to 45,999, and existing Reden gain 533 words. Fact values move in 27 of 1,944 (period, metric) pairs, and the week 2017-W20 loses its longest-Rede fact. A store built before this version owes one `--offline --repersist`; the speech rule goes from 11 to 12, the export format stays at 22.
+
+### Changed
+
+- **Reden the protocol prints without a Rede around them count.** Jan Korte's Rede in 18/7, Golze's, Bär's and Brantner's in 18/6 and 19 more WP 18 Reden are stored for their speakers (Die Linke +10, CDU/CSU +6, SPD +3, BÜNDNIS 90/DIE GRÜNEN +3, Bundesregierung +1). Each gets the id `M` plus its marker's position in the sitting, for example `M159` in 18/7. Seven of them are oral Erklärungen nach § 31; whether such a statement is a Rede at all is still open.
+- **Short turns next to a Rede join it.** A speaker's first sentence before the chair interrupts, or the last words after it, now count in that speaker's Rede. Two Zwischenfragen (18/10, 18/83) and six Befragung questions and answers (19/114, 19/201) count as the Beiträge they are. Bartels' acceptance of his election (18/76) and two ministers' thanks after their oath are procedural steps; Oppermann chairing under a speaker marker (19/14) and three replies to the chair are stored nowhere.
+- **A speaker marker outside any Rede is never counted unread.** Each of the 74 is listed by sitting, position and speaker in the reviewed list; a marker the list does not name stops the sitting, and the build says to add an entry. None of the 806 held sittings has one.
+- The data notes replace the old estimate of these words ("about 1,750") with the rule; ADR 0004's amendment and the source error E14 describe it.
+
+### Fixed
+
+- **The architecture diagram says the site keeps only sessionStorage.** The Browser node still read "localStorage only" after v0.46.39.0.
+
 ## [0.46.46.0] - 2026-11-22
 
 The data licence and the privacy page say more exactly what they cover. No stored value, figure or export table changes; the licence file and the codebook that every export carries change wording.
