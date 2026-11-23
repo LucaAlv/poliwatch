@@ -1,0 +1,7 @@
+https://x-access-token:T@github.com
+https://x-access-token:SECRET123@github.com
+https://user:SECRET123@gitlab.example
+ssh://git:secret%40evil.example%2f@github.com
+ssh://git:pw@github.com
+https://tok%40evil.example%2f@github.com
+https://(?:[A-Za-z0-9._~-]+(?::[A-Za-z0-9._~-]+)?@)?github\.com

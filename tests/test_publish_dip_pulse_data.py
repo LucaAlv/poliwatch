@@ -37,10 +37,15 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True).stdout.strip()
 
 
+# The repository CITATION.cff names, which the release DATA.md cites: every gh call is pinned to it.
+REPOSITORY = "github.com/LucaAlv/poliwatch"
+
+
 class Runner:
     """Runs git for real in the temporary repository, answers gh from a script, and records everything."""
 
-    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False, ls_remote_stdout=None):
+    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=(), remote_tags=(), ls_remote_fails=False, ls_remote_stdout=None, origin_url="https://github.com/LucaAlv/poliwatch.git"):
+        self.origin_url = origin_url
         self.calls: list[list[str]] = []
         self.missing = tuple(missing)
         self.gh_tags = list(gh_tags)
@@ -67,6 +72,11 @@ class Runner:
                     return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 422: Validation Failed")
                 return SimpleNamespace(returncode=0, stdout="https://example.invalid/release", stderr="")
             raise AssertionError(f"unexpected gh call {command}")
+        if command[:4] == ["git", "remote", "get-url", "origin"]:
+            # The temporary repository has no remote; answer as the checkout's origin would.
+            if self.origin_url is None:
+                return SimpleNamespace(returncode=2, stdout="", stderr="error: No such remote 'origin'")
+            return SimpleNamespace(returncode=0, stdout=self.origin_url + "\n", stderr="")
         if command[:2] == ["git", "ls-remote"]:
             # The temporary repository has no remote; answer as origin would.
             if self.ls_remote_fails:
@@ -478,6 +488,55 @@ class RefusalTests(ReleaseTestCase):
         self.assertFalse(hashed.exists())
 
 
+class ReleaseRepositoryTests(unittest.TestCase):
+    # Value: protects=the release is published to the GitHub repository CITATION.cff names, the one a release DATA.md cites, whatever GH_REPO or gh's default says; fails_when=a non-GitHub or malformed repository-code yields a --repo value, or a GitHub URL is not reduced to owner/name; why_new=gh release create resolved its repository itself, so a DATA.md could cite a repository the release is not in (Codex, ship of the release-citation change); seam=none; no_claim=gh's own --repo handling (mocked)
+    def test_github_repository_reads_owner_and_name(self) -> None:
+        for url, expected in (
+            ("https://github.com/LucaAlv/poliwatch", "LucaAlv/poliwatch"),
+            ("https://github.com/a-b/c.d.git", "a-b/c.d"),
+            ("https://gitlab.com/a/b", None),
+            ("https://github.com/a", None),
+            ("https://github.com/a/b/c", None),
+            ("https://github.com.evil.example/a/b", None),
+            ("https://github.com/../b", None),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(publish.github_repository(url), expected)
+
+
+    # Value: protects=an origin URL counts as a github.com repository only when its host is github.com, whatever credentials, fragments or queries it carries; fails_when=a crafted origin whose real host is elsewhere is read as the cited repository, so another server answers the tag checks (Codex fix-check); why_new=the origin check is new; seam=none; no_claim=git's own URL parsing beyond these forms
+    def test_remote_github_repository_needs_github_as_the_host(self) -> None:
+        for url, expected in (
+            ("https://github.com/LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("https://x-access-token:T@github.com/LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("git@github.com:LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("ssh://git@github.com/LucaAlv/poliwatch", "LucaAlv/poliwatch"),
+            ("https://evil.example#@github.com/LucaAlv/poliwatch.git", None),
+            ("https://evil.example?@github.com/LucaAlv/poliwatch.git", None),
+            ("https://github.com/LucaAlv/poliwatch.git?x=1", None),
+            ("https://github.com/LucaAlv/poliwatch.git#frag", None),
+            ("https://github.com:8443/LucaAlv/poliwatch", None),
+            ("https://github.com.evil.example/LucaAlv/poliwatch", None),
+            ("http://github.com/LucaAlv/poliwatch", None),
+            ("https://[bad", None),
+            ("ssh://git:secret%40evil.example%2f@github.com/LucaAlv/poliwatch.git", None),
+            ("ssh://git:pw@github.com/LucaAlv/poliwatch.git", None),
+            ("https://tok%40evil.example%2f@github.com/LucaAlv/poliwatch.git", None),
+            ("https://github.com/LucaAlv%2fx/poliwatch", None),
+            ("git@github.com:LucaAlv/poliwatch.git?x", None),
+            ("https://github.com/LucaAlv/poliwatch.git.git", "LucaAlv/poliwatch.git"),
+            ("git@github.com:LucaAlv/poliwatch.git.git", "LucaAlv/poliwatch.git"),
+            ("https://GITHUB.COM/LucaAlv/poliwatch.git", "LucaAlv/poliwatch"),
+            ("git@GitHub.com:LucaAlv/poliwatch", "LucaAlv/poliwatch"),
+            ("https://github.com/./poliwatch", None),
+            ("git@g\u0131thub.com:LucaAlv/poliwatch.git", None),
+            ("https://g\u0131thub.com/LucaAlv/poliwatch", None),
+            ("https://github.com/Luca\u212aAlv/poliwatch", None),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(publish.remote_github_repository(url), expected)
+
+
 class LineEndingTests(unittest.TestCase):
     # Value: protects=a core.autocrlf=true checkout (CRLF working tree, LF commit) hashes its authored inputs exactly as the release script hashes the committed blobs; fails_when=the exporter hashes CRLF bytes, so a clean checkout builds an export the release script refuses as "differs from commit"; why_new=release item 10d (P1); seam=_read_codebook_inputs vs build_revision.blob_sha256; no_claim=other git filters (eol attributes, smudge)
     def test_autocrlf_checkout_hashes_the_inputs_like_the_committed_blobs(self) -> None:
@@ -559,7 +618,8 @@ class PublishTests(ReleaseTestCase):
         release = self.out / f"data-{VERSION}"
         self.assertTrue((release / self.manifest["generation"] / "LICENSE-DATA.md").is_file())
         self.assertIn(f"{self.manifest['generation']}/LICENSE-DATA.md", (release / "SHA256SUMS").read_text(encoding="utf-8"))
-        self.assertEqual(len(self.runner.gh("release", "list")), 1)
+        (listing,) = self.runner.gh("release", "list")
+        self.assertEqual(listing[listing.index("--repo") + 1], REPOSITORY)
         (create,) = self.runner.gh("release", "create")
         files = sorted(
             [str(path) for path in release.rglob("*") if path.is_file()],
@@ -568,7 +628,7 @@ class PublishTests(ReleaseTestCase):
         self.assertEqual(create[:4], ["gh", "release", "create", f"data-{VERSION}"])
         self.assertEqual(sorted(create[4 : create.index("--title")]), sorted(files))
         tail = create[create.index("--title") :]
-        self.assertEqual(tail, ["--title", f"Daten {VERSION}", "--notes-file", str(release / "CHANGES.md"), "--target", self.head])
+        self.assertEqual(tail, ["--title", f"Daten {VERSION}", "--notes-file", str(release / "CHANGES.md"), "--target", self.head, "--repo", REPOSITORY])
         self.assertNotIn("dry run", stdout)
         for call in self.runner.calls:
             self.assertNotEqual(call[:2], ["git", "push"])
@@ -581,7 +641,8 @@ class PublishTests(ReleaseTestCase):
         self.assertIn("gh release create failed", stderr)
         self.assertIn("HTTP 422", stderr)
         self.assertIn(f"git ls-remote --tags origin refs/tags/data-{VERSION}", stderr)
-        self.assertIn(f"gh release view data-{VERSION}", stderr)
+        self.assertIn(f"gh release view data-{VERSION} --repo {REPOSITORY}", stderr)
+        self.assertIn(f"gh release delete data-{VERSION} --cleanup-tag --repo {REPOSITORY}", stderr)
         self.assertIn(f"git tag -d data-{VERSION}", stderr)
         self.assertNotIn("published:", stdout)
         release = self.out / f"data-{VERSION}"
@@ -644,6 +705,39 @@ class PublishTests(ReleaseTestCase):
         self.assertEqual(runner.calls[ls_remote[0]][-1], f"refs/tags/data-{VERSION}")
         self.assertLess(ls_remote[0], create[0])
         self.assertEqual([call for call in self.runner.calls if call[:2] == ["git", "ls-remote"]], [], "a dry run asks no remote")
+
+    # Value: protects=the origin the tag checks ask is the repository the release goes to (CITATION.cff's, which DATA.md cites); fails_when=origin is a fork or another repository and its tag answers stand in for the destination's, so gh attaches the release to a tag the checks never saw (Codex, ship of the release-citation change); why_new=the release is pinned to CITATION.cff's repository with --repo, origin is not; seam=main with a recorded git remote and gh; no_claim=the real remote (mocked)
+    def test_publish_refuses_an_origin_that_is_not_the_cited_repository(self) -> None:
+        for label, origin, fragments in (
+            ("a fork", "https://github.com/someone/poliwatch.git", ("origin", "someone/poliwatch", "LucaAlv/poliwatch")),
+            ("no origin", None, ("origin", "No such remote")),
+            ("another host", "https://gitlab.com/LucaAlv/poliwatch.git", ("origin", "gitlab.com")),
+        ):
+            with self.subTest(label):
+                runner = Runner(origin_url=origin)
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+                self.assert_refused(code, stderr, *fragments)
+                self.assertEqual(runner.gh("release", "create"), [])
+                self.assertEqual([call for call in runner.calls if call[:2] == ["git", "ls-remote"]], [])
+                shutil.rmtree(self.out, ignore_errors=True)
+        # An origin URL with credentials: the token never reaches the message, and a matching one is accepted.
+        runner = Runner(origin_url="https://x-access-token:SECRET123@github.com/someone/fork.git")
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assert_refused(code, stderr, "someone/fork")
+        self.assertNotIn("SECRET123", stderr)
+        self.assertNotIn("x-access-token", stderr)
+        shutil.rmtree(self.out, ignore_errors=True)
+        runner = Runner(origin_url="https://user:SECRET123@gitlab.example/x")
+        code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+        self.assert_refused(code, stderr, "origin")
+        self.assertNotIn("SECRET123", stderr)
+        shutil.rmtree(self.out, ignore_errors=True)
+        for origin in ("git@github.com:LucaAlv/poliwatch.git", "ssh://git@github.com/lucaalv/poliwatch", "https://github.com/LucaAlv/poliwatch", "https://x-access-token:SECRET123@github.com/LucaAlv/poliwatch.git"):
+            with self.subTest(origin=origin):
+                runner = Runner(origin_url=origin)
+                code, _, stderr = self.run_script("--initial", "--publish", runner=runner)
+                self.assertEqual(code, 0, stderr)
+                shutil.rmtree(self.out, ignore_errors=True)
 
     # Value: protects=only a tag whose ref is exactly refs/tags/<tag> (or its peeled ^{} line) counts as already on origin; fails_when=ls-remote lines for other refs are read as the tag (substring match refuses a good release) or the peeled line of an annotated tag is missed; why_new=the origin test's mock only ever answers with the asked ref; seam=main with a scripted git ls-remote; no_claim=the real remote (scripted output)
     def test_origin_tag_match_is_exact_and_sees_peeled_annotated_tags(self) -> None:

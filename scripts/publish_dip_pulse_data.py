@@ -45,12 +45,14 @@ import csv
 import gzip
 import hashlib
 import json
+import re
 import os
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
@@ -328,8 +330,80 @@ def local_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
     return {version for tag in result.stdout.split() if (version := release_version.version_of(tag))}
 
 
-def remote_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
-    result = run(["gh", "release", "list", "--json", "tagName", "--limit", "1000"], cwd=repo_root, capture_output=True, text=True)
+def github_repository(url: str) -> str | None:
+    """owner/name of a https://github.com/<owner>/<name> URL (a trailing .git
+    dropped), or None for any other URL."""
+    match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?", url)
+    if match is None or {match[1], match[2]} & {".", ".."}:
+        return None
+    return f"{match[1]}/{match[2]}"
+
+
+# The remote URL forms that name a github.com repository, matched literally: no
+# percent-encoding, query or fragment, so no URL that git resolves to another host
+# can match. https may carry plain credentials (user or user:token).
+_GITHUB_REMOTE = re.compile(
+    r"(?:https://(?:[A-Za-z0-9._~-]+(?::[A-Za-z0-9._~-]+)?@)?github\.com/"
+    r"|git@github\.com:"
+    r"|ssh://git@github\.com/)"
+    r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?",
+    re.IGNORECASE | re.ASCII,  # ASCII case folding only: gıthub.com is another host
+)
+
+
+def remote_github_repository(url: str) -> str | None:
+    """owner/name of a git remote URL on github.com (https with plain credentials,
+    git@github.com:… or ssh://git@github.com/…, a trailing .git dropped), or None."""
+    match = _GITHUB_REMOTE.fullmatch(url.strip())
+    # One .git is dropped, by the pattern; owner/name go out as matched.
+    if match is None or {match[1], match[2]} & {".", ".."}:
+        return None
+    return f"{match[1]}/{match[2]}"
+
+
+def _url_host(url: str) -> str:
+    """The host of a remote URL for a message, without its credentials or path."""
+    try:
+        host = urllib.parse.urlsplit(url).hostname if "://" in url else None
+    except ValueError:
+        host = None
+    return host or "a URL that names no GitHub repository"
+
+
+def origin_problem(repo_root: Path, run: Callable[..., Any], repository: str) -> str | None:
+    """Why origin is not the repository the release goes to, or None. The tag
+    checks ask origin, so origin must be that repository (owner/name)."""
+    result = run(["git", "remote", "get-url", "origin"], cwd=repo_root, env=build_revision.clean_env(), capture_output=True, text=True)
+    if result.returncode != 0:
+        return f"cannot read origin's URL (git remote get-url origin failed: {result.stderr.strip() or 'no message'})"
+    url = result.stdout.strip()
+    named = remote_github_repository(url)
+    if named is None or named.lower() != repository.lower():
+        # Never echo the URL: an https origin may carry a token (user:token@host).
+        shown = f"github.com/{named}" if named else _url_host(url)
+        return (f"origin ({shown}) is not {repository}, the repository CITATION.cff names and the release goes to; "
+                "the tag checks ask origin, so run from a clone whose origin is that repository")
+    return None
+
+
+def release_repository(repo_root: Path, full_commit: str) -> str:
+    """The repository a release DATA.md cites (CITATION.cff's repository-code at
+    the export's commit), as owner/name: the release goes there (gh --repo
+    github.com/<owner>/<name>), not to whatever GH_REPO, GH_HOST or gh's default names."""
+    site = _site()
+    relative = site.CODEBOOK_INPUT_FILES["citation"]
+    try:
+        url = site.citation_repository_url(build_revision.blob_text(repo_root, full_commit, relative) or "")
+    except RuntimeError as exc:
+        raise ReleaseError(str(exc)) from exc
+    repository = github_repository(url)
+    if repository is None:
+        raise ReleaseError(f"the repository-code {url} of {relative} at commit {full_commit[:12]} is not a GitHub repository (https://github.com/<owner>/<name>); gh cannot publish the release there")
+    return repository
+
+
+def remote_versions(repo_root: Path, run: Callable[..., Any], repository: str) -> set[str]:
+    result = run(["gh", "release", "list", "--json", "tagName", "--limit", "1000", "--repo", f"github.com/{repository}"], cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:
         raise ReleaseError(f"cannot ask gh for existing releases (gh release list failed: {result.stderr.strip() or 'no message'}); not publishing blind")
     try:
@@ -570,7 +644,12 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         shown = "; ".join(unreviewed[:12]) + ("; …" if len(unreviewed) > 12 else "")
         raise ReleaseError(f"--publish refused: {vote_link_review_text(unreviewed)}: {shown}")
     tag = release_version.tag_for(version)
-    released = remote_versions(repo_root, run) if args.publish else set()
+    repository = release_repository(repo_root, full_commit)
+    if args.publish or args.previous_manifest:
+        problem = origin_problem(repo_root, run, repository)
+        if problem:
+            raise ReleaseError(problem)
+    released = remote_versions(repo_root, run, repository) if args.publish else set()
     known = local_versions(repo_root, run) | released
     if version in known:
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
@@ -580,8 +659,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     on_origin = origin_versions(repo_root, run) if args.previous_manifest else set()
     newest = max(known | on_origin, key=release_version.version_key) if known | on_origin else None
     # The latest release a --previous-manifest must be: origin's tags, and under
-    # --publish also gh's releases (gh may publish to another repository than
-    # origin); never a local tag (owner decision 2026-11-17).
+    # --publish also gh's releases (gh publishes to CITATION.cff's repository,
+    # which may differ from origin); never a local tag (owner decision 2026-11-17).
     published = on_origin | released
     searched = "origin's tags and gh's releases" if args.publish else "origin's tags"
     if newest and release_version.version_key(version) < release_version.version_key(newest):
@@ -625,6 +704,7 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     command = [
         "gh", "release", "create", tag, *map(str, files),
         "--title", f"Daten {version}", "--notes-file", str(release_dir / "CHANGES.md"), "--target", full_commit,
+        "--repo", f"github.com/{repository}",
     ]
     out(f"version: {version}")
     out(f"tag: {tag}")
@@ -656,8 +736,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError(
             f"gh release create failed: {result.stderr.strip() or 'no message'}. The release directory {release_dir} is kept; "
             f"the same command publishes it once the cause is fixed. gh may have left a tag or a release behind: check with "
-            f"git ls-remote --tags origin refs/tags/{tag} and gh release view {tag}, and delete what this run left "
-            f"(gh release delete {tag} --cleanup-tag, or git push origin :refs/tags/{tag}; and git tag -d {tag} if a fetch "
+            f"git ls-remote --tags origin refs/tags/{tag} and gh release view {tag} --repo github.com/{repository}, and delete what this run left "
+            f"(gh release delete {tag} --cleanup-tag --repo github.com/{repository}, or git push origin :refs/tags/{tag}; and git tag -d {tag} if a fetch "
             f"brought that tag into this clone) before running it again"
         )
     out(f"published: {result.stdout.strip()}")
