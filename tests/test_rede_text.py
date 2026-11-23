@@ -198,6 +198,14 @@ class PrintedParagraphTests(unittest.TestCase):
             self.paragraphs('<p klasse="J_1">Eins.</p>', self.KOMMENTAR, marker("100"), '<p klasse="O">Zwei.</p>'),
             ["Eins.", "Zwei."])
 
+    # Value: protects=another speaker's turn inside the Rede keeps the printed paragraphs too; fails_when=its branch of
+    #   the walk reads every <p> as a paragraph; why_new=only the owner's branch was driven; seam=none
+    def test_a_nested_turn_keeps_the_printed_paragraphs(self) -> None:
+        _own, [turn] = dip.speech_segments(rede(
+            marker("100"), '<p klasse="J_1">Rede.</p>', marker("200"), '<p klasse="J_1">Wissen Sie,</p>', self.KOMMENTAR,
+            '<p klasse="O">dass das stimmt?</p>', '<p klasse="J">Und warum?</p>'))
+        self.assertEqual(turn["paragraphs"], ["Wissen Sie, dass das stimmt?", "Und warum?"])
+
     def test_the_wording_joins_paragraphs_with_one_line_feed(self) -> None:
         result = dip.speech_text_and_paragraphs(
             rede(marker("100"), '<p klasse="J_1">Erster\n  Absatz.</p>', '<p klasse="J">Zweiter\u00a0Absatz.</p>'))
@@ -250,6 +258,20 @@ class BlockQuoteTests(unittest.TestCase):
         body = self.REDE.replace("QUOTE", "").replace("Frau Kollegin.</p>", "Frau Kollegin, es heißt:</p>QUOTE")
         [speech] = self.parse(body)["speeches"]
         self.assertEqual(speech["text"], "Ich zitiere: Zitat Ende.")
+
+    # Value: protects=a quote in a Rede zu Protokoll (an annex) is stored; fails_when=quotes are unwrapped in the TOPs
+    #   only; why_new=the other cases stand in a TOP; seam=none
+    def test_a_quote_in_a_rede_zu_protokoll_is_kept(self) -> None:
+        xml = (FIXTURES / "a1-written-18-100.xml").read_text(encoding="utf-8")
+        annex = xml.index('anlagen-typ="Zu Protokoll')
+        first = xml.index('<p klasse="J">', annex)
+        quoted = xml[:first] + '<zitat><p klasse="Z">Ein Zitat im Anhang.</p></zitat>' + xml[first:]
+        before, after = ([c["text"] for c in dip.parse_protocol_xml(x, reviewed=[])["sitting_contributions"]]
+                         + [c["text"] for top in dip.parse_protocol_xml(x, reviewed=[])["agenda_items"] for c in top["contributions"]]
+                         for x in (xml, quoted))
+        changed = [(a, b) for a, b in zip(before, after) if a != b]
+        self.assertEqual((len(before), len(changed)), (len(after), 1))
+        self.assertIn("\nEin Zitat im Anhang.\n", changed[0][1])
 
     def test_a_second_quote_after_the_first_is_kept_in_order(self) -> None:
         root = ET.fromstring('<rede><p>Vor.</p><zitat><p klasse="Z">1</p></zitat><zitat><p klasse="Z">2</p><p klasse="Z">3</p></zitat>'

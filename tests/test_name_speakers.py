@@ -132,7 +132,7 @@ class NotStoredTests(unittest.TestCase):
                          [('procedural', 'Herr Präsident, ich schwöre es, so wahr mir Gott helfe.')])
 
     def test_a_guests_address_in_the_opening_is_one_ansprache_without_a_redner_id(self):
-        beginn = ('<name>Präsident Dr. Norbert Lammert:</name><p>Eröffnung.</p><name>Wolf Biermann:</name><p>Erster Teil.</p>'
+        beginn = ('<name>Präsident Dr. Norbert Lammert:</name><p>Eröffnung.</p><name>Wolf Biermann:</name><p>Erster</p><kommentar>(Beifall)</kommentar><p klasse="O">Teil.</p>'
                   '<name>Präsident Dr. Norbert Lammert:</name><p>Zwischenruf des Präsidenten.</p><name>Wolf Biermann:</name><p>Zweiter Teil.</p>'
                   '<name>Präsident Dr. Norbert Lammert:</name><p>Danke.</p>')
         parsed = parse(rede('ID1', HOST, SPEECH),
