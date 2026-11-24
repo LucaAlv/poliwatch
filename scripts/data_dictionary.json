@@ -1368,13 +1368,13 @@
         "page": {
           "meaning": "Gedruckte Protokollseite der Rede/des Beitrags bzw. Belegstelle.",
           "unit": "Gedruckte Protokollseitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
+          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben der 13 zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
           "license": "dip"
         },
         "page_quadrant": {
           "meaning": "Quadrant der gedruckten Seite, sofern die Quelle ihn angibt.",
           "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
-          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
+          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben der 13 zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
           "license": "dip"
         },
         "paragraph_count": {

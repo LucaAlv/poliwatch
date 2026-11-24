@@ -18,7 +18,7 @@ Plain offline rendering, online updates and direct export reject the old schema 
 | `agenda_items.id` | `agenda`, protocol ID and source item index as an int (`stable_ids.source_index`: `3`, `"3"` and `" 03 "` are one index) |
 | `documents.id` | `document`, issuer (`documents.herausgeber`, `BT` or `BR`) and canonical document number; the URL is an attribute (see Documents below) |
 | `speeches.id` | `speech`, protocol ID and Rede ID |
-| Synthetic Rede ID | `<protocol_id>:<item_index>:<sequence>`; from schema 12 the sequence is the Rede's position among the TOP's `<rede>` elements, so a withheld neighbour cannot change it |
+| Synthetic Rede ID | `<protocol_id>:<item_index>:<sequence>`; from schema 12 the sequence is the Rede's position among the TOP's `<rede>` elements (after Reden are split off and joined), so a withheld neighbour cannot change it |
 | `withheld_units.id` | `withheld`, protocol ID and the Rede ID the parser emitted (a split part keeps its `:n`) |
 | `withheld_turns.id` | `withheld-turn`, protocol ID, Rede ID and marker ordinal as an int |
 | `mps.id` | `mp`, compact source identity; preserved by occurrence bindings when attributes or enrichment change |
