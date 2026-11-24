@@ -1021,6 +1021,72 @@ def mark_listed_units(redes: list[ET.Element], entries: dict[str, dict[str, str]
         rede.set("listed_unit", entry["kind"])
 
 
+def join_own_words(top: ET.Element, entries: dict[str, dict[str, str]], matched: set[str],
+                   statuses: dict[str, str], sitting: str, rid_pages: dict[str, dict[str, Any]],
+                   ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """ADR 0004, amendment 2026-11-23 on split Reden: join each ``<rede>`` of one TOP, as it stands
+    after ``split_nested_reden``, that one of ``entries`` (the sitting's ``own_words``
+    entries by id) lists, to the ``<rede>`` before it. The XML ended one Rede at the
+    chair's remark and printed its rest as a new one; joined, the rest is the resumption
+    the walk reads. The Rede keeps the id of its first part, but where that part is one
+    ``split_nested_reden`` made, the listed id, which the Inhaltsverzeichnis names; its
+    page there is the rest's, so ``rid_pages`` takes the entry's. A part joined away has
+    the status ``own_words``. An entry whose ``<rede>`` does not follow its owner's
+    directly, or whose page does not fit, stops the run. Returns the diagnostics and the
+    pages of the rests, which the TOP still reaches."""
+    diagnostics: list[dict[str, Any]] = []
+    rest_pages: list[dict[str, Any]] = []
+    for rede in top.findall("rede"):
+        entry = entries.get(rede.get("id") or "")
+        if entry is None:
+            continue
+        matched.add(entry["rede_id"])
+        where = f"scripts/reviewed_units.json: {sitting} {entry['rede_id']} ({entry['kind']})"
+        children = list(top)
+        index = children.index(rede)
+        before = children[index - 1] if index else None
+        if before is None or before.tag != "rede":
+            raise reviewed_units.ReviewedUnitsError(f"{where}: no <rede> stands directly before it")
+        owners = [redner_key(part.find("./p[@klasse='redner']/redner")) for part in (before, rede)]
+        if owners != [entry["redner_id"]] * 2:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: the two <rede> are owned by Redner-ID {owners[0]} and {owners[1]}, the entry says "
+                f"{entry['redner_id']}; the entry is stale or misapplied")
+        if any(part.get("reviewed_kind") or speech_kinds.presidium_owner(part) for part in (before, rede)):
+            raise reviewed_units.ReviewedUnitsError(f"{where}: a presidium <rede> takes one of ADR 0004's kinds")
+        marker = rede.find("./p[@klasse='redner']/redner")
+        split_part = ":" in (before.get("id") or "")
+        page = reviewed_units.PAGE_RE.fullmatch(entry["page"])
+        if split_part != bool(page):
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: " + ("the first part is one the parser split off, so the entry must give the page it begins on" if split_part
+                                else "the first part has a page of its own; the entry's page must be empty"))
+        rest_page = rid_pages.get(entry["rede_id"])
+        if rest_page:
+            rest_pages.append(rest_page)
+        if split_part:
+            start = {"page": int(page.group(1)), "quadrant": page.group(2)}
+            outer_page = rid_pages.get(raw_rede_id(before.get("id")))
+            if ((outer_page and page_sort_key(start) < page_sort_key(outer_page))
+                    or (rest_page and page_sort_key(start) > page_sort_key(rest_page))):
+                raise reviewed_units.ReviewedUnitsError(
+                    f"{where}: page {entry['page']} is not between the <rede> the first part was split off and the rest")
+            rid_pages[entry["rede_id"]] = start
+            kept, gone = rede, before
+            for offset, child in enumerate(list(before)):
+                rede.insert(offset, child)
+        else:
+            kept, gone = before, rede
+            before.extend(list(rede))
+        top.remove(gone)
+        record_status(statuses, gone.get("id") or "", reviewed_units.OWN_WORDS)
+        diagnostics.append({
+            "source_rede_id": gone.get("id"), "marker_ordinal": 1, "speaker": parse_redner(marker),
+            "text": "", "evidence": "one Rede printed as two <rede>: " + entry["reason"],
+            "treatment": "joined_rede", "target_rede_id": kept.get("id")})
+    return diagnostics, rest_pages
+
+
 def unwrap_quotes(root: ET.Element) -> None:
     """A block quote is ``<p klasse="Z">``; WP 18 wraps about half of its own in a
     ``<zitat>`` (1,939 of 3,893), WP 19 on none. The quote is read out by whoever is speaking,
@@ -2265,6 +2331,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     name_entries = [entry for entry in sitting_entries if entry["kind"] in reviewed_units.NAME_KINDS]
     loose_entries = {entry["rede_id"]: entry for entry in sitting_entries if entry["kind"] in reviewed_units.LOOSE_KINDS}
     unit_entries = {entry["rede_id"]: entry for entry in sitting_entries if entry["kind"] in reviewed_units.UNIT_KINDS}
+    own_words_entries = {entry["rede_id"]: entry for entry in sitting_entries if entry["kind"] == reviewed_units.OWN_WORDS}
     matched_loose: set[str] = set()
     matched_entries: set[str] = set()
     inventory = raw_rede_inventory(root)
@@ -2320,6 +2387,9 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         if loose_diagnostics:
             name_diagnostics.setdefault(id(top), []).extend(loose_diagnostics)
         split_nested_reden(top, split_parts)
+        joined, rest_pages = join_own_words(top, own_words_entries, matched_entries, statuses, sitting, rid_pages)
+        if joined:
+            name_diagnostics.setdefault(id(top), []).extend(joined)
         redes = top.findall("rede")
         for rede in redes:
             outer = raw_rede_id(rede.get("id") or "")
@@ -2334,7 +2404,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {len(labels)} labels for {len(redes)} Reden")
         speeches: list[dict[str, Any]] = []
         contributions: list[dict[str, Any]] = []
-        pages: list[dict[str, Any]] = []
+        pages: list[dict[str, Any]] = list(rest_pages)
         nested_units: list[dict[str, Any]] = []
         withheld: list[dict[str, Any]] = []
         diagnostics: list[dict[str, Any]] = list(name_diagnostics.pop(id(top), []))
@@ -2645,7 +2715,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             }
         )
 
-    unmatched = sorted((set(reviewed_entries) | set(unit_entries)) - matched_entries)
+    unmatched = sorted((set(reviewed_entries) | set(unit_entries) | set(own_words_entries)) - matched_entries)
     if unmatched:
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting} lists {', '.join(unmatched)}, which names no Rede of a TOP in "

@@ -276,7 +276,7 @@ class LoaderTests(unittest.TestCase):
         with _support.shipped_reviewed_units() as units:
             kinds = [e['kind'] for entries in units.values() for e in entries]
         self.assertEqual((kinds.count('procedural'), kinds.count('ansprache'), kinds.count('sitzungsleitung'),
-                          kinds.count('withhold')), (141, 14, 9, 14))  # withhold: 4 N7 (18/29's fifth is an erklaerung now) + 10 N8
+                          kinds.count('withhold'), kinds.count('own_words')), (161, 14, 9, 14, 13))  # withhold: 4 N7 (18/29's fifth is an erklaerung now) + 10 N8
 
     def test_a_broken_list_stops_the_entry_points_before_any_work(self):
         import build_dip_pulse_site as build
