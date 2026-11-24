@@ -2,7 +2,7 @@
 
 Owner, 2026-11-23: plan it, to be built before the first `--publish`. Cause and numbers: [zu-protokoll-gap.md](zu-protokoll-gap.md), `docs/source-errors.md` E16. Measured on the v0.46.49.0 replay (806 sittings), read-only. Nothing is built.
 
-**Base:** main after v0.46.50.0 (`claude/paragraph-breaks`) is merged, with `claude/modest-boyd-90f16f` (this branch, docs only) merged or cherry-picked first. v0.46.50.0 edits the parser, `persist_dip_pulse_store.py`, `data_dictionary.json` and TODOS.md and takes export format 25. This build takes the next free numbers (expected: export format 26, store schema 16). Check both against origin/main before shipping.
+**Base:** main after v0.46.50.0 (`claude/paragraph-breaks`, merged as #215) with `claude/modest-boyd-90f16f` (this branch: docs, the census script and its test; no parser, store or page code) merged first. v0.46.50.0 edited the parser, `persist_dip_pulse_store.py`, `data_dictionary.json` and TODOS.md and takes export format 25. This build takes the next free numbers (expected: export format 26, store schema 16). Check both against origin/main before shipping.
 
 ## What changes
 
