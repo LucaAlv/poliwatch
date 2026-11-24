@@ -16,9 +16,11 @@ Rede past the XML's last `<rede>` without the notice go to stderr.
 The cut is the page and quadrant of the last `<rede>` outside the annexes, as the
 XML's own Inhaltsverzeichnis gives it (20/210: as DIP gives it). DIP positions after it are in the part the
 XML does not print. A turn that starts in the cut's own quadrant is not counted
-after it, so the numbers "after the cut" are lower bounds. The Fragen and Antworten
-of a Fragestunde stand outside any `<rede>` and can fall after the last one in a
-complete file too; they are left out.
+after it. The chair's farewells and greetings, which DIP types as "Rede" ("… ,
+Bundestagsvizepräs."; the store holds none of the 624 in 806 sittings as a Rede), are
+not counted as Reden after it either. The Fragen and Antworten of a Fragestunde stand outside any
+`<rede>` and can fall after the last one in a complete file too; they are in
+`dip_letzter_beitrag_gesprochen` and in no count after the cut.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ SPOKEN = {
     "Erklärung zum Vermittlungsverfahren (§ 90 GO-BT, § 10 GO-VermA)", "Wortbeitrag",
 }
 ZP = "Rede (zu Protokoll gegeben)"
+CHAIR = re.compile(r",\s*(Bundestags(vize)?präs|Alterspräs)")
 TURNS = {"Zwischenfrage", "Kurzintervention", "Erwiderung"}
 #: 20/210 prints its Inhaltsverzeichnis without page numbers. The place is DIP's for
 #: its last `<rede>` (ID2021013400, Christiane Schenderlein).
@@ -99,7 +102,10 @@ def main(data: Path) -> None:
         acts = report["api_records"]["aktivitaeten"]
         kinds = collections.Counter(a["aktivitaetsart"] for a in acts)
         cut = CUT_FROM_DIP.get(number) or xml_cut(xml)
-        spoken = [(place(a["fundstelle"].get("seite")), a["aktivitaetsart"]) for a in acts if a["aktivitaetsart"] in SPOKEN]
+        spoken = [
+            (place(a["fundstelle"].get("seite")), "chair" if a["aktivitaetsart"] == "Rede" and CHAIR.search(a["titel"]) else a["aktivitaetsart"])
+            for a in acts if a["aktivitaetsart"] in SPOKEN
+        ]
         after = [kind for where, kind in spoken if cut[0] and where > cut]
         reden_after = after.count("Rede")
         last = max((where for where, _ in spoken), default=(0, ""))
@@ -118,6 +124,7 @@ def main(data: Path) -> None:
         total["dip_reden"] += kinds["Rede"]
         total["stored_reden"] += stored[number]["speeches"]
         total["reden_after"] += reden_after
+        total["chair_after"] += after.count("chair")
         total["turns_after"] += sum(kind in TURNS for kind in after)
         total["votes"] += votes.get(number, 0)
         total["unlinked"] += unlinked.get(number, 0)

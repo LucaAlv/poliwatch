@@ -4,16 +4,16 @@ Check of 2026-11-23 on the v0.46.49.0 replay (`.context/ship-after/data`, 806 si
 
 ## Finding
 
-**The gap is larger than the TODO says.** 33 Protokoll XML files are first editions that stop mid-sitting. They lack the spoken end of the sitting as well as the annexes: 1,212 Reden that DIP lists, beside 429 Reden zu Protokoll.
+**The gap is larger than the TODO says.** 33 Protokoll XML files are first editions that stop mid-sitting. They lack the spoken end of the sitting as well as the annexes: 1,189 Reden that DIP lists, beside 429 Reden zu Protokoll.
 
 | WP | Cut sittings | Reden after the cut | Reden stored | Missing share | Reden zu Protokoll missing |
 |---|---|---|---|---|---|
 | 18 | 0 | – | 12,838 | – | 10 (another cause) |
 | 19 | 1 of 239 | 41 | 19,869 | 0.2 % | 0 |
-| 20 | 11 of 214 | 412 | 19,069 | 2.1 % | 148 |
+| 20 | 11 of 214 | 389 | 19,069 | 2.0 % | 148 |
 | 21 | 21 of 109 | 759 | 9,361 | 7.5 % | 281 |
 
-Share: missing over stored plus missing. "After the cut" counts DIP's Aktivitäten "Rede" whose page and quadrant come after the XML's last `<rede>`. The plain difference DIP minus stored in the same sittings is 1,208 (41, 404, 763): stored Reden include a few DIP types otherwise.
+Share: missing over stored plus missing. "After the cut" counts DIP's Aktivitäten "Rede" whose page and quadrant come after the XML's last `<rede>`, without the chair's. DIP types the chair's farewells and greetings as "Rede" (624 in the 806 sittings); the store holds none of them as a Rede. 23 stand after the cut: 19 in 20/210, two in 20/209, one each in 20/203 and 20/207. The first count of 2026-11-23 included them (1,212; WP 20 412, 2.1 %). The plain difference DIP minus stored in the same sittings is 1,208 (41, 404, 763), and 1,145 without all 63 entries by the chair: stored Reden include some DIP types otherwise.
 
 The 435 of the TODO: DIP 4,599, stored 4,164. 429 in the 33 cut files, 10 in WP 18 (below), less 4 stored ones DIP does not list as such (18/237 Karin Binder and Jutta Krellmann, 19/36 Stamm-Fibich, 20/66 Till Steffen).
 
@@ -26,7 +26,7 @@ Files: [per-sitting.tsv](zu-protokoll-gap/per-sitting.tsv) (47 sittings: a diffe
 - **The notice.** Each cut file ends "Der gesamte und damit endgültige Stenografische Bericht der N. Sitzung wird am … veröffentlicht.", in its Inhaltsverzeichnis, in its Sitzungsverlauf and in its last annex. The date is five or six days after the sitting. All but 20/209 (a Wednesday) are Thursdays.
 - **Not our cache.** On 2026-11-23 dserver sends all 34 files with the notice at the cached size (`HEAD`, Content-Length). Every cached file's md5 is the `xml_hash` of its DIP record.
 - **The PDF is final.** Last-Modified of the five PDFs is the announced date or later, their md5 is DIP's `pdf_hash`, and they print no notice.
-- **No cut file without the notice.** 39 other sittings have a DIP Rede after the last `<rede>` by page (35) or print no page in the Inhaltsverzeichnis (4). None is cut: DIP and stored Rede counts are close, or DIP counts the chair's farewells and greetings as Reden (18/243 and 20/212, whose unmatched rows were read; 19/236 and 19/237 likewise, which have no Rede after the last one). 18/193, 18/240, 18/241, 18/244, 19/234, 19/235, 19/238, 20/76, 20/208 and 20/211 hold 5 to 12 Reden fewer than DIP for a reason not read; only 20/211 has a DIP Rede after its last one, a single one.
+- **No cut file without the notice.** 30 other sittings have a DIP Rede after the last `<rede>` by page (26, the chair's left out) or print no page in the Inhaltsverzeichnis (4). None is cut: their DIP and stored Rede counts differ by at most 3 where DIP lists more. With the chair's farewells and greetings counted, 18/193, 18/240, 18/241, 18/243, 18/244, 19/234 to 19/238, 20/76, 20/208, 20/211 and 20/212 hold 5 to 35 Reden fewer than DIP; without them the store holds at most one fewer in each.
 
 ### The five PDFs
 
@@ -73,7 +73,7 @@ The text is in the XML, without a `<rede>` of its own (`docs/source-errors.md`, 
 
 1. **Before the first `--publish`: mark the 33 sittings as incomplete.** A coverage record per sitting ("Protokolldatei abgebrochen", with the cut and DIP's count of what follows), read by Period completeness, so that their weeks and months are not complete, shown in the dossier, and exported. Detect the notice at parse time and compare with DIP's Reden after the last `<rede>`, so that new long Thursdays do not enter unnoticed and 19/107 passes. Naming the gap in DATA.md alone leaves "complete" Fakten that are not. This moves Fakten and needs an owner decision. Effort M.
 2. **Report E16 to the Bundestag** (owner go; contact open). A replaced XML at the same address fixes everything with a re-fetch, for other users too.
-3. **After that, if the XML is not replaced: read the rest from the PDF,** as a pilot on the five sittings. The PDFs' text layer is clean enough to find every label by page; DIP's Aktivitäten give the skeleton (person, kind, page, quadrant, Vorgang), and each PDF Rede must match one or the sitting refuses. The open questions are Kommentare, chair words and column order, text hyphenated at line ends, TOP headings, and ids: the print has none, so these need a project id of their own, as `N…` and `M…` have. About 1,212 Reden and 429 Reden zu Protokoll in 33 sittings. Effort L.
+3. **After that, if the XML is not replaced: read the rest from the PDF,** as a pilot on the five sittings. The PDFs' text layer is clean enough to find every label by page; DIP's Aktivitäten give the skeleton (person, kind, page, quadrant, Vorgang), and each PDF Rede must match one or the sitting refuses. The open questions are Kommentare, chair words and column order, text hyphenated at line ends, TOP headings, and ids: the print has none, so these need a project id of their own, as `N…` and `M…` have. About 1,189 Reden and 429 Reden zu Protokoll in 33 sittings. Effort L.
 4. **Do not** fill in Reden from DIP without text: a Rede without words would enter Reden counts and leave characters, share and search wrong.
 5. **WP 18:** the ten are a parser task of their own (E17), small, and two of them are a wrong attribution, so they belong before the release. Effort S.
 
