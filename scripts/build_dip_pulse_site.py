@@ -3680,7 +3680,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 24
+EXPORT_FORMAT = 25
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -12740,8 +12740,8 @@ def render_sources_page(
         '<li id="lizenz"><strong>Lizenz und Weiterverwendung</strong><div class="licence-layers">'
         "<p>Die Daten dieser Website und jedes Downloads verbinden Quellen mit unterschiedlichen Bedingungen; jede Schicht behält ihre eigenen:</p>"
         f'<table><thead><tr><th scope="col">Daten</th><th scope="col">Bedingungen</th></tr></thead><tbody>{licence_rows}</tbody></table>'
-        "<p>Die Daten sind aufbereitet und verändert: Protokolle und DIP-Datensätze sind in Tabellen zerlegt, Leerraum ist "
-        "vereinheitlicht, die Absätze einer Rede sind zusammengefügt. Nach Nr. 5 der DIP-Nutzungsbedingungen dürfen DIP-Daten "
+        "<p>Die Daten sind aufbereitet und verändert: Protokolle und DIP-Datensätze sind in Tabellen zerlegt und Leerraum ist "
+        "vereinheitlicht. Nach Nr. 5 der DIP-Nutzungsbedingungen dürfen DIP-Daten "
         "nicht in einem entstellenden Zusammenhang verwendet werden und nicht so, dass Mitglieder des Bundestages, des "
         "Bundesrates, der Bundesregierung oder andere herabgesetzt werden können; diese Bedingung der Quelle gilt für jede "
         "Weiterverwendung.</p>"

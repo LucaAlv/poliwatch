@@ -1021,6 +1021,26 @@ def mark_listed_units(redes: list[ET.Element], entries: dict[str, dict[str, str]
         rede.set("listed_unit", entry["kind"])
 
 
+def unwrap_quotes(root: ET.Element) -> None:
+    """A block quote is ``<p klasse="Z">``; WP 18 wraps about half of its own in a
+    ``<zitat>`` (1,939 of 3,893), WP 19 on none. The quote is read out by whoever is speaking,
+    so each ``<zitat>`` is replaced by its children, and every walk of the parse
+    reads both the same way. Text in a ``<zitat>`` outside its ``<p>`` (none in the
+    806 sittings held) refuses the sitting: it would be lost here."""
+    for parent in reversed([element for element in root.iter() if element.find("zitat") is not None]):
+        for quote in parent.findall("zitat"):
+            if any((text or "").strip() for text in (quote.text, *(child.tail for child in quote))):
+                raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}: text in a <zitat> outside a paragraph: "
+                                 f"{elem_text(quote)[:80]!r}")
+            index = list(parent).index(quote)
+            children = list(quote)
+            if children:
+                children[-1].tail = quote.tail
+            parent.remove(quote)
+            for offset, child in enumerate(children):
+                parent.insert(index + offset, child)
+
+
 def mark_stage_direction_names(root: ET.Element) -> None:
     """ADR 0004 (20/25): a ``<name>`` whose whole text stands in parentheses is a
     stage direction the source printed in the chair's element, not a chair turn:
@@ -1156,12 +1176,14 @@ def mark_name_speakers(root: ET.Element, entries: list[dict[str, str]], created:
     def turn_after(element: ET.Element) -> list[str]:
         parent = parents[element]
         children = list(parent)
-        paragraphs = []
+        paragraphs: list[str] = []
+        flow = speech_kinds.ParagraphFlow()
         for following in children[children.index(element) + 1:]:
             if following.tag in ("name", "rede") or following.get("klasse") == "redner":
                 break
+            flow.see(following)
             if following.tag == "p" and elem_text(following):
-                paragraphs.append(elem_text(following))
+                flow.add(following, elem_text(following), paragraphs)
         return paragraphs
 
     for ordinal, element in enumerate(tags, 1):
@@ -1693,7 +1715,9 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                          if pattern.search(clause)}
         return names or None, factions
 
+    flow = speech_kinds.ParagraphFlow()
     for child in rede:
+        flow.see(child)
         if child.tag == "name":
             speaker, segment = _SITZUNGSLEITUNG, None
             chair_text = ""
@@ -1766,7 +1790,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 unattributed += len(text)
             elif speaker is _SITZUNGSLEITUNG:
                 if segment is not None:
-                    segment["paragraphs"].append(text)
+                    flow.add(child, text, segment["paragraphs"])
                 chair_text += " " + text
                 offer_open = offer_open or bool(NESTED_OFFER.search(text))
                 if NAMED_OFFER.search(text) and not NESTED_OFFER.search(chair_text):
@@ -1809,11 +1833,9 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 if pending_nested_announcement and re.search(r"\b(?:Herr|Frau)\b|\bWort\b", chair_text):
                     pending_nested_announcement += " " + chair_text
             elif speaker == own:
-                paragraphs.append(text)
+                flow.add(child, text, paragraphs, *([segment["paragraphs"]] if all_speakers and segment is not None else []))
                 if consent_turn is not None:
                     consent_turn.append(text)
-                if all_speakers and segment is not None:
-                    segment["paragraphs"].append(text)
                 grant = NESTED_GRANT_EVIDENCE.search(text)
                 contextual_no = request_accepted and (
                     re.search(r"\b(?:Hoffnungen nicht enttäuschen|verlängert Ihre Redezeit|das ist abgesprochen)\b", preceding_chair_text, re.IGNORECASE)
@@ -1881,7 +1903,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                         pending_factions |= factions
                     refused = False
             elif segment is not None:
-                segment["paragraphs"].append(text)
+                flow.add(child, text, segment["paragraphs"])
     granted_key = None
     for nested_segment in nested:
         text = " ".join(nested_segment["paragraphs"])
@@ -1899,20 +1921,25 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 nested_segment["granted"] = True
             else:
                 granted_key = None
-    return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
+    return SpeechText(speech_kinds.join_paragraphs(paragraphs), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
 
 
 def speech_text_and_paragraphs(rede: ET.Element) -> SpeechText:
     return speech_segments(rede)[0]
 
 
+def snippet_of(text: str) -> str:
+    """The first 240 characters of a wording as one line."""
+    return clean_text(text)[:240]
+
+
 def contribution_unit(kind: str, rede_id: str | None, parent: str | None, sequence: int,
                       speaker: dict[str, Any] | None, paragraphs: list[str], page: dict[str, Any] | None) -> dict[str, Any]:
-    text = clean_text(" ".join(paragraphs))
+    text = speech_kinds.join_paragraphs(paragraphs)
     return {"kind": kind, "rede_id": rede_id, "parent_rede_id": parent,
             "sequence": sequence, "speaker": speaker, "paragraphs": paragraphs,
             "source_page": page, "text": text, "char_count": len(text),
-            "paragraph_count": len(paragraphs), "snippet": text[:240], "unattributed_char_count": 0}
+            "paragraph_count": len(paragraphs), "snippet": snippet_of(text), "unattributed_char_count": 0}
 
 
 ZU_PROTOKOLL_ANNEX = re.compile(r"zu protokoll gegebene reden?(?: zur beratung:?)?")
@@ -2145,7 +2172,7 @@ def withheld_record(rid: str, sequence: int, reason: str, detail: str, speaker: 
     order. Segments pass 1 moved out or ruled procedural are in neither (D7)."""
     turns = []
     for segment in nested:
-        text = clean_text(" ".join(segment["paragraphs"]))
+        text = speech_kinds.join_paragraphs(segment["paragraphs"])
         turns.append({"marker": segment["marker"], "speaker": segment["speaker"],
                       "char_count": len(text), "word_count": word_count(segment["paragraphs"]), "text": text})
     return {
@@ -2225,6 +2252,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     """Parse one Plenarprotokoll XML. ``reviewed``: the reviewed-list entries
     of this sitting; by default those of ``scripts/reviewed_units.json``."""
     root = ET.fromstring(xml_text)
+    unwrap_quotes(root)
     loose_ordinals = loose_marker_ordinals(root)
     mark_stage_direction_names(root)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
@@ -2341,7 +2369,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                     f"{where}: presidium Rede at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
             if label.kind is None:
                 preceding = speech_kinds.trailing_sitzungsleitung_text(redes[i - 1]) if i else ""
-                candidate = procedural_candidate(own_text.text, heading, preceding)
+                candidate = procedural_candidate(clean_text(own_text.text), heading, preceding)
                 if candidate:
                     refused[rid] = UnreviewedUnitError(
                         f"{where}: {candidate} at {rid} has no reviewed kind (scripts/reviewed_units.json, ADR 0004)", rede_id=rid)
@@ -2370,7 +2398,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                      and labels[i + 1].parent_rede_id == label.parent_rede_id
                      and sum(r.get("id") == redes[i + 1].get("id") for r in redes) == 1 else None)
             resumed = (i > 0 and label.kind is None and labels[i - 1].kind is None
-                       and re.search(r"unterbreche den eigenen Redner", own_text.text, re.IGNORECASE)
+                       and re.search(r"unterbreche den eigenen Redner", clean_text(own_text.text), re.IGNORECASE)
                        and re.search(r"\bHerbeirufung\b", own_text.text)
                        and re.search(r"Sie können weiterreden", chair_evidence)
                        and sum(r.get("id") == redes[i - 1].get("id") for r in redes) == 1)
@@ -2378,7 +2406,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                 procedural_reden.add(rid)
                 for turn in speech_segments(rede, all_speakers=True)[1]:
                     if turn.get("own"):
-                        diagnostic(rid, turn, "procedural", "summons request: " + own_text.text)
+                        diagnostic(rid, turn, "procedural", "summons request: " + clean_text(own_text.text))
             for segment in nested:
                 key = derive.first_redner_id(segment["speaker"].get("xml_redner_id"))
                 text = clean_text(" ".join(segment["paragraphs"]))
@@ -2420,7 +2448,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                     continue
                 if resumed and key == redner_key(redes[i - 1].find("./p[@klasse='redner']/redner")):
                     if text == "Alles gut.":
-                        diagnostic(rid, segment, "procedural", "summons interruption: " + own_text.text)
+                        diagnostic(rid, segment, "procedural", "summons interruption: " + clean_text(own_text.text))
                         continue
                     if re.search(r"Sie können weiterreden", segment["announcement"]) or resumed_started:
                         resumed_started = True
@@ -2447,7 +2475,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                 prefix = attachments[rid] if label.kind == speech_kinds.ERWIDERUNG else []
                 suffix = attachments[rid] if label.kind is None else []
                 merged = prefix + own_text.paragraphs + suffix
-                own_text = SpeechText(clean_text(" ".join(merged)), merged, own_text.unattributed_chars)
+                own_text = SpeechText(speech_kinds.join_paragraphs(merged), merged, own_text.unattributed_chars)
             granted_nested_speaker = None
             grant_epoch = 0
             open_exchange = None
@@ -2464,7 +2492,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                 "unattributed_char_count": unattributed_chars,
                 "text": text,
                 "paragraphs": paragraphs,
-                "snippet": text[:240],
+                "snippet": snippet_of(text),
                 # The Rede's position among the TOP's <rede> elements after the
                 # split (D3): withholding a neighbour never renumbers it.
                 "sequence": sequence,
@@ -2565,7 +2593,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
             if counts["markers"] != markers:
                 raise ReconciliationError(f"{sitting} {top.get('top-id')}: rede reconciliation: {markers} Fragestunde markers, {counts['markers']} turns")
             for flat_index, turn in enumerate(turns, start=1):
-                text = clean_text(" ".join(turn.paragraphs))
+                text = speech_kinds.join_paragraphs(turn.paragraphs)
                 if turn.redner is not None and turn.redner.get("listed_kind") not in (None, turn.kind):
                     raise reviewed_units.ReviewedUnitsError(
                         f"scripts/reviewed_units.json: {sitting} {top.get('top-id')}: the speaker printed as <name> "
@@ -2587,7 +2615,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                         "unattributed_char_count": 0,
                         "text": text,
                         "paragraphs": turn.paragraphs,
-                        "snippet": text[:240],
+                        "snippet": snippet_of(text),
                     }
                 )
 

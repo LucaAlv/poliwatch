@@ -62,7 +62,7 @@ Rejected alternatives:
 
 ### D2 `speeches.text` ships in full
 
-The text is an extraction from the Plenarprotokoll, an amtliches Werk, not a verbatim copy: the paragraphs of a Rede are joined with single spaces, non-breaking spaces become plain spaces, and whitespace runs collapse (`validate_dip_protocol.speech_text_and_paragraphs`, `persist_dip_pulse_store.clean`). Wording and punctuation are untouched. Whether that meets § 62 (no changes) is open question 7. § 63 (name the source) is met by the source line.
+The text is an extraction from the Plenarprotokoll, an amtliches Werk, not a verbatim copy: non-breaking spaces become plain spaces, whitespace runs collapse, and the printed paragraphs are separated by one line feed (`speech_kinds.ParagraphFlow`, `speech_kinds.join_paragraphs`, `persist_dip_pulse_store.clean_wording`; until 2026-11-23 they were joined with spaces). Wording and punctuation are untouched. Whether that meets § 62 (no changes) is open question 7. § 63 (name the source) is met by the source line.
 
 The full-corpus file is not a collection that consists „überwiegend" of one speaker's speeches ([§ 48 Abs. 2 UrhG](https://www.gesetze-im-internet.de/urhg/__48.html)).
 
@@ -128,7 +128,7 @@ The operator is one person with limited time, the audience is mostly not develop
    - The cheaper first step is a one-line question to parlamentsdokumentation@bundestag.de.
 6. Whether the site is „journalistisch-redaktionell gestaltet" at all (§ 18 Abs. 2 MStV, and the press-law duties that come with it), or whether § 18 Abs. 1 is enough.
 
-7. Whether whitespace normalisation and joining paragraphs (D2) count as a change under § 62 UrhG, or whether the export must keep paragraph breaks.
+7. (Paragraph breaks are kept since 2026-11-23, see the amendment of that date.) Whether whitespace normalisation and joining paragraphs (D2) count as a change under § 62 UrhG, or whether the export must keep paragraph breaks.
 8. (Answered 2026-11-21, see the amendment of that date: both entries moved to `sessionStorage`, and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.) Whether the two localStorage entries the site writes on a click (the theme and the AI-summary collapse state, never transmitted) need consent or a statement of their basis under § 25 TDDDG. `datenschutz.html` describes them and states no legal basis.
 
 ## Amendment 2026-11-21: the open questions answered by research, one sent out
@@ -142,6 +142,13 @@ The owner cannot afford a lawyer and decided on 2026-11-21 to replace one with a
 - **Question 6:** stays covered by naming the operator as Verantwortlicher under § 18 Abs. 2 MStV (D4).
 - **Question 8:** both settings moved to `sessionStorage` on 2026-11-21 (DSK Orientierungshilfe Digitale Dienste, Rn. 80), and `datenschutz.html` names § 25 Abs. 2 Nr. 2 TDDDG.
 - **Fixed at once (2026-11-21):** the omissions notice in `LICENSE-DATA.md`; the legal bases and the true storage list in `datenschutz.html`; a source and licence notice for the Bundestag material held in the public repository.
+
+## Amendment 2026-11-23: paragraph breaks are kept
+
+The owner decided to keep the paragraph breaks before the first release (question 7). Built as follows:
+- **What a paragraph is.** The printed one. A `<p klasse="O">` after a `<kommentar>` continues the paragraph the Zwischenruf interrupted; every other `<p>` opens one. Checked against the print of 18/100 and 20/100 by the indent of each line the XML text could be placed on: of 992 such `O` paragraphs 991 stand flush, of 2,385 `J` paragraphs 2,381 are indented. On the 61,137 stored Reden that gives 594,359 breaks; taking every `<p>` as a paragraph would have given 862,202, and 48,440 paragraphs (now 744) would have opened with a lower-case letter, most of them inside a sentence. Those counts are from before the last point below; as shipped it is 596,844 breaks and 864.
+- **The separator is one line feed,** not the blank line of `proceedings.abstract`. A space becomes a line feed, so no character count moves, `char_count` stays the length of `text`, and a Rede with many Zwischenrufe does not read as longer. Whitespace collapses inside a paragraph, so the line feed is unambiguous.
+- **Block quotes of WP 18 are read** (owner, 2026-11-23). A block quote is `<p klasse="Z">`; WP 18 wraps 1,939 of its 3,893 in `<zitat>`, WP 19 on none. The parser skipped the wrapped ones, an omission no notice named. `validate_dip_protocol.unwrap_quotes` replaces each `<zitat>` by its paragraphs, so whoever is speaking reads it out. A flush `O` after a quote and a `<kommentar>` opens a paragraph, since it does not continue the quote (966 places in all four Wahlperioden; 1 resumes in lower case). That rule alone adds 790 breaks in Reden whose words did not change.
 
 ## Consequences and follow-ups
 
