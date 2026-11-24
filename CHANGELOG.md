@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.51.0] - 2026-11-24
+
+33 Protokoll XML files of the Bundestag stop in the middle of their sitting. DATA.md now says so, names what is missing and how much, and the plan to mark those sittings incomplete is decided. No stored row, Fakt, page or export moves; export format 25 and schema 15 stay.
+
+### Added
+
+- **DATA.md names the cut protocols.** For 33 of the 806 sittings (19/55, 11 of WP 20, 21 of WP 21) the XML is a first edition that was never replaced; the PDF is complete. After the last printed Rede DIP lists 1,189 Reden (WP 19 41, WP 20 389, WP 21 759) and 429 Reden zu Protokoll (WP 20 148, WP 21 281). That is 1.9% of the stored and missing Reden together, and 7.5% in WP 21. A first count of 1,212 (WP 20 412) included 23 farewells and greetings by the chair, which DIP types as Rede and the store never holds as one.
+- **The 435 missing Reden zu Protokoll are explained.** DIP lists 4,599 and the store holds 4,164: 429 are in the cut files, ten in WP 18 are printed without a `<rede>` of their own, and the store holds four that DIP does not list as such. Two of the ten are stored as the previous speaker's words: Ralph Lenkert's under Michael Thews (18/23 `ID1802308800`) and Michaela Engelmeier's under Johannes Steiniger (18/63 `ID1806311300`). The ten are to be fixed before the first release.
+- **End times.** In four of the 33 sittings the PDF prints another end than the XML, which the length of a sitting is computed from: 19/55 1.28 (XML 01:30), 20/178 23.12 (23:11), 21/89 23:37 (23:36), 21/96 00:15 (00:16). The other 29 agree.
+- **Source errors E16 and E17**, with what was checked, and the contact the Bundestag publishes for DIP. Nothing was sent.
+- **The plan `docs/plans/cut-protocols.md`**, with the owner's decisions: mark and keep the 33 sittings, judge the longest sitting by its sitting times with the four end times corrected, read the missing text from the PDFs after the first release. Nothing is built.
+- A census script reproduces the counts per sitting (`docs/plans/zu-protokoll-gap/census.py`); a test checks it, and DATA.md's table against it.
+
 ## [0.46.50.0] - 2026-11-23
 
 The text of a Rede now has the paragraphs the Bundestag prints, and the quotes speakers read out in WP 18 are part of it. Figures below come from a replay of the store (806 sittings); no Rede, Beitrag, Kind, speaker or vote moves. Export format 25, speech rule 15; a store needs one `--offline --repersist`.

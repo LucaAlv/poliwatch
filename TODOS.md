@@ -122,7 +122,7 @@ Found by `code-review` on the working tree of `claude/paragraph-breaks` (Standar
 
 ### Census script of the Protokoll gap: hygiene
 
-**What:** `docs/plans/zu-protokoll-gap/census.py`: the docstring names neither the TSV columns nor that `fehlend_zu_protokoll` can be negative; a missing page prints as `0`, so `dip_reden_danach` 0 reads as none after (20/7, 20/97, 18/223, 19/161 print no pages; only stderr says so); one Counter mixes contribution kinds and table names; the soft hyphen in the regex is a literal U+00AD.
+**What:** `docs/plans/zu-protokoll-gap/census.py`: the docstring names neither the TSV columns nor that `fehlend_zu_protokoll` can be negative; a missing page prints as `0`, so `dip_reden_danach` 0 reads as none after (20/7, 20/97, 18/223, 19/161 print no pages; only stderr says so); one Counter mixes contribution kinds and table names; `anfangsseite` of a Vorgangsposition is compared as it stands, so a page given as text would stop the run (Codex, 2026-11-24; all 43,423 cached are numbers); the soft hyphen in the regex is a literal U+00AD.
 
 **Why:** A later rerun could read an unknown as zero. No committed row is affected.
 
