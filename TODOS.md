@@ -112,7 +112,7 @@ Found by `code-review` on the working tree of `claude/paragraph-breaks` (Standar
 
 ### WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own
 
-**What:** `docs/source-errors.md` E17. Lenkert's text is stored under Thews (18/23 `ID1802308800`) and Engelmeier's under Steiniger (18/63 `ID1806311300`); eight are stored nowhere (18/17, 18/34, 18/46, 18/47, 18/66, 18/112, 18/115, 18/155); 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer) are rows with no speaker and no text. Split or wrap them by a reviewed list, as `loose_*` does.
+**What:** `docs/source-errors.md` E17. Lenkert's text is stored under Thews (18/23 `ID1802308800`) and Engelmeier's under Steiniger (18/63 `ID1806311300`); eight are stored nowhere (18/17, 18/34, 18/46, 18/47, 18/66, 18/112, 18/115, 18/155); 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer) are rows with no speaker and no text. Split or wrap them by a reviewed list, as `loose_*` does. E3 counts three `<rede>`s without a `<redner>` in 716 files; the 806 held now have six (18/63 `ID1806309700`, 18/117 `ID1811703000` and 18/118 `ID1811802900` besides; the last two are written Erklärungen nach § 31): update its scale.
 
 **Why:** Two rows give a person words someone else submitted; the others are missing or empty.
 
