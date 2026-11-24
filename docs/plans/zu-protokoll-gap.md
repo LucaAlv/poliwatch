@@ -72,13 +72,13 @@ The text is in the XML, without a `<rede>` of its own (`docs/source-errors.md`, 
 ## Recommendation for the owner
 
 1. **Before the first `--publish`: mark the 33 sittings as incomplete.** A coverage record per sitting ("Protokolldatei abgebrochen", with the cut and DIP's count of what follows), read by Period completeness, so that their weeks and months are not complete, shown in the dossier, and exported. Detect the notice at parse time and compare with DIP's Reden after the last `<rede>`, so that new long Thursdays do not enter unnoticed and 19/107 passes. Naming the gap in DATA.md alone leaves "complete" Fakten that are not. This moves Fakten and needs an owner decision. Effort M.
-2. **Report E16 to the Bundestag** (owner go; contact open). A replaced XML at the same address fixes everything with a re-fetch, for other users too.
+2. **Report E16 to the Bundestag** (the owner sends it; contact in `docs/source-errors.md`). A replaced XML at the same address fixes everything with a re-fetch, for other users too.
 3. **After that, if the XML is not replaced: read the rest from the PDF,** as a pilot on the five sittings. The PDFs' text layer is clean enough to find every label by page; DIP's Aktivitäten give the skeleton (person, kind, page, quadrant, Vorgang), and each PDF Rede must match one or the sitting refuses. The open questions are Kommentare, chair words and column order, text hyphenated at line ends, TOP headings, and ids: the print has none, so these need a project id of their own, as `N…` and `M…` have. About 1,189 Reden and 429 Reden zu Protokoll in 33 sittings. Effort L.
 4. **Do not** fill in Reden from DIP without text: a Rede without words would enter Reden counts and leave characters, share and search wrong.
 5. **WP 18:** the ten are a parser task of their own (E17), small, and two of them are a wrong attribution, so they belong before the release. Effort S.
 
-Owner, 2026-11-23: 1 before the first release (planned in [cut-protocols.md](cut-protocols.md)), 3 after it. 2 and 5 are open; my pick is 5 before the release and 2 now.
+Owner, 2026-11-23: 1 before the first release (planned in [cut-protocols.md](cut-protocols.md)), 3 after it. Owner, 2026-11-24: 5 before the first release; 2 the owner sends themselves (contact: `docs/source-errors.md`).
 
 ## Not read
 
-28 of the 33 PDFs. The Open Data XML and the DIP text of the other 32. The passages after the cut beyond the labels. Where the 11 unlinked votes were called. The contact for a report.
+28 of the 33 PDFs, but for their closing line (2026-11-24, [end-times.tsv](zu-protokoll-gap/end-times.tsv)). The Open Data XML and the DIP text of the other 32. The passages after the cut beyond the labels. Where the 11 unlinked votes were called.

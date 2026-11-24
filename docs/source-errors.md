@@ -9,9 +9,12 @@ A list of places where an official source file says something wrong or files con
 
 **Not in scope:** gaps in our own parser. A sitting our validator refuses is listed here only once a human has read the source and found the source itself wrong. Parser work lives in TODOS.md.
 
-**Who to send it to:** not yet decided.
+**Who to send it to:** the owner sends reports themselves. Read on the publishers' pages on 2026-11-24:
+- The only contact DIP publishes is the Auskunfts- und Rechercheservice der Parlamentsdokumentation, parlamentsdokumentation@bundestag.de, +49 30 227-32350 (<https://dip.bundestag.de/über-dip/kontakt>).
+- The Open Data page (<https://www.bundestag.de/services/opendata>) names no contact of its own. The general one is mail@bundestag.de or the Kontaktformular (<https://www.bundestag.de/services/kontakt>).
+- No error channel and no address of the Stenografischer Dienst was found.
 - The Plenarprotokoll XML and DIP are published by the Deutscher Bundestag.
-- Find the right contact from the publishers' own pages before sending anything. Don't guess an address.
+- Don't guess any other address: take it from the publishers' own pages.
 - Send nothing without an owner go: a report is outward-facing.
 
 **Status values:**
@@ -207,8 +210,9 @@ A list of places where an official source file says something wrong or files con
 - **What is wrong:** the XML is the partial edition of a long sitting. The final one was published as PDF and the XML was never replaced. Missing are the rest of the Sitzungsverlauf and the annexes that belong to it, among them nearly all the sitting's Reden zu Protokoll: the PDF of 20/147 has 20 annexes, 12 of them "Zu Protokoll gegebene Rede(n)"; the XML has 9, with one.
 - **What it should be:** the XML of the complete report at the same address, with its pages and annexes.
 - **Scale:** 33 of the 806 held sittings: 19/55; 20/141, 147, 175, 178, 185, 191, 194, 203, 207, 209, 210; 21/14, 21, 31, 34, 37, 40, 47, 53, 56, 59, 65, 68, 80, 83, 86, 89, 96, 99, 102, 105, 108. After the last printed `<rede>`, DIP lists 1,189 Reden (WP 19: 41, WP 20: 389, WP 21: 759; without 23 farewells and greetings by the chair, all in WP 20, that DIP also types as "Rede") and, in all 33 sittings, 429 Reden zu Protokoll more than the XML prints (WP 20: 148, WP 21: 281). Per sitting: [per-sitting.tsv](plans/zu-protokoll-gap/per-sitting.tsv). 19/107 prints the notice too, but holds the whole sitting.
-- **Checked elsewhere, 2026-11-23:** dserver serves all 33 files with the cached size, and each cached file's md5 is DIP's `xml_hash`. Read for 20/147 only: the XML on the Open Data page is byte-identical, and DIP's `plenarprotokoll-text` ends with the same notice, though its `pdf_hash` is the final PDF's. In the five PDFs read (20/147, 20/178, 21/40, 21/83, 21/99), the page DIP gives prints every one of the 262 Reden after the cut and the 157 Reden zu Protokoll (one label stands on the next page). The other 28 PDFs were not read.
-- **20/210 also** prints its Inhaltsverzeichnis with empty page numbers (`<xref div="" pnr="" …>`) and two end times, 02:19 in the head and 02:15 at the end.
+- **Checked elsewhere, 2026-11-23:** dserver serves all 33 files with the cached size, and each cached file's md5 is DIP's `xml_hash`. Read for 20/147 only: the XML on the Open Data page is byte-identical, and DIP's `plenarprotokoll-text` ends with the same notice, though its `pdf_hash` is the final PDF's. In the five PDFs read (20/147, 20/178, 21/40, 21/83, 21/99), the page DIP gives prints every one of the 262 Reden after the cut and the 157 Reden zu Protokoll (one label stands on the next page). Of the other 28 only the closing line was read, on 2026-11-24; all 28 have the md5 of DIP's `pdf_hash`.
+- **20/210 also** prints its Inhaltsverzeichnis with empty page numbers (`<xref div="" pnr="" …>`) and two end times, 02:19 in the head and 02:15 at the end. Its PDF prints "(Schluss: 2.19 Uhr)".
+- **End times:** in four more sittings the PDF's "(Schluss: …)" is not the XML's `sitzung-ende-uhrzeit`: 19/55 prints 1.28 (XML 01:30), 20/178 23.12 (23:11), 21/89 23:37 (23:36), 21/96 00:15 (00:16). Per sitting: [end-times.tsv](plans/zu-protokoll-gap/end-times.tsv).
 - **Effect on poliwatch:** the Reden, Beiträge and Tagesordnungspunkte after the cut are stored nowhere, and no check notices. Named in `docs/data-methods.md`. Nothing is built ([zu-protokoll-gap.md](plans/zu-protokoll-gap.md)).
 
 ### E17. WP 18: ten Reden zu Protokoll are printed without a `<rede>` of their own
