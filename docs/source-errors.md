@@ -9,9 +9,12 @@ A list of places where an official source file says something wrong or files con
 
 **Not in scope:** gaps in our own parser. A sitting our validator refuses is listed here only once a human has read the source and found the source itself wrong. Parser work lives in TODOS.md.
 
-**Who to send it to:** not yet decided.
+**Who to send it to:** the owner sends reports themselves. Read on the publishers' pages on 2026-11-24:
+- The only contact DIP publishes is the Auskunfts- und Rechercheservice der Parlamentsdokumentation, parlamentsdokumentation@bundestag.de, +49 30 227-32350 (<https://dip.bundestag.de/über-dip/kontakt>).
+- The Open Data page (<https://www.bundestag.de/services/opendata>) names no contact of its own. The general one is mail@bundestag.de or the Kontaktformular (<https://www.bundestag.de/services/kontakt>).
+- No error channel and no address of the Stenografischer Dienst was found.
 - The Plenarprotokoll XML and DIP are published by the Deutscher Bundestag.
-- Find the right contact from the publishers' own pages before sending anything. Don't guess an address.
+- Don't guess any other address: take it from the publishers' own pages.
 - Send nothing without an owner go: a report is outward-facing.
 
 **Status values:**
@@ -199,6 +202,32 @@ A list of places where an official source file says something wrong or files con
 - **What it should be:** a `<rede>` of its own for a Rede, and the turn inside the `<rede>` it belongs to for a reply.
 - **Scale:** 74 markers, 19,686 words, in 31 sittings: 23 whole Reden in 11 WP 18 sittings, and short turns next to a `<rede>` in WP 18 to 21 (19/114 holds 18 markers). Counted 2026-11-22 over the 806 held files.
 - **Our side:** each marker is listed in `scripts/reviewed_units.json` (kinds `loose_*`) and placed by `mark_loose_markers` in `scripts/validate_dip_protocol.py` (ADR 0004, amendment of 2026-11-22 on markers outside any `<rede>`). Before the rule, the words were stored nowhere.
+
+### E16. WP 19 to 21: 33 protocol files are first editions that stop before the sitting ends
+
+- **Status:** verified 2026-11-23 on the cached XML, with five PDFs read against it.
+- **Source:** for example `https://dserver.bundestag.de/btp/20/20147.xml`. The last `<rede>` of the Sitzungsverlauf is `ID2014714100` (Karsten Hilse, AfD, p. 18766 B), which ends "Jetzt rufe ich auf Michael Kruse für die FDP-Fraktion." Then comes `<p klasse="Ende">Der gesamte und damit endgültige Stenografische Bericht der 147. Sitzung wird am 23. Januar 2024 veröffentlicht.</p>`, and `<sitzungsende sitzung-ende-uhrzeit="23:31"/>`. The same notice closes the Inhaltsverzeichnis and the last annex. `https://dserver.bundestag.de/btp/20/20147.pdf` (Last-Modified 23 Jan 2024, md5 equal to DIP's `pdf_hash`) goes on with Michael Kruse at p. 18767 A, to "(Schluss: 23.31 Uhr)" on p. 18799, and has no such notice.
+- **What is wrong:** the XML is the partial edition of a long sitting. The final one was published as PDF and the XML was never replaced. Missing are the rest of the Sitzungsverlauf and the annexes that belong to it, among them nearly all the sitting's Reden zu Protokoll: the PDF of 20/147 has 20 annexes, 12 of them "Zu Protokoll gegebene Rede(n)"; the XML has 9, with one.
+- **What it should be:** the XML of the complete report at the same address, with its pages and annexes.
+- **Scale:** 33 of the 806 held sittings: 19/55; 20/141, 147, 175, 178, 185, 191, 194, 203, 207, 209, 210; 21/14, 21, 31, 34, 37, 40, 47, 53, 56, 59, 65, 68, 80, 83, 86, 89, 96, 99, 102, 105, 108. After the last printed `<rede>`, DIP lists 1,189 Reden (WP 19: 41, WP 20: 389, WP 21: 759; without 23 farewells and greetings by the chair, all in WP 20, that DIP also types as "Rede") and, in all 33 sittings, 429 Reden zu Protokoll more than the XML prints (WP 20: 148, WP 21: 281). Per sitting: [per-sitting.tsv](plans/zu-protokoll-gap/per-sitting.tsv). 19/107 prints the notice too, but holds the whole sitting.
+- **Checked elsewhere, 2026-11-23:** dserver serves all 33 files with the cached size, and each cached file's md5 is DIP's `xml_hash`. Read for 20/147 only: the XML on the Open Data page is byte-identical, and DIP's `plenarprotokoll-text` ends with the same notice, though its `pdf_hash` is the final PDF's. In the five PDFs read (20/147, 20/178, 21/40, 21/83, 21/99), the page DIP gives prints every one of the 262 Reden after the cut and the 157 Reden zu Protokoll (one label stands on the next page). Of the other 28 only the closing line was read, on 2026-11-24; all 28 have the md5 of DIP's `pdf_hash`.
+- **20/210 also** prints its Inhaltsverzeichnis with empty page numbers (`<xref div="" pnr="" …>`) and two end times, 02:19 in the head and 02:15 at the end. Its PDF prints "(Schluss: 2.19 Uhr)".
+- **End times:** in four more sittings the PDF's "(Schluss: …)" is not the XML's `sitzung-ende-uhrzeit`: 19/55 prints 1.28 (XML 01:30), 20/178 23.12 (23:11), 21/89 23:37 (23:36), 21/96 00:15 (00:16). Per sitting: [end-times.tsv](plans/zu-protokoll-gap/end-times.tsv).
+- **Effect on poliwatch:** the Reden, Beiträge and Tagesordnungspunkte after the cut are stored nowhere, and no check notices. Named in `docs/data-methods.md`. Nothing is built ([zu-protokoll-gap.md](plans/zu-protokoll-gap.md)).
+
+### E17. WP 18: ten Reden zu Protokoll are printed without a `<rede>` of their own
+
+- **Status:** verified 2026-11-23 on the XML of the reference store.
+- **Source:** `https://dserver.bundestag.de/btp/18/`, annexes titled "Zu Protokoll gegebene Rede(n)".
+- **What is wrong:** three shapes.
+  - A second speaker's text inside the previous speaker's `<rede>`, with a speaker marker: Charles M. Huber in 18/17 `ID1801712700` (Bernd Fabritius), Gabriele Schmidt (Ühlingen) in 18/66 `ID1806614200` (Martin Pätzold) and 18/112 `ID1811211800` (Matthäus Strebl), Özcan Mutlu in 18/115 `ID1811515000` (Rosemarie Hein).
+  - The same without a marker, as plain text: Ralph Lenkert in 18/23 `ID1802308800` (Michael Thews; `<p klasse="J_Abstand">`), Michaela Engelmeier in 18/63 `ID1806311300` (Johannes Steiniger; `<p klasse="N_Anlage">`).
+  - No `<rede>` around the text: Christian Petry in 18/34 Anlage 2, Armin Schuster in 18/46 Anlage 16, Hartmut Koschyk in 18/47 Anlage 4, Metin Hakverdi in 18/155 Anlage 2.
+
+  The Inhaltsverzeichnis gives Huber and Lenkert a Rede-ID (`ID1801712800`, `ID1802308900`) that no `<rede>` carries.
+- **What it should be:** a `<rede>` with a speaker marker for each.
+- **Scale:** the annex blocks of that title in the 806 held files. 18/47 Anlage 5 prints Georg Kippels's Rede of 18/46 again without a `<rede>`; the store has it from 18/46. The Neudrucke in 18/192, 18/238 and 18/245 are reprints and not counted.
+- **Effect on poliwatch:** of the second shape, Lenkert's and Engelmeier's words are stored as the other speaker's. The other eight are stored nowhere. 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer), both `N_Anlage` without a `<redner>` (18/76: see E3), are stored with no speaker and no text. Named in `docs/data-methods.md`; nothing is built.
 
 ## Candidates
 

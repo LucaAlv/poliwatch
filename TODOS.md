@@ -100,16 +100,34 @@ Found by `code-review` on the working tree of `claude/paragraph-breaks` (Standar
 **Priority:** P3
 **Depends on:** None
 
-### Reden zu Protokoll that DIP lists and the store lacks
+### Protokoll XML files that stop mid-sitting (33 sittings)
 
-**What:** DIP lists 4,599 Reden zu Protokoll in the cached reports. The store holds 4,164 as `zu_protokoll`, the 122 of decision 3 included. About 435 are missing net, in 40 sittings with a difference (three of them hold more than DIP: 18/237, 19/36, 20/66), mostly WP 20 and 21: 21/83 (38 in DIP, 1 stored), 20/147 (34, 1), 21/99 (32, 1), 21/40 (29, 0), 20/178 (24, 0). Checked in 21/83, 20/178 and 21/99: the Protokoll XML has no annex that holds them, though DIP gives each a printed page. Read the PDFs of a few sittings: if they print an annex the XML leaves out, add it to `docs/source-errors.md`, name the gap and its size in DATA.md, and decide whether the text can be taken from elsewhere.
+**What:** The check of 2026-11-23 found that 429 of the 435 missing Reden zu Protokoll, and 1,189 spoken Reden DIP lists (WP 19 41, WP 20 389, WP 21 759), are in the part of 33 sittings the Protokoll XML does not print: it is the first edition, and dserver never replaced it (`docs/source-errors.md` E16, `docs/plans/zu-protokoll-gap.md`). DATA.md names it. Left: (1) build `docs/plans/cut-protocols.md` (D1, D2 and D3 decided; step 0 done 2026-11-24): mark the 33 sittings incomplete: detect the notice at parse time, compare with DIP's Reden after the last `<rede>`, make Period completeness false, show it in the dossier, export it. Moves Fakten. (2) E16 goes to the Bundestag: the owner sends it themselves (contact in `docs/source-errors.md`); set E16 to sent when they say so. (3) After the first release, if the XML stays: read the rest from the PDF, pilot on 20/147, 20/178, 21/40, 21/83 and 21/99. (4) Not read: the other 28 PDFs beyond their closing line, the 11 votes without a TOP in these sittings.
 
-**Why:** A reader counting `zu_protokoll` per year would read the missing rows as none; `docs/data-methods.md` does not name this gap.
+**Why:** 7.5 % of WP 21's Reden are missing while the weeks and months of these sittings count as complete; every Rede count for them is too small.
 
-**Context:** Found 2026-11-23 by the census of `docs/plans/beitraege-as-reden.md` (count per sitting: DIP `aktivitaetsart` "Rede (zu Protokoll gegeben)" against `contributions.kind`).
+**Effort:** M (1), S (2), L (3)
+**Priority:** P1 (1, before the first `--publish`), P2 (2, 3)
+**Depends on:** None (D2 decided 2026-11-24: `times` basis, four end times corrected by a reviewed list, step 3b of the plan)
 
-**Effort:** S for the check, unknown for a fix
-**Priority:** P1 (the check and the DATA.md sentence, before the first `--publish`)
+### WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own
+
+**What:** `docs/source-errors.md` E17. Lenkert's text is stored under Thews (18/23 `ID1802308800`) and Engelmeier's under Steiniger (18/63 `ID1806311300`); eight are stored nowhere (18/17, 18/34, 18/46, 18/47, 18/66, 18/112, 18/115, 18/155); 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer) are rows with no speaker and no text. Split or wrap them by a reviewed list, as `loose_*` does. E3 counts three `<rede>`s without a `<redner>` in 716 files; the 806 held now have six (18/63 `ID1806309700`, 18/117 `ID1811703000` and 18/118 `ID1811802900` besides; the last two are written Erklärungen nach § 31): update its scale.
+
+**Why:** Two rows give a person words someone else submitted; the others are missing or empty.
+
+**Effort:** S
+**Priority:** P1 (owner, 2026-11-24: fixed before the first release; wrong attribution)
+**Depends on:** `claude/rede-count-leftovers` merged (it changes `speech_kinds.py`, `validate_dip_protocol.py` and `reviewed_units.*`)
+
+### Census script of the Protokoll gap: hygiene
+
+**What:** `docs/plans/zu-protokoll-gap/census.py`: the docstring names neither the TSV columns nor that `fehlend_zu_protokoll` can be negative; a missing page prints as `0`, so `dip_reden_danach` 0 reads as none after (20/7, 20/97, 18/223, 19/161 print no pages; only stderr says so); one Counter mixes contribution kinds and table names; `anfangsseite` of a Vorgangsposition is compared as it stands, so a page given as text would stop the run (Codex, 2026-11-24; all 43,423 cached are numbers); the soft hyphen in the regex is a literal U+00AD.
+
+**Why:** A later rerun could read an unknown as zero. No committed row is affected.
+
+**Effort:** S
+**Priority:** P4
 **Depends on:** None
 
 ### Coverage gate before the first data release
