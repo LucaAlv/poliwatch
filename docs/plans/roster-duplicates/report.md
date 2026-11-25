@@ -2,7 +2,7 @@
 
 Built 2026-11-23 on `claude/loving-brattain-e57984` (cut from main 067dd80, v0.46.49.0). TODOS.md "Roster MdB records that never join their speaker: 56 empty duplicate Personenseiten".
 
-Baseline: `.context/ship-after` (806 sittings, the v0.46.49.0 replay). Result: `.context/roster-after`, a clone of it replayed with `--offline --repersist` on this branch. `pairs.tsv` lists every pair with its evidence.
+Restated 2026-11-25 on main 511e948 (v0.46.52.0, with PRs 215, 216 and 217). Baseline: `.context/leftovers-review-after` (806 sittings, the v0.46.52.0 replay). Result: `.context/roster-after-52`, a clone of it replayed with `--offline --repersist` on this branch. `pairs.tsv` lists every pair with its evidence; its counts are the result's. "Against the first measurement" below names what the restatement moved.
 
 ## Why pass 2 left them apart
 
@@ -43,7 +43,7 @@ In addition:
 | Empty MdB persons (0 Reden, 0 Beiträge, 0 Stimmen) | 56 | 0 | each has joined its speaker |
 | Persons with at least one record | 1,984 | 1,877 | 107 records of the same people joined |
 | `abgeordnete/` pages | 1,676 | 1,605 | 56 empty pages, 14 pages of provisional ids, Trasnea's second page; 84 old page URLs redirect, 13 pages stand under the older of the joined keys |
-| Reden on MdB persons | 51,857 | 54,239 | the 56 MdBs' own |
+| Reden on MdB persons | 51,830 | 54,211 | the 56 MdBs' own (2,377) and Trăsnea's 4 |
 | Beiträge on MdB persons | 31,238 | 33,469 | the same |
 | Stimmen on MdB persons | 420,558 | 441,413 | the same |
 | Stimmen of roll-call persons without a page | 8,195 | 4,738 | 3,457 Stimmen of MdBs whose bucket was blocked are on their page |
@@ -52,9 +52,21 @@ In addition:
 | `facts`: `erste-reden` | | | see below |
 | `fact_sources` | 3,116 | 3,107 | nine second debuts gone |
 
-Unchanged: 61,137 Reden, 46,499 Beiträge, 502,697 `vote_members`, `votes`, `vote_fractions`, `withheld_units`, `withheld_turns`, Redeanteil, Abweichler, recipe r3 (1,432 rows). In `mps` only `person_id` changes (125 rows).
+Unchanged: 61,104 Reden, 46,499 Beiträge, 502,697 `vote_members`, `votes`, `vote_fractions`, `withheld_units`, `withheld_turns`, Redeanteil, Abweichler, recipe r3 (1,432 rows; the same counts, 74 of them under the roster's spelling of the name). In `mps` only `person_id` changes (125 rows).
 
 **`erste-reden`.** A person with two Redner-IDs counted a second debut. Values: 2019-W03 1 → 0, 2021-W20 3 → 2, 2021-W23 4 → 1, 2021-W25 2 → 1, 2022-W36 2 → 1, 2023-W13 2 → 1, 2025-W21 58 → 57. Two weeks fall below the floor and are no longer publishable (2021-W23, 2021-W25). In 2021-W20 the fact moves from rank 1 to 2 and `laengste-sitzung` to 1; in 2021-W23 `laengste-sitzung` moves from 2 to 1 and `laengste-debatte` from 3 to 2. 27 further weeks move only in their percentile, because their baseline weeks hold fewer debuts.
+
+## Against the first measurement
+
+First measured on v0.46.49.0 (`.context/ship-after` to `.context/roster-after`). Every old and new value was recounted with one script on both pairs of stores; it gives the first report's figures on the first pair. Three differ:
+
+| Figure | v0.46.49.0 | v0.46.52.0 | Why |
+|---|---|---|---|
+| Reden | 61,137 | 61,104 | PR 217 joined 13 Reden printed in two halves (one row less each) and made 20 bare motions procedural |
+| Reden on MdB persons, old → new | 51,857 → 54,239 | 51,830 → 54,211 | of those 33 Reden 27 are on MdB persons before the join and 28 after it: Dagmar Schmidt's (Wetzlar) of 18/21 `ID1802103000` is the 28th. The other five (Schwesig 18/59, Lange 18/88, Lindholz 18/63, Warken 20/196, Lemke 19/41) are on persons without a plain MdB roster record |
+| Reden of Dagmar Schmidt (Wetzlar) in `pairs.tsv` | 90 | 89 | the same Rede |
+
+Everything else is the same in both measurements: the empty persons, persons, pages, redirects, Beiträge, Stimmen, aliases, `fact_sources`, all seven `erste-reden` values, the two weeks below the floor, the four rank moves and the 27 percentiles. The 125 `mps` rows are the same 125, and the 58 joins are the same 58.
 
 ## Grouping changes outside the 56
 
@@ -78,7 +90,7 @@ No group was torn apart: every new person is a union of old ones. `match_rows` o
 10. **Interrupted run:** no new write.
 11. **Claims:** `docs/stable-ids.md`, `CONTEXT.md` and E15 say what `_bucket_name`, `_namesakes` and `_validate_same_person` do. `docs/data-methods.md` is untouched: `mps.xml_redner_id` keeps the printed id, so its CPP-BT figures stand.
 12. **Loop cost:** `_namesakes` runs once per qualifying pair; the two extra queries are one `DISTINCT` per table. The replay took its usual time.
-13. **Last commit:** one commit.
+13. **Last commit:** the build commit, the merge of main and the restated figures; no code changed after the build commit, and no commit touches TODOS.md outside the merge.
 
 Not run here: the full gate and a from-scratch build (one gate run follows at the end of the figure-moving work), and a browser check (no rendering code changed; a page's old URL was checked to redirect).
 
