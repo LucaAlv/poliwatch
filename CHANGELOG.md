@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.52.0] - 2026-11-24
+
+A Rede the WP 18 protocols print in two pieces counts once, and 20 more turns that only move a motion zur Geschäftsordnung are no Reden. Reden go from 61,137 to 61,104 (806 sittings); Beiträge stay at 46,499 and withheld Reden at 99, and no vote moves. Speech rule 16, export format 25 as before; a store needs one `--offline --repersist`.
+
+### Changed
+
+- **Longer motions zur Geschäftsordnung are no Reden.** The 32 turns of 400 to 799 characters that DIP lists as „Zur Geschäftsordnung BT“ were read by two readers without each other's verdict. The 20 both call a motion with no more than its reason, with high confidence, are kept as procedural steps and stored as neither Rede nor Beitrag, like the 24 shorter ones of 0.46.49.0 (Reden 61,124 to 61,104, 11,222 characters less; AfD −12, CDU/CSU −5, Bündnis 90/Die Grünen −2, FDP −1). The five both call a motion but at least one is unsure of stay Reden, and so do the two on which they differ.
+- **Two Fakt values move.** The most debated Vorgang of February 2021 goes from 15 to 14, and that of May 2025 moves in its percentile. 589 Fakten stay publishable and no winner changes.
+
+### Fixed
+
+- **13 Reden of WP 18 are whole.** Where the chair interrupts, the XML sometimes ends the Rede and prints the rest as a new one of the same speaker (18/88 `ID1808801400` Lange, 18/98 `ID1809801100` Wilms). Each piece counted as a Rede. A census of all 806 sittings found 13; the reviewed list names them (kind `own_words`) and the parser joins the two pieces (Reden 61,137 to 61,124, 13 characters more, one line feed each). The Rede keeps the id of its first piece, or that of the second where the first stands inside another speaker's `<rede>` (seven). A repeated Redebeitrag the chair announces as one (19/224) stays two.
+- **Those seven Reden begin where they begin.** The Inhaltsverzeichnis gives the place of the rest, so they carry the page DIP gives: 18/11 Schiewerling 731A (the Inhaltsverzeichnis has 731D) and Scharfenberg 753A (753D), 18/63 Lindholz 5869A (5869D), 18/70 Binder 6704A (6704C), 18/98 Wilms 9337A (9338B); 18/26 Kurth 2013A and Wiese 2032C agree. One Zwischenfrage in them moves from p. 6702 to 6704, and four change their id.
+- **`sequence` counts after the joining.** It moves in 146 Reden, 105 Beiträge and 6 withheld Reden.
+- The codebook, the data notes and the sources page now say what the joining changes: `speeches.sequence`, the seven pages from DIP, the ids of nested Beiträge, the seven Rede ids under which the XML and CPP-BT hold only the rest. The figures against CPP-BT (81,397 shared Rede ids, 2,362 only in CPP-BT) follow by arithmetic; they were not measured again. The notes count 510 entries of the kinds that type a whole turn (was 514: four are `own_words` now).
+
 ## [0.46.51.0] - 2026-11-24
 
 33 Protokoll XML files of the Bundestag stop in the middle of their sitting. DATA.md now says so, names what is missing and how much, and the plan to mark those sittings incomplete is decided. No stored row, Fakt, page or export moves; export format 25 and schema 15 stay.

@@ -28,7 +28,7 @@ Decided by the owner as N1 B on 2026-11-07. The build's shape was settled in the
 ## What stays the same
 
 - **Ids, text, speaker and kind of every other unit.** Each Rede emits its units and diagnostics into lists of its own, which join the Tagesordnungspunkt only when the Rede finishes. So a withheld Rede leaves nothing behind.
-- **Sequence of every speech and Rede-based Beitrag (D3).** `speeches.sequence` is the Rede's position among the Tagesordnungspunkt's `<rede>` elements after the split. A withheld or procedural Rede leaves a gap. Nested and Zu-Protokoll Beiträge follow and may shift; their ids do not.
+- **Sequence of every speech and Rede-based Beitrag (D3).** `speeches.sequence` is the Rede's position among the Tagesordnungspunkt's `<rede>` elements after the split and the join (ADR 0004, "split Reden"); a joined-away `<rede>` leaves no gap. A withheld or procedural Rede leaves a gap. Nested and Zu-Protokoll Beiträge follow and may shift; their ids do not.
 - **The page range of the Tagesordnungspunkt.** It still spans the withheld Rede, because the page range describes the printed source.
 - `scripts/check_withhold_one.py` withholds one Rede per Tagesordnungspunkt in every held Sitzung and checks all of this (D6).
 

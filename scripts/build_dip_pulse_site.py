@@ -12973,7 +12973,7 @@ def render_sources_page(
           <article class="source-card">
             <span class="eyebrow">Maßgebliches Protokoll</span>
             <h3>Bundestag Plenarprotokoll XML</h3>
-            <p>Tagesordnungspunkte, Redetext, Redner, Seitenangaben und in der Sitzung genannte Drucksachen werden aus dem offiziellen XML-Protokoll gelesen.</p>
+            <p>Tagesordnungspunkte, Redetext, Redner, Seitenangaben und in der Sitzung genannte Drucksachen werden aus dem offiziellen XML-Protokoll gelesen. Bei sieben der 13 Reden der 18. Wahlperiode, die das XML in zwei Teilen druckt, stammt die Seite aus DIP.</p>
             <a href="https://search.dip.bundestag.de/api/v1/plenarprotokoll">DIP Plenarprotokoll API</a>
           </article>
           <article class="source-card">

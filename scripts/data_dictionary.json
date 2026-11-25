@@ -261,7 +261,7 @@
         "page": {
           "meaning": "Gedruckte Protokollseite der Rede/des Beitrags bzw. Belegstelle.",
           "unit": "Gedruckte Protokollseitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder. Eine Zwischenfrage trägt die Seite der Rede, in der sie steht (siehe speeches.page).",
           "license": "dip"
         },
         "char_count": {
@@ -1354,7 +1354,7 @@
           "license": "dip"
         },
         "sequence": {
-          "meaning": "Stelle der Rede unter den <rede>-Elementen des Tagesordnungspunkts (nach der Abtrennung eingebetteter Reden), ab 1. Eine zurückgehaltene oder als Verfahren gewertete Nachbarrede verschiebt sie nicht; deshalb hat die Folge Lücken. Gleicher Zahlenraum wie contributions.sequence redebasierter Beiträge.",
+          "meaning": "Stelle der Rede unter den <rede>-Elementen des Tagesordnungspunkts (nachdem eingebettete Reden abgetrennt und zweigeteilt gedruckte verbunden sind), ab 1. Eine zurückgehaltene oder als Verfahren gewertete Nachbarrede verschiebt sie nicht; deshalb hat die Folge Lücken. Gleicher Zahlenraum wie contributions.sequence redebasierter Beiträge.",
           "unit": "Ordnungszahl als Ganzzahl (Quellposition).",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
@@ -1368,13 +1368,13 @@
         "page": {
           "meaning": "Gedruckte Protokollseite der Rede/des Beitrags bzw. Belegstelle.",
           "unit": "Gedruckte Protokollseitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
+          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben der 13 zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
           "license": "dip"
         },
         "page_quadrant": {
-          "meaning": "Quadrant der gedruckten Seite, sofern im XML angegeben.",
+          "meaning": "Quadrant der gedruckten Seite, sofern die Quelle ihn angibt.",
           "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
-          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
+          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben der 13 zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
           "license": "dip"
         },
         "paragraph_count": {
