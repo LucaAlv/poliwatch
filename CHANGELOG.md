@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.53.0] - 2026-11-25
+
+56 members of the Bundestag had more than one Personenseite: one or two with their Reden, and an empty one with their Wahlperioden from DIP. Each now has one page with everything. On the 806-sitting store the empty pages go from 56 to 0; Reden (61,104), Beiträge (46,499), votes and every Stimme are unchanged, and nothing moves between Fraktionen. Export format 25 and schema 15 as before; a store needs one `--offline --repersist`.
+
+### Fixed
+
+- **An MdB whose name two sources spell differently has one page.** DIP prints a constituency behind some names ("Achim Post (Minden)") that the Plenarprotokoll leaves out, and drops an accent the Protokoll prints ("Anikó"). The comparison of names now ignores both, for 41 of the 56. Two records that differ this way stay apart when both print a constituency and none is shared, or when they have no Wahlperiode in common: Dagmar Schmidt (Meschede), WP 13 to 16, and Dagmar Schmidt (Wetzlar), WP 18 to 21, are two people. Umlauts still tell names apart.
+- **An MdB printed under two Redner-IDs has one page.** The Bundestag gives some members who join during a Wahlperiode a provisional id before their own: 14 MdBs, among them Janosch Dahmen, Clara Bünger and Gisela Manderla (source error E15). A reviewed list names their ids, and Uda Heller, whom DIP lists with three given names. Each record keeps the id its source printed. The evidence for every pair is in `docs/plans/roster-duplicates/pairs.tsv`.
+- **More Reden and Stimmen are on the page of their MdB.** Reden on persons DIP lists as MdB go from 51,830 to 54,211, Beiträge from 31,238 to 33,469 and Stimmen from 420,558 to 441,413. Stimmen of people without a page fall from 8,195 to 4,738, and those people from 81 to 45. The higher figures are the more correct ones, because the Reden and Stimmen were already stored on a second record of the same person.
+- Persons with a record go from 1,984 to 1,877 and Personenseiten from 1,676 to 1,605; no person was split. Every old page address still works: 84 pages became redirects.
+- **`Erste Reden` no longer counts a second debut.** A person with two Redner-IDs was counted twice. Seven weeks move: 2019-W03 1 → 0, 2021-W20 3 → 2, 2021-W23 4 → 1, 2021-W25 2 → 1, 2022-W36 2 → 1, 2023-W13 2 → 1, 2025-W21 58 → 57. The weeks 2021-W23 and 2021-W25 fall below the floor, so 587 Fakten are publishable (was 589), and `laengste-sitzung` now leads 2021-W20 and 2021-W23. 27 further weeks move only in their percentile.
+
+### Changed
+
+- Page headings and the name in the Daten recipes follow DIP's spelling on the joined pages, so "Achim Post" reads "Achim Post (Minden)", and "Aniko Glogowski-Merten", "Zada Salihovic" and "Ana-Maria Trasnea" lose an accent. The five rows each recipe shows are unchanged.
+- `scripts/person_corrections.json` needs a `same_person` array, which lists the reviewed ids of one person with the evidence and the review date.
+- The codebook and the data notes say that a Redner-ID need not be the number of the MdB-Stammdaten: 14 members stand under a provisional one for a time, others under nothing else. The codebook had called the two the same number.
+
 ## [0.46.52.0] - 2026-11-24
 
 A Rede the WP 18 protocols print in two pieces counts once, and 20 more turns that only move a motion zur Geschäftsordnung are no Reden. Reden go from 61,137 to 61,104 (806 sittings); Beiträge stay at 46,499 and withheld Reden at 99, and no vote moves. Speech rule 16, export format 25 as before; a store needs one `--offline --repersist`.
