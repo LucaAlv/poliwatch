@@ -2,13 +2,13 @@
 
 Owner, 2026-11-23: plan it, to be built before the first `--publish`. Cause and numbers: [zu-protokoll-gap.md](zu-protokoll-gap.md), `docs/source-errors.md` E16. Measured on the v0.46.49.0 replay (806 sittings), read-only. Nothing is built.
 
-**Base:** main after v0.46.50.0 (`claude/paragraph-breaks`, merged as #215) with `claude/modest-boyd-90f16f` (this branch: docs, the census script and its test; no parser, store or page code) merged first. v0.46.50.0 edited the parser, `persist_dip_pulse_store.py`, `data_dictionary.json` and TODOS.md and takes export format 25. This build takes the next free numbers (expected: export format 26, store schema 16). Check both against origin/main before shipping.
+**Base:** main at v0.46.53.0 (88d83d3), which holds this plan (#216), the split Reden (#217, speech rule 16) and the roster joins (#218). Export format 25, store schema 15. This build takes the next free numbers (expected: export format 26, store schema 16). Check both against origin/main before shipping.
 
 ## What changes
 
 A sitting whose Protokoll XML is a first edition stays stored with its Reden, TOPs and votes. It is marked, it is not complete for speeches, and what DIP lists for the missing part is stored as a list that counts nowhere.
 
-No stored Rede, Beitrag, vote or vote link changes: 61,137 Reden and 4,164 `zu_protokoll` stay. Fakten change.
+No stored Rede, Beitrag, vote or vote link changes: 61,104 Reden (v0.46.53.0; 61,137 on the replay this plan was measured on) and 4,164 `zu_protokoll` stay. Fakten change.
 
 ## Decisions for the owner
 
@@ -16,7 +16,7 @@ No stored Rede, Beitrag, vote or vote link changes: 61,137 Reden and 4,164 `zu_p
 
 **D2. `laengste-sitzung` gets a Completeness basis of its own, and four end times are corrected. Decided 2026-11-24:** "Yes, times + fixes", to "Judge laengste-sitzung by sitting times, with the four end times corrected from the PDFs?". The metric reads only the start and end times, which a cut file prints. Under the speeches basis the longest days would leave its own comparison: its published Fakten would fall from 92 to 67 over WP 19 to 21, and the remaining ones would compare with shorter weeks. Basis `times`: the XML is parsed and has both times. The owner allowed the 28 PDFs on 2026-11-24 (the check, not the basis). Result ([end-times.tsv](zu-protokoll-gap/end-times.tsv), head time of the XML, which `laengste-sitzung` reads, against the PDF's "(Schluss: …)"): 29 of 33 agree, 20/210 among them (2.19; its closing element says 02:15). Four differ: 19/55 by two minutes (XML 01:30, PDF 1.28), and 20/178 (23:11, 23.12), 21/89 (23:36, 23:37) and 21/96 (00:16, 00:15) by one. Under `times` with the four corrected, 152 Fakten stay published: four values move by one or two minutes (2018-W41 990 to 988, 2024-W26 851 to 852, 2026-W28 876 to 877, 2026-W39 916 to 915), and 2024-W41's percentile is 0.587 instead of 0.603 (0.597 on the store as it is, under the speeches basis). A reviewed list citing the PDFs corrects 19/55, 20/178, 21/89 and 21/96 (step 3b). Sittings that are not cut were not compared with their PDFs; the basis reads the XML's times for them as `laengste-sitzung` does today.
 
-**D3. The PDF pilot comes after the release. Decided 2026-11-23.** Under D1 published Fakten fall from 590 to 506. With D2 they would be 531 if `laengste-sitzung` kept its 114, and WP 21 loses the most. Basis `times` (D2) also frees the weeks that withheld Reden hold back: `laengste-sitzung` goes from 114 published Fakten to 152 (WP 18 22 to 42, WP 19 29 to 46, WP 20 43 to 43, WP 21 20 to 21), so 569 in all. On v0.46.50.0 every total is one lower (2016-W07 lost `laengste-debatte`, WP 18).
+**D3. The PDF pilot comes after the release. Decided 2026-11-23.** Under D1 published Fakten fall from 590 to 506. With D2 they would be 531 if `laengste-sitzung` kept its 114, and WP 21 loses the most. Basis `times` (D2) also frees the weeks that withheld Reden hold back: `laengste-sitzung` goes from 114 published Fakten to 152 (WP 18 22 to 42, WP 19 29 to 46, WP 20 43 to 43, WP 21 20 to 21), so 569 in all. These are totals of the v0.46.49.0 replay. On v0.46.53.0 587 Fakten are published, not 590: 2016-W07 lost `laengste-debatte` (v0.46.50.0, WP 18), 2021-W23 and 2021-W25 `erste-reden` (v0.46.53.0, WP 19). `laengste-sitzung` still has 114 (22, 29, 43, 20). Simulate the totals after the build again on that replay.
 
 | | complete periods now | after | published now | after |
 |---|---|---|---|---|
@@ -52,7 +52,7 @@ Each is one commit with its tests. Tests first where a rule is named.
 
 **0. Read the end times. Done 2026-11-24:** result under D2; the four corrections are step 3b.
 
-**1. Parser** (`scripts/validate_dip_protocol.py`). `first_edition_notice(root, sitting)` gives the announced date, refuses a notice naming another sitting, and gives the last `<rede>` of the Sitzungsverlauf with its place. `protocol_cut(parsed, aktivitaeten)` applies rule 2 and builds the list of DIP entries after the cut: each "Rede" whose place is later, and each "Rede (zu Protokoll gegeben)" not matched to a stored one by name within the sitting. The parser has no DIP person for an XML speaker (and only 11 of 61,137 stored Reden have a record with a `dip_person_id`); matched by surname, the 33 sittings leave 429 and no stored one over. Written to `validation_summary["protocol_cut"]` (null, or date, last Rede, place, list). A `cut_rule_version` in the summary and a cause of its own in `build_dip_pulse_site.stale_causes`, which compares three named versions today and would not notice a fourth, make older cached reports stale, so `--offline --repersist` re-reads all 806.
+**1. Parser** (`scripts/validate_dip_protocol.py`). `first_edition_notice(root, sitting)` gives the announced date, refuses a notice naming another sitting, and gives the last `<rede>` of the Sitzungsverlauf with its place. `protocol_cut(parsed, aktivitaeten)` applies rule 2 and builds the list of DIP entries after the cut: each "Rede" whose place is later, and each "Rede (zu Protokoll gegeben)" not matched to a stored one by name within the sitting. The parser has no DIP person for an XML speaker (and only 11 of 61,104 stored Reden have a record with a `dip_person_id`); matched by surname, the 33 sittings leave 429 and no stored one over. Written to `validation_summary["protocol_cut"]` (null, or date, last Rede, place, list). A `cut_rule_version` in the summary and a cause of its own in `build_dip_pulse_site.stale_causes`, which compares three named versions today and would not notice a fourth, make older cached reports stale, so `--offline --repersist` re-reads all 806.
    - Tests: the notice with soft hyphens and "16.Oktober" (19/55's spelling), a foreign sitting number, 19/107's shape, no Aktivitäten, an Inhaltsverzeichnis without pages, a Fragestunde after the last `<rede>` (18/3's shape, not cut), a Rede starting in the cut's own quadrant.
 
 **2. Store and dictionary** (`persist_dip_pulse_store.py`, `data_dictionary.json`, `stable_ids.py`).
@@ -95,22 +95,22 @@ Each is one commit with its tests. Tests first where a rule is named.
 
 **9. Words.** `CONTEXT.md`: Completeness basis, Sitzung completeness, and a term for the cut protocol (proposed *abgebrochenes Protokoll*). New ADR 0006, because it is hard to reverse and a reader would ask why 20 more weeks of WP 21 count as incomplete. ADR 0005 and 0002 stay. `docs/release-review.md`: a check of new cut sittings. The weekly run will meet them often: 21 of 109 sittings of WP 21.
 
-**10. Replay and compare.** `--offline --repersist` from the cached XML, `compare_store_values.py` against the v0.46.50.0 replay: only the new table, columns, `facts`, and the export version move. Report every Fakt that changes, as a TSV (metric, period, old, new, why). Update `docs/plans/zu-protokoll-gap/` by rerunning the census. Coverage gate on the new store.
+**10. Replay and compare.** `--offline --repersist` from the cached XML, `compare_store_values.py` against a replay of main right before the build (today `.context/roster-after-52`, v0.46.53.0): only the new table, columns, `facts`, and the export version move. Report every Fakt that changes, as a TSV (metric, period, old, new, why). Update `docs/plans/zu-protokoll-gap/` by rerunning the census. Coverage gate on the new store.
 
 ## Acceptance
 
 - 33 sittings marked, the list of E16; 19/107 is not.
-- 1,189 `rede` and 429 `zu_protokoll` rows; 61,137 Reden and 4,164 `zu_protokoll` unchanged.
+- 1,189 `rede` and 429 `zu_protokoll` rows; 61,104 Reden and 4,164 `zu_protokoll` unchanged.
 - 31 weeks and 20 months lose completeness for speeches and no other; none gains it.
-- The four end times are in `sitting_end_corrected`, `xml_header_json` is unchanged, and `laengste-sitzung` has 152 published Fakten (WP 18 42, WP 19 46, WP 20 43, WP 21 21) with 2018-W41 at 988 (was 990), 2024-W26 852 (851), 2026-W28 877 (876), 2026-W39 915 (916) and the percentile of 2024-W41 at 0.587 (0.603 under `times` without the corrections, 0.597 today). No other value moves for the corrections. Simulated 2026-11-24 on the v0.46.49.0 replay.
+- The four end times are in `sitting_end_corrected`, `xml_header_json` is unchanged, and `laengste-sitzung` has 152 published Fakten (WP 18 42, WP 19 46, WP 20 43, WP 21 21) with 2018-W41 at 988 (was 990), 2024-W26 852 (851), 2026-W28 877 (876), 2026-W39 915 (916) and the percentile of 2024-W41 at 0.587 (0.603 under `times` without the corrections, 0.597 today). No other value moves for the corrections. Simulated 2026-11-24 on the v0.46.49.0 replay; on v0.46.53.0 the 114 published Fakten and these five values before the build are the same.
 - The seven people of step 4 have no debut row.
 - A cached report from before the build never reads as complete.
 - Two runs give the same store.
 
 ## Not in this plan
 
-The ten WP 18 texts of E17: a fix of their own, before the first release (owner, 2026-11-24). Not started: it needs `speech_kinds.py`, `validate_dip_protocol.py` and `reviewed_units.*`, which `claude/rede-count-leftovers` is changing. Reading the missing text from the PDFs. Reporting E16: the owner sends it. The 11 votes without a TOP in these sittings.
+The ten WP 18 texts of E17: a fix of their own, before the first release (owner, 2026-11-24). Not started: it needs `speech_kinds.py`, `validate_dip_protocol.py` and `reviewed_units.*`, which #217 changed (merged 2026-11-25). Reading the missing text from the PDFs. Reporting E16: the owner sends it. The 11 votes without a TOP in these sittings.
 
 ## Size
 
-M to L: steps 1 to 6 one session, 7 to 10 another. Two reviews by the checklist, since Fakten move. Files it will share with other open work: `facts.py` and `build_dip_pulse_site.py` (TODOS.md facts items), `persist_dip_pulse_store.py` and `data_dictionary.json` (v0.46.50.0), `docs/data-methods.md`.
+M to L: steps 1 to 6 one session, 7 to 10 another. Two reviews by the checklist, since Fakten move. Files it will share with other open work: `facts.py` and `build_dip_pulse_site.py` (TODOS.md facts items), `persist_dip_pulse_store.py`, `data_dictionary.json`, `docs/data-methods.md`, and the parser and `reviewed_units.*` with the E17 fix.
