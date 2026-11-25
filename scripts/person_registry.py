@@ -13,6 +13,7 @@ from collections.abc import Iterator, Mapping
 from types import MappingProxyType
 import re
 import sqlite3
+import unicodedata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -163,7 +164,7 @@ def _load_corrections(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("version") != 1:
             raise ValueError("expected a version 1 object")
-        for name in ("partitions", "assignments", "merges", "splits", "dip_successors"):
+        for name in ("partitions", "assignments", "merges", "splits", "dip_successors", "same_person"):
             if not isinstance(data.get(name), list):
                 raise ValueError(f"{name} must be an array")
         # Records placed on another person (occurrence assignments, splits) are
@@ -267,12 +268,23 @@ def _load_corrections(path: Path) -> dict[str, Any]:
             for owner, own_id in partition["own_ids"].items():
                 if own_id.startswith("xml:") and own_id[4:] in partitioned_ids and owner != partition["holder"]:
                     raise ValueError(f"own id {own_id} of partition owner {owner!r} is itself partitioned")
+        data["same_person_of"] = MappingProxyType(
+            _validate_same_person(data["same_person"], text, texts, partitioned_ids, data["successor_of"]))
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RegistryError(f"Unreadable person corrections {path}: {exc}") from exc
 
 _SUCCESSOR_FIELDS = {"dip_person_id", "successor", "evidence", "reviewed"}
 _REVIEWED_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _require_review_date(reviewed: str, entry: str) -> None:
+    try:
+        if not _REVIEWED_DATE.fullmatch(reviewed):
+            raise ValueError
+        date.fromisoformat(reviewed)
+    except ValueError:
+        raise ValueError(f"{entry} reviewed must read YYYY-MM-DD") from None
 
 
 def _validate_dip_successors(entries: list[Any], text: Any) -> dict[str, str]:
@@ -288,13 +300,7 @@ def _validate_dip_successors(entries: list[Any], text: Any) -> dict[str, str]:
             if canonical_dip_person_id(value) != value:
                 raise ValueError(f"dip_successors[{index}]: DIP id {value!r} is not in canonical form")
         text(entry["evidence"], f"dip_successors[{index}] evidence")
-        reviewed = text(entry["reviewed"], f"dip_successors[{index}] reviewed")
-        try:
-            if not _REVIEWED_DATE.fullmatch(reviewed):
-                raise ValueError
-            date.fromisoformat(reviewed)
-        except ValueError:
-            raise ValueError(f"dip_successors[{index}] reviewed must read YYYY-MM-DD") from None
+        _require_review_date(text(entry["reviewed"], f"dip_successors[{index}] reviewed"), f"dip_successors[{index}]")
         if old == new:
             raise ValueError(f"dip_successors[{index}]: DIP id {old} cannot succeed itself")
         if old in successor_of:
@@ -304,6 +310,49 @@ def _validate_dip_successors(entries: list[Any], text: Any) -> dict[str, str]:
         if new in successor_of:
             raise ValueError(f"dip_successors: successor {new} of DIP id {old} is itself superseded; name the last record")
     return successor_of
+
+
+_SAME_PERSON_FIELDS = {"ids", "evidence", "reviewed"}
+
+
+def _validate_same_person(entries: list[Any], text: Any, texts: Any, partitioned_ids: set[str],
+                          successor_of: Mapping[str, str]) -> dict[str, str]:
+    """Ids the sources give one person: each id in one entry, at most one DIP id
+    per entry (a second DIP record is a ``dip_successors`` matter), no Redner-ID
+    under partition (its printed names decide) and no superseded DIP id (it reads
+    as its successor's). Returns the map id -> the entry's first id."""
+    first_of: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        where = f"same_person[{index}]"
+        if not isinstance(entry, dict) or set(entry) != _SAME_PERSON_FIELDS:
+            raise ValueError(f"{where} requires exactly {', '.join(sorted(_SAME_PERSON_FIELDS))}")
+        texts(entry["ids"], "same_person ids")
+        if len(entry["ids"]) < 2:
+            raise ValueError(f"{where} names fewer than two ids")
+        text(entry["evidence"], f"{where} evidence")
+        _require_review_date(text(entry["reviewed"], f"{where} reviewed"), where)
+        for own_id in entry["ids"]:
+            if not OWN_ID_RE.fullmatch(own_id):
+                raise ValueError(f"{where} id {own_id!r} must read xml:<Redner-ID> or dip:<DIP id>")
+            kind, _, value = own_id.partition(":")
+            if kind == "xml" and value in partitioned_ids:
+                raise ValueError(f"{where}: Redner-ID {value} is partitioned; its printed names decide who it is")
+            if kind == "dip" and canonical_dip_person_id(value) != value:
+                raise ValueError(f"{where}: {own_id} is not a canonical DIP id")
+            if kind == "dip" and value in successor_of:
+                raise ValueError(f"{where}: DIP id {value} is superseded; name its successor")
+            if own_id in first_of:
+                raise ValueError(f"{own_id} is listed twice in same_person; one entry names a person's ids")
+            first_of[own_id] = entry["ids"][0]
+        if sum(own_id.startswith("dip:") for own_id in entry["ids"]) > 1:
+            raise ValueError(f"{where} names two DIP ids; a re-issued DIP record is a dip_successors entry")
+    return first_of
+
+
+def same_person() -> Mapping[str, str]:
+    """Reviewed ids of one person (scripts/person_corrections.json): id -> the
+    entry's first id. Built once per corrections file."""
+    return corrections()["same_person_of"]
 
 
 def dip_successors() -> Mapping[str, str]:
@@ -780,7 +829,8 @@ def mp_keys(row: dict[str, Any]) -> list[str]:
     person across sources (DIP roster vs. protocol speaker). An abgeordnetenwatch
     id counts only when it was looked up by the Redner-ID (match kind ext_id); one
     found by searching a name is a Namensabgleich and links nothing. A re-issued
-    DIP record's id reads as its successor's (``current_dip_person_id``)."""
+    DIP record's id reads as its successor's (``current_dip_person_id``). An id
+    reviewed as one of a person's several (``same_person``) links to the others."""
     keys: list[str] = []
     if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         keys.append(f"aw:{row['aw_politician_id']}")
@@ -789,6 +839,8 @@ def mp_keys(row: dict[str, Any]) -> list[str]:
         keys.append(f"dip:{dip}:{row['partition']}" if row.get("partition") else f"dip:{dip}")
     for xml_id in sorted(_redner_ids(row)):
         keys.append(f"xml:{xml_id}:{row['partition']}" if row.get("partition") else f"xml:{xml_id}")
+    reviewed = same_person()
+    keys += sorted({reviewed[key] for key in keys if key in reviewed} - set(keys))
     return keys
 
 
@@ -941,11 +993,62 @@ def _normalized_mp_party(party: Any) -> str:
 
 
 
-def name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
-    """Every normalised (name, party) a record is known under, with both parts
-    present: the keys of the buckets it can join."""
+# The Wahlkreiszusatz DIP prints behind a name in its titel ("Achim Post (Minden)")
+# and the Plenarprotokoll keeps out of it: the last bracket of the name, with a name before it.
+_WAHLKREISZUSATZ = re.compile(r"(?<=\S) +\(([^()]+)\)$")
+# The diaeresis is a letter of its own in German (Müller, Muller), not an accent.
+_DIAERESIS = "\u0308"
+
+
+def _bucket_name(name: str) -> str:
+    """A normalised name as its bucket reads it: without the Wahlkreiszusatz and
+    without accents other than the diaeresis, which one source prints and another
+    leaves off ("Anikó", "Aniko"; "Salihović", "Salihovic")."""
+    decomposed = unicodedata.normalize("NFD", _WAHLKREISZUSATZ.sub("", name))
+    return unicodedata.normalize("NFC", "".join(
+        char for char in decomposed if char == _DIAERESIS or not unicodedata.combining(char)))
+
+
+def _printed_name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
+    """Every normalised (name, party) a record is known under, both parts present."""
     keys = {(_normalized_mp_name(name), _normalized_mp_party(party)) for name, party in _name_party_pairs(row)}
     return {key for key in keys if key[0] and key[1]}
+
+
+def name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
+    """The keys of the buckets a record can join: its names as ``_bucket_name``
+    reads them, with their parties. Two records in one bucket may still be printed
+    differently, so a join also asks ``_namesakes``."""
+    return {(_bucket_name(name), party) for name, party in _printed_name_party_keys(row)}
+
+
+def _wahlperioden(rows: list[dict[str, Any]]) -> set[int]:
+    """The Wahlperioden the records are known in: the roster's list, their roll
+    calls, their Reden and Beiträge."""
+    periods: set[int] = set()
+    for row in rows:
+        periods.update(row.get("vote_wahlperioden") or (), row.get("spoken_wahlperioden") or (),
+                       (int(number) for number in re.findall(r"[0-9]+", str(row.get("wahlperiode") or ""))))
+    return periods
+
+
+def _namesakes(left: list[dict[str, Any]], right: list[dict[str, Any]]) -> bool:
+    """Whether two sides share a bucket only because ``_bucket_name`` dropped what
+    tells them apart, and evidence says they are two people: both print a
+    Wahlkreiszusatz and none is shared (Dagmar Schmidt (Meschede), Dagmar Schmidt
+    (Wetzlar)), or their known Wahlperioden have none in common. Names printed
+    alike, or a side without that evidence, are no contradiction."""
+    def printed(rows: list[dict[str, Any]]) -> set[tuple[str, str]]:
+        return set().union(*(_printed_name_party_keys(row) for row in rows))
+
+    ours, theirs = printed(left), printed(right)
+    if ours & theirs:
+        return False
+    marks, others = ({match.group(1) for name, _ in keys if (match := _WAHLKREISZUSATZ.search(name))} for keys in (ours, theirs))
+    if marks and others and not marks & others:
+        return True
+    periods, other_periods = _wahlperioden(left), _wahlperioden(right)
+    return bool(periods and other_periods and not periods & other_periods)
 
 
 def _names(row: dict[str, Any]) -> set[str]:
@@ -1137,8 +1240,9 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
                    for member in rows_of[root])
 
     # Pass 2: Namensabgleich on roster/speaker records pass 1 left. A name+party bucket
-    # merges only when it holds exactly two records, one on each side, and no
-    # Personenkennung of one contradicts one of the other. It is a guess, so
+    # merges only when it holds exactly two records, one on each side, no
+    # Personenkennung of one contradicts one of the other, and names printed
+    # differently are not two namesakes' (``_namesakes``). It is a guess, so
     # any other shape stays split. Buckets are judged on the records passes 1 and 1b left and
     # the unions applied afterwards.
     # A record printed under several names or parties sits in one bucket per
@@ -1164,6 +1268,7 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
             and not _external_ids_conflict(
                 _merge_external_ids(rows_of[speaker[0]]), _merge_external_ids(rows_of[roster[0]])
             )
+            and not _namesakes(rows_of[speaker[0]], rows_of[roster[0]])
         ):
             pending.append((speaker[0], roster[0]))
         elif len(ordered) >= 3:
@@ -1231,7 +1336,7 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         if len(partitions) > 1 or any(
             votes[a] & votes[b] or _external_ids_conflict(ids[a], ids[b])
             for a, b in itertools.combinations(range(len(groups)), 2)
-        ):
+        ) or any(_namesakes(groups[0], voter) for voter in groups[1:]):
             continue
         for voter in voters:
             attach.setdefault(voter, set()).add(anchor)
@@ -1262,6 +1367,7 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str]) -> list[dict[str, An
     it is live: this build touched it (``touched``). A record that is not live is
     stale evidence: it keeps its person but takes part in no match."""
     vote_ids, wahlperioden = _vote_evidence(conn)
+    spoken = _spoken_wahlperioden(conn)
     rows = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
@@ -1269,7 +1375,8 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str]) -> list[dict[str, An
         live = record["id"] in touched
         evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live,
                         vote_ids=vote_ids.get(record["id"], set()),
-                        vote_wahlperioden=wahlperioden.get(record["id"], set()))
+                        vote_wahlperioden=wahlperioden.get(record["id"], set()),
+                        spoken_wahlperioden=spoken.get(record["id"], set()))
         rows.append(evidence)
     return rows
 
@@ -1288,6 +1395,21 @@ def _vote_evidence(conn: sqlite3.Connection) -> tuple[dict[str, set[str]], dict[
         if prefix.isdigit():
             wahlperioden.setdefault(member["mp_id"], set()).add(int(prefix))
     return vote_ids, wahlperioden
+
+
+def _spoken_wahlperioden(conn: sqlite3.Connection) -> dict[str, set[int]]:
+    """Per record, the Wahlperioden it gave a Rede or Beitrag in (from the
+    protocol's Dokumentnummer)."""
+    wahlperioden: dict[str, set[int]] = {}
+    for table in ("speeches", "contributions"):
+        for mp_id, number in conn.execute(
+            f"SELECT DISTINCT u.mp_id, p.document_number FROM {table} u"
+            " JOIN protocols p ON p.id = u.protocol_id WHERE u.mp_id IS NOT NULL"
+        ):
+            prefix = str(number).split("/", 1)[0]
+            if prefix.isdigit():
+                wahlperioden.setdefault(mp_id, set()).add(int(prefix))
+    return wahlperioden
 
 
 def _assign(conn: sqlite3.Connection, record: str, person: str) -> None:
@@ -1339,7 +1461,8 @@ def _stale_roster_partners(
         if any(roster_member(member) and not member.get("xml_redner_id") for member in members):
             continue  # the person was listed again under another roster record
         partitions = {member.get("partition") for member in [*members, row] if member.get("partition")}
-        if len(partitions) > 1 or _external_ids_conflict(_merge_external_ids([row]), _merge_external_ids(members)):
+        if (len(partitions) > 1 or _external_ids_conflict(_merge_external_ids([row]), _merge_external_ids(members))
+                or _namesakes([row], members)):
             continue
         partners.append((row, members))
     return partners

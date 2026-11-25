@@ -400,9 +400,13 @@ def _zusammenfuehrung(store: Store) -> dict[str, int] | None:
         vote_ids, wahlperioden = {}, {}
         if store.has("vote_members", "mp_id", "vote_id"):
             vote_ids, wahlperioden = registry._vote_evidence(conn)
+        spoken = {}
+        if store.has("speeches", "mp_id", "protocol_id") and store.has("contributions", "mp_id", "protocol_id"):
+            spoken = registry._spoken_wahlperioden(conn)
         for row in rows:
             row["vote_ids"] = vote_ids.get(row["id"], set())
             row["vote_wahlperioden"] = wahlperioden.get(row["id"], set())
+            row["spoken_wahlperioden"] = spoken.get(row["id"], set())
         components, totals = registry.match_rows(rows)
         return dict(rows=len(rows), entries=len(components), merges_ext_id=totals["ext_id"],
                     merges_corroborated_name=totals["corroborated_name"], merges_unique_name=totals["unique_name"],

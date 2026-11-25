@@ -254,6 +254,91 @@ class EvidenceDecisionTests(EvidenceHelpers, unittest.TestCase):
         self.assertEqual(len(components), 1)
 
     @staticmethod
+    def _roster_and_speaker(roster_name, speaker_name, *, roster_wp="[19, 20]", spoken=(20,), party="SPD"):
+        def row(rid, name, **kw):
+            return dict(id=rid, display_name=name, party=party, person_id=rid, live=True, **kw)
+        return (row("r", roster_name, dip_person_id="d1", is_mdb=True, wahlperiode=roster_wp),
+                row("s", speaker_name, xml_redner_id="1", spoken_wahlperioden=set(spoken)))
+
+    @staticmethod
+    def _grouped(rows):
+        found = set()
+        for order in itertools.permutations(rows):
+            components, _ = registry.match_rows([dict(row) for row in order])
+            found.add(tuple(sorted(tuple(sorted(r["id"] for r in members)) for members in components.values())))
+        return found
+
+    # Value: protects=a DIP roster record joins the speaker and the roll-call record of the same MdB where only the bracketed Wahlkreis or an accent differs (Achim Post (Minden), Aniko/Anikó Glogowski-Merten), while an umlaut still tells two names apart; fails_when=the name+party bucket keys on the printed spelling, or folds umlauts too; why_new=41 of the 56 empty Personenseiten of 2026-11-23 were this; seam=none
+    def test_a_bracketed_wahlkreis_or_an_accent_does_not_keep_a_roster_record_apart(self):
+        voter = lambda name: dict(id="v", display_name=name, party="SPD", person_id="v", live=True, vote_ids={"x"}, vote_wahlperioden={20})  # noqa: E731
+        for roster, spoken, vote in (
+            ("Achim Post (Minden), MdB, SPD", "Achim Post", "Post, Achim"),
+            ("Dr. Hans-Peter Friedrich (Hof), MdB, CDU/CSU", "Dr. Hans-Peter Friedrich", "Friedrich, Dr. Hans-Peter"),
+            ("Aniko Glogowski-Merten, MdB, FDP", "Anikó Glogowski-Merten", "Glogowski-Merten, Anikó"),
+            ("Zada Salihovic, MdB, DIE LINKE", "Zada Salihović", "Salihovic, Zada"),
+            ("Sevim Dagdelen, MdB, BSW (Gruppe)", "Sevim Dağdelen", "Dagdelen, Sevim"),
+        ):
+            with self.subTest(roster):
+                self.assertEqual(self._grouped([*self._roster_and_speaker(roster, spoken), voter(vote)]), {(("r", "s", "v"),)})
+        for left, right in (("Ada Müller, MdB, SPD", "Ada Muller"), ("Ada Schön (Köln), MdB, SPD", "Ada Schon")):
+            with self.subTest(left):
+                self.assertEqual(self._grouped(self._roster_and_speaker(left, right)), {(("r",), ("s",))})
+
+    # Value: protects=two real people never merge because a bracketed Wahlkreis was dropped: Dagmar Schmidt (Meschede), SPD, WP 13-16, and Dagmar Schmidt (Wetzlar), SPD, WP 18-21, are two people; fails_when=a bracket is folded away without the Wahlperioden, the other bracket or the second roster record blocking the join; why_new=the bracket is what the source prints to tell namesakes apart; seam=none
+    def test_a_namesake_with_another_wahlkreis_never_joins(self):
+        roster, speaker = self._roster_and_speaker("Dagmar Schmidt (Meschede), MdB, SPD", "Dagmar Schmidt", roster_wp="[13, 14, 15, 16]", spoken=(18, 19))
+        wetzlar = dict(roster, id="w", dip_person_id="d2", display_name="Dagmar Schmidt (Wetzlar), MdB, SPD", wahlperiode="[18, 19, 20, 21]")
+        voter = dict(id="v", display_name="Schmidt, Dagmar", party="SPD", person_id="v", live=True, vote_ids={"x"}, vote_wahlperioden={18})
+        # No Wahlperiode in common: the speaker is someone else, and a voter between them is ambiguous.
+        self.assertEqual(self._grouped([roster, speaker]), {(("r",), ("s",))})
+        self.assertEqual(self._grouped([roster, speaker, voter]), {(("r",), ("s",), ("v",))})
+        # Nor does a voter of other Wahlperioden join the roster record alone.
+        self.assertEqual(self._grouped([roster, voter]), {(("r",), ("v",))})
+        # Two roster records under one name: no unique partner, whichever period fits.
+        self.assertEqual(self._grouped([roster, wetzlar, speaker]), {(("r",), ("s",), ("w",))})
+        # Both sides print a Wahlkreis and they differ: the mark itself is the evidence.
+        marked = dict(speaker, display_name="Dagmar Schmidt (Wetzlar)", spoken_wahlperioden={16})
+        self.assertEqual(self._grouped([roster, marked]), {(("r",), ("s",))})
+        # Control: the Wetzlar record and the speaker share Wahlperioden, so they join.
+        self.assertEqual(self._grouped([wetzlar, speaker, voter]), {(("s", "v", "w"),)})
+        # Control: the guard reads names the fold made equal, not names printed alike.
+        plain = self._roster_and_speaker("Ada Example, MdB, SPD", "Ada Example", roster_wp="[13]", spoken=(20,))
+        self.assertEqual(self._grouped(plain), {(("r", "s"),)})
+        # A speaker whose Wahlperioden the store does not know contradicts nothing.
+        self.assertEqual(self._grouped(self._roster_and_speaker("Achim Post (Minden), MdB, SPD", "Achim Post", spoken=())), {(("r", "s"),)})
+
+    # Value: protects=the Wahlperioden the namesake guard compares come from the sittings a record gave a Rede or Beitrag in, as reconcile loads them; fails_when=reconcile hands match_rows no spoken Wahlperioden, so the guard never fires in a build; why_new=the guard tests above pass the set in by hand; seam=none
+    def test_reconcile_reads_the_spoken_wahlperioden_of_a_record(self):
+        def build(roster_wp, table):
+            conn = self.open_store(f"spoken-{roster_wp[0]}-{table}.sqlite")
+            registry.begin_build(conn)
+            self.up(conn, roster_occurrence_id("1"), "dip:1", "Dagmar Schmidt (Meschede), MdB, SPD", dip="1", mdb=True, party="SPD", wahlperiode=roster_wp)
+            speaker = self.up(conn, speech("s"), "xml:1", "Dagmar Schmidt", xml="1", party="SPD")
+            conn.execute("INSERT INTO protocols(id, document_number, created_at, updated_at) VALUES ('p1', '18/3', '', '')")
+            conn.execute("INSERT INTO agenda_items(id, protocol_id, item_index, heading, created_at, updated_at) VALUES ('a1', 'p1', 1, 'x', '', '')")
+            if table == "speeches":
+                conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, created_at, updated_at)"
+                             " VALUES ('s1', 'p1', 'a1', 'r1', 1, ?, '', '')", (speaker,))
+            else:
+                conn.execute("INSERT INTO contributions(id, protocol_id, agenda_item_id, kind, rede_id, sequence, mp_id, created_at, updated_at)"
+                             " VALUES ('c1', 'p1', 'a1', 'zwischenfrage', 'r1', 1, ?, '', '')", (speaker,))
+            registry.reconcile(conn)
+            return len(self.grouping(conn))
+        for table in ("speeches", "contributions"):
+            with self.subTest(table):
+                self.assertEqual((build([13, 14], table), build([18, 19], table)), (2, 1))
+
+    # Value: protects=a former roster record the build no longer lists joins its speaker across a bracketed Wahlkreis, and not a namesake of other Wahlperioden; fails_when=the stale-partner pass compares printed spellings or skips the namesake guard; why_new=_stale_roster_partners is a second entry point of the same name match; seam=none
+    def test_a_stale_roster_record_follows_the_same_name_rule(self):
+        for wp, joined in (("[18, 19]", True), ("[13, 14]", False)):
+            roster, speaker = self._roster_and_speaker("Dagmar Schmidt (Wetzlar), MdB, SPD", "Dagmar Schmidt", roster_wp=wp, spoken=(18,))
+            roster.update(live=False, ever_mdb=True, is_mdb=False)
+            rows = [roster, speaker]
+            components, _ = registry.match_rows([speaker])
+            with self.subTest(wp):
+                self.assertEqual([row["id"] for row, _ in registry._stale_roster_partners(rows, components)], ["r"] if joined else [])
+
+    @staticmethod
     def _pass3_world(voter_id="v", anchor_ids=("a", "b"), voter_pairs=(("Ada Example", "SPD"), ("Ada Example", "CDU/CSU"))):
         def row(rid, pairs, **kw):
             return dict(id=rid, display_name=pairs[0][0], party=pairs[0][1], pairs=[list(p) for p in pairs], person_id=rid, live=True, **kw)

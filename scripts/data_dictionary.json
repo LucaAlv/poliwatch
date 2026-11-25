@@ -708,7 +708,7 @@
       "meaning": "Zugehörigkeit je MdB, Wahlperiode und ununterbrochenem Zeitraum: zu welchem Zusammenschluss (oder fraktionslos) ein Mitglied an diesen Tagen seines Mandats gehörte. Grundlage der Sitzzahlen in party_seats.",
       "columns": {
         "mdb_id": {
-          "meaning": "Personenkennung des Mitglieds in den MdB-Stammdaten (dieselbe Nummer wie die Redner-ID der Protokoll-XML).",
+          "meaning": "Personenkennung des Mitglieds in den MdB-Stammdaten. Das Protokoll-XML führt das Mitglied als Redner-ID unter derselben Nummer, manche Mitglieder aber zeitweise auch oder nur unter einer anderen (siehe `mps.xml_redner_id`).",
           "unit": "Achtstellige Quellkennung als Text.",
           "source": "MdB-Stammdaten des Deutschen Bundestages (bundestag.de/services/opendata, MDB_STAMMDATEN.XML), Element ID.",
           "license": "bundestag-stammdaten"
@@ -796,7 +796,7 @@
           "license": "dip"
         },
         "xml_redner_id": {
-          "meaning": "Redner-ID der sprechenden Person aus dem Plenarprotokoll-XML. Einige IDs vergibt der Bundestag an mehrere Personen. Für die geprüften Fälle hält scripts/person_corrections.json je gedrucktem Namen fest, wer gemeint ist: Dann steht hier die eigene Redner-ID dieser Person, nicht die gedruckte, und die Spalte ist leer, wenn die Person nur eine DIP-ID hat (dann in `dip_person_id`). Wo eine mehrfach vergebene ID stehen bleibt, etwa 11005304, trennt `person_id` die Personen.",
+          "meaning": "Redner-ID der sprechenden Person aus dem Plenarprotokoll-XML. Einige IDs vergibt der Bundestag an mehrere Personen. Für die geprüften Fälle hält scripts/person_corrections.json je gedrucktem Namen fest, wer gemeint ist: Dann steht hier die eigene Redner-ID dieser Person, nicht die gedruckte, und die Spalte ist leer, wenn die Person nur eine DIP-ID hat (dann in `dip_person_id`). Wo eine mehrfach vergebene ID stehen bleibt, etwa 11005304, trennt `person_id` die Personen. Umgekehrt druckt das XML manche Personen unter mehreren IDs: 14 MdB der 19. und 20. Wahlperiode stehen zeitweise unter einer vorläufigen ID, die mit 999 beginnt. Jede Aufzeichnung behält die gedruckte ID; die geprüften Einträge derselben Datei (`same_person`) geben beiden dieselbe `person_id`.",
           "unit": "Protokoll-Rednerkennung als Text.",
           "source": "Rednerkennung aus dem Protokoll-XML; für geprüfte mehrfach vergebene IDs die eigene Redner-ID der Person aus scripts/person_corrections.json.",
           "license": "dip"

@@ -58,6 +58,10 @@ def successor(old, new, *, evidence="One person: the old record's name and party
     return {key: value for key, value in entry.items() if value is not None}
 
 
+def same_person(*ids, **fields):
+    return {"ids": list(ids), "evidence": "One person: the sources print one name and one mandate.", "reviewed": "2026-11-23", **fields}
+
+
 def roster_client(*persons):
     client = mock.Mock()
     client.list_all.return_value = list(persons)
@@ -281,6 +285,31 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                                  [("Ada Current", 2, [21])])
                 self.assertEqual(lookup["dip:7"], adas[0]["id"])
                 self.assertEqual(lookup["dip:9"], adas[0]["id"])
+
+    # Value: protects=an MdB printed under a provisional and a final Redner-ID and listed by DIP
+    #   under a fuller given name is one person with one page holding every Rede and Stimme, online
+    #   and in every replay, and each record keeps the id its source printed; fails_when=a
+    #   same_person id stops being a Personenkennung, the roll-call record stays off the person, or a
+    #   replay regroups; why_new=same_person is new (Dahmen 999990105/11004962, Heller dip 319);
+    #   seam=none; no_claim=which ids are one person (reviewed in person_corrections.json)
+    def test_a_reviewed_same_person_entry_joins_two_redner_ids_and_a_dip_record(self):
+        sitting = report_with_vote(member="Example, Ada", url="https://www.bundestag.de/abgeordnete/biografien/E/example_ada-123")
+        speakers = sitting["agenda_items"][0]["xml_speakers"]
+        speakers[0]["speaker"]["xml_redner_id"] = "99"
+        speakers.append(copy.deepcopy(speakers[0]))
+        speakers[1]["rede_id"], speakers[1]["speaker"]["xml_redner_id"] = "s1-later", "11"
+        roster = self.roster_of(dip_person("5", "Ada Carla Example"))
+        self.rebuild([sitting], preserve_roster=False, roster_ingest=roster)
+        split = [page for page in self.pages()[0] if "Example" in page["name"]]
+        self.assertEqual(sorted((page["speech_count"], len(page["votes"])) for page in split if page["has_page"]), [(0, 0), (1, 0), (1, 0)])
+        with self.correction_file({"same_person": [same_person("xml:11", "xml:99", "dip:5")]}):
+            for _ in range(3):
+                self.rebuild([sitting])
+                pages, lookup = self.pages()
+                adas = [page for page in pages if "Example" in page["name"]]
+                self.assertEqual([(page["speech_count"], len(page["votes"]), page["is_mdb"]) for page in adas], [(2, 1, True)])
+                self.assertEqual({lookup[key] for key in ("xml:11", "xml:99", "dip:5")}, {adas[0]["id"]})
+                self.assertEqual({m["xml_redner_id"] for m in self.rows("mps")} - {None}, {"11", "99"})
 
     # Value: protects=bind, mp_keys and roster_member read the successor map without rebuilding it
     #   on every call (about 524k binds on the reference store), and no caller can change the
@@ -558,6 +587,26 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             ("successor without evidence", {"dip_successors": [successor("7", "9", evidence="")]}, "evidence must be a nonempty string"),
             ("successor review date", {"dip_successors": [successor("7", "9", reviewed="12.11.2026")]}, "reviewed must read YYYY-MM-DD"),
             ("successor review date out of range", {"dip_successors": [successor("7", "9", reviewed="2026-13-40")]}, "reviewed must read YYYY-MM-DD"),
+            # Value: protects=a same_person entry the registry cannot apply as one reviewed
+            #   Personenkennung (one id, a wrong form, an id in two entries, two DIP records, a
+            #   shared or superseded id, no evidence, a bad review date) aborts before any write;
+            #   fails_when=the loader accepts it and mp_keys joins two people or none;
+            #   why_new=same_person is new; seam=none
+            ("same_person not an array", {"same_person": {}}, "same_person must be an array"),
+            ("same_person with an unknown field", {"same_person": [same_person("xml:1", "xml:2", note="x")]}, r"same_person\[0\] requires exactly"),
+            ("same_person ids not an array", {"same_person": [{**same_person(), "ids": "xml:1"}]}, "same_person ids must be a nonempty array"),
+            ("same_person id not a string", {"same_person": [same_person("xml:1", 2)]}, "same_person ids must be a nonempty string"),
+            ("same_person of one id", {"same_person": [same_person("xml:1")]}, r"same_person\[0\] names fewer than two ids"),
+            ("same_person id twice", {"same_person": [same_person("xml:1", "xml:1")]}, "xml:1 is listed twice in same_person"),
+            ("same_person id in two entries", {"same_person": [same_person("xml:1", "xml:2"), same_person("xml:2", "xml:3")]}, "xml:2 is listed twice in same_person"),
+            ("same_person id form", {"same_person": [same_person("xml:1", "aw:2")]}, "must read xml:<Redner-ID> or dip:<DIP id>"),
+            ("same_person id without a kind", {"same_person": [same_person("xml:1", "2")]}, "must read xml:<Redner-ID> or dip:<DIP id>"),
+            ("same_person DIP id not canonical", {"same_person": [same_person("xml:1", "dip:07")]}, "dip:07 is not a canonical DIP id"),
+            ("same_person with two DIP records", {"same_person": [same_person("xml:1", "dip:7", "dip:8")]}, "two DIP ids"),
+            ("same_person with a shared Redner-ID", {"same_person": [same_person("xml:1", "xml:9")], "partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}}]}, "Redner-ID 9 is partitioned"),
+            ("same_person with a superseded DIP id", {"same_person": [same_person("xml:1", "dip:7")], "dip_successors": [successor("7", "9")]}, "DIP id 7 is superseded"),
+            ("same_person without evidence", {"same_person": [same_person("xml:1", "xml:2", evidence="")]}, "evidence must be a nonempty string"),
+            ("same_person review date", {"same_person": [same_person("xml:1", "xml:2", reviewed="23.11.2026")]}, "reviewed must read YYYY-MM-DD"),
         ]
         before = self.db.read_bytes()
         for label, data, diagnostic in cases:

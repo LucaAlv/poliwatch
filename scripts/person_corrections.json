@@ -171,5 +171,127 @@
       "evidence": "Fraktion change of Jan Wenzel Schmidt (WP 20 and 21). DIP 7406 'Jan Wenzel Schmidt, MdB, AfD' (aktualisiert 2025-03-11) is listed only by the /person roster; the cached Plenarprotokolle sample 8220 'Jan Wenzel Schmidt, MdB, fraktionslos' (aktualisiert 2026-04-09), with the same name and Wahlperioden [20, 21]. Redner-ID 11005210 is one speaker.",
       "reviewed": "2026-11-12"
     }
+  ],
+  "same_person": [
+    {
+      "ids": [
+        "xml:11004348",
+        "xml:999980200"
+      ],
+      "evidence": "Gisela Manderla (CDU/CSU, DIP 1515, Wahlperioden [18, 19]). MdB-Stammdaten know one MdB of this name, 11004348, with a mandate from 2018-11-05 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999980200 in 19/74 to 19/84 (2 sittings, from 2019-01-17, inside the mandate), 11004348 in 18/23 to 19/235; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004956",
+        "xml:999990089"
+      ],
+      "evidence": "Sandra Bubendorfer-Licht (FDP, DIP 7140, Wahlperioden [19, 20]). MdB-Stammdaten know one MdB of this name, 11004956, with a mandate from 2019-12-09 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990089 in 19/143 to 19/213 (6 sittings, from 2020-01-30, inside the mandate), 11004956 in 19/228 to 20/210; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004950",
+        "xml:999990085"
+      ],
+      "evidence": "Joe Weingarten (SPD, DIP 7133, Wahlperioden [19, 20]). MdB-Stammdaten know one MdB of this name, 11004950, with a mandate from 2019-11-01 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990085 in 19/149 to 19/223 (8 sittings, from 2020-03-05, inside the mandate), 11004950 in 19/236 to 20/207; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004953",
+        "xml:999990088"
+      ],
+      "evidence": "Sylvia Lehmann (SPD, DIP 7139, Wahlperioden [19, 20]). MdB-Stammdaten know one MdB of this name, 11004953, with a mandate from 2019-12-03 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990088 in 19/150 to 19/223 (7 sittings, from 2020-03-06, inside the mandate), 11004953 in 19/232 to 20/183; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004957",
+        "xml:999990092"
+      ],
+      "evidence": "Bela Bach (SPD, DIP 7147, Wahlperioden [19]). MdB-Stammdaten know one MdB of this name, 11004957, with a mandate from 2020-02-04 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990092 in 19/160 to 19/199 (5 sittings, from 2020-05-14, inside the mandate), 11004957 in 19/230 to 19/234; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004958",
+        "xml:999990096"
+      ],
+      "evidence": "Matthias Nölke (FDP, DIP 7151, Wahlperioden [19]). MdB-Stammdaten know one MdB of this name, 11004958, with a mandate from 2020-04-28 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990096 in 19/163 to 19/225 (5 sittings, from 2020-05-28, inside the mandate), 11004958 in 19/233 to 19/239; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004951",
+        "xml:999990084"
+      ],
+      "evidence": "Charlotte Schneidewind-Hartnagel (BÜNDNIS 90/DIE GRÜNEN, DIP 7132, Wahlperioden [19]). MdB-Stammdaten know one MdB of this name, 11004951, with a mandate from 2019-11-01 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990084 in 19/167 to 19/182 (2 sittings, from 2020-06-19, inside the mandate), 11004951 in 19/228; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004954",
+        "xml:999990087"
+      ],
+      "evidence": "Saskia Ludwig (CDU/CSU, DIP 7138, Wahlperioden [19, 21]). MdB-Stammdaten know one MdB of this name, 11004954, with a mandate from 2019-12-03 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990087 in 19/171 to 19/223 (6 sittings, from 2020-07-03, inside the mandate), 11004954 in 19/232 to 21/102; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004959",
+        "xml:999990097"
+      ],
+      "evidence": "Dorothee Martin (SPD, DIP 7157, Wahlperioden [19, 20]). MdB-Stammdaten know one MdB of this name, 11004959, with a mandate from 2020-05-11 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990097 in 19/172 to 19/224 (6 sittings, from 2020-09-09, inside the mandate), 11004959 in 19/229 to 20/207; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11004962",
+        "xml:999990105"
+      ],
+      "evidence": "Janosch Dahmen (BÜNDNIS 90/DIE GRÜNEN, DIP 7173, Wahlperioden [19, 20, 21]). MdB-Stammdaten know one MdB of this name, 11004962, with a mandate from 2020-11-12 in WP 19. The Plenarprotokoll XML prints this name and no other under both ids: 999990105 in 19/194 to 19/216 (9 sittings, from 2020-11-25, inside the mandate), 11004962 in 19/226 to 21/102; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11005289",
+        "xml:999990123"
+      ],
+      "evidence": "Clara Bünger (DIE LINKE, DIP 7559, Wahlperioden [20, 21]). MdB-Stammdaten know one MdB of this name, 11005289, with a mandate from 2022-01-05 in WP 20. The Plenarprotokoll XML prints this name and no other under both ids: 999990123 in 20/13 to 20/44 (15 sittings, from 2022-01-26, inside the mandate), 11005289 in 20/46 to 21/109; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11005301",
+        "xml:999990130"
+      ],
+      "evidence": "Alexander Bartz (SPD, DIP 7622, Wahlperioden [20]). MdB-Stammdaten know one MdB of this name, 11005301, with a mandate from 2022-11-08 in WP 20. The Plenarprotokoll XML prints this name and no other under both ids: 999990130 in 20/73 (1 sitting, from 2022-12-01, inside the mandate), 11005301 in 20/95 to 20/209; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11005300",
+        "xml:999990129"
+      ],
+      "evidence": "Daniel Rinkert (SPD, DIP 7617, Wahlperioden [20, 21]). MdB-Stammdaten know one MdB of this name, 11005300, with a mandate from 2022-09-30 in WP 20. The Plenarprotokoll XML prints this name and no other under both ids: 999990129 in 20/79 to 20/191 (20 sittings, from 2023-01-19, inside the mandate), 11005300 in 21/7 to 21/103; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11005302",
+        "xml:999990132"
+      ],
+      "evidence": "Emily Vontz (SPD, DIP 7633, Wahlperioden [20]). MdB-Stammdaten know one MdB of this name, 11005302, with a mandate from 2023-01-01 in WP 20. The Plenarprotokoll XML prints this name and no other under both ids: 999990132 in 20/87 (1 sitting, from 2023-03-01, inside the mandate), 11005302 in 20/89 to 20/195; no sitting prints both.",
+      "reviewed": "2026-11-23"
+    },
+    {
+      "ids": [
+        "xml:11003550",
+        "dip:319"
+      ],
+      "evidence": "Uda Heller (CDU/CSU). DIP 319 'Uda Carmen Freia Heller, MdB, CDU/CSU' (Wahlperioden 15, 16 and 18) lists 'Uda Heller', CDU/CSU, WP 15 and 18 among its own person_roles. MdB-Stammdaten 11003550 is Uda Heller (CDU, Wahlperioden 15, 16 and 18), the only MdB with the surname Heller, and the Plenarprotokoll XML prints 11003550 'Uda Heller' (CDU/CSU) in WP 18.",
+      "reviewed": "2026-11-23"
+    }
   ]
 }

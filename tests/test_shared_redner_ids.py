@@ -157,6 +157,18 @@ class SharedRednerIdTests(RegistryFixture, unittest.TestCase):
             self.assertEqual(self.person_of(conn, f"occ-{name}-{index * 2}"), self.person_of(conn, f"occ-{name}-{index * 2 + 1}"))
         self.assertEqual(conn.execute("SELECT COUNT(DISTINCT person_id) FROM person_bindings").fetchone()[0], 3)
 
+    # Value: protects=the shipped same_person entries join an MdB's provisional and own Redner-ID and their roster record into one person, each record keeping its printed id, and refuse the build when the XML gives a listed id to someone else; fails_when=an entry is dropped or names a wrong id, or a reused provisional id files two people as one; why_new=14 MdBs were two persons and an empty roster page (docs/source-errors.md E15); seam=none
+    def test_the_shipped_same_person_entries_join_both_redner_ids_and_the_roster(self):
+        gruene = "BÜNDNIS 90/DIE GRÜNEN"
+        roster = [("7173", f"Dr. Janosch Dahmen, MdB, {gruene}", gruene), ("319", "Uda Carmen Freia Heller, MdB, CDU/CSU", "CDU/CSU")]
+        speakers = [("999990105", "Dr. Janosch Dahmen", gruene, None), ("11004962", "Dr. Janosch Dahmen", gruene, None),
+                    ("11003550", "Uda Heller", "CDU/CSU", None)]
+        conn = self.build(speakers=speakers, roster=roster)
+        self.assertEqual(self.grouping(conn), {frozenset({"xml:999990105", "xml:11004962", "dip:7173"}), frozenset({"xml:11003550", "dip:319"})})
+        self.assertEqual({row[0] for row in conn.execute("SELECT xml_redner_id FROM mps") if row[0]}, {"999990105", "11004962", "11003550"})
+        with self.assertRaisesRegex(registry.RegistryError, "999990105"):
+            self.build(speakers=[*speakers, ("999990105", "Bea Fremd", "SPD", None)], roster=roster)
+
     # Value: protects=people with no Redner-ID of their own land on their DIP person, whose page already exists; fails_when=the dip: form of own_ids binds a separate record, or a replay keeps the occurrence on the old xml record; why_new=Beuth, Gerlach, Bovenschulte, Daimagüler and Friemann-Jennert hold only a DIP id; seam=none
     def test_people_with_only_a_dip_id_land_on_their_dip_person(self):
         conn = self.build(roster=ROSTER)
