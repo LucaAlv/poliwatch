@@ -41,7 +41,7 @@ In addition:
 | Figure | Old | New | Why the new value is more correct |
 |---|---:|---:|---|
 | Empty MdB persons (0 Reden, 0 Beiträge, 0 Stimmen) | 56 | 0 | each has joined its speaker |
-| Persons with at least one record | 1,984 | 1,877 | 107 records of the same people joined |
+| Persons with at least one record | 1,984 | 1,877 | 165 persons became 58, so 107 person ids lost their records |
 | `abgeordnete/` pages | 1,676 | 1,605 | 56 empty pages, 14 pages of provisional ids, Trasnea's second page; 84 old page URLs redirect, 13 pages stand under the older of the joined keys |
 | Reden on MdB persons | 51,830 | 54,211 | the 56 MdBs' own (2,377) and Trăsnea's 4 |
 | Beiträge on MdB persons | 31,238 | 33,469 | the same |
@@ -52,7 +52,7 @@ In addition:
 | `facts`: `erste-reden` | | | see below |
 | `fact_sources` | 3,116 | 3,107 | nine second debuts gone |
 
-Unchanged: 61,104 Reden, 46,499 Beiträge, 502,697 `vote_members`, `votes`, `vote_fractions`, `withheld_units`, `withheld_turns`, Redeanteil, Abweichler, recipe r3 (1,432 rows; the same counts, 74 of them under the roster's spelling of the name). In `mps` only `person_id` changes (125 rows).
+Unchanged: 61,104 Reden, 46,499 Beiträge, 502,697 `vote_members`, `votes`, `vote_fractions`, `withheld_units`, `withheld_turns`, Redeanteil, Abweichler, recipe r3 (1,432 rows; the same counts, 74 of them under the roster's spelling of the name). In `mps` only `person_id` changes (125 rows), the rebuild timestamps aside.
 
 **`erste-reden`.** A person with two Redner-IDs counted a second debut. Values: 2019-W03 1 → 0, 2021-W20 3 → 2, 2021-W23 4 → 1, 2021-W25 2 → 1, 2022-W36 2 → 1, 2023-W13 2 → 1, 2025-W21 58 → 57. Two weeks fall below the floor and are no longer publishable (2021-W23, 2021-W25). In 2021-W20 the fact moves from rank 1 to 2 and `laengste-sitzung` to 1; in 2021-W23 `laengste-sitzung` moves from 2 to 1 and `laengste-debatte` from 3 to 2. 27 further weeks move only in their percentile, because their baseline weeks hold fewer debuts.
 
