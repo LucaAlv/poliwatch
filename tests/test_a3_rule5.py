@@ -117,7 +117,7 @@ class NestedRedeTests(unittest.TestCase):
                 top, contributions = parse(self.body(floor=floor))
                 self.assertEqual([(s['rede_id'], s['speaker']['xml_redner_id'], s['text']) for s in top['speeches']],
                                  [('R', 'A', 'Frau Präsidentin! Rede A.'),
-                                  ('R:2', 'B', 'Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Rede B. Gerne. Ja. Ende.')])
+                                  ('R:2', 'B', 'Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Rede B.\nGerne.\nJa. Ende.')])
                 self.assertEqual([(c['kind'], c['rede_id'], c['parent_rede_id']) for c in top['contributions']],
                                  [(sk.ZWISCHENFRAGE, 'nested:R:2:3', 'R:2')])
 

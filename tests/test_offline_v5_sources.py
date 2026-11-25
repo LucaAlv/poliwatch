@@ -61,7 +61,9 @@ def source_markers(sitting, rede_id):
         raise AssertionError(f"source Rede {rede_id} missing from {sitting}")
     markers = []
     active = None
+    before = None  # the element before this one, page anchors (<a>) aside
     for child in rede:
+        previous, before = before, before if child.tag == "a" else child.tag
         if child.tag == "name":
             active = None  # chair text is not owned by the previous speaker
         elif child.tag == "p" and child.get("klasse") == "redner":
@@ -71,7 +73,11 @@ def source_markers(sitting, rede_id):
         elif child.tag == "p" and active:
             paragraph = dip.clean_text(dip.elem_text(child))
             if paragraph:
-                markers[-1]["paragraphs"].append(paragraph)
+                # A flush <p klasse="O"> after a Zwischenruf goes on in the same paragraph.
+                if child.get("klasse") == "O" and previous == "kommentar" and markers[-1]["paragraphs"]:
+                    markers[-1]["paragraphs"][-1] += " " + paragraph
+                else:
+                    markers[-1]["paragraphs"].append(paragraph)
     return markers
 
 
@@ -85,10 +91,10 @@ def unit_paragraphs(sitting, agenda, source_id, marker):
 
 
 def assert_counts(test, unit):
-    test.assertEqual(unit["text"], " ".join(unit["paragraphs"]))
+    test.assertEqual(unit["text"], "\n".join(unit["paragraphs"]))
     test.assertEqual(unit["paragraph_count"], len(unit["paragraphs"]))
     test.assertEqual(unit["char_count"], len(unit["text"]))
-    test.assertEqual(unit["snippet"], unit["text"][:240])
+    test.assertEqual(unit["snippet"], " ".join(unit["paragraphs"])[:240])
 
 
 class OfflineV5SourceTests(unittest.TestCase):
@@ -116,7 +122,7 @@ class OfflineV5SourceTests(unittest.TestCase):
                     self.assertEqual(len(matches), 1)
                     self.assertEqual(matches[0]["speaker"]["xml_redner_id"], speaker_id)
                     self.assertTrue(matches[0]["paragraphs"])
-                    self.assertEqual(matches[0]["text"], " ".join(matches[0]["paragraphs"]))
+                    self.assertEqual(matches[0]["text"], "\n".join(matches[0]["paragraphs"]))
 
     def test_each_reported_marker_matches_raw_source_paragraphs_and_speaker(self):
         targets = {sitting: list(markers) for sitting, markers in BLOCKERS.items()}

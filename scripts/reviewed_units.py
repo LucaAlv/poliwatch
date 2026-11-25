@@ -38,6 +38,13 @@ entry with a ``kind``:
   ``<id>:<marker>``, or the ``N<ordinal>`` or ``M<ordinal>`` a ``name_rede`` or
   ``loose_rede`` entry makes a Rede of. ``rede`` says that a unit DIP types as
   one of the others is a Rede after all.
+- ``own_words`` (ADR 0004, amendment 2026-11-23 on split Reden): a ``<rede>`` that goes on with
+  the Rede just before it in the same TOP. The XML ended that Rede at a remark of
+  the chair and printed its rest as a ``<rede>`` of its own
+  (``docs/plans/split-reden.md``). It names the second ``<rede>``. The entry adds
+  ``page``, where the Rede begins as DIP prints it (``9337A``), where its first part
+  is one ``split_nested_reden`` made: the Inhaltsverzeichnis then gives only the
+  place of the rest. Elsewhere it is empty, and the first part's own page stands.
 
 ``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
 unit the sitting does not hold, or whose owner differs, stops the run
@@ -98,10 +105,14 @@ NAME_KINDS_WITHOUT_SPEAKER = frozenset({"name_procedural", "name_ansprache", "na
 #: What a whole unit as emitted is (ADR 0002, amendment 2026-11-23); every one
 #: but ``rede`` is a ``speech_kinds.CONTRIBUTION_KINDS`` value.
 UNIT_KINDS = frozenset({"rede", "kurzintervention", "erwiderung", "erklaerung", "zu_protokoll"})
-KINDS = frozenset({WITHHOLD}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
+#: A ``<rede>`` that goes on with the Rede before it in its TOP, which the XML ended
+#: at a remark of the chair (ADR 0004, amendment 2026-11-23 on split Reden): the two are one Rede.
+OWN_WORDS = "own_words"
+KINDS = frozenset({WITHHOLD, OWN_WORDS}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
 ENTRY_KEYS = frozenset({"sitting", "rede_id", "redner_id", "kind", "reason"})
 NAME_ENTRY_KEYS = ENTRY_KEYS | {"name"}
 LOOSE_ENTRY_KEYS = ENTRY_KEYS | {"attach"}
+OWN_WORDS_ENTRY_KEYS = ENTRY_KEYS | {"page"}
 SITTING_RE = re.compile(r"^\d{2}/\d{1,3}$")
 REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+(?::\d+)*$")
 WHOLE_REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
@@ -109,6 +120,7 @@ REDNER_ID_RE = re.compile(r"^\d+$")
 NAME_REDNER_ID_RE = re.compile(r"^(?:\d+|dip:[1-9]\d*)$")
 NAME_REDE_ID_RE = re.compile(r"^(?:[A-Za-z0-9]+|N[1-9]\d*)$")
 LOOSE_REDE_ID_RE = re.compile(r"^M[1-9]\d*$")
+PAGE_RE = re.compile(r"^([1-9]\d{0,5})([A-D])$")
 
 _cache: dict[Path, dict[str, list[dict[str, str]]]] = {}
 #: Entries ``use`` installed in place of the shipped file (tests), or None.
@@ -130,13 +142,15 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         label = f"{where} entry {position}"
         name_kind = isinstance(entry, dict) and entry.get("kind") in NAME_KINDS
         loose_kind = isinstance(entry, dict) and entry.get("kind") in LOOSE_KINDS
-        keys = NAME_ENTRY_KEYS if name_kind else LOOSE_ENTRY_KEYS if loose_kind else ENTRY_KEYS
+        own_words = isinstance(entry, dict) and entry.get("kind") == OWN_WORDS
+        keys = (NAME_ENTRY_KEYS if name_kind else LOOSE_ENTRY_KEYS if loose_kind
+                else OWN_WORDS_ENTRY_KEYS if own_words else ENTRY_KEYS)
         if not isinstance(entry, dict) or set(entry) != keys:
             raise ReviewedUnitsError(f"{label} must have exactly the keys {', '.join(sorted(keys))}")
         for key in keys:
             if not isinstance(entry[key], str):
                 raise ReviewedUnitsError(f"{label}: {key} must be a string")
-            if not entry[key].strip() and not (key == "redner_id" and entry["kind"] in NAME_KINDS_WITHOUT_SPEAKER):
+            if not entry[key].strip() and key != "page" and not (key == "redner_id" and entry["kind"] in NAME_KINDS_WITHOUT_SPEAKER):
                 raise ReviewedUnitsError(f"{label}: {key} must be a nonempty string")
         if not SITTING_RE.fullmatch(entry["sitting"]):
             raise ReviewedUnitsError(f"{label}: sitting {entry['sitting']!r} is not WP/NR, e.g. 18/2")
@@ -156,6 +170,8 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         elif not (NAME_REDNER_ID_RE if name_kind else REDNER_ID_RE).fullmatch(entry["redner_id"]):
             raise ReviewedUnitsError(f"{label}: redner_id {entry['redner_id']!r} is not a Redner-ID, digits only"
                                      + (", or dip:<n>" if name_kind else ""))
+        if own_words and entry["page"] and not PAGE_RE.fullmatch(entry["page"]):
+            raise ReviewedUnitsError(f"{label}: page {entry['page']!r} is not a page and quadrant, e.g. 9337A, nor empty")
         if entry["kind"] in PRESIDIUM_KINDS and not WHOLE_REDE_ID_RE.fullmatch(entry["rede_id"]):
             raise ReviewedUnitsError(f"{label}: a {entry['kind']} entry names a whole source <rede>, not the split part {entry['rede_id']!r}")
         if name_kind and not NAME_REDE_ID_RE.fullmatch(entry["rede_id"]):

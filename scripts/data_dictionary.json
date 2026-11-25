@@ -261,17 +261,17 @@
         "page": {
           "meaning": "Gedruckte Protokollseite der Rede/des Beitrags bzw. Belegstelle.",
           "unit": "Gedruckte Protokollseitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
+          "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder. Eine Zwischenfrage trägt die Seite der Rede, in der sie steht (siehe speeches.page).",
           "license": "dip"
         },
         "char_count": {
-          "meaning": "Zeichenanzahl des normalisierten Wortlauts; keine Zeit- oder Redezeitmessung.",
+          "meaning": "Zeichenanzahl des normalisierten Wortlauts (Länge von text; ein Absatzumbruch zählt als ein Zeichen); keine Zeit- oder Redezeitmessung.",
           "unit": "Anzahl Zeichen als Ganzzahl.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
         },
         "text": {
-          "meaning": "Wortlaut der Rede/des Beitrags; bei Reden Whitespace normalisiert und Absatzumbrüche zu Leerzeichen zusammengeführt. Nur die eigenen Worte des Sprechers: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll als eigenes Element druckt, sind nicht enthalten. Ausnahme: ein „(Beifall …)“, das das Protokoll innerhalb eines Absatzes des Sprechers druckt, bleibt im Text; LICENSE-DATA.md nennt die betroffenen Reden und den einen Beitrag.",
+          "meaning": "Wortlaut des Beitrags, gebildet wie speeches.text: Whitespace normalisiert, ein Zeilenumbruch (\\n) zwischen zwei gedruckten Absätzen. Nur die eigenen Worte des Sprechers: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll als eigenes Element druckt, sind nicht enthalten. Ausnahme: ein „(Beifall …)“, das das Protokoll innerhalb eines Absatzes des Sprechers druckt, bleibt im Text; LICENSE-DATA.md nennt die betroffenen Reden und den einen Beitrag.",
           "unit": "Beitragswortlaut als normalisierter Text; vereinzelt NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
@@ -1354,7 +1354,7 @@
           "license": "dip"
         },
         "sequence": {
-          "meaning": "Stelle der Rede unter den <rede>-Elementen des Tagesordnungspunkts (nach der Abtrennung eingebetteter Reden), ab 1. Eine zurückgehaltene oder als Verfahren gewertete Nachbarrede verschiebt sie nicht; deshalb hat die Folge Lücken. Gleicher Zahlenraum wie contributions.sequence redebasierter Beiträge.",
+          "meaning": "Stelle der Rede unter den <rede>-Elementen des Tagesordnungspunkts (nachdem eingebettete Reden abgetrennt und zweigeteilt gedruckte verbunden sind), ab 1. Eine zurückgehaltene oder als Verfahren gewertete Nachbarrede verschiebt sie nicht; deshalb hat die Folge Lücken. Gleicher Zahlenraum wie contributions.sequence redebasierter Beiträge.",
           "unit": "Ordnungszahl als Ganzzahl (Quellposition).",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
@@ -1368,35 +1368,35 @@
         "page": {
           "meaning": "Gedruckte Protokollseite der Rede/des Beitrags bzw. Belegstelle.",
           "unit": "Gedruckte Protokollseitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
+          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben der 13 zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
           "license": "dip"
         },
         "page_quadrant": {
-          "meaning": "Quadrant der gedruckten Seite, sofern im XML angegeben.",
+          "meaning": "Quadrant der gedruckten Seite, sofern die Quelle ihn angibt.",
           "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
-          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
+          "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen. Bei sieben der 13 zweigeteilt gedruckten Reden der WP 18 DIP (scripts/reviewed_units.json, Art own_words), weil das Inhaltsverzeichnis dort die Stelle der zweiten Hälfte nennt.",
           "license": "dip"
         },
         "paragraph_count": {
-          "meaning": "Zahl der Absatzsegmente des ursprünglichen Redetexts vor dem Zusammenführen der Absätze zu einem normalisierten Fließtext.",
+          "meaning": "Zahl der Absätze in text, wie das Protokoll sie druckt (siehe text), also die Zahl der Zeilenumbrüche plus eins; 0 bei leerem Text.",
           "unit": "Absatzanzahl als Ganzzahl.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
         },
         "char_count": {
-          "meaning": "Zeichenanzahl des normalisierten Wortlauts; keine Zeit- oder Redezeitmessung.",
+          "meaning": "Zeichenanzahl des normalisierten Wortlauts (Länge von text; ein Absatzumbruch zählt als ein Zeichen); keine Zeit- oder Redezeitmessung.",
           "unit": "Anzahl Zeichen als Ganzzahl.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
         },
         "text": {
-          "meaning": "Redewortlaut mit den XML-Absätzen zu einem Fließtext verbunden; Whitespace normalisiert, Wortlaut und Satzzeichen nicht redigiert. Nur die eigenen Worte des Redners: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll innerhalb der Rede als eigenes Element druckt, sind nicht enthalten; Beiträge anderer Redner stehen in contributions. Ausnahme: eine Reaktion wie „(Beifall …)“, ein Zuruf oder ein Zwischenruf, die das Protokoll innerhalb eines Absatzes des Redners druckt, bleibt im Text; LICENSE-DATA.md nennt die betroffenen Reden (18 im Stand vom 2026-11-22).",
+          "meaning": "Redewortlaut; Whitespace innerhalb eines Absatzes normalisiert, Wortlaut und Satzzeichen nicht redigiert. Zwischen zwei Absätzen steht genau ein Zeilenumbruch (\\n), sonst enthält der Text keinen. Absätze sind die gedruckten: Wo das Protokoll einen Absatz für Beifall oder einen Zwischenruf unterbricht und danach ohne Einzug fortsetzt (klasse O im XML), läuft er weiter. Ein vorgelesenes Blockzitat (klasse Z) gehört zum Text und ist ein eigener Absatz. Nur die eigenen Worte des Redners: Beifall, Zwischenrufe und Bemerkungen der Sitzungsleitung, die das Protokoll innerhalb der Rede als eigenes Element druckt, sind nicht enthalten; Beiträge anderer Redner stehen in contributions. Ausnahme: eine Reaktion wie „(Beifall …)“, ein Zuruf oder ein Zwischenruf, die das Protokoll innerhalb eines Absatzes des Redners druckt, bleibt im Text; LICENSE-DATA.md nennt die betroffenen Reden (18 im Stand vom 2026-11-22).",
           "unit": "Normalisierter Redewortlaut als Text oder NULL.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
         },
         "snippet": {
-          "meaning": "Kurzer, aus dem normalisierten Redetext abgeleiteter Anzeigeauszug (Parser: erste 240 Zeichen).",
+          "meaning": "Kurzer, aus dem normalisierten Redetext abgeleiteter Anzeigeauszug (Parser: erste 240 Zeichen, Absatzumbrüche als Leerzeichen).",
           "unit": "Redetext-Auszug als Text oder NULL.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
@@ -1862,7 +1862,7 @@
           "license": "eigene-auswertung-uebernommene-quelldaten"
         },
         "text": {
-          "meaning": "Wortlaut des Beitrags.",
+          "meaning": "Wortlaut des Beitrags, gebildet wie speeches.text.",
           "unit": "Normalisierter Wortlaut als Text oder NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; zurückgehalten nach ADR 0005 (docs/adr/0005-withhold-refused-reden.md).",
           "license": "dip"

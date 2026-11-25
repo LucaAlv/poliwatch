@@ -22,7 +22,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 13
+VERSION = 16
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -225,6 +225,50 @@ FRAGESTUNDE = "fragestunde"
 
 def _clean(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").replace("\xa0", " ")).strip()
+
+
+#: Between two paragraphs of a stored wording. One character, as the space it
+#: replaces, so no character count depends on how often the print breaks; inside a
+#: paragraph whitespace is collapsed, so a line feed is always a paragraph break.
+PARAGRAPH_BREAK = "\n"
+
+
+def join_paragraphs(paragraphs: list[str]) -> str:
+    """A unit's wording as stored: its paragraphs, whitespace collapsed inside each
+    and one ``PARAGRAPH_BREAK`` between them."""
+    return PARAGRAPH_BREAK.join(text for text in (" ".join(p.replace("\xa0", " ").split()) for p in paragraphs) if text)
+
+
+class ParagraphFlow:
+    """Collects one walk's ``<p>`` texts into the printed paragraphs.
+
+    Where a Zwischenruf or Beifall stands inside a paragraph, the XML ends the
+    ``<p>``, prints the ``<kommentar>`` and goes on in a ``<p klasse="O">`` ("ohne
+    Einzug": set flush in the print, where a new paragraph, klasse ``J``, is
+    indented). That ``<p>`` continues the paragraph before it. Every other ``<p>``
+    opens one, as does an ``O`` after anything but a ``<kommentar>``, and an ``O``
+    after a block quote (klasse ``Z``), whose own words it does not continue.
+    Call ``see`` for each element of the walk and ``add`` for each text kept.
+    """
+
+    def __init__(self) -> None:
+        self._open: tuple[list[str], ...] = ()
+        self._interrupted = False
+
+    def see(self, element: ET.Element) -> None:
+        if element.tag == "kommentar":
+            self._interrupted = True
+        elif (element.tag != "p" and element.tag != "a") or element.get("klasse") == "redner":
+            self._open, self._interrupted = (), False
+
+    def add(self, element: ET.Element, text: str, *targets: list[str]) -> None:
+        continues = self._interrupted and element.get("klasse") == "O"
+        for target in targets:
+            if continues and any(target is paragraphs for paragraphs in self._open):
+                target[-1] = f"{target[-1]} {text}"
+            else:
+                target.append(text)
+        self._open, self._interrupted = () if element.get("klasse") == "Z" else targets, False
 
 
 def _text(elem: ET.Element | None) -> str:
@@ -763,7 +807,9 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
     unplaced = 0
     chair_markers = 0  # markers the caller marked as Sitzungsleitung: no turn
     unplaced_open = False  # the last unplaced marker has not yet lost a paragraph
+    flow = ParagraphFlow()
     for child in top:
+        flow.see(child)
         if child.tag == "name":
             speaker, turn, question = "leadership", None, None
             announcement = ""
@@ -791,7 +837,7 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
             if not text:
                 continue
             if speaker == "turn" and turn is not None:
-                turn["paragraphs"].append(text)
+                flow.add(child, text, turn["paragraphs"])
             elif speaker == "unplaced" and unplaced_open:
                 unplaced, unplaced_open = unplaced + 1, False
             elif speaker == "leadership":
@@ -805,7 +851,7 @@ def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[st
                             "paragraphs": [],
                         }
                         items.append(question)
-                    question["paragraphs"].append(text)
+                    flow.add(child, text, question["paragraphs"])
                 else:
                     announcement, question = text, None
 

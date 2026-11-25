@@ -103,7 +103,8 @@
     "tests/code_rules_baseline.json": ["tests/test_code_rules.py"],
     "docs/plans/name-tag-speakers/make_entries.py": ["tests/test_name_speakers.py"],
     "docs/plans/loose-speaker-markers/make_entries.py": ["tests/test_loose_markers.py"],
-    "docs/plans/beitraege-as-reden/census.py": ["tests/test_listed_units.py"]
+    "docs/plans/beitraege-as-reden/census.py": ["tests/test_listed_units.py"],
+    "docs/plans/zu-protokoll-gap/census.py": ["tests/test_protokoll_gap_census.py"]
   },
   "empty_lanes": ["docs/plans/**/*.json", "docs/plans/**/*.txt", "docs/plans/**/*.tsv", "docs/plans/**/*.patch"]
 }

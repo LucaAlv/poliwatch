@@ -305,7 +305,7 @@ class ZwischenfragePerExchangeTests(unittest.TestCase):
                             '<name>Vizepräsidentin Petra Pau:</name><p>Frau Gast hat das Wort.</p>']:
                 with self.subTest(wp=wp, between=between):
                     top, contributions = parse(self.body(between), wp=wp)
-                    self.assertEqual(contributions, [('zwischenfrage', 'Vielen Dank, Frau Präsidentin. Meine Frage ist: Warum?')])
+                    self.assertEqual(contributions, [('zwischenfrage', 'Vielen Dank, Frau Präsidentin.\nMeine Frage ist: Warum?')])
                     self.assertEqual([c['rede_id'] for c in top['contributions']], ['nested:R:3'])
                     merged = [(d['marker_ordinal'], d['treatment'], d.get('target_rede_id')) for d in top['xml_turn_diagnostics']]
                     self.assertEqual(merged, [(merged[0][0], 'merged_zwischenfrage', 'nested:R:3')])

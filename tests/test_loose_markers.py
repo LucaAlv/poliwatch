@@ -71,7 +71,7 @@ class WrapTests(unittest.TestCase):
         self.assertEqual([(rid, speaker) for rid, speaker, _ in speeches(parsed)],
                          [('M1', '11000001'), ('M5', '11000003'), ('ID1', '11000004')])
         self.assertEqual(speeches(parsed)[0][2], 'Frau Präsidentin! Liebe Kolleginnen und Kollegen! Eine Rede zur Sache mit '
-                         'Inhalt. Das tue ich gerne. Weil die Bundesregierung das im Ausschuss erklärt hat.')
+                         'Inhalt.\nDas tue ich gerne.\nWeil die Bundesregierung das im Ausschuss erklärt hat.')
         [question] = top(parsed)['contributions']
         self.assertEqual((question['kind'], question['parent_rede_id'], question['speaker']['xml_redner_id']),
                          ('zwischenfrage', 'M1', '11000002'))
@@ -98,7 +98,7 @@ class MoveTests(unittest.TestCase):
         body = (CHAIR + '<p>Nächster Redner ist der Kollege Lindner.</p>' + LINDNER + '<p>Genau.</p>'
                 + CHAIR + '<p>Bitte schön, Sie haben das Wort.</p>' + rede('ID1', LINDNER, SPEECH))
         parsed = parse(body, [loose('M1', '11000004', 'loose_own_words', 'next')])
-        self.assertEqual(speeches(parsed), [('ID1', '11000004', 'Genau. ' + SPEECH[3:-4])])
+        self.assertEqual(speeches(parsed), [('ID1', '11000004', 'Genau.\n' + SPEECH[3:-4])])
 
     # Value: protects=own words after the speaker's <rede> close it; fails_when=Kühne's last 407 words (19/62) stay
     #   unread; why_new=new rule; seam=reviewed
@@ -106,7 +106,7 @@ class MoveTests(unittest.TestCase):
         body = (rede('ID1', LINDNER, SPEECH) + CHAIR + '<p>Da haben Sie was ausgelöst.</p>'
                 + LINDNER + '<p>Ja, genau. Und weiter in der Sache.</p>')
         parsed = parse(body, [loose('M1', '11000004', 'loose_own_words', 'prev')])
-        self.assertEqual(speeches(parsed), [('ID1', '11000004', SPEECH[3:-4] + ' Ja, genau. Und weiter in der Sache.')])
+        self.assertEqual(speeches(parsed), [('ID1', '11000004', SPEECH[3:-4] + '\nJa, genau. Und weiter in der Sache.')])
 
     # Value: protects=a procedural turn becomes a diagnostic, a remark and Sitzungsleitung are stored nowhere, and none
     #   of them moves with a run; fails_when=an acceptance of an election is counted, or refuses the sitting; why_new=new rule; seam=reviewed
@@ -242,7 +242,7 @@ class PlacementEdgeTests(unittest.TestCase):
         body = (CHAIR + '<p>Bitte.</p>' + LINDNER + '<p>Genau.</p>' + BEYER + '<p>Zuruf ohne Wert.</p>'
                 + rede('ID1', LINDNER, SPEECH))
         parsed = parse(body, [loose('M1', '11000004', 'loose_own_words', 'next'), loose('M2', '11000003', 'loose_remark', 'none')])
-        self.assertEqual(speeches(parsed), [('ID1', '11000004', 'Genau. ' + SPEECH[3:-4])])
+        self.assertEqual(speeches(parsed), [('ID1', '11000004', 'Genau.\n' + SPEECH[3:-4])])
         self.assertNotIn('Zuruf', speeches(parsed)[0][2])
 
 
@@ -266,7 +266,7 @@ class NameSpeakerRunTests(unittest.TestCase):
         name_entry = {**entry('N2', '999990002', 'name_rede', '18/10'), 'name': tag}
         parsed = parse(body, [name_entry, loose('M1', '999990002', 'loose_own_words', 'prev')])
         self.assertEqual(speeches(parsed), [
-            ('N2', '999990002', 'Frau Präsidentin! Meine Damen und Herren! Die Rede der Ministerin. Ein letzter Satz zur Sache.'),
+            ('N2', '999990002', 'Frau Präsidentin! Meine Damen und Herren! Die Rede der Ministerin.\nEin letzter Satz zur Sache.'),
             ('ID2', '11000004', SPEECH[3:-4])])
         with self.assertRaises(dip.UnlistedLooseMarkerError):
             parse(body, [name_entry])

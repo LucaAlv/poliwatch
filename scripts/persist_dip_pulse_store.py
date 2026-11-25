@@ -154,6 +154,13 @@ def clean(value: Any) -> str | None:
     return text or None
 
 
+def clean_wording(value: Any) -> str | None:
+    """A stored wording: ``clean`` inside each paragraph, the paragraph breaks kept."""
+    if value is None:
+        return None
+    return speech_kinds.join_paragraphs(str(value).split(speech_kinds.PARAGRAPH_BREAK)) or None
+
+
 def page_number(page: dict[str, Any] | None) -> int | None:
     if not page or page.get("page") is None:
         return None
@@ -1462,7 +1469,7 @@ def persist_speeches(
                 quadrant,
                 int(speech["paragraph_count"]),
                 int(speech["char_count"]),
-                clean(speech.get("text")),
+                clean_wording(speech.get("text")),
                 clean(speech.get("snippet")),
                 speech_fraktion,
                 # NULL for a report cached before the parser measured it:
@@ -1525,7 +1532,7 @@ def persist_contributions(
                 sprechrolle,
                 page,
                 int(contribution["char_count"]),
-                clean(contribution.get("text")),
+                clean_wording(contribution.get("text")),
                 now,
                 now,
             ),
@@ -1558,7 +1565,7 @@ def persist_withheld(
                 derive.first_redner_id(speaker.get("xml_redner_id")),
                 clean(derive.undouble(speaker.get("display_name"))), clean(speaker.get("fraktion")),
                 page, quadrant, int(unit["char_count"]), int(unit["word_count"]),
-                int(unit["nested_word_count"]), clean(unit.get("text")), now, now,
+                int(unit["nested_word_count"]), clean_wording(unit.get("text")), now, now,
             ),
         )
         for turn in unit.get("nested_turns") or []:
@@ -1575,7 +1582,7 @@ def persist_withheld(
                     withheld_turn_id(protocol_id, rede_id, turn["marker"]), unit_id, protocol_id, int(turn["marker"]),
                     derive.first_redner_id(turn_speaker.get("xml_redner_id")),
                     clean(derive.undouble(turn_speaker.get("display_name"))), clean(turn_speaker.get("fraktion")),
-                    int(turn["char_count"]), int(turn["word_count"]), clean(turn.get("text")), now, now,
+                    int(turn["char_count"]), int(turn["word_count"]), clean_wording(turn.get("text")), now, now,
                 ),
             )
 

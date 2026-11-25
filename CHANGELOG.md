@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.52.0] - 2026-11-24
+
+A Rede the WP 18 protocols print in two pieces counts once, and 20 more turns that only move a motion zur Geschäftsordnung are no Reden. Reden go from 61,137 to 61,104 (806 sittings); Beiträge stay at 46,499 and withheld Reden at 99, and no vote moves. Speech rule 16, export format 25 as before; a store needs one `--offline --repersist`.
+
+### Changed
+
+- **Longer motions zur Geschäftsordnung are no Reden.** The 32 turns of 400 to 799 characters that DIP lists as „Zur Geschäftsordnung BT“ were read by two readers without each other's verdict. The 20 both call a motion with no more than its reason, with high confidence, are kept as procedural steps and stored as neither Rede nor Beitrag, like the 24 shorter ones of 0.46.49.0 (Reden 61,124 to 61,104, 11,222 characters less; AfD −12, CDU/CSU −5, Bündnis 90/Die Grünen −2, FDP −1). The five both call a motion but at least one is unsure of stay Reden, and so do the two on which they differ.
+- **Two Fakt values move.** The most debated Vorgang of February 2021 goes from 15 to 14, and that of May 2025 moves in its percentile. 589 Fakten stay publishable and no winner changes.
+
+### Fixed
+
+- **13 Reden of WP 18 are whole.** Where the chair interrupts, the XML sometimes ends the Rede and prints the rest as a new one of the same speaker (18/88 `ID1808801400` Lange, 18/98 `ID1809801100` Wilms). Each piece counted as a Rede. A census of all 806 sittings found 13; the reviewed list names them (kind `own_words`) and the parser joins the two pieces (Reden 61,137 to 61,124, 13 characters more, one line feed each). The Rede keeps the id of its first piece, or that of the second where the first stands inside another speaker's `<rede>` (seven). A repeated Redebeitrag the chair announces as one (19/224) stays two.
+- **Those seven Reden begin where they begin.** The Inhaltsverzeichnis gives the place of the rest, so they carry the page DIP gives: 18/11 Schiewerling 731A (the Inhaltsverzeichnis has 731D) and Scharfenberg 753A (753D), 18/63 Lindholz 5869A (5869D), 18/70 Binder 6704A (6704C), 18/98 Wilms 9337A (9338B); 18/26 Kurth 2013A and Wiese 2032C agree. One Zwischenfrage in them moves from p. 6702 to 6704, and four change their id.
+- **`sequence` counts after the joining.** It moves in 146 Reden, 105 Beiträge and 6 withheld Reden.
+- The codebook, the data notes and the sources page now say what the joining changes: `speeches.sequence`, the seven pages from DIP, the ids of nested Beiträge, the seven Rede ids under which the XML and CPP-BT hold only the rest. The figures against CPP-BT (81,397 shared Rede ids, 2,362 only in CPP-BT) follow by arithmetic; they were not measured again. The notes count 510 entries of the kinds that type a whole turn (was 514: four are `own_words` now).
+
+## [0.46.51.0] - 2026-11-24
+
+33 Protokoll XML files of the Bundestag stop in the middle of their sitting. DATA.md now says so, names what is missing and how much, and the plan to mark those sittings incomplete is decided. No stored row, Fakt, page or export moves; export format 25 and schema 15 stay.
+
+### Added
+
+- **DATA.md names the cut protocols.** For 33 of the 806 sittings (19/55, 11 of WP 20, 21 of WP 21) the XML is a first edition that was never replaced; the PDF is complete. After the last printed Rede DIP lists 1,189 Reden (WP 19 41, WP 20 389, WP 21 759) and 429 Reden zu Protokoll (WP 20 148, WP 21 281). That is 1.9% of the stored and missing Reden together, and 7.5% in WP 21. A first count of 1,212 (WP 20 412) included 23 farewells and greetings by the chair, which DIP types as Rede and the store never holds as one.
+- **The 435 missing Reden zu Protokoll are explained.** DIP lists 4,599 and the store holds 4,164: 429 are in the cut files, ten in WP 18 are printed without a `<rede>` of their own, and the store holds four that DIP does not list as such. Two of the ten are stored as the previous speaker's words: Ralph Lenkert's under Michael Thews (18/23 `ID1802308800`) and Michaela Engelmeier's under Johannes Steiniger (18/63 `ID1806311300`). The ten are to be fixed before the first release.
+- **End times.** In four of the 33 sittings the PDF prints another end than the XML, which the length of a sitting is computed from: 19/55 1.28 (XML 01:30), 20/178 23.12 (23:11), 21/89 23:37 (23:36), 21/96 00:15 (00:16). The other 29 agree.
+- **Source errors E16 and E17**, with what was checked, and the contact the Bundestag publishes for DIP. Nothing was sent.
+- **The plan `docs/plans/cut-protocols.md`**, with the owner's decisions: mark and keep the 33 sittings, judge the longest sitting by its sitting times with the four end times corrected, read the missing text from the PDFs after the first release. Nothing is built.
+- A census script reproduces the counts per sitting (`docs/plans/zu-protokoll-gap/census.py`); a test checks it, and DATA.md's table against it.
+
+## [0.46.50.0] - 2026-11-23
+
+The text of a Rede now has the paragraphs the Bundestag prints, and the quotes speakers read out in WP 18 are part of it. Figures below come from a replay of the store (806 sittings); no Rede, Beitrag, Kind, speaker or vote moves. Export format 25, speech rule 15; a store needs one `--offline --repersist`.
+
+### Added
+
+- **Paragraphs in the text.** `speeches.text`, `contributions.text` and the wording of withheld Reden and turns separate two printed paragraphs with one line feed and hold no other; before, all paragraphs were joined with spaces. 61,137 Reden hold 596,844 of them and 46,499 Beiträge 72,232. Where the protocol interrupts a paragraph for applause or a Zwischenruf and goes on without an indent, it stays one paragraph. A break at every element of the XML would have made 862,202, about 48,000 of them before a lower-case letter. 864 paragraphs of Reden still open with a lower-case letter and are unread. `char_count` is the length of the text as before, and the paragraph breaks alone move none.
+
+### Changed
+
+- **`paragraph_count` counts printed paragraphs.** It is the number of line feeds in the text plus one (0 for an empty text); the sum over all Reden falls from 923,339 to 657,980.
+- **`snippet` stays one line.** Its length is unchanged; 110 snippets move because a quote stands in their first 240 characters.
+
+### Fixed
+
+- **Block quotes of WP 18 are in the text.** The WP 18 protocols wrap 1,939 of their 3,893 block-quote paragraphs in an element the parser skipped, so a Rede could say „ich zitiere“ and go on after the quote (18/91 `ID1809102400`). The rest, and all quotes of WP 19 to 21, were read. 1,028 Reden of WP 18 gain 302,012 characters (78,486,429 to 78,788,441, 0.4%) and 41,335 words, 110 Beiträge gain 39,630 characters, six withheld Reden gain 1,005 and one turn in a withheld Rede 819. Of the characters of WP 18 Reden, by the Fraktion the protocol names, CDU/CSU has 38.700% (was 38.721), SPD 26.038% (26.048), the Grünen 14.755% (14.759) and Die Linke 14.029% (13.973). 53 quote paragraphs stay outside the stored texts, as the chair's words, written annexes and openings do.
+- **Fakten of WP 18 follow.** 31 of 1,944 rows move, and 590 become 589 publishable: week 7 of 2016 loses its longest debate, whose value stays and whose percentile falls from 0.531 to 0.469.
+- The licence note on the site no longer says the paragraphs of a Rede are joined.
+
 ## [0.46.49.0] - 2026-11-23
 
 Turns the protocol prints like a Rede but that are something else no longer count as Reden. The stored Reden were compared with the type DIP gives the same person at the same place (1,055 of 61,660 could not be matched), each difference was read, and 514 turns are now listed by name with what they are. Reden go from 61,660 to 61,137 (806 sittings), Beiträge from 45,999 to 46,499, withheld Reden from 100 to 99. No text changes, and no Fraktion's share of all Reden moves by more than 0.1 points; 351 persons' Reden move, at most by 8. 38 of the 1,944 stored Fakt values move, and publishable weeks go from 213 to 212, months from 63 to 62. Stores need one `--offline --repersist` (speech rule 13); the export format goes from 23 to 24.

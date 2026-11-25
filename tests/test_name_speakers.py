@@ -132,14 +132,14 @@ class NotStoredTests(unittest.TestCase):
                          [('procedural', 'Herr Präsident, ich schwöre es, so wahr mir Gott helfe.')])
 
     def test_a_guests_address_in_the_opening_is_one_ansprache_without_a_redner_id(self):
-        beginn = ('<name>Präsident Dr. Norbert Lammert:</name><p>Eröffnung.</p><name>Wolf Biermann:</name><p>Erster Teil.</p>'
+        beginn = ('<name>Präsident Dr. Norbert Lammert:</name><p>Eröffnung.</p><name>Wolf Biermann:</name><p>Erster</p><kommentar>(Beifall)</kommentar><p klasse="O">Teil.</p>'
                   '<name>Präsident Dr. Norbert Lammert:</name><p>Zwischenruf des Präsidenten.</p><name>Wolf Biermann:</name><p>Zweiter Teil.</p>'
                   '<name>Präsident Dr. Norbert Lammert:</name><p>Danke.</p>')
         parsed = parse(rede('ID1', HOST, SPEECH),
                        [listed('N2', 'Wolf Biermann', 'name_ansprache', ''), listed('N4', 'Wolf Biermann', 'name_ansprache', '')],
                        beginn=beginn)
         self.assertEqual([(c['kind'], c['rede_id'], c['speaker'], c['text']) for c in parsed['sitting_contributions']],
-                         [(sk.ANSPRACHE, 'N2', {'xml_redner_id': None, 'display_name': 'Wolf Biermann'}, 'Erster Teil. Zweiter Teil.')])
+                         [(sk.ANSPRACHE, 'N2', {'xml_redner_id': None, 'display_name': 'Wolf Biermann'}, 'Erster Teil.\nZweiter Teil.')])
 
     def test_a_remark_is_stored_nowhere(self):
         body = CHAIR + '<p>Das Wort hat Bartsch.</p>' + name('Dr. Dietmar Bartsch (DIE LINKE)') + '<p>Ein Zuruf.</p>' + rede('ID1', HOST, SPEECH)

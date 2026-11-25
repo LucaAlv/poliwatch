@@ -399,6 +399,22 @@
       "reason": "DIP lists Erwiderung (p. 677A); read 2026-11-23 (Answers a minister's remark about his own record; prior speaker's remark not visible)"
     },
     {
+      "sitting": "18/11",
+      "rede_id": "ID1801103400",
+      "redner_id": "11003839",
+      "kind": "own_words",
+      "reason": "the rest of Schiewerling's running Rede, printed as a <rede> of its own after the chair asks whether he takes a Zwischenfrage (\"Nein. – Um dieses System zu sichern\"); DIP lists one Rede (p. 731A); read 2026-11-23",
+      "page": "731A"
+    },
+    {
+      "sitting": "18/11",
+      "rede_id": "ID1801105400",
+      "redner_id": "11003835",
+      "kind": "own_words",
+      "reason": "the rest of Scharfenberg's running Rede, printed as a <rede> of its own after the chair reminds her of the Redezeit (\"Ich komme gleich zum Ende.\"); DIP lists one Rede (p. 753A); read 2026-11-23",
+      "page": "753A"
+    },
+    {
       "sitting": "18/12",
       "rede_id": "ID1801202600",
       "redner_id": "999990003",
@@ -500,6 +516,14 @@
       "kind": "name_zwischenfrage",
       "reason": "a Zwischenfrage printed under <name> (name-tag-speakers.tsv entry 21)",
       "name": "Dr. Alexander S. Neu (DIE LINKE)"
+    },
+    {
+      "sitting": "18/21",
+      "rede_id": "ID1802103000",
+      "redner_id": "11004401",
+      "kind": "own_words",
+      "reason": "the rest of Schmidt's running Rede, printed as a <rede> of its own after the chair starts to ask about a Zwischenfrage (\"Nein. Ab dem 1. Januar 2015\"); DIP lists one Rede (p. 1665D); read 2026-11-23",
+      "page": ""
     },
     {
       "sitting": "18/22",
@@ -790,6 +814,22 @@
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede>: continues after a chair remark (loose-speaker-markers.tsv)",
       "attach": "wrap"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "ID1802600800",
+      "redner_id": "11003578",
+      "kind": "own_words",
+      "reason": "the rest of Kurth's running Rede, printed as a <rede> of its own after the chair asks whether he takes a Zwischenfrage (\"Ja, gerne. Bitte schön.\"); DIP lists one Rede (p. 2013A); read 2026-11-23",
+      "page": "2013A"
+    },
+    {
+      "sitting": "18/26",
+      "rede_id": "ID1802602300",
+      "redner_id": "11004444",
+      "kind": "own_words",
+      "reason": "the rest of Wiese's running Rede, printed as a <rede> of its own after a remark of the chair (\"Fast so schön.\"); DIP lists one Rede (p. 2032C); read 2026-11-23",
+      "page": "2032C"
     },
     {
       "sitting": "18/28",
@@ -1502,24 +1542,26 @@
     },
     {
       "sitting": "18/42",
+      "rede_id": "ID1804205700",
+      "redner_id": "11003547",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Kurzintervention (p. 3782D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/42",
       "rede_id": "ID1804202100",
       "redner_id": "11004022",
-      "kind": "rede",
-      "reason": "DIP lists Erwiderung (p. 3727D); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: Finishes her running Rede after Zwischenfrage request; Otte's Kurzintervention comes after"
+      "kind": "own_words",
+      "reason": "the rest of Buchholz's running Rede, printed as a <rede> of its own after the chair asks about a Zwischenfrage; DIP lists Erwiderung for this part (p. 3727D), but Otte's Kurzintervention comes after it; DIP lists one Rede (p. 3726D); read 2026-11-23",
+      "page": ""
     },
     {
       "sitting": "18/42",
       "rede_id": "ID1804205400",
       "redner_id": "11004066",
-      "kind": "rede",
-      "reason": "DIP lists Erwiderung (p. 3778D); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: Closing sentences after overtime warning 'Ich bin gleich fertig'; Pfeiffer's Kurzintervention follows"
-    },
-    {
-      "sitting": "18/42",
-      "rede_id": "ID1804205700",
-      "redner_id": "11003547",
-      "kind": "kurzintervention",
-      "reason": "DIP lists Kurzintervention (p. 3782D); read 2026-11-23"
+      "kind": "own_words",
+      "reason": "the rest of Kekeritz's running Rede, printed as a <rede> of its own after the chair's remark on the time; DIP lists Erwiderung for this part (p. 3778D), but Pfeiffer's Kurzintervention comes after it; DIP lists one Rede (p. 3776D); read 2026-11-23",
+      "page": ""
     },
     {
       "sitting": "18/44",
@@ -2043,6 +2085,14 @@
       "name": "Michaela Engelmeier (SPD)"
     },
     {
+      "sitting": "18/59",
+      "rede_id": "ID1805900300",
+      "redner_id": "999990002",
+      "kind": "own_words",
+      "reason": "the rest of Schwesig's running Rede, printed as a <rede> of its own after the chair's remark on the time, in the opening report of the Befragung (\"Dann runde ich das jetzt ab.\"); read 2026-11-23",
+      "page": ""
+    },
+    {
       "sitting": "18/60",
       "rede_id": "ID1806002200",
       "redner_id": "11003755",
@@ -2168,6 +2218,14 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 104)",
       "name": "Jutta Blankau-Rosenfeldt, Senatorin (Hamburg)"
+    },
+    {
+      "sitting": "18/63",
+      "rede_id": "ID1806305300",
+      "redner_id": "11004342",
+      "kind": "own_words",
+      "reason": "the rest of Lindholz's running Rede, printed as a <rede> of its own after the chair asks whether she takes a Zwischenfrage (\"Ich glaube, ich komme noch zu dem Punkt.\"); DIP lists one Rede (p. 5869A); read 2026-11-23",
+      "page": "5869A"
     },
     {
       "sitting": "18/64",
@@ -2320,6 +2378,14 @@
       "kind": "name_rede",
       "reason": "a whole Rede the chair gave the floor to, printed under <name> (name-tag-speakers.tsv entry 107)",
       "name": "Norbert Müller (Potsdam) (DIE LINKE)"
+    },
+    {
+      "sitting": "18/70",
+      "rede_id": "ID1807005200",
+      "redner_id": "11003738",
+      "kind": "own_words",
+      "reason": "the rest of Binder's running Rede, printed as a <rede> of its own after the chair asks whether she takes a Zwischenfrage (\"Lieber Kollege Priesmeier\"); DIP lists one Rede (p. 6704A); read 2026-11-23",
+      "page": "6704A"
     },
     {
       "sitting": "18/72",
@@ -2538,8 +2604,9 @@
       "sitting": "18/88",
       "rede_id": "ID1808801600",
       "redner_id": "11004087",
-      "kind": "rede",
-      "reason": "DIP lists Erwiderung (p. 8283B); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: Last sentences after 'Die Redezeit ist abgelaufen'; Wilms's Kurzintervention follows"
+      "kind": "own_words",
+      "reason": "the rest of Lange's running Rede, printed as a <rede> of its own after \"Die Redezeit ist abgelaufen\"; DIP lists Erwiderung for this part (p. 8283B), but Wilms's Kurzintervention comes after it; DIP lists one Rede (p. 8281B); read 2026-11-23",
+      "page": ""
     },
     {
       "sitting": "18/89",
@@ -2610,6 +2677,14 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 9229D); read twice, readers agree, 2026-11-23: Chair: 'Kollegen Kiesewetter das Wort zu einer Erwiderung' after Neu's § 30 Erklärung"
     },
     {
+      "sitting": "18/98",
+      "rede_id": "ID1809801100",
+      "redner_id": "11004190",
+      "kind": "own_words",
+      "reason": "the rest of Wilms's running Rede, printed as a <rede> of its own after the chair reminds her of the Redezeit (\"Ich komme zum Schluss, Herr Präsident.\"); DIP lists one Rede (p. 9337A); read 2026-11-23",
+      "page": "9337A"
+    },
+    {
       "sitting": "18/101",
       "rede_id": "ID1810103700",
       "redner_id": "11004123",
@@ -2674,8 +2749,9 @@
       "sitting": "18/110",
       "rede_id": "ID1811004300",
       "redner_id": "11004288",
-      "kind": "rede",
-      "reason": "DIP lists Erwiderung (p. 10625B); read twice, readers agree, 2026-11-23: the speaker's own running Rede, printed as a <rede> of its own: ich komme zum Schluss ending own Rede after time warning; Schwabe's Kurzintervention follows"
+      "kind": "own_words",
+      "reason": "the rest of Hahn's running Rede, printed as a <rede> of its own after the chair reminds him of the time; DIP lists Erwiderung for this part (p. 10625B), but Schwabe's Kurzintervention comes after it; DIP lists one Rede (p. 10624A); read 2026-11-23",
+      "page": ""
     },
     {
       "sitting": "18/112",
@@ -3727,6 +3803,13 @@
       "reason": "DIP lists Erwiderung (p. 3974C); read 2026-11-23"
     },
     {
+      "sitting": "19/41",
+      "rede_id": "ID194107300",
+      "redner_id": "11002720",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 4072B; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Moves Herbeirufung of Minister Seehofer, with a short reason."
+    },
+    {
       "sitting": "19/43",
       "rede_id": "ID194304800",
       "redner_id": "11004093",
@@ -3854,6 +3937,13 @@
       "reason": "DIP lists Erwiderung (p. 7259A); read twice, readers agree, 2026-11-23: Chair: 'Sie können von Ihrem Platz aus antworten ... Antworten auf Kurzinterventionen'; answers Hess"
     },
     {
+      "sitting": "19/63",
+      "rede_id": "ID196307500",
+      "redner_id": "11004680",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 7275A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the responsible minister under § 42 with Art. 43 GG."
+    },
+    {
       "sitting": "19/64",
       "rede_id": "ID196403400",
       "redner_id": "11004834",
@@ -3973,6 +4063,13 @@
       "reason": "DIP lists Erwiderung (p. 10750C); read 2026-11-23"
     },
     {
+      "sitting": "19/92",
+      "rede_id": "ID199207100",
+      "redner_id": "11002667",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 10961D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Moves a half-hour Unterbrechung so the AfD can finish its Fraktionssitzung."
+    },
+    {
       "sitting": "19/95",
       "rede_id": "ID199508300",
       "redner_id": "11004874",
@@ -4050,6 +4147,13 @@
       "redner_id": "11004833",
       "kind": "erwiderung",
       "reason": "DIP lists Erwiderung (p. 13245D); read 2026-11-23"
+    },
+    {
+      "sitting": "19/107",
+      "rede_id": "ID1910716700",
+      "redner_id": "11004680",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 13294D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Doubts Beschlussfähigkeit under § 45 Abs. 2, asks for check."
     },
     {
       "sitting": "19/109",
@@ -4265,6 +4369,13 @@
       "redner_id": "11004361",
       "kind": "kurzintervention",
       "reason": "DIP lists Kurzintervention (p. 16348A); read 2026-11-23"
+    },
+    {
+      "sitting": "19/134",
+      "rede_id": "ID1913412800",
+      "redner_id": "11004175",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 16806C; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Moves under § 62 Abs. 2 that the committee report by a deadline."
     },
     {
       "sitting": "19/145",
@@ -4518,6 +4629,13 @@
       "redner_id": "11004678",
       "kind": "erklaerung",
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 26133C); read 2026-11-23"
+    },
+    {
+      "sitting": "19/208",
+      "rede_id": "ID1920806500",
+      "redner_id": "11003764",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 26239A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeizitierung of Finance Minister Scholz under Art. 43 GG and § 42, with short reason."
     },
     {
       "sitting": "19/209",
@@ -4987,11 +5105,25 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 5819C); read 2026-11-23"
     },
     {
+      "sitting": "20/56",
+      "rede_id": "ID205607000",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 6151B; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of Minister Habeck under § 42, with short reason."
+    },
+    {
       "sitting": "20/57",
       "rede_id": "ID205704600",
       "redner_id": "11005049",
       "kind": "rede",
       "reason": "DIP lists Rede (p. 6264); read twice, readers agree, 2026-11-23: Chair 'die nächste Rednerin in der Debatte'; Höferlin declined the Kurzintervention"
+    },
+    {
+      "sitting": "20/60",
+      "rede_id": "ID206006900",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 6714D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the Chancellor under § 42, with reason."
     },
     {
       "sitting": "20/70",
@@ -5065,6 +5197,13 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 9687B); read 2026-11-23"
     },
     {
+      "sitting": "20/86",
+      "rede_id": "ID208607100",
+      "redner_id": "11004722",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 10324A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the minister under § 42; reason is the topic's importance."
+    },
+    {
       "sitting": "20/91",
       "rede_id": "ID209102900",
       "redner_id": "11003638",
@@ -5077,6 +5216,13 @@
       "redner_id": "11005016",
       "kind": "erwiderung",
       "reason": "DIP lists Erwiderung (p. 10853C); read 2026-11-23"
+    },
+    {
+      "sitting": "20/91",
+      "rede_id": "ID209115100",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 10988C; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the Innenministerin; jibes are side remarks."
     },
     {
       "sitting": "20/92",
@@ -5175,11 +5321,25 @@
       "attach": "next"
     },
     {
+      "sitting": "20/106",
+      "rede_id": "ID2010611000",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 12895A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the Health Minister under § 42, Art. 43 GG; jokes are side remarks."
+    },
+    {
       "sitting": "20/109",
       "rede_id": "ID2010907700",
       "redner_id": "11004409",
       "kind": "erklaerung",
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 13261B); read 2026-11-23"
+    },
+    {
+      "sitting": "20/109",
+      "rede_id": "ID2010907500",
+      "redner_id": "11004787",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 13260A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the Health Minister, with short reason."
     },
     {
       "sitting": "20/112",
@@ -5203,6 +5363,20 @@
       "kind": "loose_own_words",
       "reason": "the speaker's own words printed outside their <rede> (loose-speaker-markers.tsv)",
       "attach": "next"
+    },
+    {
+      "sitting": "20/116",
+      "rede_id": "ID2011601300",
+      "redner_id": "11004276",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 14323D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeizitierung of Minister Habeck under § 42, with reason."
+    },
+    {
+      "sitting": "20/116",
+      "rede_id": "ID2011607800",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 14399D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Doubts Beschlussfähigkeit under § 45 Abs. 2, announces possible namentliche Abstimmung."
     },
     {
       "sitting": "20/123",
@@ -5298,6 +5472,13 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 17313B); read 2026-11-23"
     },
     {
+      "sitting": "20/142",
+      "rede_id": "ID2014205700",
+      "redner_id": "11004305",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 18047A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeizitierung of the Finance Minister under § 42, with reason."
+    },
+    {
       "sitting": "20/143",
       "rede_id": "ID2014313200",
       "redner_id": "11004678",
@@ -5366,6 +5547,13 @@
       "redner_id": "11004286",
       "kind": "erwiderung",
       "reason": "DIP lists Erwiderung (p. 19434D); read 2026-11-23"
+    },
+    {
+      "sitting": "20/154",
+      "rede_id": "ID2015418100",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 19769D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeizitierung of the Minister for Digital and Transport, with reason."
     },
     {
       "sitting": "20/157",
@@ -5530,6 +5718,20 @@
       "reason": "DIP lists Erwiderung (p. 23709C); read 2026-11-23"
     },
     {
+      "sitting": "20/185",
+      "rede_id": "ID2018505800",
+      "redner_id": "11004146",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 24031B; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Moves that the minister reappear for the debate; reason given is respect for Parliament."
+    },
+    {
+      "sitting": "20/186",
+      "rede_id": "ID2018604300",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 24193A; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Moves Herbeirufung of the Chancellor; reason is the Chancellor's speech earlier in the week."
+    },
+    {
       "sitting": "20/191",
       "rede_id": "ID2019105100",
       "redner_id": "11004850",
@@ -5591,6 +5793,13 @@
       "redner_id": "11005187",
       "kind": "procedural",
       "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 25649A; read twice, 2026-11-23, readers agree; owner decision of that day): One-sentence proposal to ask for the ministers and interrupt the sitting"
+    },
+    {
+      "sitting": "20/196",
+      "rede_id": "ID2019610100",
+      "redner_id": "11004437",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 25648D; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the Economics and Finance Ministers under § 42, with reason."
     },
     {
       "sitting": "20/197",
@@ -6595,6 +6804,13 @@
       "redner_id": "11003586",
       "kind": "erwiderung",
       "reason": "DIP lists Erwiderung (p. 13751B); read 2026-11-23"
+    },
+    {
+      "sitting": "21/108",
+      "rede_id": "ID2110812300",
+      "redner_id": "11004678",
+      "kind": "procedural",
+      "reason": "a Geschäftsordnung motion printed as its own <rede>, with no more than its reason (p. 13745C; read twice blind, 2026-11-23, both readers high; owner decision of that day on the class): Herbeirufung of the Ministerin, with short reason."
     }
   ]
 }

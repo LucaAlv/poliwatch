@@ -12,8 +12,9 @@ import _support  # noqa: F401  (puts scripts/ on the path)
 import build_dip_pulse_site as build
 import reviewed_units
 import speech_kinds as sk
+import validate_dip_protocol as dip
 import validate_store_gate as gate
-from test_presidium_kinds import entry, parse, redner, rede, top_of
+from test_presidium_kinds import entry, parse, redner, rede, sitting, top_of
 
 HIRTE = redner('11000001', 'Hirte', 'CDU/CSU', first='Heribert', printed='Dr. Heribert Hirte (CDU/CSU):')
 DEMASI = redner('11000002', 'De Masi', 'DIE LINKE', first='Fabio', printed='Fabio De Masi (DIE LINKE):')
@@ -35,6 +36,92 @@ def kinds(parsed):
     top = top_of(parsed)
     return ([s['rede_id'] for s in top['speeches']],
             [(c['rede_id'], c['kind'], c['parent_rede_id']) for c in top['contributions']])
+
+
+def own_words(rede_id, redner_id, page=''):
+    return {**entry(rede_id, redner_id, 'own_words'), 'page': page}
+
+
+def parse_with_pages(body, pages, entries):
+    """``parse``, with an Inhaltsverzeichnis that names each ``rede`` id's page."""
+    listed = ''.join(f'<ivz-eintrag><xref ref-type="rede" rid="{rid}" pnr="{page[:-1]}" div="{page[-1]}"/></ivz-eintrag>'
+                     for rid, page in pages.items())
+    xml = sitting(body).replace('<sitzungsverlauf>', '<vorspann><inhaltsverzeichnis><ivz-block><ivz-block-titel>T1</ivz-block-titel>'
+                                f'{listed}</ivz-block></inhaltsverzeichnis></vorspann><sitzungsverlauf>', 1)
+    return dip.parse_protocol_xml(xml, reviewed=list(entries))
+
+
+def place(page_ref):
+    return f"{page_ref['page']}{page_ref['quadrant']}"
+
+
+class OwnWordsTests(unittest.TestCase):
+    """A ``<rede>`` that goes on with the Rede before it (ADR 0004, amendment 2026-11-23 on split Reden)."""
+
+    ASKED = CHAIR + '<p>Frau Kollegin, gestatten Sie eine Zwischenfrage?</p>'
+    REST = '<p>Ja, gerne.</p>' + DEMASI + '<p>Ist Ihnen das bekannt?</p>' + NEXT + '<p>Ja. Und damit zum Schluss.</p>'
+    ENTRY = own_words('ID2', '11000004')
+
+    def two(self, between=''):
+        return rede('ID1', NEXT, MAIN + self.ASKED) + between + rede('ID2', NEXT, self.REST) + rede('ID3', HIRTE, MAIN)
+
+    def split(self):
+        return (rede('ID1', HIRTE, MAIN + CHAIR + '<p>Das Wort hat die Kollegin Dr. Petra Sitte.</p>' + NEXT + MAIN + self.ASKED)
+                + rede('ID2', NEXT, self.REST))
+
+    # Value: protects=the two parts are one Rede under the first id, the Zwischenfrage in the second is its Beitrag, and the part
+    #   joined away has a status; fails_when=the rest counts as a Rede, loses its text or its Zwischenfrage; why_new=new kind; seam=reviewed
+    def test_the_rest_joins_the_rede_before_it(self):
+        self.assertEqual([s['rede_id'] for s in top_of(parse(self.two()))['speeches']], ['ID1', 'ID2', 'ID3'])
+        parsed = parse(self.two(), [self.ENTRY])
+        self.assertEqual(kinds(parsed), (['ID1', 'ID3'], [('nested:ID1:3', 'zwischenfrage', 'ID1')]))
+        self.assertEqual(top_of(parsed)['speeches'][0]['text'], MAIN[3:-4] + '\nJa, gerne.\nJa. Und damit zum Schluss.')
+        self.assertEqual([(d['source_rede_id'], d['treatment'], d['target_rede_id']) for d in top_of(parsed)['xml_turn_diagnostics']
+                          if d['treatment'] == 'joined_rede'], [('ID2', 'joined_rede', 'ID1')])
+
+    # Value: protects=where the first part is one the parser split off another Rede, the Rede keeps the id the Inhaltsverzeichnis
+    #   names; fails_when=it goes by the made-up id, which no other dataset has; why_new=7 of the 13; seam=reviewed
+    def test_a_split_parts_rede_keeps_the_listed_id(self):
+        self.assertEqual([s['rede_id'] for s in top_of(parse(self.split()))['speeches']], ['ID1', 'ID1:2', 'ID2'])
+        parsed = parse(self.split(), [own_words('ID2', '11000004', '12A')])
+        self.assertEqual([s['rede_id'] for s in top_of(parsed)['speeches']], ['ID1', 'ID2'])
+        self.assertEqual(top_of(parsed)['speeches'][1]['text'], MAIN[3:-4] + '\nJa, gerne.\nJa. Und damit zum Schluss.')
+
+    # Value: protects=a joined Rede begins where its first part does, and the TOP still reaches the rest's page; fails_when=the
+    #   Rede takes the page the Inhaltsverzeichnis gives its rest (18/98), or the TOP ends before it (18/88); why_new=review; seam=reviewed
+    def test_the_rede_begins_where_its_first_part_does(self):
+        top = top_of(parse_with_pages(self.split(), {'ID1': '10B', 'ID2': '13C'}, [own_words('ID2', '11000004', '12A')]))
+        self.assertEqual([place(s['source_page']) for s in top['speeches']], ['10B', '12A'])
+        self.assertEqual([place(top['page_range'][end]) for end in ('start', 'end')], ['10B', '13C'])
+        top = top_of(parse_with_pages(self.two(), {'ID1': '10B', 'ID2': '13C', 'ID3': '13A'}, [self.ENTRY]))
+        self.assertEqual([place(s['source_page']) for s in top['speeches']], ['10B', '13A'])
+        self.assertEqual([place(top['page_range'][end]) for end in ('start', 'end')], ['10B', '13C'])
+
+    # Value: protects=the page is given exactly where the source has none, and lies between the two it has; fails_when=a typed page
+    #   is stored unread; why_new=new key; seam=reviewed
+    def test_a_page_that_does_not_fit_stops_the_run(self):
+        for case, body, page in (('missing on a split part', self.split(), ''), ('given where the first part has its own', self.two(), '12A'),
+                                 ('before the Rede it was split off', self.split(), '10A'), ('after the rest', self.split(), '13D')):
+            with self.subTest(case), self.assertRaises(reviewed_units.ReviewedUnitsError):
+                parse_with_pages(body, {'ID1': '10B', 'ID2': '13C'}, [own_words('ID2', '11000004', page)])
+        for case, bad in (('no page key', entry('ID2', '11000004', 'own_words')), ('no quadrant', own_words('ID2', '11000004', '12')),
+                          ('page on another kind', {**entry('ID2', '11000004', 'rede'), 'page': '12A'}),
+                          ('number', {**own_words('ID2', '11000004'), 'page': 12})):
+            with self.subTest(case), self.assertRaises(reviewed_units.ReviewedUnitsError):
+                reviewed_units._check({'entries': [bad]}, Path('list.json'))
+
+    # Value: protects=no words move to another person, over another turn, or on a stale entry; fails_when=a guard is dropped;
+    #   why_new=new kind; seam=reviewed
+    def test_an_entry_that_does_not_fit_stops_the_run(self):
+        for case, body, listed in (
+                ('another owner', self.two(), own_words('ID2', '11000001')),
+                ('another speaker before', self.two(), own_words('ID3', '11000001')),
+                ('nothing before', self.two(), own_words('ID1', '11000004')),
+                ('text between', self.two('<p>Wir kommen zur Abstimmung.</p>'), self.ENTRY),
+                ('another Rede between', rede('ID1', NEXT, MAIN) + rede('ID9', HIRTE, MAIN) + rede('ID2', NEXT, self.REST), self.ENTRY),
+                ('no such rede', self.two(), own_words('ID7', '11000004'))):
+            with self.subTest(case), self.assertRaises(reviewed_units.ReviewedUnitsError):
+                parse(body, [listed])
 
 
 class ListedUnitTests(unittest.TestCase):
