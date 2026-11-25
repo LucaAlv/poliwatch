@@ -22,7 +22,7 @@ Both, each where it fits.
 - **Name rule for 41.** The bracket and the accent are systematic spelling differences between two sources, like academic titles, and a later Wahlperiode brings new ones. `person_registry._bucket_name` drops them from the bucket key only. Printed names, partition labels, the Redner-ID name check and pass 1b read the name as before. Umlauts stay (Müller, Muller).
 - **Reviewed list for 15.** No name rule can tell one MdB with two Redner-IDs from two namesakes, or "Uda" from "Uda Carmen Freia". `same_person` in `scripts/person_corrections.json` names the ids, the evidence and the review date; `mp_keys` reads them as one Personenkennung. A `partitions` entry with `own_ids` would also join them, but it rewrites `mps.xml_redner_id`, and `data-methods.md` compares that column with CPP-BT. A `merges` entry names person keys and refuses every store without them.
 
-**Namesake guard** (`person_registry._namesakes`). Pass 2 still needs exactly one roster and one speaker record in the bucket. Where the printed names differ, a join is refused when both sides print a Wahlkreiszusatz and none is shared, or when their known Wahlperioden have none in common. Pass 3 and the stale-roster pass ask the same. The tests use a real case: Dagmar Schmidt (Meschede), SPD, WP 13 to 16, and Dagmar Schmidt (Wetzlar), SPD, WP 18 to 21. A listed Redner-ID printed for someone else stops the build (`require_reviewed_redner_ids`).
+**Namesake guard** (`person_registry._namesakes`). Pass 2 still needs exactly one roster and one speaker record in the bucket. Where the printed names differ, a join is refused when both sides print a Wahlkreiszusatz and none is shared, or when their known Wahlperioden have none in common. Pass 3 and the stale-roster pass ask the same. The tests use a real case: Dagmar Schmidt (Meschede), SPD, WP 13 to 16, and Dagmar Schmidt (Wetzlar), SPD, WP 18 to 21. A listed Redner-ID the store holds under two names that share no word stops the build (`require_reviewed_redner_ids`); one it holds only under another person's name does not (none of the 806 files prints one).
 
 ## Evidence
 
@@ -90,7 +90,7 @@ No group was torn apart: every new person is a union of old ones. `match_rows` o
 10. **Interrupted run:** no new write.
 11. **Claims:** `docs/stable-ids.md`, `CONTEXT.md` and E15 say what `_bucket_name`, `_namesakes` and `_validate_same_person` do. `docs/data-methods.md` is untouched: `mps.xml_redner_id` keeps the printed id, so its CPP-BT figures stand.
 12. **Loop cost:** `_namesakes` runs once per qualifying pair; the two extra queries are one `DISTINCT` per table. The replay took its usual time.
-13. **Last commit:** the build commit, the merge of main and the restated figures; no code changed after the build commit, and no commit touches TODOS.md outside the merge.
+13. **Last commit:** the build commit, the merge of main and the restated figures; no code changed after the build commit, and TODOS.md closes the entry (ship).
 
 Not run here: the full gate and a from-scratch build (one gate run follows at the end of the figure-moving work), and a browser check (no rendering code changed; a page's old URL was checked to redirect).
 
