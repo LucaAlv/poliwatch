@@ -26,7 +26,7 @@ The goal comes from PRODUCT.md: a citable dataset for WP 18 to the present, and 
 4. "Rename the project to open-parlament". ~~"Comparison and joinable ids in DATA.md"~~ is written (2026-11-20, see Completed); "Vergleich section in DATA.md: what it leaves open" holds the rest.
 5. Owner inputs: the e-mail for "Settle the roll-call source for redistribution" (sent 2026-11-21, answer awaited) (best sent early: the coverage gate leans on votes, and a no changes their source), the terms in "Settle the MdB-Stammdaten redistribution terms", ~~a Zenodo account~~ (set up 2026-11-21), ~~the trademark check~~ (done 2026-11-21, no live hit). Before the first `--publish` (owner, 2026-11-21): ADR 0003 question 4 in writing to the Cyber Law Clinic Hamburg, per "ADR 0003 legal questions: what the research leaves to do".
 6. The first release: the first real `--publish` of "Write the release script", "A DOI per release and a citation file" (DOI on stable releases only). Items 1–5 of "Release pipeline: deferred /ship review findings", which had to come first, are done (2026-11-17).
-7. "Public repository: follow-ups": the two GitHub settings are on (2026-11-21); the test-excerpt question rides on the e-mail of item 5.
+7. "Public repository: follow-ups": the two GitHub settings are on (2026-11-21); the test-excerpt question rides on the e-mail of item 5. On the day of the first `--publish`: open the `data-quality` issues, the roadmap milestones and a few contributor issues (decided 2026-11-26).
 
 **Stage 2: the public site.** Daily view plus one analysis.
 1. "Split the dataset from the site" (A4), "Apply DESIGN.md to the site" and "Apply the v1 surface list", in the order of `docs/plans/render-layer-and-order.md` (decided 2026-11-10):
@@ -540,8 +540,13 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 **What is left:**
 - ~~The owner turns on secret scanning and push protection (Settings → Code security), and "Block command line pushes that expose my email".~~ **Done by the owner on 2026-11-21:** secret scanning and push protection read `enabled` in the repository API (checked 2026-11-21); the account's "Block command line pushes that expose my email" is on, by the owner's word (the API does not show it). The commit history stays as it is (decided 2026-11-14); this repo's `user.email` is the GitHub noreply address.
 - One sentence in the roll-call e-mail ("Settle the roll-call source for redistribution"): are test excerpts of the roll-call pages in a public code repository covered (`tests/fixtures/roll_call_detail_*.html`, `member_votes.html`, `namenslisten_list.html`, `roll_call_1002.json`, and named Stimmen in `docs/plans/e4-refiled-votes-old-new.tsv`)? **Asked in the owner's e-mail of 2026-11-21** (question 3), answer awaited.
+- GitHub issues for readers and contributors, on the day of the first `--publish` (owner decision, 2026-11-26). TODOS.md stays the agents' working backlog: the gstack skills write to it, a PR strikes its entry with the fix, and agents read it offline. No wholesale move, because most entries are written for the owner and agents (`.context/` stores, versions, plan docs) and would make a noisy tracker. On release day:
+  1. Every open item that leaves a published figure wrong or incomplete becomes an issue labelled `data-quality`, written for someone citing the data, and DATA.md links the label. The TODOS.md entry becomes `→ #NN`.
+  2. The roadmap becomes milestones or one pinned tracking issue.
+  3. A few self-contained issues for outside help, written for a stranger, `good first issue` where it fits.
+  4. Everything else is promoted by the `→ #NN` rule in `docs/agents/issue-tracker.md` when someone takes it up or it is specced.
 
-**Why:** Found by the v1 scope review.
+**Why:** Found by the v1 scope review. The issues item: a 2,863-line TODOS.md is unreadable from outside, and transparency starts to matter once someone cites a figure; before the release nobody depends on one.
 
 **Effort:** S
 **Priority:** P1
