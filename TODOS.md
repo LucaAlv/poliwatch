@@ -111,15 +111,15 @@ Found by `code-review` on the working tree of `claude/paragraph-breaks` (Standar
 **Priority:** P1 (1, before the first `--publish`), P2 (2, 3)
 **Depends on:** None (D2 decided 2026-11-24: `times` basis, four end times corrected by a reviewed list, step 3b of the plan)
 
-### WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own
+### Bullet points of written Reden printed between two `<rede>`s
 
-**What:** `docs/source-errors.md` E17. Lenkert's text is stored under Thews (18/23 `ID1802308800`) and Engelmeier's under Steiniger (18/63 `ID1806311300`); eight are stored nowhere (18/17, 18/34, 18/46, 18/47, 18/66, 18/112, 18/115, 18/155); 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer) are rows with no speaker and no text. Split or wrap them by a reviewed list, as `loose_*` does. E3 counts three `<rede>`s without a `<redner>` in 716 files; the 806 held now have six (18/63 `ID1806309700`, 18/117 `ID1811703000` and 18/118 `ID1811802900` besides; the last two are written Erklärungen nach § 31): update its scale.
+**What:** Found by the E17 census (`docs/plans/e17-wp18-texts.md`, 2026-11-26). In five zu-Protokoll annex blocks the bullet points of a written Rede stand as `<p klasse="J">` paragraphs directly in the block, after the `<rede>` they most likely belong to: 18/136 Anlage block 6 (two after Strebl's `ID1813611300`, four after Kapschack's `ID1813611400`), 18/206 block 6 (three after Binding's `ID1820612300`), 18/209 block 20 (eight after Klimke's `ID1820916300`), 18/243 block 9 (four after Bahr's `ID1824313700`) and 19/104 block 9 (three after Höferlin's `ID1910418500`). Nothing reads them, so those words are stored nowhere; the Rede before is stored without them. Neither the owner nor the place in the Rede is marked: each Rede's last paragraph has to be read against the PDF (it may end with the colon that opens the list). Fix by a reviewed list like `annex_rede` (append to, or insert into, the named `<rede>`), test first; the guard of `mark_annex_texts` does not see plain paragraphs.
 
-**Why:** Two rows give a person words someone else submitted; the others are missing or empty.
+**Why:** 24 paragraphs of five Reden are missing from their text and word counts.
 
 **Effort:** S
-**Priority:** P1 (owner, 2026-11-24: fixed before the first release; wrong attribution)
-**Depends on:** `claude/rede-count-leftovers` merged (it changes `speech_kinds.py`, `validate_dip_protocol.py` and `reviewed_units.*`)
+**Priority:** P3
+**Depends on:** None
 
 ### Census script of the Protokoll gap: hygiene
 
@@ -2721,6 +2721,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own (source-errors E17, P1): built 2026-11-26 on branch `claude/e17-wp18-texts-8bc435`. Twelve entries of kind `annex_rede` in `scripts/reviewed_units.json`, placed by `mark_annex_texts`; an unlisted structural shape refuses its sitting. `zu_protokoll` 4,164 → 4,174, Lenkert's and Engelmeier's words leave Thews and Steiniger, Freudenstein's and Böhmer's rows get speaker and text; Reden and Fakten unchanged (`docs/plans/e17-wp18-texts.md`, "Outcome"). What it leaves open: "Bullet points of written Reden printed between two `<rede>`s".
 - Roster MdB records that never join their speaker (56 empty duplicate Personenseiten): v0.46.53.0, 2026-11-25. 41 pairs by a name rule with a namesake guard, 15 by reviewed `same_person` entries; empty MdB persons 56 → 0, `docs/plans/roster-duplicates/report.md`. What it leaves open: "Roster duplicates: what the build and its code review leave open".
 - Paragraph breaks and WP 18 block quotes (owner decision 4 of 2026-11-23, "ADR 0003 legal questions" question 7): v0.46.50.0, 2026-11-23. Printed paragraphs separated by one line feed in the wording, `<zitat>` read; speech rule 15, export format 25. What it leaves open: "Paragraph breaks and block quotes: what the code review left open".
 - Turns DIP types otherwise (owner decisions of 2026-11-23, 1 to 3; "Oral Erklärungen nach § 31: Rede or not?"): v0.46.49.0, 2026-11-23. 514 entries of scripts/reviewed_units.json, Kind `erklaerung`, 24 bare motions `procedural`, the DIP row guard (`docs/plans/beitraege-as-reden.md`). What it leaves open: "Turns DIP types otherwise: what the build of 2026-11-23 leaves open".

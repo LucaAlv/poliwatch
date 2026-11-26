@@ -2109,6 +2109,141 @@ def annex_rede_key(block_index: int, sequence: int) -> str:
     return f"annex:{block_index}:{sequence}"
 
 
+#: An annex heading ends the text a block-level ``annex_rede`` entry wraps.
+ANNEX_HEADINGS = frozenset({"Anlage_2", "Anlage_3", "Anlage_Strich"})
+#: What to do when a sitting is refused for an unlisted annex shape: a re-fetch
+#: returns the same XML.
+UNLISTED_ANNEX_TEXT_FIX = ("list the written Rede in scripts/reviewed_units.json with kind annex_rede "
+                           "(docs/source-errors.md E17, docs/plans/e17-wp18-texts.md), then re-run")
+
+
+class UnlistedAnnexTextError(ValueError):
+    """A zu-Protokoll annex where a ``<rede>`` holds markers of two Redner-IDs or
+    none, or a speaker marker stands outside any ``<rede>``, with no reviewed
+    entry: the words would be dropped or credited to nobody, so the sitting is
+    refused (``UNLISTED_ANNEX_TEXT_FIX``)."""
+
+
+def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: set[str]) -> None:
+    """docs/source-errors.md E17: give each written Rede a zu-Protokoll annex
+    prints without a ``<rede>`` of its own one, by its ``annex_rede`` entry in
+    ``scripts/reviewed_units.json`` (``docs/plans/e17-wp18-texts.md``).
+
+    The entry's ``label`` is found once where the entry's ``rede_id`` points: a
+    speaker marker printing it (kept; it must carry the entry's Redner-ID and
+    ``name``), a paragraph opening with it and a colon (the label leaves the
+    paragraph, and a marker built from ``name`` goes before it), or, where neither
+    is printed in a block, a heading naming the writer (the marker goes before
+    the first paragraph after it that is no heading). In another writer's ``<rede>`` everything from the
+    marker on becomes ``<rede id="<id>:<marker ordinal>">`` right after it, the
+    form of ``split_nested_reden``; a ``<rede>`` the label opens keeps its id. In
+    a block the marker and its paragraphs up to the next ``<rede>``, annex heading
+    or block end become ``<rede id="annex:<block>:<place>">`` (``annex_rede_key``).
+    Each id made goes into ``created``. Only annex blocks are edited.
+
+    Afterwards a zu-Protokoll block where a ``<rede>`` holds markers of two
+    Redner-IDs or none, or a marker stands outside any ``<rede>``, refuses the
+    sitting (``UnlistedAnnexTextError``). An entry that does not match its place
+    stops the run (``ReviewedUnitsError``).
+    """
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    blocks = root.findall("./anlagen/anlage/anlagen-text")
+    written = [block for block in blocks if zu_protokoll_annex_type(block) is not None]
+
+    def is_marker(element: ET.Element) -> bool:
+        return element.tag == "p" and element.get("klasse") == "redner"
+
+    def marker_label(element: ET.Element) -> str:
+        return clean_text((element.find("redner").tail or "") if element.find("redner") is not None else "").partition(":")[0].strip()
+
+    for entry in entries:
+        where = f"scripts/reviewed_units.json: {sitting} annex_rede {entry['rede_id']} ({entry['label']})"
+        if re.fullmatch(r"A[1-9]\d*", entry["rede_id"]):
+            index = int(entry["rede_id"][1:])
+            container = blocks[index - 1] if index <= len(blocks) else None
+            if container is None or container not in written:
+                raise reviewed_units.ReviewedUnitsError(f"{where}: names no zu-Protokoll block of this sitting's XML")
+            host = None
+        else:
+            host = next((rede for block in written for rede in block.findall("rede") if rede.get("id") == entry["rede_id"]), None)
+            if host is None:
+                raise reviewed_units.ReviewedUnitsError(f"{where}: names no <rede> of a zu-Protokoll annex in this sitting's XML")
+            container = host
+        children = list(container)
+        label = re.compile(rf"\s*{re.escape(entry['label'])}\s*:\s*")
+        places = []
+        for index, child in enumerate(children):
+            if is_marker(child) and marker_label(child) == entry["label"]:
+                places.append((index, "marker"))
+            elif child.tag == "p" and not is_marker(child) and label.match(child.text or ""):
+                places.append((index, "paragraph"))
+        if not places and host is None:
+            # The heading names the writer of every written Rede below it; it
+            # marks where a text begins only where no label is printed (18/34).
+            places = [(index, "heading") for index, child in enumerate(children) if child.tag == "p"
+                      and child.get("klasse") == "Anlage_3" and entry["label"] in elem_text(child)]
+        if len(places) != 1:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: the label is found {'nowhere' if not places else f'{len(places)} times'} in its place")
+        start, how = places[0]
+        if how == "marker":
+            marker = children[start]
+            if marker.find("redner").get("id") != entry["redner_id"]:
+                raise reviewed_units.ReviewedUnitsError(
+                    f"{where}: the marker carries Redner-ID {marker.find('redner').get('id')}, not {entry['redner_id']}")
+            if entry["name"] != entry["label"]:
+                raise reviewed_units.ReviewedUnitsError(f"{where}: name {entry['name']!r} must equal the printed marker's label")
+        else:
+            if how == "heading":
+                start = next((index for index in range(start + 1, len(children)) if children[index].tag == "p"
+                              and children[index].get("klasse") not in ANNEX_HEADINGS), None)
+                if start is None or is_marker(children[start]):
+                    raise reviewed_units.ReviewedUnitsError(f"{where}: no text paragraph follows the heading")
+            else:
+                paragraph = children[start]
+                paragraph.text = paragraph.text[label.match(paragraph.text).end():]
+            marker = name_tag_marker(entry["name"], entry["redner_id"], None)
+            container.insert(start, marker)
+            children = list(container)
+        if host is not None:
+            owner = host.find("./p[@klasse='redner']/redner")
+            if start == 0 and owner is marker.find("redner") and how != "marker":
+                continue  # a <rede> without a marker that the label opens: it keeps its id
+            if owner is None or owner.get("id") == entry["redner_id"] or start == 0:
+                raise reviewed_units.ReviewedUnitsError(f"{where}: the label opens the writer of the <rede> itself; nothing to split")
+            ordinal = sum(1 for child in children[:start + 1] if is_marker(child))
+            part = ET.Element("rede", {"id": f"{entry['rede_id']}:{ordinal}"})
+            for moved in children[start:]:
+                host.remove(moved)
+                part.append(moved)
+            parent = next(block for block in written if host in list(block))
+            parent.insert(list(parent).index(host) + 1, part)
+        else:
+            end = next((index for index in range(start + 1, len(children)) if children[index].tag == "rede"
+                        or (children[index].tag == "p" and children[index].get("klasse") in ANNEX_HEADINGS)), len(children))
+            place = sum(1 for child in children[:start] if child.tag == "rede") + 1
+            part = ET.Element("rede", {"id": annex_rede_key(blocks.index(container) + 1, place)})
+            for moved in children[start:end]:
+                container.remove(moved)
+                part.append(moved)
+            container.insert(start, part)
+        created.add(part.get("id"))
+
+    for block in written:
+        for child in block:
+            if is_marker(child):
+                raise UnlistedAnnexTextError(f"{sitting}: a speaker marker stands outside any <rede> in annex "
+                                             f"\"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
+            if child.tag != "rede":
+                continue
+            ids = {marker.find("redner").get("id") for marker in child.findall("p[@klasse='redner']")
+                   if marker.find("redner") is not None}
+            if len(ids) != 1:
+                raise UnlistedAnnexTextError(
+                    f"{sitting}: annex <rede> {child.get('id')} holds " + ("no speaker marker" if not ids else
+                                                                           f"markers of {len(ids)} Redner-IDs ({', '.join(sorted(ids))})"))
+
+
 def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                          rid_pages: dict[str, dict[str, Any]],
                          statuses: dict[str, str] | None = None) -> list[dict[str, Any]]:
@@ -2121,6 +2256,16 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
     tops_by_id: dict[str, list[dict[str, Any]]] = {}
     for top in agenda_items:
         tops_by_id.setdefault(clean_text(top.get("top_id") or ""), []).append(top)
+    # A page anchor marks where a page begins, so a block opens on the page of the
+    # last anchor before it: the page of a Rede printed before the block's first
+    # anchor, where the Inhaltsverzeichnis gives none (mark_annex_texts's units).
+    page_before: dict[int, int | None] = {}
+    last_page = None
+    for node in root.iter():
+        if node.tag == "anlagen-text":
+            page_before[id(node)] = last_page
+        elif node.tag == "a" and node.get("typ") == "druckseitennummer":
+            last_page = page_number(re.sub(r"^S", "", node.get("id") or ""))
     for annex_index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1):
         annex_type = zu_protokoll_annex_type(block)
         if annex_type is None:
@@ -2130,7 +2275,7 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                     record_status(statuses, rede.get("id") or annex_rede_key(annex_index, sequence), f"excluded_annex:{rule}")
             continue
         annex_pages = {}
-        current_page = None
+        current_page = page_before[id(block)]
         for node in block.iter():
             if node.tag == "a" and node.get("typ") == "druckseitennummer":
                 current_page = page_number(re.sub(r"^S", "", node.get("id") or ""))
@@ -2728,6 +2873,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     if any(name_diagnostics.values()):
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting}: a name_procedural entry outside any TOP; it has nowhere to be recorded")
+    mark_annex_texts(root, [entry for entry in sitting_entries if entry["kind"] == reviewed_units.ANNEX_REDE], split_parts)
     sitting_contributions = written_contributions(root, agenda_items, rid_pages, statuses)
     for ansprache in name_ansprachen:
         ansprache["sequence"] = len(sitting_contributions) + 1
@@ -5165,6 +5311,9 @@ def build_report(
                        source_rejected=True) from exc
     except UnlistedLooseMarkerError as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_LOOSE_MARKER_FIX}",
+                       source_rejected=True) from exc
+    except UnlistedAnnexTextError as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_ANNEX_TEXT_FIX}",
                        source_rejected=True) from exc
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc

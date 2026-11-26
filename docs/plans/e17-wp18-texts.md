@@ -51,7 +51,7 @@ Not part of this fix: 18/136, 18/206, 18/209, 18/243 and 19/104 print the bullet
 
 An entry whose label is not found once, whose marker carries another Redner-ID, whose `name` differs from an existing marker's label, or that names a `<rede>` or block that is no zu-Protokoll annex stops the run (`ReviewedUnitsError`). `check_withhold_one.py` applies the new entries in both parses, as it does the `name_*` and `loose_*` ones.
 
-The new units go through `written_contributions` unchanged: kind `zu_protokoll`, the TOP from the block's `(Tagesordnungspunkt …)` heading, the page from the block's page anchors. Petry's heading names the 33rd sitting's TOP 17 and Hakverdi's "11 a und 11 b", so both stay without a TOP, as any such written Rede does today. Ids:
+`written_contributions` now starts each block on the page of the last page anchor before it (an anchor marks where a page begins), not on no page: Petry's, Schuster's, Koschyk's and Hakverdi's texts begin before their block's first anchor, and the Inhaltsverzeichnis gives them no page. Otherwise the new units go through `written_contributions` unchanged: kind `zu_protokoll`, the TOP from the block's `(Tagesordnungspunkt …)` heading, the page from the block's page anchors. Petry's heading names the 33rd sitting's TOP 17 and Hakverdi's "11 a und 11 b", so both stay without a TOP, as any such written Rede does today. Ids:
 
 | Unit | Id |
 |---|---|
@@ -82,3 +82,16 @@ The replay gives the real values. The report lists each with old and new value.
 ## Docs
 
 `docs/source-errors.md` E17 (effect, "Our side") and E3's scale (six `<rede>`s without a `<redner>` in the 806); `docs/data-methods.md`: the paragraph on the ten, the reconciliation paragraph's "Abschnitte anderer Redner innerhalb einer zu Protokoll gegebenen Rede", the `ID…:N` and `annex:<n>:<m>` counts and the DIP comparison (4,599 / 4,164); `reviewed_units.py`'s docstring; TODOS.md: entry closed, new entry for the list items.
+
+## Outcome (2026-11-26)
+
+Replayed with `--offline --repersist` on `.context/e17-after`, compared with `scripts/compare_store_values.py --cohort all` against `.context/roster-after-52` (806 sittings each):
+
+- `contributions` 46,499 → 46,509; `zu_protokoll` 4,164 → 4,174 (WP 18 2,086 → 2,096), characters 18,199,527 → 18,249,525 (+49,998).
+- Reden 61,104 → 61,104, speech characters unchanged in every protocol, Redeanteil, votes and withheld Reden unchanged; 0 of 1,944 Fakt values moved.
+- `person_bindings` 612,450 → 612,462: the ten new rows and the two rows that had no speaker.
+- `zu_protokoll` rows without a person 2 → 0, without a page 25 → 24.
+- Rows reattributed or emptied: 18/23 `ID1802308800` Thews 11,190 → 7,421 characters (Lenkert's 3,741 go to `ID1802308800:2`); 18/63 `ID1806311300` Steiniger 9,957 → 5,465 (Engelmeier's 4,463 go to `ID1806311300:2`); 18/63 `ID1806309700` no speaker, 0 → Freudenstein, 4,053 characters; 18/76 `ID1807611000` no speaker, 0 → Böhmer, 4,578, Sprechrolle Bundesregierung.
+- New rows: Huber 6,434 characters, Lenkert 3,741, Petry 4,590, Schuster 5,411, Koschyk 8,537, Engelmeier 4,463, Schmidt 4,039 (18/66) and 4,670 (18/112), Mutlu 4,181, Hakverdi 3,562. Each page is DIP's (1365, 1889, 2931, 4325, 4412, 5949, 6317, 10849, 11240, 15339). Petry, Mutlu and Hakverdi have no TOP: Mutlu's host, Hein's Rede, has none either.
+- One row outside the ten moved, through the page rule: 19/36 `ID193616800` (Stamm-Fibich's continuation in the mistitled Anlage 2, E8) page none → 3543, the page of the anchor before its block. That page is where the annex prints it. DIP lists only her spoken Rede, at 3370B. The other 24 rows without a page are in 20/97 and 20/210, whose files print no page anchors.
+- No other stored row changed (every `contributions` row compared by protocol, id and kind).

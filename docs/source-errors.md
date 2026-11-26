@@ -49,7 +49,7 @@ A list of places where an official source file says something wrong or files con
 - **Status:** verified 2026-10-29.
 - **Source:** `https://dserver.bundestag.de/btp/18/18104.xml`, `<rede id="ID1810402200">`. It opens with a bare `<name>Christian Kühn ( Tübingen) (BÜNDNIS 90/DIE GRÜNEN) : </name>` instead of `<p klasse="redner"><redner id="…">…</redner></p>`.
 - **What is wrong:** the speaker's person id and Fraktion are not marked up. Their only trace is a free-text name, which also carries a stray space ("( Tübingen)").
-- **Scale:** across the 716 WP 18–21 files, three `<rede>` elements have no `<redner>`. The other two (18/46 `ID1804617400`, 18/76 `ID1807611000`) are Anlage texts that begin with `<p klasse="N_Anlage">`.
+- **Scale:** across the 716 WP 18–21 files, three `<rede>` elements have no `<redner>`. The other two (18/46 `ID1804617400`, 18/76 `ID1807611000`) are Anlage texts that begin with `<p klasse="N_Anlage">`. The 806 files held on 2026-11-26 have six: besides these three, 18/63 `ID1806309700`, also an Anlage text, and 18/117 `ID1811703000` and 18/118 `ID1811802900`. Of the five Anlage texts, 18/63's and 18/76's are Reden zu Protokoll (E17); the other three are Erklärungen nach § 31 GO, which are not stored.
 - **Effect on poliwatch:** the speech has no Fraktion, so Redeanteil for WP 18 lists one Rede under "(ohne Zuordnung)". It is the only such Rede in WP 18–21 (a3-phase4.md, step 3).
 
 ### E4. WP 19/20 roll-calls file MdBs under the wrong group (Fraktion changes dated wrong)
@@ -227,7 +227,7 @@ A list of places where an official source file says something wrong or files con
 
 ### E17. WP 18: ten Reden zu Protokoll are printed without a `<rede>` of their own
 
-- **Status:** verified 2026-11-23 on the XML of the reference store.
+- **Status:** verified 2026-11-23 on the XML of the reference store; read by a reviewed list since 2026-11-26.
 - **Source:** `https://dserver.bundestag.de/btp/18/`, annexes titled "Zu Protokoll gegebene Rede(n)".
 - **What is wrong:** three shapes.
   - A second speaker's text inside the previous speaker's `<rede>`, with a speaker marker: Charles M. Huber in 18/17 `ID1801712700` (Bernd Fabritius), Gabriele Schmidt (Ühlingen) in 18/66 `ID1806614200` (Martin Pätzold) and 18/112 `ID1811211800` (Matthäus Strebl), Özcan Mutlu in 18/115 `ID1811515000` (Rosemarie Hein).
@@ -236,8 +236,9 @@ A list of places where an official source file says something wrong or files con
 
   The Inhaltsverzeichnis gives Huber and Lenkert a Rede-ID (`ID1801712800`, `ID1802308900`) that no `<rede>` carries.
 - **What it should be:** a `<rede>` with a speaker marker for each.
-- **Scale:** the annex blocks of that title in the 806 held files. 18/47 Anlage 5 prints Georg Kippels's Rede of 18/46 again without a `<rede>`; the store has it from 18/46. The Neudrucke in 18/192, 18/238 and 18/245 are reprints and not counted.
-- **Effect on poliwatch:** of the second shape, Lenkert's and Engelmeier's words are stored as the other speaker's. The other eight are stored nowhere. 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer), both `N_Anlage` without a `<redner>` (18/76: see E3), are stored with no speaker and no text. Named in `docs/data-methods.md`; nothing is built.
+- **Scale:** the annex blocks of that title in the 806 held files. 18/47 Anlage 5 prints Georg Kippels's Rede of 18/46 again without a `<rede>`; the store has it from 18/46. The Neudrucke in 18/192, 18/238 and 18/245 are reprints and not counted. A census of the 806 files on 2026-11-26 (`docs/plans/e17-wp18-texts.md`) found no other `<rede>` with two writers' markers, no other marker outside a `<rede>` and no other label paragraph. It found a further defect, not counted here: in 18/136, 18/206, 18/209, 18/243 and 19/104 the bullet points of a written Rede stand between two `<rede>`s (TODOS.md).
+- **Effect on poliwatch until 2026-11-26:** Lenkert's and Engelmeier's words were stored as the other speaker's. The other eight were stored nowhere. 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer), both `N_Anlage` without a `<redner>` (E3), were stored with no speaker and no text.
+- **Our side:** the ten texts and the two `<rede>`s without a marker are listed in `scripts/reviewed_units.json` (kind `annex_rede`) and placed by `mark_annex_texts` in `scripts/validate_dip_protocol.py`. Each text becomes a zu Protokoll gegebener Beitrag of its writer. A text inside another writer's `<rede>` is split off as `<id>:2`. Freudenstein's and Böhmer's `<rede>`s get their writer under their own id. A text in no `<rede>` becomes `annex:<block>:<place>`. A zu-Protokoll block where a `<rede>` holds two writers' markers or none, or a marker stands outside any `<rede>`, now refuses its sitting unless the list names it. Plain text with no marker gives no such sign.
 
 ## Candidates
 
