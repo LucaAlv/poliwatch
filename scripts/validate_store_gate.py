@@ -496,17 +496,47 @@ def _require_disjoint_paths(source: Path, target: Path) -> None:
         raise ValueError(f"clone target {target} must not overlap input {source}")
 
 
+def _require_stammdaten_of_store(store: Path, cache: Path) -> None:
+    """ValueError when ``store`` was built with a MdB-Stammdaten file and ``cache``
+    does not hold it (missing, or another sha256): the clone's rebuild would drop
+    the store's re-filed Stimmen or file them from another file. A store that
+    cannot be read, or whose schema predates the table, has no such record; the
+    gate's own reads of the source report an unreadable store."""
+    if not store.is_file():
+        return
+    try:
+        conn = open_readonly(store)
+        try:
+            if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mdb_stammdaten_stand'").fetchone():
+                return
+            built_with = conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        return
+    if built_with is None:
+        return
+    cached = hashlib.sha256(cache.read_bytes()).hexdigest() if cache.is_file() else None
+    if cached != built_with[1]:
+        found = f"a file with sha256 {cached[:12]}…" if cached else "no file"
+        raise ValueError(f"the source store {store} was built with a MdB-Stammdaten file (Stand {built_with[0]}, sha256 "
+                         f"{built_with[1][:12]}…), but {cache} holds {found}; restore that file before running the gate")
+
+
 def _data_clone(source: Path, target: Path) -> Path:
     """A copy of ``source/data`` under ``target`` without its store: an APFS clone
     where the file system offers one. The source's cached MdB-Stammdaten
     (``mdb-stammdaten.*`` in its private directory) go to the clone's private
     directory, so the clone's rebuild re-files the Stimmen as the input store
     does; a stale copy there from an earlier run is removed first. Raises
-    ValueError when the source caches the file and the clone ends up without it."""
+    ValueError, before cloning, when the source store was built with a file
+    (``mdb_stammdaten_stand``) and the source caches no file with that sha256,
+    and when the source caches the file and the clone ends up without it."""
     import person_registry as registry
     import stammdaten
 
     _require_disjoint_paths(source, target)
+    _require_stammdaten_of_store(source / STORE, registry.private_dir(source / STORE) / stammdaten.CACHE_NAME)
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)

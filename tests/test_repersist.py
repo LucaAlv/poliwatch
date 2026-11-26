@@ -900,9 +900,42 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("ERROR [cached input]: The cached MdB-Stammdaten cannot be read: kaputt", err)
         # Removing the file and re-running a plain --offline would leave the panels and the store filing
         # Stimmen from different files (TODOS E4 /gstack-review item 3): the fix names the rebuild.
-        self.assertIn("--offline --repersist", err)
+        self.assertIn("--offline --repersist --without-stammdaten", err)
         self.assertNotIn("remove it, then re-run", err)
         self.render.assert_not_called()
+
+    # Value: protects=--offline --repersist over a store built with a MdB-Stammdaten file, with no file cached,
+    #   exits 1 naming --without-stammdaten and leaves the store's bytes; with the flag it rebuilds without the
+    #   Stand (TODOS E4 deferred item 1); fails_when=main does not pass the flag, or the refusal escapes as a
+    #   traceback; why_new=item 1; seam=main with read_cached_stammdaten patched
+    def test_a_repersist_without_the_file_over_a_store_built_with_it_needs_the_flag(self) -> None:
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached(stammdaten_wp21())):
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        before = self.database.read_bytes()
+        with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
+            code, err = self.run_main("--repersist")
+            self.assertEqual(code, 1, err)
+            self.assertIn("--without-stammdaten", err)
+            self.assertIn("ab" * 6, err)
+            self.assertEqual(self.database.read_bytes(), before)
+            code, err = self.run_main("--repersist", "--without-stammdaten")
+        self.assertEqual(code, 0, err)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertIsNone(conn.execute("SELECT stand FROM mdb_stammdaten_stand").fetchone())
+        finally:
+            conn.close()
+
+    # Value: protects=--without-stammdaten and --enrich mdb-stammdaten contradict each other and are refused with
+    #   exit 2 before anything runs; fails_when=the pair is accepted and the fetched file is used against the
+    #   operator's intent, or silently ignored; why_new=item 1; seam=main
+    def test_without_stammdaten_and_enrich_mdb_stammdaten_are_refused_together(self) -> None:
+        before = self.database.read_bytes() if self.database.exists() else None
+        code, err = self.run_main("--without-stammdaten", "--enrich", "mdb-stammdaten", offline=False)
+        self.assertEqual(code, 2, err)
+        self.assertIn("--without-stammdaten", err)
+        self.assertEqual(self.database.read_bytes() if self.database.exists() else None, before)
 
     # Value: protects=a plain --offline render refuses, before any page is rendered, when the cached
     #   MdB-Stammdaten file is not the one the store was built with (another sha256, no file for a store built
@@ -925,12 +958,14 @@ class RepersistTests(unittest.TestCase):
                     self.assertIn("ERROR [cached input]:", err)
                     self.assertIn("ab" * 6, err)
                     self.assertIn("Fix: run --offline --repersist", err)
+                    if on_disk is None:  # the rebuild without the file needs the flag (E4 item 1)
+                        self.assertIn("--offline --repersist --without-stammdaten", err)
                     self.render.assert_not_called()
                 else:
                     self.assertEqual(code, 0, err)
                     self.render.assert_called_once()
         with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
-            code, err = self.run_main("--repersist")
+            code, err = self.run_main("--repersist", "--without-stammdaten")
         self.assertEqual(code, 0, err)
         for label, on_disk, refused in (("file for a store built without", built_with, True), ("none on either side", None, False)):
             with self.subTest(label), mock.patch.object(build, "read_cached_stammdaten", return_value=on_disk):

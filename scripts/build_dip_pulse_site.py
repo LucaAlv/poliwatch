@@ -1705,7 +1705,8 @@ def _entry_label(entry: dict[str, Any]) -> str:
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, upgrade=False, vorgang_cache=None, excluded_document_numbers=()) -> Rebuilt:
+                                  today=None, upgrade=False, vorgang_cache=None, excluded_document_numbers=(),
+                                  without_stammdaten=False) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1719,7 +1720,13 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched. A stored protocol
     whose document number is in ``excluded_document_numbers`` (the reviewed
-    exclusions, D2) is not missing evidence: it leaves the store."""
+    exclusions, D2) is not missing evidence: it leaves the store.
+
+    The cached MdB-Stammdaten are read once, for the refiling, the seat counts
+    and the Stand alike. With no file cached, a store built with one is not
+    replaced unless ``without_stammdaten`` (``--without-stammdaten``) says to
+    drop its correction (TODOS E4 deferred item 1); the flag never hides a
+    cached file."""
     # One spelling for the lock, the staging directory and the swap: a rebuild
     # through a symlink to the store replaces the store, not the link.
     database_path = Path(database_path).resolve()
@@ -1728,7 +1735,8 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
                 catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade,
-                vorgang_cache=vorgang_cache, excluded_document_numbers=excluded_document_numbers)
+                vorgang_cache=vorgang_cache, excluded_document_numbers=excluded_document_numbers,
+                without_stammdaten=without_stammdaten)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1739,19 +1747,6 @@ def read_cached_stammdaten(database_path: Path) -> stammdaten.Stammdaten | None:
     cached. Raises StammdatenError for a cached file that cannot be read."""
     path = stammdaten.cache_path(database_path)
     return stammdaten.read_zip(path) if path.is_file() else None
-
-
-def refile_entry_votes(entries: list[dict[str, Any]], database_path: Path) -> None:
-    """Mark in ``entries`` the roll-call members the cached MdB-Stammdaten place in
-    another group than the page does (``derive.refile_vote_members``). Runs before
-    a report is persisted or rendered, and also clears the marks a cached report
-    holds when no file is cached. Raises DatabaseRebuildError for a cached file
-    that cannot be read."""
-    try:
-        cached = read_cached_stammdaten(database_path)
-    except derive.StammdatenError as exc:
-        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
-    refile_entries_from(entries, cached)
 
 
 def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten | None) -> str | None:
@@ -1785,16 +1780,19 @@ def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten
     if cached is None:
         return (f"no MdB-Stammdaten file is cached, but the store was built with one (Stand {row[0]}, sha256 {row[1][:12]}…), "
                 "so the vote panels would put back the Stimmen the store re-filed. "
-                f"{rebuild} without it, or restore that file to {stammdaten.cache_path(database_path)} and re-run.")
+                "Fix: run --offline --repersist --without-stammdaten to rebuild the store from the cached reports without "
+                f"it, or restore that file to {stammdaten.cache_path(database_path)} and re-run.")
     return (f"the cached MdB-Stammdaten file (Stand {cached.stand}, sha256 {cached.sha256[:12]}…) is not the file the store "
             f"was built with (Stand {row[0]}, sha256 {row[1][:12]}…), so the vote panels would file Stimmen differently "
             f"from the store. {rebuild} and the cached file.")
 
 
 def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammdaten | None) -> None:
-    """``refile_entry_votes`` with the Stammdaten already read (None: no file
-    is cached, so the marks a cached report holds are cleared). Raises
-    DatabaseRebuildError for records the derivation refuses."""
+    """Mark in ``entries`` the roll-call members the MdB-Stammdaten ``cached``
+    place in another group than the page does (``derive.refile_vote_members``).
+    Runs before a report is persisted or rendered; None (no file is cached)
+    clears the marks a cached report holds. Raises DatabaseRebuildError for
+    records the derivation refuses."""
     try:
         source = (derive.stammdaten_refiling_source(cached.records, cached.stand, since_wahlperiode=V1_FIRST_WAHLPERIODE)
                   if cached else None)
@@ -1814,15 +1812,11 @@ def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammd
               f"{', '.join(sorted(set(refused)))}", file=sys.stderr)
 
 
-def rebuild_seat_counts(store: sqlite3.Connection, database_path: Path) -> None:
-    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the cached
-    MdB-Stammdaten into the staged store (C1). With no cached file the tables
-    stay empty and a warning says so; a file that cannot be read, or breaks an
-    interval or size rule, raises DatabaseRebuildError, so nothing is swapped in."""
-    try:
-        cached = read_cached_stammdaten(database_path)
-    except derive.StammdatenError as exc:
-        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+def rebuild_seat_counts(store: sqlite3.Connection, cached: stammdaten.Stammdaten | None) -> None:
+    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the MdB-Stammdaten
+    ``cached`` (read once per rebuild) into the staged store (C1). With no file
+    the tables stay empty and a warning says so; a file that breaks an interval
+    or size rule raises DatabaseRebuildError, so nothing is swapped in."""
     if cached is None:
         print("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen): "
               "mdb_zugehoerigkeiten and party_seats stay empty and every Stimme counts for the group its roll-call page lists; "
@@ -1916,9 +1910,11 @@ def _rebuild_database_from_entries(
     upgrade: bool = False,
     vorgang_cache: dict[str, Any] | None = None,
     excluded_document_numbers: Collection[str] = (),
+    without_stammdaten: bool = False,
 ) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
     excluded = {normalized_document_number(number) for number in excluded_document_numbers}
+    built_with = None
     if database_path.exists():
         try:
             probe = facts.open_readonly(database_path)
@@ -1927,6 +1923,10 @@ def _rebuild_database_from_entries(
                 # A downloaded release given as --database-path is refused here,
                 # before anything is staged; the swap below would replace it.
                 pulse_store.require_build_store(probe, database_path)
+                # The file the store was built with, if any. A store whose schema
+                # predates the table (the --repersist upgrade) was built without one.
+                if probe.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mdb_stammdaten_stand'").fetchone():
+                    built_with = probe.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
             except RuntimeError as exc:
                 raise DatabaseRebuildError(str(exc)) from exc
             finally:
@@ -1965,7 +1965,19 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
-    refile_entry_votes(entries, database_path)
+    # Read once: the refiling, the seat counts and the Stand must come from one
+    # file even if a refresh replaces it during the rebuild (E4 item 3).
+    try:
+        cached = read_cached_stammdaten(database_path)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    if cached is None and built_with is not None and not without_stammdaten:
+        raise DatabaseRebuildError(
+            f"no MdB-Stammdaten file is cached, but the store {database_path} was built with one (Stand {built_with[0]}, "
+            f"sha256 {built_with[1][:12]}…); a rebuild without it would put every re-filed Stimme back under the page's "
+            "group and leave the seat counts empty. Fix: restore that file to "
+            f"{stammdaten.cache_path(database_path)} and re-run, or re-run with --without-stammdaten to rebuild without it")
+    refile_entries_from(entries, cached)
     temp_path = _staged_store_path(database_path)
     store = pulse_store.connect(temp_path)
     try:
@@ -2054,7 +2066,7 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
-        rebuild_seat_counts(store, database_path)
+        rebuild_seat_counts(store, cached)
         try:
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
@@ -2823,6 +2835,7 @@ def repersist_cached_reports(
     today: date | None = None,
     vorgang_cache: dict[str, Any] | None = None,
     roster_ingest: Callable[[sqlite3.Connection], None] | None = None,
+    without_stammdaten: bool = False,
 ) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -2840,7 +2853,7 @@ def repersist_cached_reports(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
         today=today, upgrade=True, vorgang_cache=vorgang_cache, excluded_document_numbers=recorded,
-        roster_ingest=roster_ingest,
+        roster_ingest=roster_ingest, without_stammdaten=without_stammdaten,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
@@ -14209,6 +14222,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--without-stammdaten",
+        action="store_true",
+        help=(
+            "Rebuild the store although no MdB-Stammdaten file is cached and the store was built with one: "
+            "every re-filed Stimme goes back under the group its roll-call page lists and the seat counts stay "
+            "empty. Without it such a rebuild refuses. A cached file is still used; cannot be combined with "
+            "--enrich mdb-stammdaten."
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=0,
@@ -14996,6 +15019,10 @@ def main() -> int:
     except FeatureError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if getattr(args, "without_stammdaten", False) and "mdb-stammdaten" in enrichments:
+        print("error: --without-stammdaten rebuilds without the MdB-Stammdaten and --enrich mdb-stammdaten fetches them; "
+              "pass one of the two", file=sys.stderr)
+        return 2
     if getattr(args, "list_features", False):
         print("warning: --list-features is deprecated; use --list-capabilities. Removal: 0.6.0.", file=sys.stderr)
         print_capability_table(enrichments)
@@ -15120,6 +15147,7 @@ def main() -> int:
                     output_dir, database_path, protocols, preserve_roster=True,
                     today=resolve_today(getattr(args, "today", None)),
                     vorgang_cache=vorgang_cache,
+                    without_stammdaten=getattr(args, "without_stammdaten", False),
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
@@ -15162,7 +15190,7 @@ def main() -> int:
             except derive.StammdatenError as exc:
                 print(f"ERROR [cached input]: The cached MdB-Stammdaten cannot be read: {exc}. "
                       "Fix: refresh the file with --enrich mdb-stammdaten, or remove it and rebuild the store "
-                      "with --offline --repersist; then re-run.", file=sys.stderr)
+                      "with --offline --repersist --without-stammdaten; then re-run.", file=sys.stderr)
                 return 1
             mismatch = stammdaten_store_mismatch(database_path, cached_stammdaten)
             if mismatch:
@@ -15172,7 +15200,7 @@ def main() -> int:
                 refile_entries_from(cached_entries, cached_stammdaten)
             except DatabaseRebuildError as exc:
                 print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten, or remove it "
-                      "and rebuild the store with --offline --repersist; then re-run.", file=sys.stderr)
+                      "and rebuild the store with --offline --repersist --without-stammdaten; then re-run.", file=sys.stderr)
                 return 1
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before
@@ -15524,6 +15552,7 @@ def main() -> int:
                     today=resolve_today(getattr(args, "today", None)),
                     vorgang_cache=vorgang_cache,
                     excluded_document_numbers=listed,
+                    without_stammdaten=getattr(args, "without_stammdaten", False),
                 ).facts_report
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)

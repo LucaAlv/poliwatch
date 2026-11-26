@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import io
 import sqlite3
 import tempfile
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -361,20 +363,6 @@ class CachedStammdatenTests(unittest.TestCase):
         return {"report": {"protocol": {"dokumentnummer": "19/30"}, "agenda_items": [{"votes": [
             vote(member("Kamann, Uwe", "fraktionslos"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", no=1)])]}]}}
 
-    # Value: protects=the build's one entry point reads the private cache and marks the entries; no file clears
-    #   marks an old cached report still carries; fails_when=it reads the store's tables (empty before the rebuild's
-    #   seat step) or leaves a stale mark; why_new=E4 runs on every rebuild and render; seam=refile_entry_votes
-    #   with read_cached_stammdaten patched
-    def test_entries_follow_the_cached_file(self) -> None:
-        entry = self.entry()
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=self.records()):
-            build.refile_entry_votes([entry], self.database)
-        members = entry["report"]["agenda_items"][0]["votes"][0]["members"]
-        self.assertEqual(members[0]["refiled_to"], "AfD")
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
-            build.refile_entry_votes([entry], self.database)
-        self.assertNotIn("refiled_to", members[0])
-
     @staticmethod
     def filed_from(records: list[dict], the_vote: dict) -> list[tuple[str, str]]:
         derive.refile_vote_members(the_vote, 19, derive.stammdaten_refiling_source(records, STAND, since_wahlperiode=18))
@@ -477,7 +465,7 @@ class CachedStammdatenTests(unittest.TestCase):
 
     # Value: protects=an MdB with two Mandate in one Wahlperiode (left and came back) keeps the proof of the first
     #   one: a page row on a day of the first Mandat is still re-filed, in either element order; fails_when=
-    #   the later Mandat's lead-in or record hides the earlier Mandat's days; why_new=Codex reproduced it in the ship review; seam=refile_entry_votes
+    #   the later Mandat's lead-in or record hides the earlier Mandat's days; why_new=Codex reproduced it in the ship review; seam=stammdaten_refiling_source
     def test_a_second_mandat_in_the_wahlperiode_keeps_the_first_mandats_proof(self) -> None:
         spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
         first = {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019",
@@ -490,17 +478,9 @@ class CachedStammdatenTests(unittest.TestCase):
             page = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
             self.assertEqual(self.filed_from([mdb], page), [("Muster, Ada", "SPD")])
 
-    # Value: protects=an unreadable cached file stops a rebuild as DatabaseRebuildError with the store untouched,
-    #   as the seat step does; fails_when=StammdatenError escapes the CLI's handler; why_new=this read comes before the
-    #   seat step's; seam=refile_entry_votes
-    def test_an_unreadable_file_is_a_rebuild_error(self) -> None:
-        with mock.patch.object(build, "read_cached_stammdaten", side_effect=derive.StammdatenError("kaputt")):
-            with self.assertRaises(build.DatabaseRebuildError):
-                build.refile_entry_votes([self.entry()], self.database)
-
     # Value: protects=a rebuild from cached reports files the Stimmen from the cached Stammdaten into the store, a vote
     #   whose counts cannot absorb the move stays as the page has it, and stderr names it; fails_when=the rebuild
-    #   skips refile_entry_votes, or drops the refused warning; why_new=only refile_entry_votes was called directly;
+    #   skips the refiling, or drops the refused warning; why_new=only the refiling step was called directly;
     #   seam=rebuild_database_from_entries, read_cached_stammdaten patched and seat counts skipped (one MdB, no legal size)
     def test_a_rebuild_files_the_votes_and_names_a_refused_one(self) -> None:
         good = vote(member("Kamann, Uwe", "fraktionslos", "yes"), member("Müller, Max", "AfD", "no"),
@@ -526,6 +506,164 @@ class CachedStammdatenTests(unittest.TestCase):
             [("501", "AfD", "fraktionslos"), ("502", "fraktionslos", None)])
         self.assertIn("refile: 1 Stimmen in 1 Abstimmungen", err.getvalue())
         self.assertRegex(err.getvalue(), r"warning: \[refile\] the fraction rows of 1 votes cannot absorb the moves.*502")
+
+
+def stammdaten_zip(path: Path, kamann: str, *, version: int = 1777449783) -> bytes:
+    """A WP 19 MdB-Stammdaten zip of two AfD MdBs from the constituent day, Uwe Kamann with the INSTITUTION
+    elements ``kamann`` and Max Müller an AfD member throughout; with BUNDESTAG_SIZES[19] = 2 it passes the seat
+    rules."""
+    def mdb(mdb_id: str, vorname: str, nachname: str, institutionen: str) -> str:
+        return (f"<MDB><ID>{mdb_id}</ID><NAMEN><NAME><NACHNAME>{nachname}</NACHNAME><VORNAME>{vorname}</VORNAME>"
+                f"<HISTORIE_VON>24.10.2017</HISTORIE_VON></NAME></NAMEN><WAHLPERIODEN><WAHLPERIODE><WP>19</WP>"
+                f"<MDBWP_VON>24.10.2017</MDBWP_VON><MDBWP_BIS>26.10.2021</MDBWP_BIS><INSTITUTIONEN>{institutionen}"
+                f"</INSTITUTIONEN></WAHLPERIODE></WAHLPERIODEN></MDB>")
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("MDB_STAMMDATEN.XML", f"<DOCUMENT><VERSION>{version}</VERSION>"
+                         + mdb("11004700", "Uwe", "Kamann", kamann) + mdb("11009991", "Max", "Müller", institution(AFD, "24.10.2017"))
+                         + "</DOCUMENT>")
+    return path.read_bytes()
+
+
+AFD = "Fraktion Alternative für Deutschland"
+
+
+def institution(ins_lang: str, von: str, bis: str = "") -> str:
+    return (f"<INSTITUTION><INSART_LANG>Fraktion/Gruppe</INSART_LANG><INS_LANG>{ins_lang}</INS_LANG>"
+            f"<MDBINS_VON>{von}</MDBINS_VON><MDBINS_BIS>{bis}</MDBINS_BIS></INSTITUTION>")
+
+
+#: Kamann leaves the AfD on 02.01.2019 and is entered Fraktionslos from the next day.
+KAMANN_LEAVES = institution(AFD, "24.10.2017", "02.01.2019") + institution("Fraktionslos", "03.01.2019")
+#: A file that keeps Kamann in the AfD throughout.
+KAMANN_STAYS = institution(AFD, "24.10.2017")
+
+
+class RebuildStammdatenTests(unittest.TestCase):
+    """The rebuild reads the cached file once and refuses to drop the correction a store holds
+    (TODOS E4 deferred items 1 and 3), at the public entry point."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.database = Path(self._tmp.name) / "data" / "s.sqlite"
+        self.database.parent.mkdir(parents=True)
+        self.cache = stammdaten.cache_path(self.database)
+        self.cache.parent.mkdir(parents=True, exist_ok=True)
+        self.leaves = stammdaten_zip(Path(self._tmp.name) / "leaves.zip", KAMANN_LEAVES)
+        self.stays = stammdaten_zip(Path(self._tmp.name) / "stays.zip", KAMANN_STAYS, version=1780000000)
+        # One report object across rebuilds, as the offline path reuses it: a stale mark must not survive.
+        the_vote = vote(member("Kamann, Uwe", "AfD", "yes"), member("Müller, Max", "AfD", "no"),
+                        fractions=[fraction("AfD", yes=1, no=1)], day="2019-06-01", vote_id="501")
+        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+                  "protocol": {"id": "p19-30", "dokumentnummer": "19/30", "datum": "2019-06-01"},
+                  "agenda_items": [{"index": 1, "heading": "Test", "votes": [the_vote]}]}
+        self.entries = [{"report": report, "report_path": Path(self._tmp.name) / "plenarprotokoll-19-30.json"}]
+
+    def rebuild(self, **options) -> str:
+        err = io.StringIO()
+        with mock.patch.dict(derive.BUNDESTAG_SIZES, {19: 2}), contextlib.redirect_stderr(err):
+            build.rebuild_database_from_entries(self.database, self.entries, preserve_roster=False, **options)
+        return err.getvalue()
+
+    def state(self) -> dict:
+        conn = sqlite3.connect(self.database)
+        try:
+            return {
+                "sha256": [row[0] for row in conn.execute("SELECT sha256 FROM mdb_stammdaten_stand")],
+                "moved": conn.execute("""SELECT m.display_name, p.name, l.name FROM vote_members vm JOIN mps m ON m.id = vm.mp_id
+                                         JOIN parties p ON p.id = vm.party_id JOIN parties l ON l.id = vm.listed_party_id""").fetchall(),
+                "kamann": conn.execute("""SELECT p.name, z.valid_from FROM mdb_zugehoerigkeiten z JOIN parties p ON p.id = z.party_id
+                                          WHERE z.mdb_id = '11004700' ORDER BY z.valid_from""").fetchall(),
+                "seats": conn.execute("""SELECT p.name, ps.valid_from, ps.seats FROM party_seats ps JOIN parties p ON p.id = ps.party_id
+                                         ORDER BY ps.valid_from, p.name""").fetchall(),
+            }
+        finally:
+            conn.close()
+
+    def sha(self, body: bytes) -> str:
+        return hashlib.sha256(body).hexdigest()
+
+    # Value: protects=a store built with a file is not rebuilt without it by accident: the rebuild refuses, names the
+    #   flag and leaves the store's bytes; with without_stammdaten the rebuild drops the Stand, the seat tables and
+    #   every move, and clears the marks the reused report still carried (TODOS E4 deferred item 1); fails_when=a
+    #   missing file only warns, or the flag keeps a stale mark; why_new=item 1; seam=rebuild_database_from_entries
+    def test_a_rebuild_without_the_file_over_a_store_built_with_it_is_refused(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        self.rebuild()
+        self.assertEqual(self.state()["moved"], [("Kamann, Uwe", "fraktionslos", "AfD")])
+        self.cache.unlink()
+        before = self.database.read_bytes()
+        with self.assertRaisesRegex(build.DatabaseRebuildError, r"--without-stammdaten") as refused:
+            self.rebuild()
+        self.assertIn(self.sha(self.leaves)[:12], str(refused.exception))
+        self.assertIn(str(self.cache), str(refused.exception))
+        self.assertEqual(self.database.read_bytes(), before)
+        err = self.rebuild(without_stammdaten=True)
+        self.assertEqual(self.state(), {"sha256": [], "moved": [], "kamann": [], "seats": []})
+        self.assertIn("keine Sitzzahlen (MdB-Stammdaten nicht geladen)", err)
+
+    # Value: protects=without a file and without a store built from one, a rebuild goes on with the warning: a fresh
+    #   local build, a store built without a file, and a store whose schema predates the Stand table (the --repersist
+    #   upgrade); fails_when=item 1's refusal reaches a store that never held the correction; why_new=item 1's
+    #   contract; seam=rebuild_database_from_entries
+    def test_a_rebuild_without_a_file_goes_on_where_no_file_was_used(self) -> None:
+        self.assertIn("keine Sitzzahlen", self.rebuild())
+        self.assertIn("keine Sitzzahlen", self.rebuild())
+        self.assertEqual(self.state()["sha256"], [])
+        conn = sqlite3.connect(self.database)
+        conn.execute("DROP TABLE mdb_stammdaten_stand")
+        conn.commit()
+        conn.close()
+        self.assertIn("keine Sitzzahlen", self.rebuild(upgrade=True))
+
+    # Value: protects=the flag only permits a rebuild without a file; a cached file is still read and used;
+    #   fails_when=without_stammdaten hides the file; why_new=item 1's contract (Codex plan review 5);
+    #   seam=rebuild_database_from_entries
+    def test_the_flag_does_not_hide_a_cached_file(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        self.rebuild(without_stammdaten=True)
+        self.assertEqual(self.state()["sha256"], [self.sha(self.leaves)])
+        self.assertEqual(self.state()["moved"], [("Kamann, Uwe", "fraktionslos", "AfD")])
+
+    # Value: protects=one rebuild reads the cached file once, so the moves, the Zugehörigkeiten, the seat counts and the
+    #   Stand all come from one file even when a refresh replaces it mid-rebuild (TODOS E4 deferred item 3);
+    #   fails_when=the seat step reads the file again; why_new=item 3; seam=rebuild_database_from_entries with
+    #   persist_report wrapped to swap the cache
+    def test_one_rebuild_reads_one_file(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        real_read, real_persist = stammdaten.read_zip, pulse_store.persist_report
+        reads = []
+
+        def counting_read(path, *args, **kwargs):
+            reads.append(path)
+            return real_read(path, *args, **kwargs)
+
+        def swapping_persist(*args, **kwargs):
+            self.cache.write_bytes(self.stays)
+            return real_persist(*args, **kwargs)
+
+        with mock.patch.object(stammdaten, "read_zip", side_effect=counting_read), \
+                mock.patch.object(pulse_store, "persist_report", side_effect=swapping_persist):
+            self.rebuild()
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(self.state(), {
+            "sha256": [self.sha(self.leaves)],
+            "moved": [("Kamann, Uwe", "fraktionslos", "AfD")],
+            "kamann": [("AfD", "2017-10-24"), ("fraktionslos", "2019-01-03")],
+            "seats": [("AfD", "2017-10-24", 2), ("AfD", "2019-01-03", 1), ("fraktionslos", "2019-01-03", 1)],
+        })
+
+    # Value: protects=an unreadable cached file stops the rebuild as DatabaseRebuildError with the store's bytes
+    #   unchanged; fails_when=StammdatenError escapes the CLI's handler, or a half-built store is swapped in;
+    #   why_new=moved from refile_entry_votes to the public entry point (item 3); seam=rebuild_database_from_entries
+    def test_an_unreadable_file_stops_the_rebuild(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        self.rebuild()
+        self.cache.write_bytes(b"not a zip")
+        before = self.database.read_bytes()
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "cannot be read"):
+            self.rebuild()
+        self.assertEqual(self.database.read_bytes(), before)
 
 
 class StoreSchemaTests(unittest.TestCase):

@@ -671,6 +671,39 @@ class ClonePathSafetyTest(unittest.TestCase):
             self.assertEqual([path.name for path in cloned.iterdir()], [])
 
 
+    # Value: protects=a source store built with a MdB-Stammdaten file is cloned only with that very file: no file, or
+    #   a file with another sha256, is refused before anything is cloned, so the clone's rebuild does not quietly
+    #   drop the correction or re-file from another file (TODOS E4 deferred item 1, sibling path); a store built
+    #   without one, and the matching file, clone; fails_when=_data_clone only checks that a file present at the
+    #   source was copied; why_new=item 1; seam=_data_clone
+    def test_a_source_store_built_with_a_file_needs_that_file(self) -> None:
+        import hashlib
+
+        import person_registry as registry
+        import stammdaten
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, target = Path(tmp) / "site", Path(tmp) / "scratch" / "fresh"
+            (source / "data").mkdir(parents=True)
+            conn = sqlite3.connect(source / gate.STORE)
+            conn.execute("CREATE TABLE mdb_stammdaten_stand (sha256 TEXT, stand TEXT)")
+            conn.commit()
+            gate._data_clone(source, target)  # built without a file, none cached
+            conn.execute("INSERT INTO mdb_stammdaten_stand VALUES (?, ?)", (hashlib.sha256(b"zip bytes").hexdigest(), "2026-04-29T08:03:03+00:00"))
+            conn.commit()
+            conn.close()
+            with self.assertRaisesRegex(ValueError, "built with a MdB-Stammdaten file"):
+                gate._data_clone(source, Path(tmp) / "scratch" / "none")
+            self.assertFalse((Path(tmp) / "scratch" / "none").exists())
+            private = registry.private_dir(source / gate.STORE)
+            private.mkdir(mode=0o700)
+            (private / stammdaten.CACHE_NAME).write_bytes(b"other bytes")
+            with self.assertRaisesRegex(ValueError, "built with a MdB-Stammdaten file"):
+                gate._data_clone(source, Path(tmp) / "scratch" / "other")
+            (private / stammdaten.CACHE_NAME).write_bytes(b"zip bytes")
+            gate._data_clone(source, target)
+            self.assertEqual(stammdaten.cache_path(target / gate.STORE).read_bytes(), b"zip bytes")
+
 class LinkAuditTest(unittest.TestCase):
     # Value: protects=every page a replay renders links only to pages and anchors that exist;
     # fails_when=a missing target or anchor goes unreported, or an external link is flagged;
