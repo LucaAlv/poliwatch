@@ -170,6 +170,39 @@ class ProtocolCutTests(unittest.TestCase):
         self.assertEqual((result["page"], result["quadrant"], result["place_from"]), (12, "B", "dip"))
         self.assertEqual([entry["dip_activity_id"] for entry in result["entries"]], ["a4", "a5", "a8"])
 
+    # Value: protects=a whole first edition holding a withheld Rede is not marked cut: DIP lists the withheld Rede,
+    #   the file prints it; fails_when=such a sitting is marked and CUT_PROTOCOL hides WITHHELD_REDEN;
+    #   why_new=TODOS cut-protocols item 2; seam=parser
+    def test_withheld_reden_count_as_printed_in_the_whole_test(self):
+        whole = parsed(NOTICE_READ, reden=3, zu_protokoll=("Dreher", "Esch"))
+        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4"}, {"rede_id": "ID5"}]
+        self.assertIsNone(cut.protocol_cut(whole, ACTIVITIES))
+        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4"}]
+        self.assertEqual([e["dip_activity_id"] for e in cut.protocol_cut(whole, ACTIVITIES)["entries"]], ["a4", "a5"])
+
+    # Value: protects=a cut place without a quadrant: only a later page is after it, so the last printed Rede and its
+    #   page neighbours are never listed as unprinted; a DIP Rede without a quadrant on the cut's page is not after it;
+    #   fails_when=the last Rede itself is listed as missing; why_new=TODOS cut-protocols item 3; seam=parser
+    def test_a_cut_place_without_a_quadrant_counts_only_later_pages(self):
+        notice = {**NOTICE_READ, "last_rede": {"rede_id": "ID2", "page": 12, "quadrant": None, "surname": "Berg"}}
+        result = cut.protocol_cut(parsed(notice), ACTIVITIES)
+        self.assertEqual([e["dip_activity_id"] for e in result["entries"] if e["kind"] == "rede"], ["a5"])
+        bare = [*ACTIVITIES, activity("b1", "Rede", "Fritz Fink, MdB, SPD", "12", "17"),
+                activity("b2", "Rede", "Gerd Gans, MdB, SPD", "13", "18")]
+        result = cut.protocol_cut(parsed(NOTICE_READ), bare)
+        self.assertEqual([e["dip_activity_id"] for e in result["entries"] if e["kind"] == "rede"], ["a4", "b2", "a5"])
+        self.assertEqual([cut.after_cut(place, (12, "B")) for place in ((12, ""), (12, "C"), (13, ""), (12, "A"))],
+                         [False, True, True, False])
+        self.assertEqual([cut.after_cut(place, (12, "")) for place in ((12, "D"), (12, ""), (13, ""), (11, "D"))],
+                         [False, False, True, False])
+
+    def test_rule_3_counts_only_later_pages_without_a_quadrant(self):
+        root = protocol_root(notice="", toc=xref("ID1", 10, "A") + xref("ID2", 12, ""))
+        same_page = [activity(f"s{n}", "Rede", f"Same Page{n}, MdB", "12C") for n in range(6)]
+        self.assertIsNone(cut.unmarked_cut_evidence(root, same_page, 0))
+        later = [activity(f"l{n}", "Rede", f"Later Page{n}, MdB", "13A") for n in range(6)]
+        self.assertEqual(cut.unmarked_cut_evidence(root, later, 0)["dip_reden_after"], 6)
+
     def test_without_pages_two_dip_reden_of_the_last_speaker_refuse(self):
         notice = {**NOTICE_READ, "last_rede": {"rede_id": "ID2", "page": None, "quadrant": None, "surname": "Berg"}}
         twice = [*ACTIVITIES, activity("b1", "Rede", "Bernd Berg, MdB, AfD", "14A", "12")]
@@ -224,6 +257,11 @@ class ParsedReportTests(unittest.TestCase):
         self.assertIn("cut", site.stale_causes(report))
         report["validation_summary"]["cut_rule_version"] = cut.CUT_RULE_VERSION
         self.assertNotIn("cut", site.stale_causes(report))
+        # Rule 1 counted a withheld Rede as missing and placed a quadrant-less cut on page 0 of its quadrant
+        # (TODOS cut-protocols items 2, 3 and 9): a report read under it is re-read.
+        report["validation_summary"]["cut_rule_version"] = 1
+        self.assertIn("cut", site.stale_causes(report))
+        self.assertGreater(cut.CUT_RULE_VERSION, 1)
 
 
 CUT = {"announced": "2026-10-13", "last_rede_id": "R3", "page": 103, "quadrant": "B", "place_from": "inhaltsverzeichnis",
@@ -617,6 +655,7 @@ class GateTests(unittest.TestCase):
         report = cut_report(protocol_cut)
         report["api_records"] = {"aktivitaeten": list(aktivitaeten)}
         report["validation_summary"]["xml_speech_count"] = 3
+        report["validation_summary"]["withheld_rede_count"] = 0
         return report
 
     # Value: protects=the mark and the notice agree, and the receipt carries the counts; fails_when=a sitting is
@@ -649,6 +688,11 @@ class GateTests(unittest.TestCase):
         result = gate.cut_protocol_check(output, database)
         self.assertEqual([entry["dip_reden_after"] for entry in result["rule3"]], [8])
         self.assertIn("look cut by rule 3", " ".join(result["problems"]))
+        # A withheld Rede is printed: DIP's 8 against 3 stored and 1 withheld is 4 more, below rule 3's 5 (item 2).
+        report = self.gate_report(None, after)
+        report["validation_summary"]["withheld_rede_count"] = 1
+        output, database = self.output(xml, report)
+        self.assertEqual(gate.cut_protocol_check(output, database)["rule3"], [])
 
     # Value: protects=no unprinted entry is a stored Rede over again; fails_when=a DIP Rede the file prints is listed as
     #   missing; why_new=step 6; seam=gate
