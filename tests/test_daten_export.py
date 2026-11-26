@@ -2102,7 +2102,11 @@ class AccentedNameTests(unittest.TestCase):
         ("2", "Sevim Dagdelen, MdB, SPD", ("Sevim Dagdelen", "Sevim Da\u011fdelen")),
         ("3", "Boris Mijatovi\u0107, MdB, SPD", ("Boris Mijatovic",)),
         ("4", "Achim Post (Minden), MdB, SPD", ("Achim Post",)),
+        ("5", "Adis Ahmetovic, MdB, SPD", ("Adis Ahmetovic",)),
     )
+    # The accent only in the roll call's "surname, given name", on the one
+    # member record that also prints the name without it.
+    VOTER = ("5", ("Ahmetovic, Adis", "Ahmetović, Adis"))
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
@@ -2140,6 +2144,17 @@ class AccentedNameTests(unittest.TestCase):
                                paragraph_count, char_count, text, snippet, created_at, updated_at)
                                VALUES (?, 'p1', 'ai1', ?, ?, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
                             (f"speech-{sequence}", f"R{sequence}", sequence, speaker, now, now))
+                dip_id, printed = self.VOTER
+                url = f"https://www.bundestag.de/abgeordnete/biografien/A/voter-{dip_id}"
+                for number, name in enumerate(printed, 1):
+                    voter = pulse_store.upsert_mp(
+                        conn, now=now, display_name=name, party_id=party, profile_url=url,
+                        identity_key=pulse_store.mp_identity(profile_url=url),
+                        occurrence_id=f"fixture:vote:{dip_id}:{number}")
+                    conn.execute("INSERT INTO votes(id, protocol_id, top_link_step, created_at, updated_at) "
+                                 "VALUES (?, 'p1', 'none', ?, ?)", (f"vote-{number}", now, now))
+                    conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES (?, ?, ?, 'yes')",
+                                 (f"vote-{number}", voter, party))
             conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
                          (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
             person_registry.reconcile(conn)
@@ -2174,12 +2189,14 @@ class AccentedNameTests(unittest.TestCase):
     # Value: protects=a heading shows the accents the protocols print and the r1 label is that heading plus DIP's tail, in the rows shown and in the published SQL; fails_when=either side keeps DIP's spelling, reads only the speaker record's representative name, strips an accent the roster has or drops a Wahlkreiszusatz; why_new=the representative tests fix which row names a person, none that its accents can come from another printing; seam=none
     def test_the_heading_and_the_recipe_label_take_the_accents_the_protocols_print(self) -> None:
         pages = {mp["name"] for mp in self.collect()}
-        self.assertEqual(pages, {"Zada Salihovi\u0107", "Sevim Da\u011fdelen", "Boris Mijatovi\u0107", "Achim Post (Minden)"})
+        self.assertEqual(pages, {"Zada Salihovi\u0107", "Sevim Da\u011fdelen", "Boris Mijatovi\u0107", "Achim Post (Minden)",
+                                 "Adis Ahmetovi\u0107"})
 
         manifest, dist = self.exported()
         expected = {
             "Zada Salihovi\u0107, MdB, SPD", "Sevim Da\u011fdelen, MdB, SPD",
             "Boris Mijatovi\u0107, MdB, SPD", "Achim Post (Minden), MdB, SPD",
+            "Adis Ahmetovi\u0107, MdB, SPD",
         }
         r1 = next(r for r in manifest["recipes"] if r["id"] == "r1-meiste-reden")
         self.assertEqual({row["display_name"] for row in r1["rows"]}, expected)
@@ -2190,7 +2207,8 @@ class AccentedNameTests(unittest.TestCase):
         self.assertEqual(
             sorted(dist.execute("SELECT DISTINCT canonical_id, accented_name FROM mp_canonical WHERE accented_name IS NOT NULL").fetchall(), key=lambda r: r[1]),
             sorted(((dist.execute("SELECT person_id FROM mps WHERE display_name = ?", (titel,)).fetchone()[0], accented)
-                    for titel, accented in (("Sevim Dagdelen, MdB, SPD", "Sevim Da\u011fdelen, MdB, SPD"),
+                    for titel, accented in (("Adis Ahmetovic, MdB, SPD", "Adis Ahmetovi\u0107, MdB, SPD"),
+                                            ("Sevim Dagdelen, MdB, SPD", "Sevim Da\u011fdelen, MdB, SPD"),
                                             ("Zada Salihovic, MdB, SPD", "Zada Salihovi\u0107, MdB, SPD"))), key=lambda r: r[1]))
         self.assertEqual(dist.execute(
             "SELECT COUNT(*) FROM mp_canonical GROUP BY canonical_id HAVING COUNT(DISTINCT accented_name IS NULL) > 1").fetchall(), [])
@@ -2217,7 +2235,7 @@ class AccentedNameTests(unittest.TestCase):
         self.assertIn('const q = fold((search ? search.value : "").trim());', script)
         self.assertIn("fold(row.dataset.search).includes(q)", script)
 
-    # Value: protects=only added accents change a name; fails_when=the rule folds the diaeresis, drops an accent the label has, takes a roll call's word order, a title, a bracket or another surname, or depends on the order of the printings; why_new=the end-to-end test holds four persons, not the refusals; seam=none
+    # Value: protects=only added accents change a name; fails_when=the rule folds the diaeresis, drops an accent the label has, misses a roll call's "surname, given name", takes a title, a bracket or another surname, or depends on the order of the printings; why_new=the end-to-end test holds five persons, not the refusals; seam=none
     def test_only_added_accents_change_a_label(self) -> None:
         cases = (
             ("Aniko Glogowski-Merten, MdB, FDP", ["Anik\u00f3 Merten", "Anik\u00f3 Glogowski-Merten"],
@@ -2231,7 +2249,12 @@ class AccentedNameTests(unittest.TestCase):
             ("Boris Mijatovi\u0107", ["Boris Mijatovic"], None),
             ("Zo\u00e9 Kovac", ["Zoe Kova\u010d"], None),
             ("Zo\u00e9 Test", ["Zoe\u0301 Test"], None),
-            ("Zada Salihovic", ["Salihovi\u0107, Zada"], None),
+            # The roll call prints "surname, given name"; it is read in the
+            # label's order, and a label in that order still reads it as printed.
+            ("Zada Salihovic", ["Salihovi\u0107, Zada"], "Zada Salihovi\u0107"),
+            ("Salihovic, Zada", ["Salihovi\u0107, Zada"], "Salihovi\u0107, Zada"),
+            ("Zada Salihovic", ["Zada, Salihovi\u0107"], None),
+            ("Zada Salihovic", ["Salihovi\u0107, Dr. Zada"], None),
             ("Zada Salihovic", ["Dr. Zada Salihovi\u0107"], None),
             ("Achim Post (Minden)", ["Achim Post"], None),
             ("Aniko Glogowski-Merten", ["Anik\u00f3 Merten"], None),

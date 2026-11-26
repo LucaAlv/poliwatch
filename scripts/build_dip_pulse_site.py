@@ -3757,8 +3757,8 @@ def _write_accented_names(conn: sqlite3.Connection) -> None:
 _MP_ID_MEANING = "Konsolidierte Personenkennung (persons.id), im HTML nur Linkschlüssel."
 _DISPLAY_NAME_MEANING = (
     "Anzeigename der repräsentativen Quellaufzeichnung: MdB-Kader vor XML-Redner, dann identity_key. Druckt eine "
-    "Aufzeichnung der Person denselben Namen mit zusätzlichen Akzenten, steht er in dieser Schreibweise "
-    "(mp_canonical.accented_name)."
+    "Aufzeichnung der Person denselben Namen mit zusätzlichen Akzenten, auch als „Nachname, Vorname“, steht er in "
+    "dieser Schreibweise (mp_canonical.accented_name)."
 )
 
 # Parties are keyed by name across Wahlperioden (per-WP Fraktion identity is its
