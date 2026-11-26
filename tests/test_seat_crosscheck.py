@@ -69,6 +69,23 @@ class StoreFixture(unittest.TestCase):
             self.conn.execute("INSERT INTO vote_fractions(vote_id, party_id, total_count, rank) VALUES (?, ?, ?, 1)",
                               (vote_id, party_id, total))
 
+    def refiled_vote(self, vote_id: str, day: str, page: dict[str, int], moves: list[tuple[str, str, str]]) -> None:
+        """A roll-call persisted as the build persists it: the page's group counts ``page`` (all Nein), and the
+        members ``moves`` names, (name, the page's group, the group the Stammdaten prove), re-filed."""
+        members = [{"name": name, "faction": listed, "vote": "no", "profile_url": None, "refiled_to": filed}
+                   for name, listed, filed in moves]
+        fractions = [{"name": party, "counts": {"yes": 0, "no": count, "abstain": 0, "absent": 0}, "total": count}
+                     for party, count in page.items()]
+        the_vote = {"id": vote_id, "date": day, "title": "Test", "members": members, "fractions": fractions,
+                    "detail_url": f"https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id={vote_id}",
+                    "total": {"yes": 0, "no": sum(page.values()), "abstain": 0, "absent": 0}}
+        with self.conn:
+            pulse_store.persist_vote(self.conn, the_vote, protocol_id=None, now=NOW, top_link_step="none")
+
+    def causes(self, result: stammdaten.CrossCheck) -> list[tuple]:
+        return [(row["vote_id"], row["party"], row["stammdaten_seats"], row["roll_call_total"], row["filed_total"], row["cause"])
+                for row in result.disagreements]
+
 
 class CrossCheckTests(StoreFixture):
     # Value: protects=a roll-call that lists one member fewer than the Stammdaten seat
@@ -82,9 +99,10 @@ class CrossCheckTests(StoreFixture):
         result = stammdaten.crosscheck(self.conn)
         self.assertEqual(result.compared, 1)
         self.assertEqual(result.disagreements, [
-            {"vote_id": "1001", "date": "2025-06-26", "wahlperiode": 21, "party": "SPD",
-             "stammdaten_seats": 3, "roll_call_total": 2, "difference": -1, "cause": "roll_call_short"},
+            {"vote_id": "1001", "date": "2025-06-26", "wahlperiode": 21, "party": "SPD", "stammdaten_seats": 3,
+             "roll_call_total": 2, "filed_total": 2, "page_difference": -1, "filed_difference": -1, "cause": "roll_call_short"},
         ])
+        self.assertEqual(result.refiled, [])
 
     # Value: protects=a roll-call that files members under another group than the
     #   Stammdaten (the E4 shape: the totals agree, the groups do not) is one roll-call
@@ -95,7 +113,7 @@ class CrossCheckTests(StoreFixture):
         self.stammdaten(bundestag(AfD=3, SPD=2, fraktionslos=1))
         self.vote("1002", "2025-06-26", AfD=2, SPD=2, fraktionslos=2)
         result = stammdaten.crosscheck(self.conn)
-        self.assertEqual([(row["party"], row["difference"], row["cause"]) for row in result.disagreements],
+        self.assertEqual([(row["party"], row["filed_difference"], row["cause"]) for row in result.disagreements],
                          [("AfD", -1, "shift_between_groups"), ("fraktionslos", 1, "shift_between_groups")])
 
     # Value: protects=a roll-call on the day members change group, listing them under
@@ -113,7 +131,7 @@ class CrossCheckTests(StoreFixture):
         self.vote("1003", "2025-07-01", AfD=3, SPD=2, fraktionslos=3)
         self.vote("1004", "2025-09-01", AfD=2, SPD=2, fraktionslos=1, Gruppe_BSW=3)
         result = stammdaten.crosscheck(self.conn)
-        self.assertEqual([(row["vote_id"], row["party"], row["difference"], row["cause"]) for row in result.disagreements], [
+        self.assertEqual([(row["vote_id"], row["party"], row["filed_difference"], row["cause"]) for row in result.disagreements], [
             ("1003", "Gruppe BSW", -3, "change_on_vote_day"), ("1003", "fraktionslos", 3, "change_on_vote_day"),
             ("1004", "AfD", -1, "shift_between_groups"), ("1004", "fraktionslos", 1, "shift_between_groups"),
         ])
@@ -164,6 +182,69 @@ class CrossCheckTests(StoreFixture):
         result = stammdaten.crosscheck(self.conn)
         self.assertEqual((result.compared, result.disagreements, result.without_seat_count), (1, [], ["1012"]))
 
+    # Value: protects=a roll-call whose page files a member under another group than the Stammdaten, re-filed by
+    #   E4, is reported with the page's count beside the filed one and filed as re-filed, and the move is listed
+    #   (TODOS E4 deferred item 4); fails_when=the check compares only the filed counts, which come from the same
+    #   file as the seats, so the page's disagreement disappears; why_new=item 4; seam=stammdaten.crosscheck
+    def test_a_roll_call_the_stammdaten_re_filed_is_filed_as_refiled(self) -> None:
+        self.stammdaten(bundestag(AfD=87, fraktionslos=9))
+        self.refiled_vote("1101", "2025-06-26", {"AfD": 86, "fraktionslos": 10}, [("Kamann, Uwe", "fraktionslos", "AfD")])
+        result = stammdaten.crosscheck(self.conn)
+        self.assertEqual(result.disagreements, [
+            {"vote_id": "1101", "date": "2025-06-26", "wahlperiode": 21, "party": "AfD", "stammdaten_seats": 87,
+             "roll_call_total": 86, "filed_total": 87, "page_difference": -1, "filed_difference": 0, "cause": "refiled"},
+            {"vote_id": "1101", "date": "2025-06-26", "wahlperiode": 21, "party": "fraktionslos", "stammdaten_seats": 9,
+             "roll_call_total": 10, "filed_total": 9, "page_difference": 1, "filed_difference": 0, "cause": "refiled"},
+        ])
+        self.assertEqual(result.refiled, [{"vote_id": "1101", "date": "2025-06-26", "member": "Kamann, Uwe",
+                                           "listed": "fraktionslos", "filed": "AfD"}])
+
+    # Value: protects=a re-filed roll-call whose filed counts still disagree with the seats is filed by the shape
+    #   of the filed differences, with the page's count in its rows and the move in the list; a move that breaks an
+    #   agreement the page had is filed by shape too, never as re-filed; fails_when=any roll-call with a move counts
+    #   as explained; why_new=item 4; seam=stammdaten.crosscheck
+    def test_a_residual_beside_a_move_is_filed_by_its_shape(self) -> None:
+        self.stammdaten(bundestag(AfD=88, fraktionslos=8))
+        self.refiled_vote("1102", "2025-06-26", {"AfD": 86, "fraktionslos": 10}, [("Kamann, Uwe", "fraktionslos", "AfD")])
+        self.refiled_vote("1103", "2025-06-26", {"AfD": 88, "fraktionslos": 8}, [("Muster, Ada", "AfD", "fraktionslos")])
+        result = stammdaten.crosscheck(self.conn)
+        self.assertEqual(self.causes(result), [
+            ("1102", "AfD", 88, 86, 87, "shift_between_groups"), ("1102", "fraktionslos", 8, 10, 9, "shift_between_groups"),
+            ("1103", "AfD", 88, 88, 87, "shift_between_groups"), ("1103", "fraktionslos", 8, 8, 9, "shift_between_groups"),
+        ])
+        self.assertEqual([(move["vote_id"], move["member"]) for move in result.refiled], [("1102", "Kamann, Uwe"), ("1103", "Muster, Ada")])
+
+    # Value: protects=two opposite moves in one roll-call cancel in the totals, so nothing disagrees, but both stay in
+    #   the list; fails_when=the list is built from the disagreements; why_new=Codex plan review finding 2;
+    #   seam=stammdaten.crosscheck
+    def test_opposite_moves_that_cancel_are_still_listed(self) -> None:
+        self.stammdaten(bundestag(AfD=87, fraktionslos=9))
+        self.refiled_vote("1104", "2025-06-26", {"AfD": 87, "fraktionslos": 9},
+                          [("Kamann, Uwe", "fraktionslos", "AfD"), ("Muster, Ada", "AfD", "fraktionslos")])
+        result = stammdaten.crosscheck(self.conn)
+        self.assertEqual((result.compared, result.disagreements), (1, []))
+        self.assertEqual([move["member"] for move in result.refiled], ["Kamann, Uwe", "Muster, Ada"])
+
+    # Value: protects=a group every member of which the Stammdaten moved has no vote_fractions row, and its page count
+    #   comes back from the moves; fails_when=the page counts are taken over the filed groups only; why_new=Codex plan
+    #   review finding 3; seam=stammdaten.crosscheck
+    def test_a_group_its_members_all_left_gets_its_page_count_back(self) -> None:
+        self.stammdaten(bundestag(AfD=87))
+        self.refiled_vote("1105", "2025-06-26", {"AfD": 86, "fraktionslos": 1}, [("Kamann, Uwe", "fraktionslos", "AfD")])
+        result = stammdaten.crosscheck(self.conn)
+        self.assertEqual(self.causes(result), [("1105", "AfD", 87, 86, 87, "refiled"), ("1105", "fraktionslos", 0, 1, 0, "refiled")])
+
+    # Value: protects=moves that would put a page count below zero (the moves and vote_fractions disagree, as when two
+    #   page entries share one member row) make the roll-call not comparable instead of a made-up figure; fails_when=a
+    #   negative page count is compared; why_new=Codex plan review finding 3; seam=stammdaten.crosscheck
+    def test_moves_the_group_totals_cannot_hold_are_not_compared(self) -> None:
+        self.stammdaten(bundestag(AfD=87, fraktionslos=9))
+        self.refiled_vote("1106", "2025-06-26", {"AfD": 86, "fraktionslos": 10}, [("Kamann, Uwe", "fraktionslos", "AfD")])
+        self.conn.execute("UPDATE vote_fractions SET total_count = 0 WHERE party_id = (SELECT id FROM parties WHERE name = 'AfD')")
+        result = stammdaten.crosscheck(self.conn)
+        self.assertEqual((result.compared, result.disagreements, result.moves_inconsistent), (0, [], ["1106"]))
+        self.assertEqual(len(result.refiled), 1)
+
     # Value: protects=a store without Stammdaten has nothing to check against, which the
     #   cross-check says as None instead of reporting every roll-call; fails_when=an empty
     #   seat table yields a disagreement per group; why_new=C1 step 5;
@@ -199,15 +280,16 @@ class ReportTests(StoreFixture):
         self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {
             "stand": "2025-08-01T08:03:03+00:00", "sha256": "0" * 64,
             "compared": 3, "agree": 1,
-            "roll_calls_by_cause": {"near_stand": ["1022"], "change_on_vote_day": [], "shift_between_groups": [],
+            "roll_calls_by_cause": {"near_stand": ["1022"], "refiled": [], "change_on_vote_day": [], "shift_between_groups": [],
                                     "roll_call_short": [], "unexplained": ["1021"]},
-            "not_compared": {"without_seat_count": [], "without_totals": [], "with_unbekannt": ["1023"]},
+            "not_compared": {"without_seat_count": [], "without_totals": [], "with_unbekannt": ["1023"], "moves_inconsistent": []},
             "disagreements": [
-                {"vote_id": "1021", "date": "2025-04-26", "wahlperiode": 21, "party": "AfD",
-                 "stammdaten_seats": 1, "roll_call_total": 2, "difference": 1, "cause": "unexplained"},
-                {"vote_id": "1022", "date": "2025-08-02", "wahlperiode": 21, "party": "SPD",
-                 "stammdaten_seats": 3, "roll_call_total": 2, "difference": -1, "cause": "near_stand"},
+                {"vote_id": "1021", "date": "2025-04-26", "wahlperiode": 21, "party": "AfD", "stammdaten_seats": 1,
+                 "roll_call_total": 2, "filed_total": 2, "page_difference": 1, "filed_difference": 1, "cause": "unexplained"},
+                {"vote_id": "1022", "date": "2025-08-02", "wahlperiode": 21, "party": "SPD", "stammdaten_seats": 3,
+                 "roll_call_total": 2, "filed_total": 2, "page_difference": -1, "filed_difference": -1, "cause": "near_stand"},
             ],
+            "refiled": [],
         })
         self.assertIn("stammdaten: cross-check of 3 roll-calls against the seat counts: 1 agree, 2 disagree "
                       "(1 near the Stand, 1 unexplained); 1 not compared", err)
@@ -218,6 +300,30 @@ class ReportTests(StoreFixture):
         first = path.read_bytes()
         self.log()
         self.assertEqual(path.read_bytes(), first)
+
+    # Value: protects=the report lists every re-filed Stimme and the summary line counts them and the re-filed
+    #   roll-calls without a warning, while moves the totals cannot hold are warned about as not compared (TODOS E4
+    #   deferred item 4); fails_when=the moves are dropped from the report, or 87 explained roll-calls warn on every
+    #   build; why_new=item 4; seam=build.log_seat_crosscheck
+    def test_the_report_lists_the_moves_and_the_summary_counts_them(self) -> None:
+        self.stammdaten(bundestag(AfD=87, fraktionslos=9))
+        self.refiled_vote("1050", "2025-04-26", {"AfD": 86, "fraktionslos": 10}, [("Kamann, Uwe", "fraktionslos", "AfD")])
+        self.refiled_vote("1051", "2025-04-26", {"AfD": 87, "fraktionslos": 9},
+                          [("Kamann, Uwe", "fraktionslos", "AfD"), ("Muster, Ada", "AfD", "fraktionslos")])
+        self.refiled_vote("1052", "2025-04-26", {"AfD": 86, "fraktionslos": 10}, [("Kamann, Uwe", "fraktionslos", "AfD")])
+        self.conn.execute("UPDATE vote_fractions SET total_count = 0 WHERE vote_id = '1052' AND party_id = "
+                          "(SELECT id FROM parties WHERE name = 'AfD')")
+        err, path = self.log()
+        report = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(report["roll_calls_by_cause"]["refiled"], ["1050"])
+        self.assertEqual(report["not_compared"]["moves_inconsistent"], ["1052"])
+        self.assertEqual([(move["vote_id"], move["member"], move["listed"], move["filed"]) for move in report["refiled"]], [
+            ("1050", "Kamann, Uwe", "fraktionslos", "AfD"), ("1051", "Kamann, Uwe", "fraktionslos", "AfD"),
+            ("1051", "Muster, Ada", "AfD", "fraktionslos"), ("1052", "Kamann, Uwe", "fraktionslos", "AfD")])
+        self.assertIn("cross-check of 2 roll-calls against the seat counts: 1 agree, 1 disagree (1 re-filed); "
+                      "4 Stimmen re-filed in 3 roll-calls; 1 not compared", err)
+        self.assertIn("warning: [stammdaten] not compared, the re-filed Stimmen and the group totals disagree, 1 roll-call: 1052", err)
+        self.assertNotIn("1050", "".join(line for line in err.splitlines() if line.startswith("warning:")))
 
     # Value: protects=roll-calls the cross-check cannot compare (no seat count on their date, no group
     #   totals) are named in a warning each and counted as not compared in the summary, never as agreeing
@@ -232,7 +338,8 @@ class ReportTests(StoreFixture):
         err, path = self.log()
         report = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual((report["compared"], report["agree"]), (1, 1))
-        self.assertEqual(report["not_compared"], {"without_seat_count": ["1030"], "without_totals": ["1031"], "with_unbekannt": []})
+        self.assertEqual(report["not_compared"], {"without_seat_count": ["1030"], "without_totals": ["1031"], "with_unbekannt": [],
+                                                  "moves_inconsistent": []})
         self.assertIn("cross-check of 1 roll-call against the seat counts: 1 agree, 0 disagree; 2 not compared", err)
         self.assertIn("warning: [stammdaten] not compared, no seat count on the date, 1 roll-call: 1030", err)
         self.assertIn("warning: [stammdaten] not compared, no group totals, 1 roll-call: 1031", err)

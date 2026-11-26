@@ -2603,6 +2603,7 @@ def refresh_drucksache_texts(
 #: How the summary line names each cross-check cause (stammdaten.CAUSES).
 _CROSSCHECK_CAUSE_LABELS = {
     "near_stand": "near the Stand",
+    "refiled": "re-filed",
     "change_on_vote_day": "change on the vote's day",
     "shift_between_groups": "shift between groups",
     "roll_call_short": "roll-call short",
@@ -2635,7 +2636,8 @@ def write_crosscheck_report(path: Path, text: str | None) -> bool:
 def log_seat_crosscheck(database_path: Path) -> None:
     """C1 step 5: the store's seat counts against its roll-call totals. Writes
     every disagreement to ``stammdaten.crosscheck_path`` (private, D9), prints
-    one summary line, and warns for disagreements near the Stand (D6, E4 item 2),
+    one summary line (with the Stimmen E4 re-filed, listed in the report), and
+    warns for disagreements near the Stand (D6, E4 item 2),
     in no known shape, or not comparable. Never fails the build: a new
     misattribution on a roll-call page must not stop a routine update."""
     path = stammdaten.crosscheck_path(database_path)
@@ -2659,18 +2661,21 @@ def log_seat_crosscheck(database_path: Path) -> None:
             by_cause[row["cause"]].append(row["vote_id"])
     disagreeing = sum(len(ids) for ids in by_cause.values())
     not_compared = {"without_seat_count": result.without_seat_count, "without_totals": result.without_totals,
-                    "with_unbekannt": result.with_unbekannt}
+                    "with_unbekannt": result.with_unbekannt, "moves_inconsistent": result.moves_inconsistent}
     report = {
         "stand": result.stand, "sha256": result.sha256,
         "compared": result.compared, "agree": result.compared - disagreeing,
         "roll_calls_by_cause": by_cause, "not_compared": not_compared,
         "disagreements": result.disagreements,
+        "refiled": result.refiled,
     }
     written = write_crosscheck_report(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     causes =", ".join(f"{len(ids)} {_CROSSCHECK_CAUSE_LABELS[cause]}" for cause, ids in by_cause.items() if ids)
     skipped = sum(map(len, not_compared.values()))
+    moved_in = len({move["vote_id"] for move in result.refiled})
     print(f"stammdaten: cross-check of {_roll_calls(result.compared)} against the seat counts: "
           f"{report['agree']} agree, {disagreeing} disagree" + (f" ({causes})" if causes else "")
+          + (f"; {len(result.refiled)} Stimmen re-filed in {_roll_calls(moved_in)}" if result.refiled else "")
           + (f"; {skipped} not compared" if skipped else "") + (f"; report: {path}" if written else ""), file=sys.stderr)
     stand_day = datetime.fromisoformat(result.stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
     proved_until = date.fromisoformat(derive.last_proved_day(result.stand)).strftime("%d.%m.%Y")
@@ -2679,6 +2684,7 @@ def log_seat_crosscheck(database_path: Path) -> None:
         (by_cause["near_stand"], f"disagreement after {proved_until}, {derive.STAMMDATEN_LAG_DAYS} days before the Stand "
                                  f"({stand_day}): the file may not record a change yet"),
         (result.with_unbekannt, "not compared, a group named Unbekannt"),
+        (result.moves_inconsistent, "not compared, the re-filed Stimmen and the group totals disagree"),
         (result.without_seat_count, "not compared, no seat count on the date"),
         (result.without_totals, "not compared, no group totals"),
     ):
