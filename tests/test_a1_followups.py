@@ -28,7 +28,8 @@ def report(parsed, number='18/100'):
                          'pdf_url': 'https://dserver.bundestag.de/btp/18/18100.pdf'},
             'agenda_items': [dict(index=t['index'], **dip.xml_top_fields(t)) for t in parsed['agenda_items']],
             'xml_contributions': parsed.get('sitting_contributions', []),
-            'validation_summary': dip.contribution_summary(parsed['agenda_items'], parsed.get('sitting_contributions'))}
+            'validation_summary': {**dip.contribution_summary(parsed['agenda_items'], parsed.get('sitting_contributions')),
+                                   **dip.protocol_cut.cut_summary(parsed, [])}}
 
 
 class SourceRecoveryTests(unittest.TestCase):
@@ -621,7 +622,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             conn = store.connect(path)
             store.persist_report(conn, r)
             self.assertEqual(sk.VERSION, 16)
-            self.assertEqual(store.SCHEMA_VERSION, 15)
+            self.assertEqual(store.SCHEMA_VERSION, 16)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()

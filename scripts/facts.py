@@ -47,6 +47,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sqlite3
 import statistics
 import sys
@@ -59,6 +60,7 @@ from typing import Any, Callable, Iterable, Mapping, MutableMapping, NamedTuple,
 from xml.sax.saxutils import escape
 
 import derive
+import protocol_cut
 import sqlite_open
 from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, document_sort_key, stable_key
 from persist_dip_pulse_store import require_current_schema, require_current_speech_rules
@@ -172,8 +174,22 @@ def _minutes_of(expression: str) -> str:
     )
 
 
-_SITZUNG_START = "json_extract(p.xml_header_json, '$.sitzung_start')"
-_SITZUNG_END = "json_extract(p.xml_header_json, '$.sitzung_end')"
+def _clock(expression: str) -> str:
+    """A sitting time as "H:MM": 19 WP 19 heads print "13.00", "2.09" or
+    "13.00 Uhr" (sitting_clock is the same rule in Python)."""
+    return f"REPLACE(REPLACE(TRIM({expression}), ' Uhr', ''), '.', ':')"
+
+
+def _is_clock(expression: str) -> str:
+    return f"({expression} GLOB '[0-9]:[0-5][0-9]' OR {expression} GLOB '[0-9][0-9]:[0-5][0-9]')"
+
+
+SITZUNG_START_SQL = _clock("json_extract(p.xml_header_json, '$.sitzung_start')")
+#: The end the printed PDF gives where scripts/reviewed_end_times.json corrects
+#: the XML head (D2), else the head's.
+SITZUNG_END_SQL = _clock("COALESCE(p.sitting_end_corrected, json_extract(p.xml_header_json, '$.sitzung_end'))")
+_SITZUNG_START = SITZUNG_START_SQL
+_SITZUNG_END = SITZUNG_END_SQL
 #: 0 for a sitting number of the form WP/number, else 1 (sorted after them).
 _MALFORMED_NUMBER = (
     "CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*' AND p.document_number NOT GLOB '*[^0-9/]*' "
@@ -346,7 +362,10 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "laengste-sitzung",
-        "version": 1,
+        # v2 (docs/plans/cut-protocols.md D2): judged by the sitting times
+        # (coverage "times"), not by the Reden: a cut Protokoll file or a
+        # withheld Rede leaves both times in the XML head.
+        "version": 2,
         "title": "Die längste Sitzung der Woche",
         "unit": "Minuten",
         "direction": "max",
@@ -355,7 +374,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "SELECT p.id, p.document_number, p.date, p.pdf_url, p.id AS protocol_id,\n"
             f"       {_SITZUNG_START} AS sitzung_start,\n"
             f"       {_SITZUNG_END} AS sitzung_end,\n"
-            f"       CASE WHEN {_SITZUNG_START} LIKE '_%:__' AND {_SITZUNG_END} LIKE '_%:__'\n"
+            f"       CASE WHEN {_is_clock(_SITZUNG_START)} AND {_is_clock(_SITZUNG_END)}\n"
             f"         THEN (({_minutes_of(_SITZUNG_END)})\n"
             f"               - ({_minutes_of(_SITZUNG_START)}) + 1440) % 1440\n"
             "       END AS value,\n"
@@ -365,7 +384,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "min_history_weeks": MIN_HISTORY_WEEKS,
         "tie_rank": 5,
         "depends_on": None,
-        "coverage": "speeches",
+        "coverage": "times",
         "receipt": "protocol",
         "min_value": None,
         "requires_topic": False,
@@ -373,7 +392,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "erste-reden",
-        "version": 3,
+        "version": 4,
         "title": "Die meisten ersten Reden der Woche",
         "unit": "Abgeordnete mit ihrer ersten Rede",
         "direction": "max",
@@ -393,6 +412,13 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # week of the real debut is already incomplete for speeches, and every
         # later Rede is not a first one. withheld_units.sequence and
         # speeches.sequence are one numbering within a TOP (ADR 0005 D3).
+        #
+        # v4 (docs/plans/cut-protocols.md step 4): a Rede DIP lists in the part
+        # of a sitting its cut Protokoll file does not print
+        # (unprinted_contributions, kind "rede") counts as one too, as a
+        # withheld Rede does. It has no TOP or position, so it ranks after every
+        # printed Rede of its sitting (item index past any real one, then page),
+        # and it binds by the mps row of its DIP person, not by a Redner-ID.
         "sql": (
             "WITH speaker AS (\n"
             "  SELECT s.id AS speech_id, NULL AS withheld_id, 0 AS withheld,\n"
@@ -418,6 +444,16 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "  JOIN protocols p ON p.id = w.protocol_id\n"
             "  JOIN agenda_items ai ON ai.id = w.agenda_item_id\n"
             "  WHERE w.xml_redner_id <> ''\n"
+            "  UNION ALL\n"
+            "  SELECT NULL, u.id, 1,\n"
+            "         p.date, p.document_number,\n"
+            f"         {_MALFORMED_NUMBER},\n"
+            "         2147483647, COALESCE(u.page, 2147483647),\n"
+            "         'p#' || mc.canonical_id\n"
+            "  FROM unprinted_contributions u\n"
+            "  JOIN mp_canonical mc ON mc.mp_id = u.mp_id\n"
+            "  JOIN protocols p ON p.id = u.protocol_id\n"
+            "  WHERE u.kind = 'rede'\n"
             "),\n"
             "first_day AS (\n"
             "  SELECT person_key, MIN(day) AS day FROM speaker GROUP BY person_key\n"
@@ -615,7 +651,7 @@ def validate_registry(registry: Iterable[Mapping[str, Any]] = REGISTRY) -> None:
             raise FactsError(f"facts: metric {metric_id} has no direction")
         if metric.get("aggregation") not in ("extreme", "count", "grouped_extreme"):
             raise FactsError(f"facts: metric {metric_id} has no aggregation")
-        if metric.get("coverage") not in ("votes", "speeches"):
+        if metric.get("coverage") not in COVERAGE_DOMAINS:
             raise FactsError(f"facts: metric {metric_id} has no coverage domain")
         if metric.get("min_value") is not None and metric["direction"] != "max":
             raise FactsError(
@@ -946,6 +982,34 @@ COMPLETE_SCAN_ENDS = ("date_passed", "list_end")
 #: code, not text: the gap note words it and the backfill recognizes it.
 WITHHELD_REDEN = "withheld_reden"
 
+#: The speeches reason code of a sitting whose Protokoll XML is a first edition
+#: that stops partway through (docs/source-errors.md E16, protocol_cut): its
+#: Reden after the cut are in no table. Like withheld Reden, no re-fetch of the
+#: same file releases it.
+CUT_PROTOCOL = "cut_protocol"
+
+#: The same for a cut sitting whose report holds no DIP Aktivitäten (DIP had not
+#: indexed it when it was fetched): a re-fetch reads them, so it is acquirable,
+#: and they may show the sitting whole (as 19/107).
+CUT_PROTOCOL_UNINDEXED = "cut_protocol_unindexed"
+
+#: The times reason code of a parsed XML that prints no start or no end time
+#: (18/23): ``laengste-sitzung`` cannot be judged for that sitting.
+NO_SITTING_TIMES = "no_sitting_times"
+
+#: A sitting time as ``sitting_clock`` reads it, "09:00" or "9:00".
+_SITTING_TIME = re.compile(r"[0-9]{1,2}:[0-5][0-9]")
+
+
+def sitting_clock(value: Any) -> str | None:
+    """A sitting time of the XML head as "H:MM" or "HH:MM", the rule
+    ``laengste-sitzung``'s SQL applies (``_clock``): "13.00", "2.09" and
+    "13.00 Uhr" count, as 19 WP 19 heads print them. None for anything else."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip(" ").replace(" Uhr", "").replace(".", ":")
+    return text if _SITTING_TIME.fullmatch(text) else None
+
 
 def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """document_number -> {"votes": bool, "speeches": bool, "reasons": {...}}.
@@ -980,6 +1044,18 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
                 speeches, speeches_reason = False, "no withheld count (report predates it)"
             elif withheld > 0:
                 speeches, speeches_reason, withheld_count = False, WITHHELD_REDEN, withheld
+        if summary.get("xml_speech_count") is not None:
+            if "protocol_cut" not in summary or summary.get("cut_rule_version") != protocol_cut.CUT_RULE_VERSION:
+                speeches, speeches_reason = False, "no cut check (report predates it)"
+            elif summary["protocol_cut"]:
+                # Outranks withheld Reden: what the file lacks is larger and unknown.
+                indexed = any(isinstance(activity, dict)
+                              for activity in (report.get("api_records") or {}).get("aktivitaeten") or [])
+                speeches, speeches_reason = False, CUT_PROTOCOL if indexed else CUT_PROTOCOL_UNINDEXED
+        header = protocol.get("xml_header") or {}
+        parsed = summary.get("xml_speech_count") is not None
+        times = parsed and all(sitting_clock(header.get(key)) for key in ("sitzung_start", "sitzung_end"))
+        times_reason: str | None = None if times else ("XML not parsed" if not parsed else NO_SITTING_TIMES)
         acquisition = (report.get("acquisition") or {}).get("votes")
         votes_reason: str | None = None
         if not acquisition:
@@ -1015,7 +1091,8 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
         result[str(number)] = {
             "votes": votes,
             "speeches": speeches,
-            "reasons": {"votes": votes_reason, "speeches": speeches_reason},
+            "times": times,
+            "reasons": {"votes": votes_reason, "speeches": speeches_reason, "times": times_reason},
         }
         if withheld_count is not None:
             result[str(number)]["withheld_reden"] = withheld_count
@@ -1089,7 +1166,7 @@ def week_is_complete(week: Week | Month, completeness: Mapping[str, Mapping[str,
     return bool(week.protocols or week.expected) and not period_gaps(week, completeness, domain)
 
 
-COVERAGE_DOMAINS = ("votes", "speeches")
+COVERAGE_DOMAINS = ("votes", "speeches", "times")
 
 
 def sitting_gaps(
@@ -1171,7 +1248,11 @@ def incomplete_periods(
     return result
 
 
-_GAP_DOMAIN_TEXT = {"votes": "Abstimmungen nicht vollständig erfasst", "speeches": "Reden nicht erfasst"}
+_GAP_DOMAIN_TEXT = {
+    "votes": "Abstimmungen nicht vollständig erfasst",
+    "speeches": "Reden nicht erfasst",
+    "times": "Sitzungszeiten nicht erfasst",
+}
 
 
 def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) -> str:
@@ -1193,6 +1274,10 @@ def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) 
             else:
                 noun = "Rede" if count == "1" else "Reden"
                 parts.append(f"Sitzung {number}: {count} {noun} zurückgehalten")
+        elif reason in (CUT_PROTOCOL, CUT_PROTOCOL_UNINDEXED):
+            parts.append(f"Sitzung {number}: Protokolldatei abgebrochen")
+        elif reason == NO_SITTING_TIMES:
+            parts.append(f"Sitzung {number}: Beginn oder Ende nicht im Protokoll")
         else:
             parts.append(f"Sitzung {number}: {_GAP_DOMAIN_TEXT[domain]}")
     if len(gaps) > shown:

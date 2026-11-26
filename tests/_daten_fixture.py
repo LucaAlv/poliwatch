@@ -314,7 +314,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 stand=STAMMDATEN_STAND, sha256=STAMMDATEN_SHA256, now=now,
             )
         person_registry.reconcile(conn)
-        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         conn.commit()
     finally:
         conn.close()

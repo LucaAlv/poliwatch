@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import protocol_cut
 import build_dip_pulse_site as build
 import derive
 import facts
@@ -338,7 +339,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
     #   fails_when=the warning drops the count, --fetch-xml or --offline --repersist, fires for a marked report, or the return count is wrong;
     #   why_new=the warning text was only checked as a side effect of repersist_cached_reports on one report; seam=none
     def test_warn_unparsed_reports_names_the_stale_count_and_the_fix(self) -> None:
-        current = {"report": _support.stamp_reviewed({"validation_summary": {"speech_kinds_version": speech_kinds.VERSION}})}
+        current = {"report": _support.stamp_reviewed({"validation_summary": {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}})}
         old = {"report": _support.stamp_reviewed({"validation_summary": {"xml_speech_count": 1}})}
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
@@ -562,6 +563,8 @@ class RepersistTests(unittest.TestCase):
         for fixture, slug in (("report.json", "20-999"), ("demo-report-21-84.json", "21-84")):
             report = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))
             report.setdefault("validation_summary", {})["speech_kinds_version"] = speech_kinds.VERSION
+            report.setdefault("validation_summary", {})["cut_rule_version"] = protocol_cut.CUT_RULE_VERSION
+            report.setdefault("validation_summary", {}).setdefault("protocol_cut", None)
             _support.stamp_reviewed(report)
             (self.output_dir / "data" / f"plenarprotokoll-{slug}.json").write_text(
                 json.dumps(report), encoding="utf-8"
@@ -1206,7 +1209,7 @@ class RepersistTests(unittest.TestCase):
         self.assertTrue(rebuilt.replaced)
         conn = sqlite3.connect(self.database)
         try:
-            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 15)
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 16)
             self.assertGreater(conn.execute("SELECT COUNT(*) FROM vote_fractions").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_fractions WHERE rank < 1").fetchone()[0], 0)
         finally:

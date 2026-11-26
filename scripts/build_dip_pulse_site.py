@@ -106,6 +106,7 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import vote_links
+import protocol_cut
 import reviewed_vote_links
 import dip_cache
 import abgeordnetenwatch as aw
@@ -160,6 +161,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen, mündliche Erklärungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
     "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005). Nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
+    "unprinted_contributions": "Was DIP im Teil einer Sitzung nennt, den ihre abgebrochene Protokolldatei nicht druckt (protocols.xml_cut = 1): Reden nach der letzten gedruckten Rede und zu Protokoll gegebene Reden, die keiner gespeicherten entsprechen, je mit Redner wie DIP ihn nennt, Seite und DIP-Kennungen. Ohne Wortlaut und in keiner Zählung: Sie sind keine Reden des Datensatzes.",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, mündliche Erklärung (erklaerung), Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
@@ -568,15 +570,18 @@ def v1_coverage_floor(catalog: list[dict[str, Any]]) -> str | None:
 _BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
 
 
+#: Gaps that a re-fetch of the same files reproduces (ADR 0005, E16): withheld
+#: Reden (a parser rule or the reviewed list releases them), a cut Protokoll
+#: file (only a replaced file does, see ``replaced_cut_files``) and an XML head
+#: without a sitting time. A cut file whose report holds no DIP Aktivitäten
+#: (``facts.CUT_PROTOCOL_UNINDEXED``) is not among them: a re-fetch reads them.
+_UNACQUIRABLE = {("speeches", facts.WITHHELD_REDEN), ("speeches", facts.CUT_PROTOCOL), ("times", facts.NO_SITTING_TIMES)}
+
+
 def _acquirable_reasons(gap: dict[str, Any]) -> dict[str, str]:
-    """The gap's reasons without withheld Reden (ADR 0005): re-fetching never
-    releases a withheld Rede, only a parser rule or a reviewed-list change does,
-    through --offline --repersist."""
-    return {
-        domain: reason
-        for domain, reason in gap["reasons"].items()
-        if not (domain == "speeches" and reason == facts.WITHHELD_REDEN)
-    }
+    """The gap's reasons without those a re-fetch never closes
+    (``_UNACQUIRABLE``)."""
+    return {domain: reason for domain, reason in gap["reasons"].items() if (domain, reason) not in _UNACQUIRABLE}
 
 
 def _structural_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
@@ -619,13 +624,17 @@ def incomplete_sitting_protocols(
     votes: bool = True,
     scan_pages: int | None = None,
     wahlperiode: int | None = None,
+    replaced: Collection[str] = (),
 ) -> tuple[
     list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]
 ]:
     """(acquirable, waiting, vote_only, structural, withheld): the sittings to
     acquire, those DIP has no XML for yet, those held back only by votes while
     votes are off, those a rescan at these settings reproduces, and those held
-    back only by withheld Reden (ADR 0005), which no acquisition releases."""
+    back only by what no acquisition releases (``_UNACQUIRABLE``: withheld
+    Reden, a cut Protokoll file, a head without times). ``replaced``
+    (``replaced_cut_files``) names cut sittings whose file DIP lists with
+    another hash now: they are acquired again whatever else holds them."""
     stored = []
     for entry in entries:
         protocol = (entry.get("report") or {}).get("protocol") or {}
@@ -648,7 +657,9 @@ def incomplete_sitting_protocols(
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
         if gap is None or (wahlperiode and wahlperiode_of(protocol) != wahlperiode):
             continue
-        if not _acquirable_reasons(gap):
+        if normalized_document_number(protocol.get("dokumentnummer")) in replaced:
+            (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
+        elif not _acquirable_reasons(gap):
             withheld.append(protocol)
         elif _structural_gap(gap, scan_pages):
             structural.append(protocol)
@@ -659,6 +670,68 @@ def incomplete_sitting_protocols(
         else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
     return acquirable, waiting, vote_only, structural, withheld
+
+
+def replaced_cut_files(output_dir: Path, entries: list[dict[str, Any]], catalog: list[dict[str, Any]]) -> set[str]:
+    """The cut sittings (E16) whose cached XML is not the file DIP's catalog lists
+    now: its ``xml_hash`` (an md5) differs from the md5 of the cached file, so the
+    Bundestag may have replaced the first edition. Nothing is known without a
+    hash or a cached file. The catalog of a closed Wahlperiode can be up to
+    ``CATALOG_FULL_FETCH_DAYS`` old."""
+    hashes = {
+        normalized_document_number(protocol.get("dokumentnummer")): str(protocol.get("xml_hash") or "").strip().lower()
+        for protocol in catalog
+    }
+    replaced = set()
+    for entry in entries:
+        report = entry.get("report") or {}
+        if not (report.get("validation_summary") or {}).get("protocol_cut"):
+            continue
+        number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+        listed = hashes.get(number)
+        path = xml_cache_path(output_dir, number) if number else None
+        if not listed or path is None or not path.is_file():
+            continue
+        data = path.read_bytes()
+        read = (report.get("protocol") or {}).get("xml_sha256")
+        # A run stopped between writing the new XML and its report leaves a
+        # report read from another file than the one cached.
+        if hashlib.md5(data).hexdigest() != listed or (
+                read and read != dip.xml_source_sha256(data.decode("utf-8", errors="replace"))):
+            replaced.add(number)
+    return replaced
+
+
+def unacquirable_lines(held: list[dict[str, Any]], entries: list[dict[str, Any]], replaced: Collection[str]) -> list[str]:
+    """What a backfill says of the sittings it leaves because no acquisition
+    closes their gap, one line per cause, read from each cached report: a cut
+    Protokoll file (E16), withheld Reden (ADR 0005), or an XML head without a
+    sitting time. ``replaced`` adds the cut sittings it fetches again."""
+    summaries = {
+        normalized_document_number(((entry.get("report") or {}).get("protocol") or {}).get("dokumentnummer")):
+            (entry.get("report") or {}).get("validation_summary") or {}
+        for entry in entries
+    }
+    groups: dict[str, list[str]] = {"cut": [], "withheld": [], "times": []}
+    for protocol in held:
+        number = normalized_document_number(protocol.get("dokumentnummer"))
+        summary = summaries.get(number) or {}
+        cause = "cut" if summary.get("protocol_cut") else "withheld" if summary.get("withheld_rede_count") else "times"
+        groups[cause].append(number)
+    lines = []
+    if groups["cut"]:
+        lines.append(f"[backfill] leaving {len(groups['cut'])} sitting(s) whose Protokoll file stops partway (E16): "
+                     f"only a file the Bundestag replaces closes them ({_first_numbers(groups['cut'], 12)}).")
+    if groups["withheld"]:
+        lines.append(f"[backfill] leaving {len(groups['withheld'])} sitting(s) held back only by withheld Reden (ADR 0005): "
+                     "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.")
+    if groups["times"]:
+        lines.append(f"[backfill] leaving {len(groups['times'])} sitting(s) whose XML prints no start or end time: "
+                     f"laengste-sitzung cannot judge them ({_first_numbers(groups['times'], 12)}).")
+    if replaced:
+        lines.append(f"[backfill] acquiring {len(replaced)} cut sitting(s) again: DIP lists their XML with another hash "
+                     f"now, so the file may have been replaced ({_first_numbers(sorted(replaced), 12)}).")
+    return lines
 
 
 def backfill_scope_lines(
@@ -936,6 +1009,7 @@ def format_incomplete_report(
     raised_pages = max(2 * vote_scan_pages, vote_scan_pages + 30) if exhausted and vote_scan_pages else vote_scan_pages
     structural = [number for number, gap in gaps.items() if _structural_gap(gap, raised_pages)]
     withheld = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.WITHHELD_REDEN]
+    cut = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.CUT_PROTOCOL]
     # The votes reasons of the structural line; a sitting that is structural
     # only for its withheld Reden gets the withheld line instead.
     vote_structural = [number for number in structural if _acquirable_reasons(gaps[number])]
@@ -959,6 +1033,11 @@ def format_incomplete_report(
         lines.append(
             f"  {len(withheld)} sittings hold withheld Reden (ADR 0005): a parser rule or the reviewed list "
             f"releases them, not a backfill ({_first_numbers(withheld, 12)})"
+        )
+    if cut:
+        lines.append(
+            f"  {len(cut)} sittings hold a Protokoll file that stops partway (E16): only a replaced file closes them, "
+            f"not a backfill ({_first_numbers(cut, 12)})"
         )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
@@ -2060,6 +2139,8 @@ def _rebuild_database_from_entries(
         except RuntimeError as exc:
             raise DatabaseRebuildError(str(exc)) from exc
         registry.reconcile(store)
+        # After every report and the roster: an entry's person never depends on sitting order (E16).
+        pulse_store.resolve_unprinted_people(store)
         store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
@@ -2129,7 +2210,9 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
     sitting (R3), or has no reviewed_digest at all (P3b: every parse since rule 8
     records one, so its absence proves nothing about the list), "votes" when it
     was parsed before the vote-link rule read what it reads now from the XML
-    (``vote_links.INPUTS_VERSION``). Empty when current."""
+    (``vote_links.INPUTS_VERSION``), "cut" when it was read before the rule
+    that marks a first edition cut short (``protocol_cut.CUT_RULE_VERSION``, E16).
+    Empty when current."""
     causes = []
     summary = report.get("validation_summary") or {}
     if summary.get("speech_kinds_version") != speech_kinds.VERSION:
@@ -2140,6 +2223,8 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
         causes.append("reviewed")
     if summary.get("vote_inputs_version") != vote_links.INPUTS_VERSION:
         causes.append("votes")
+    if summary.get("cut_rule_version") != protocol_cut.CUT_RULE_VERSION:
+        causes.append("cut")
     return tuple(causes)
 
 
@@ -2160,6 +2245,7 @@ def stale_clauses(stale: list[dict[str, Any]]) -> list[str]:
         ("rule", f"predate the current speech-counting rule ({speech_kinds.VERSION})"),
         ("reviewed", "were parsed under other entries of scripts/reviewed_units.json than it holds now"),
         ("votes", f"predate the current inputs of the vote-link rule ({vote_links.INPUTS_VERSION})"),
+        ("cut", f"predate the current rule for cut Protokoll files ({protocol_cut.CUT_RULE_VERSION})"),
     ):
         numbers = sorted(_report_number(entry) for entry in stale if cause in stale_causes(entry["report"]))
         if numbers:
@@ -3647,6 +3733,10 @@ _COLUMN_SOURCE_DERIVED = {
     # interval rules (handover day, Mandat clipping, S5), not copied.
     ("mdb_zugehoerigkeiten", "valid_from"),
     ("mdb_zugehoerigkeiten", "valid_until"),
+    # Whether a Protokoll file is cut short, and what an unprinted entry is, are
+    # protocol_cut's verdict over the XML's notice and DIP's Aktivitäten (E16).
+    ("protocols", "xml_cut"),
+    ("unprinted_contributions", "kind"),
 }
 
 
@@ -3680,7 +3770,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 25
+EXPORT_FORMAT = 26
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -10646,10 +10736,10 @@ def _fact_proceeding_citation(
 def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> dict[str, Any] | None:
     """document_number, unique."""
     row = conn.execute(
-        """
+        f"""
         SELECT p.id, p.document_number, p.date,
-               json_extract(p.xml_header_json, '$.sitzung_start') AS sitzung_start,
-               json_extract(p.xml_header_json, '$.sitzung_end') AS sitzung_end
+               {facts.SITZUNG_START_SQL} AS sitzung_start,
+               {facts.SITZUNG_END_SQL} AS sitzung_end
         FROM protocols p WHERE p.document_number = ?
         """,
         (str(document_number),),
@@ -15340,12 +15430,14 @@ def main() -> int:
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
+            replaced = replaced_cut_files(output_dir, stored_entries, protocols)
             acquisition_scope, waiting, vote_only, structural, withheld = incomplete_sitting_protocols(
                 stored_entries,
                 [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
                 wahlperiode=protocol_wahlperiode,
+                replaced=replaced,
             )
             for line in backfill_scope_lines(protocols, stored_entries, acquisition_scope, protocol_wahlperiode):
                 print(line, file=sys.stderr)
@@ -15356,12 +15448,8 @@ def main() -> int:
                     f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
                     file=sys.stderr,
                 )
-            if withheld:
-                print(
-                    f"[backfill] leaving {len(withheld)} sitting(s) held back only by withheld Reden (ADR 0005): "
-                    "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.",
-                    file=sys.stderr,
-                )
+            for line in unacquirable_lines(withheld, stored_entries, replaced):
+                print(line, file=sys.stderr)
             if vote_only:
                 print(
                     f"[backfill] skipping {len(vote_only)} sitting(s) held back only by votes: votes are off "
