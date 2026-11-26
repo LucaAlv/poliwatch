@@ -6,15 +6,18 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import io
 import sqlite3
 import tempfile
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import protocol_cut
 import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
@@ -48,13 +51,10 @@ def vote(*members: dict, fractions: list[dict] | None = None, day: str = "2018-0
 KAMANN = [row("Uwe Kamann", "AfD", "2017-10-24", "2019-01-03"), row("Uwe Kamann", "fraktionslos", "2019-01-03", "2021-10-26")]
 
 
-def source(rows: list[dict], stand: str = STAND) -> derive.RefilingSource:
-    """The lookup for hand-written rows, each standing for a recorded Fraktion or Gruppe membership."""
-    recorded_from: dict[tuple[int, str], str] = {}
-    for r in rows:
-        key = (r["wahlperiode"], r["mdb_id"])
-        recorded_from[key] = min(recorded_from.get(key, r["valid_from"]), r["valid_from"])
-    return derive.refiling_source(rows, stand, recorded_from)
+def source(rows: list[dict], stand: str = STAND, unrecorded: dict | None = None) -> derive.RefilingSource:
+    """The lookup for hand-written rows, each standing for a recorded Fraktion or Gruppe membership unless
+    ``unrecorded`` lists its days as rule-3 days, (Wahlperiode, MdB id) to (first day, end) pairs."""
+    return derive.refiling_source(rows, stand, unrecorded or {})
 
 
 def filed(the_vote: dict, rows: list[dict], *, wahlperiode: int = 19, stand: str = STAND) -> list[dict]:
@@ -135,15 +135,16 @@ class RefileRuleTests(unittest.TestCase):
         the_vote["date"] = "2023-12-06"
         self.assertEqual(filed(the_vote, [row("Heidi Reichinnek", "Gruppe Die Linke", "2021-10-26", "2023-12-06", wp=20), *rows], wahlperiode=20), [])
 
-    # Value: protects=a vote after the Stand: the file cannot know a later change and its open row is only carried
-    #   forward, so the fresher page stands (checklist class 2); fails_when=the Stand is not checked; why_new=19 votes
-    #   lie after the Stand; seam=none
-    def test_a_vote_after_the_stand_keeps_the_page(self) -> None:
+    # Value: protects=a vote in the 90 days before the Stand, or after it, keeps the page: the file may not record a
+    #   change yet, and its open row is only carried forward (TODOS E4 deferred item 2; checklist class 2);
+    #   fails_when=the window is off by one, or the Stand day itself still proves; why_new=the window replaces the
+    #   Stand-day guard; seam=refile_vote_members
+    def test_only_a_vote_more_than_90_days_before_the_stand_moves(self) -> None:
         rows = [row("Ada Muster", "AfD", "2025-03-25", None, wp=21)]
-        the_vote = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", no=1)], day="2026-06-25")
-        self.assertEqual(filed(the_vote, rows, wahlperiode=21), [])
-        the_vote["date"] = "2026-04-29"  # the file covers the whole of its day
-        self.assertEqual(len(filed(the_vote, rows, wahlperiode=21)), 1)
+        for day, moves in (("2026-01-28", True), ("2026-01-29", True), ("2026-01-30", False),
+                           ("2026-04-29", False), ("2026-06-25", False)):
+            the_vote = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", no=1)], day=day)
+            self.assertEqual(len(filed(the_vote, rows, wahlperiode=21)), int(moves), day)
 
     # Value: protects=no proof, no move: namesakes in one Wahlperiode, a name the Stammdaten lack, another
     #   Wahlperiode's row, a day no row covers, no date or an unreadable one, a member listed twice; fails_when=any of
@@ -363,25 +364,9 @@ class CachedStammdatenTests(unittest.TestCase):
         return {"report": {"protocol": {"dokumentnummer": "19/30"}, "agenda_items": [{"votes": [
             vote(member("Kamann, Uwe", "fraktionslos"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", no=1)])]}]}}
 
-    # Value: protects=the build's one entry point reads the private cache and marks the entries; no file clears
-    #   marks an old cached report still carries; fails_when=it reads the store's tables (empty before the rebuild's
-    #   seat step) or leaves a stale mark; why_new=E4 runs on every rebuild and render; seam=refile_entry_votes
-    #   with read_cached_stammdaten patched
-    def test_entries_follow_the_cached_file(self) -> None:
-        entry = self.entry()
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=self.records()):
-            build.refile_entry_votes([entry], self.database)
-        members = entry["report"]["agenda_items"][0]["votes"][0]["members"]
-        self.assertEqual(members[0]["refiled_to"], "AfD")
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=None):
-            build.refile_entry_votes([entry], self.database)
-        self.assertNotIn("refiled_to", members[0])
-
-    def filed_from(self, records: list[dict], the_vote: dict) -> list[tuple[str, str]]:
-        entry = {"report": {"protocol": {"dokumentnummer": "19/30"}, "agenda_items": [{"votes": [the_vote]}]}}
-        cached = stammdaten.Stammdaten(records=records, stand=STAND, sha256="ab" * 32)
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached):
-            build.refile_entry_votes([entry], self.database)
+    @staticmethod
+    def filed_from(records: list[dict], the_vote: dict) -> list[tuple[str, str]]:
+        derive.refile_vote_members(the_vote, 19, derive.stammdaten_refiling_source(records, STAND, since_wahlperiode=18))
         return [(m["name"], m["refiled_to"]) for m in the_vote["members"] if "refiled_to" in m]
 
     @staticmethod
@@ -396,10 +381,10 @@ class CachedStammdatenTests(unittest.TestCase):
     # Value: protects=a Mandat the file lists before any Fraktion or Gruppe record is no proof of fraktionslos: the
     #   page's SPD row stands (TODOS E4 deferred item 2); fails_when=_proved_group treats an uncovered Mandat
     #   stretch with no record in the Wahlperiode as fraktionslos; why_new=a refreshed file can enter a Mandat before
-    #   its Fraktion; seam=refile_entry_votes with read_cached_stammdaten patched
+    #   its Fraktion; seam=stammdaten_refiling_source
     # Value (extension): protects=the same holds for the days before an MdB's first record when the record comes in
     #   later (Mandat from 24.10.2017, SPD entered from 01.12.2017); fails_when=only a Wahlperiode with no record at
-    #   all is guarded; why_new=a late entry is the same lag; no_claim=a gap after a record, which stays proof
+    #   all is guarded; why_new=a late entry is the same lag
     def test_a_mandat_with_no_record_yet_is_no_proof_of_fraktionslos(self) -> None:
         spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
         page = lambda day: vote(member("Muster, Ada", "SPD"), fractions=[fraction("SPD", no=1)], day=day)  # noqa: E731
@@ -409,21 +394,79 @@ class CachedStammdatenTests(unittest.TestCase):
         page_fraktionslos = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
         self.assertEqual(self.filed_from([self.mdb([self.record(spd, "01.12.2017")])], page_fraktionslos), [("Muster, Ada", "SPD")])
 
-    # Value: protects=fraktionslos stays provable: an explicit Fraktionslos record from the Mandat's first day (Petry,
-    #   Mieruch) and the gap after a Fraktion record ends (Kamann's file has no Fraktionslos record) both move a page's
-    #   AfD row; fails_when=the guard drops every fraktionslos row, or every uncovered stretch; why_new=the guard
-    #   must not cost the six real fraktionslos MdBs; seam=refile_entry_votes
-    def test_a_fraktionslos_record_or_a_gap_after_a_record_still_proves_fraktionslos(self) -> None:
+    # Value: protects=fraktionslos stays provable from an explicit Fraktionslos record (Petry, Mieruch from the
+    #   Mandat's first day), but the days after a Fraktion record ends with no record after it prove nothing: the
+    #   file may not have entered the next one yet (TODOS E4 deferred item 9, tail); fails_when=the guard drops every
+    #   fraktionslos row, or a rule-3 tail moves a page's AfD row; why_new=rule 2 of the window decision;
+    #   seam=stammdaten_refiling_source
+    def test_a_fraktionslos_record_proves_fraktionslos_and_an_uncovered_tail_does_not(self) -> None:
         afd = lambda day: vote(member("Muster, Ada", "AfD"), fractions=[fraction("AfD", no=1)], day=day)  # noqa: E731
         self.assertEqual(self.filed_from([self.mdb([self.record("Fraktionslos", "24.10.2017")])], afd("2018-06-01")),
                          [("Muster, Ada", "fraktionslos")])
         left = [self.record("Fraktion Alternative für Deutschland", "24.10.2017", "02.01.2019")]
-        self.assertEqual(self.filed_from([self.mdb(left)], afd("2019-06-01")), [("Muster, Ada", "fraktionslos")])
+        self.assertEqual(self.filed_from([self.mdb(left)], afd("2019-06-01")), [])
+        # The record itself still proves its own days.
+        fraktionslos = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
+        self.assertEqual(self.filed_from([self.mdb(left)], fraktionslos), [("Muster, Ada", "AfD")])
+
+    # Value: protects=a gap between two records (A ends 31.03.2019, B starts 01.05.2019) proves nothing for its days,
+    #   while both records prove theirs, and the same gap entered as Fraktionslos does prove fraktionslos (TODOS E4
+    #   deferred item 9, gap); fails_when=a rule-3 gap day moves a page row, or the guard reaches the records around
+    #   it; why_new=rule 2 of the window decision; seam=stammdaten_refiling_source
+    def test_a_gap_between_two_records_proves_nothing_for_its_days(self) -> None:
+        afd, spd = "Fraktion Alternative für Deutschland", "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        page = lambda group, day: vote(member("Muster, Ada", group), fractions=[fraction(group, no=1)], day=day)  # noqa: E731
+        gap = [self.record(afd, "24.10.2017", "31.03.2019"), self.record(spd, "01.05.2019")]
+        self.assertEqual(self.filed_from([self.mdb(gap)], page("SPD", "2019-04-15")), [])
+        self.assertEqual(self.filed_from([self.mdb(gap)], page("AfD", "2019-06-01")), [("Muster, Ada", "SPD")])
+        entered = [*gap, self.record("Fraktionslos", "01.04.2019", "30.04.2019")]
+        self.assertEqual(self.filed_from([self.mdb(entered)], page("SPD", "2019-04-15")), [("Muster, Ada", "fraktionslos")])
+
+    # Value: protects=the lead-in of a second Mandat in the Wahlperiode, before its record, proves nothing, and the
+    #   record proves its days (TODOS E4 deferred item 9, re-entry); fails_when=the guard is keyed to the first record
+    #   of the Wahlperiode, which the first Mandat already passed; why_new=rule 2 of the window decision;
+    #   seam=stammdaten_refiling_source
+    def test_a_re_entry_mandat_before_its_record_proves_nothing(self) -> None:
+        spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        mdb = self.mdb([])
+        mdb["WAHLPERIODEN"] = [
+            {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019", "INSTITUTIONEN": [self.record(spd, "24.10.2017", "31.12.2019")]},
+            {"WP": "19", "MDBWP_VON": "01.06.2020", "MDBWP_BIS": "26.10.2021", "INSTITUTIONEN": [self.record(spd, "01.09.2020")]},
+        ]
+        page = lambda group, day: vote(member("Muster, Ada", group), fractions=[fraction(group, no=1)], day=day)  # noqa: E731
+        self.assertEqual(self.filed_from([mdb], page("SPD", "2020-07-01")), [])
+        self.assertEqual(self.filed_from([mdb], page("fraktionslos", "2020-10-01")), [("Muster, Ada", "SPD")])
+
+    # Value: protects=the day an explicit Fraktionslos record takes over from rule-3 days is a change day and proves
+    #   nothing, though the seat rows merge the two into one fraktionslos row that hides the boundary; the day after
+    #   proves fraktionslos; fails_when=_proved_group reads only the merged seat rows; why_new=Codex plan review
+    #   finding 6; seam=stammdaten_refiling_source
+    def test_the_day_a_record_takes_over_from_uncovered_days_proves_nothing(self) -> None:
+        records = [self.record("Fraktion Alternative für Deutschland", "24.10.2017", "31.12.2018"), self.record("Fraktionslos", "01.02.2019")]
+        afd = lambda day: vote(member("Muster, Ada", "AfD"), fractions=[fraction("AfD", no=1)], day=day)  # noqa: E731
+        self.assertEqual(self.filed_from([self.mdb(records)], afd("2019-01-15")), [])
+        self.assertEqual(self.filed_from([self.mdb(records)], afd("2019-02-01")), [])
+        self.assertEqual(self.filed_from([self.mdb(records)], afd("2019-02-02")), [("Muster, Ada", "fraktionslos")])
+
+    # Value: protects=the seat rows do not change with the refiling guard: rule-3 days still count as fraktionslos
+    #   seats and merge with an adjacent Fraktionslos record; fails_when=the evidence split leaks into
+    #   mdb_zugehoerigkeiten or party_seats; why_new=_mandate_stretches now tags its stretches; seam=mdb_zugehoerigkeiten
+    def test_the_seat_rows_are_unchanged_by_the_guard(self) -> None:
+        afd, spd = "Fraktion Alternative für Deutschland", "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        spans = lambda records: [(r["party"], r["valid_from"], r["valid_until"])  # noqa: E731
+                                 for r in derive.mdb_zugehoerigkeiten([self.mdb(records)], since_wahlperiode=18)]
+        self.assertEqual(spans([self.record(afd, "24.10.2017", "31.03.2019"), self.record(spd, "01.05.2019")]), [
+            ("AfD", "2017-10-24", "2019-04-01"), ("fraktionslos", "2019-04-01", "2019-05-01"), ("SPD", "2019-05-01", "2021-10-27")])
+        self.assertEqual(spans([self.record(afd, "24.10.2017", "31.12.2018"), self.record("Fraktionslos", "01.02.2019")]), [
+            ("AfD", "2017-10-24", "2019-01-01"), ("fraktionslos", "2019-01-01", "2021-10-27")])
+        self.assertEqual(spans([self.record(afd, "24.10.2017", "02.01.2019")]), [
+            ("AfD", "2017-10-24", "2019-01-03"), ("fraktionslos", "2019-01-03", "2021-10-27")])
+        self.assertEqual(derive.party_seats(derive.mdb_zugehoerigkeiten([self.mdb([])], since_wahlperiode=18)), [
+            {"party": "fraktionslos", "wahlperiode": 19, "valid_from": "2017-10-24", "valid_until": "2021-10-27", "seats": 1}])
 
     # Value: protects=an MdB with two Mandate in one Wahlperiode (left and came back) keeps the proof of the first
     #   one: a page row on a day of the first Mandat is still re-filed, in either element order; fails_when=
-    #   first_record_days keeps the last WAHLPERIODE element's day, so the later Mandat's record hides the earlier
-    #   ones; why_new=Codex reproduced it in the ship review; seam=refile_entry_votes
+    #   the later Mandat's lead-in or record hides the earlier Mandat's days; why_new=Codex reproduced it in the ship review; seam=stammdaten_refiling_source
     def test_a_second_mandat_in_the_wahlperiode_keeps_the_first_mandats_proof(self) -> None:
         spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
         first = {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019",
@@ -436,24 +479,16 @@ class CachedStammdatenTests(unittest.TestCase):
             page = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
             self.assertEqual(self.filed_from([mdb], page), [("Muster, Ada", "SPD")])
 
-    # Value: protects=an unreadable cached file stops a rebuild as DatabaseRebuildError with the store untouched,
-    #   as the seat step does; fails_when=StammdatenError escapes the CLI's handler; why_new=this read comes before the
-    #   seat step's; seam=refile_entry_votes
-    def test_an_unreadable_file_is_a_rebuild_error(self) -> None:
-        with mock.patch.object(build, "read_cached_stammdaten", side_effect=derive.StammdatenError("kaputt")):
-            with self.assertRaises(build.DatabaseRebuildError):
-                build.refile_entry_votes([self.entry()], self.database)
-
     # Value: protects=a rebuild from cached reports files the Stimmen from the cached Stammdaten into the store, a vote
     #   whose counts cannot absorb the move stays as the page has it, and stderr names it; fails_when=the rebuild
-    #   skips refile_entry_votes, or drops the refused warning; why_new=only refile_entry_votes was called directly;
+    #   skips the refiling, or drops the refused warning; why_new=only the refiling step was called directly;
     #   seam=rebuild_database_from_entries, read_cached_stammdaten patched and seat counts skipped (one MdB, no legal size)
     def test_a_rebuild_files_the_votes_and_names_a_refused_one(self) -> None:
         good = vote(member("Kamann, Uwe", "fraktionslos", "yes"), member("Müller, Max", "AfD", "no"),
                     fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)], vote_id="501")
         refused = vote(member("Kamann, Uwe", "fraktionslos", "no"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)],
                        vote_id="502")
-        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
                   "protocol": {"id": "p19-30", "dokumentnummer": "19/30", "datum": "2018-06-01"},
                   "agenda_items": [{"index": 1, "heading": "Test", "votes": [good, refused]}]}
         entries = [{"report": report, "report_path": Path(self._tmp.name) / "plenarprotokoll-19-30.json"}]
@@ -472,6 +507,164 @@ class CachedStammdatenTests(unittest.TestCase):
             [("501", "AfD", "fraktionslos"), ("502", "fraktionslos", None)])
         self.assertIn("refile: 1 Stimmen in 1 Abstimmungen", err.getvalue())
         self.assertRegex(err.getvalue(), r"warning: \[refile\] the fraction rows of 1 votes cannot absorb the moves.*502")
+
+
+def stammdaten_zip(path: Path, kamann: str, *, version: int = 1777449783) -> bytes:
+    """A WP 19 MdB-Stammdaten zip of two AfD MdBs from the constituent day, Uwe Kamann with the INSTITUTION
+    elements ``kamann`` and Max Müller an AfD member throughout; with BUNDESTAG_SIZES[19] = 2 it passes the seat
+    rules."""
+    def mdb(mdb_id: str, vorname: str, nachname: str, institutionen: str) -> str:
+        return (f"<MDB><ID>{mdb_id}</ID><NAMEN><NAME><NACHNAME>{nachname}</NACHNAME><VORNAME>{vorname}</VORNAME>"
+                f"<HISTORIE_VON>24.10.2017</HISTORIE_VON></NAME></NAMEN><WAHLPERIODEN><WAHLPERIODE><WP>19</WP>"
+                f"<MDBWP_VON>24.10.2017</MDBWP_VON><MDBWP_BIS>26.10.2021</MDBWP_BIS><INSTITUTIONEN>{institutionen}"
+                f"</INSTITUTIONEN></WAHLPERIODE></WAHLPERIODEN></MDB>")
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("MDB_STAMMDATEN.XML", f"<DOCUMENT><VERSION>{version}</VERSION>"
+                         + mdb("11004700", "Uwe", "Kamann", kamann) + mdb("11009991", "Max", "Müller", institution(AFD, "24.10.2017"))
+                         + "</DOCUMENT>")
+    return path.read_bytes()
+
+
+AFD = "Fraktion Alternative für Deutschland"
+
+
+def institution(ins_lang: str, von: str, bis: str = "") -> str:
+    return (f"<INSTITUTION><INSART_LANG>Fraktion/Gruppe</INSART_LANG><INS_LANG>{ins_lang}</INS_LANG>"
+            f"<MDBINS_VON>{von}</MDBINS_VON><MDBINS_BIS>{bis}</MDBINS_BIS></INSTITUTION>")
+
+
+#: Kamann leaves the AfD on 02.01.2019 and is entered Fraktionslos from the next day.
+KAMANN_LEAVES = institution(AFD, "24.10.2017", "02.01.2019") + institution("Fraktionslos", "03.01.2019")
+#: A file that keeps Kamann in the AfD throughout.
+KAMANN_STAYS = institution(AFD, "24.10.2017")
+
+
+class RebuildStammdatenTests(unittest.TestCase):
+    """The rebuild reads the cached file once and refuses to drop the correction a store holds
+    (TODOS E4 deferred items 1 and 3), at the public entry point."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.database = Path(self._tmp.name) / "data" / "s.sqlite"
+        self.database.parent.mkdir(parents=True)
+        self.cache = stammdaten.cache_path(self.database)
+        self.cache.parent.mkdir(parents=True, exist_ok=True)
+        self.leaves = stammdaten_zip(Path(self._tmp.name) / "leaves.zip", KAMANN_LEAVES)
+        self.stays = stammdaten_zip(Path(self._tmp.name) / "stays.zip", KAMANN_STAYS, version=1780000000)
+        # One report object across rebuilds, as the offline path reuses it: a stale mark must not survive.
+        the_vote = vote(member("Kamann, Uwe", "AfD", "yes"), member("Müller, Max", "AfD", "no"),
+                        fractions=[fraction("AfD", yes=1, no=1)], day="2019-06-01", vote_id="501")
+        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
+                  "protocol": {"id": "p19-30", "dokumentnummer": "19/30", "datum": "2019-06-01"},
+                  "agenda_items": [{"index": 1, "heading": "Test", "votes": [the_vote]}]}
+        self.entries = [{"report": report, "report_path": Path(self._tmp.name) / "plenarprotokoll-19-30.json"}]
+
+    def rebuild(self, **options) -> str:
+        err = io.StringIO()
+        with mock.patch.dict(derive.BUNDESTAG_SIZES, {19: 2}), contextlib.redirect_stderr(err):
+            build.rebuild_database_from_entries(self.database, self.entries, preserve_roster=False, **options)
+        return err.getvalue()
+
+    def state(self) -> dict:
+        conn = sqlite3.connect(self.database)
+        try:
+            return {
+                "sha256": [row[0] for row in conn.execute("SELECT sha256 FROM mdb_stammdaten_stand")],
+                "moved": conn.execute("""SELECT m.display_name, p.name, l.name FROM vote_members vm JOIN mps m ON m.id = vm.mp_id
+                                         JOIN parties p ON p.id = vm.party_id JOIN parties l ON l.id = vm.listed_party_id""").fetchall(),
+                "kamann": conn.execute("""SELECT p.name, z.valid_from FROM mdb_zugehoerigkeiten z JOIN parties p ON p.id = z.party_id
+                                          WHERE z.mdb_id = '11004700' ORDER BY z.valid_from""").fetchall(),
+                "seats": conn.execute("""SELECT p.name, ps.valid_from, ps.seats FROM party_seats ps JOIN parties p ON p.id = ps.party_id
+                                         ORDER BY ps.valid_from, p.name""").fetchall(),
+            }
+        finally:
+            conn.close()
+
+    def sha(self, body: bytes) -> str:
+        return hashlib.sha256(body).hexdigest()
+
+    # Value: protects=a store built with a file is not rebuilt without it by accident: the rebuild refuses, names the
+    #   flag and leaves the store's bytes; with without_stammdaten the rebuild drops the Stand, the seat tables and
+    #   every move, and clears the marks the reused report still carried (TODOS E4 deferred item 1); fails_when=a
+    #   missing file only warns, or the flag keeps a stale mark; why_new=item 1; seam=rebuild_database_from_entries
+    def test_a_rebuild_without_the_file_over_a_store_built_with_it_is_refused(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        self.rebuild()
+        self.assertEqual(self.state()["moved"], [("Kamann, Uwe", "fraktionslos", "AfD")])
+        self.cache.unlink()
+        before = self.database.read_bytes()
+        with self.assertRaisesRegex(build.DatabaseRebuildError, r"--without-stammdaten") as refused:
+            self.rebuild()
+        self.assertIn(self.sha(self.leaves)[:12], str(refused.exception))
+        self.assertIn(str(self.cache), str(refused.exception))
+        self.assertEqual(self.database.read_bytes(), before)
+        err = self.rebuild(without_stammdaten=True)
+        self.assertEqual(self.state(), {"sha256": [], "moved": [], "kamann": [], "seats": []})
+        self.assertIn("keine Sitzzahlen (MdB-Stammdaten nicht geladen)", err)
+
+    # Value: protects=without a file and without a store built from one, a rebuild goes on with the warning: a fresh
+    #   local build, a store built without a file, and a store whose schema predates the Stand table (the --repersist
+    #   upgrade); fails_when=item 1's refusal reaches a store that never held the correction; why_new=item 1's
+    #   contract; seam=rebuild_database_from_entries
+    def test_a_rebuild_without_a_file_goes_on_where_no_file_was_used(self) -> None:
+        self.assertIn("keine Sitzzahlen", self.rebuild())
+        self.assertIn("keine Sitzzahlen", self.rebuild())
+        self.assertEqual(self.state()["sha256"], [])
+        conn = sqlite3.connect(self.database)
+        conn.execute("DROP TABLE mdb_stammdaten_stand")
+        conn.commit()
+        conn.close()
+        self.assertIn("keine Sitzzahlen", self.rebuild(upgrade=True))
+
+    # Value: protects=the flag only permits a rebuild without a file; a cached file is still read and used;
+    #   fails_when=without_stammdaten hides the file; why_new=item 1's contract (Codex plan review 5);
+    #   seam=rebuild_database_from_entries
+    def test_the_flag_does_not_hide_a_cached_file(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        self.rebuild(without_stammdaten=True)
+        self.assertEqual(self.state()["sha256"], [self.sha(self.leaves)])
+        self.assertEqual(self.state()["moved"], [("Kamann, Uwe", "fraktionslos", "AfD")])
+
+    # Value: protects=one rebuild reads the cached file once, so the moves, the Zugehörigkeiten, the seat counts and the
+    #   Stand all come from one file even when a refresh replaces it mid-rebuild (TODOS E4 deferred item 3);
+    #   fails_when=the seat step reads the file again; why_new=item 3; seam=rebuild_database_from_entries with
+    #   persist_report wrapped to swap the cache
+    def test_one_rebuild_reads_one_file(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        real_read, real_persist = stammdaten.read_zip, pulse_store.persist_report
+        reads = []
+
+        def counting_read(path, *args, **kwargs):
+            reads.append(path)
+            return real_read(path, *args, **kwargs)
+
+        def swapping_persist(*args, **kwargs):
+            self.cache.write_bytes(self.stays)
+            return real_persist(*args, **kwargs)
+
+        with mock.patch.object(stammdaten, "read_zip", side_effect=counting_read), \
+                mock.patch.object(pulse_store, "persist_report", side_effect=swapping_persist):
+            self.rebuild()
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(self.state(), {
+            "sha256": [self.sha(self.leaves)],
+            "moved": [("Kamann, Uwe", "fraktionslos", "AfD")],
+            "kamann": [("AfD", "2017-10-24"), ("fraktionslos", "2019-01-03")],
+            "seats": [("AfD", "2017-10-24", 2), ("AfD", "2019-01-03", 1), ("fraktionslos", "2019-01-03", 1)],
+        })
+
+    # Value: protects=an unreadable cached file stops the rebuild as DatabaseRebuildError with the store's bytes
+    #   unchanged; fails_when=StammdatenError escapes the CLI's handler, or a half-built store is swapped in;
+    #   why_new=moved from refile_entry_votes to the public entry point (item 3); seam=rebuild_database_from_entries
+    def test_an_unreadable_file_stops_the_rebuild(self) -> None:
+        self.cache.write_bytes(self.leaves)
+        self.rebuild()
+        self.cache.write_bytes(b"not a zip")
+        before = self.database.read_bytes()
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "cannot be read"):
+            self.rebuild()
+        self.assertEqual(self.database.read_bytes(), before)
 
 
 class StoreSchemaTests(unittest.TestCase):

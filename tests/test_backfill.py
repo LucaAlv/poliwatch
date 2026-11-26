@@ -22,6 +22,7 @@ from unittest import mock
 
 import _facts_fixture
 import _support
+import protocol_cut
 import build_dip_pulse_site as build
 import facts
 import persist_dip_pulse_store as pulse_store
@@ -54,13 +55,14 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
     report["protocol"].update(
         {"id": f"pp-{n}", "dokumentnummer": f"21/{n}", "datum": day or f"2026-06-{10 + n:02d}"}
     )
+    report["protocol"]["xml_header"].update({"sitzung_start": "09:00", "sitzung_end": "14:08"})
     for item in report["agenda_items"]:
         for speech in item["xml_speakers"]:
             speech["rede_id"] = f"{n}-{speech['rede_id']}"
         for vote in item.get("votes") or []:
             vote["id"] = f"{n}{vote['id']}"
             vote["detail_url"] = f"{vote['detail_url']}{n}"
-    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION}
+    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
     _support.stamp_reviewed(report)
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}
@@ -113,6 +115,7 @@ class RetainedScopeTests(unittest.TestCase):
         def rebuild(*args, **kwargs):
             self.order.append("rebuild")
             self.rebuild_cache.append(kwargs.get("vorgang_cache"))
+            self.rebuild_options = kwargs
             return real_rebuild(*args, **kwargs)
 
         argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(self.output_dir), *extra]
@@ -153,6 +156,18 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.output_dir / "protocols").glob("*.html")), sorted(pages_before))
         for n in (1, 2, 3):
             self.assertTrue((self.output_dir / "data" / f"plenarprotokoll-21-{n}.json").exists())
+
+    # Value: protects=the online build hands --without-stammdaten to its rebuild, as --offline --repersist does,
+    #   and leaves it off by default (TODOS E4 deferred item 1, sibling path); fails_when=main's online call drops
+    #   the flag, so an online build over a store built with a file can never be rebuilt without it; why_new=item 1;
+    #   seam=main with rebuild_database_from_entries wrapped
+    def test_the_online_build_passes_without_stammdaten_to_the_rebuild(self) -> None:
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition={**COMPLETE_VOTES, "acquired_at": "2026-09-29T10:00:00Z"}))
+        for extra, expected in (((), False), (("--without-stammdaten",), True)):
+            with self.subTest(extra=extra):
+                code, *_rest, stderr = self.run_main("--document-number", "21/2", *extra, generated=[refreshed])
+                self.assertEqual(code, 0, stderr)
+                self.assertIs(self.rebuild_options["without_stammdaten"], expected)
 
     # Value: protects=an online build whose staged rebuild is refused (here: another writer holds the store lock) exits 1 with an error line and leaves the store as it was; fails_when=main lets DatabaseRebuildError escape as a traceback (only SprechrolleError and DipError are caught around the rebuild); why_new=only the offline --repersist path and rebuild_database_from_entries itself were tested for rebuild failures; seam=none
     def test_an_online_build_reports_a_refused_rebuild_instead_of_a_traceback(self) -> None:
@@ -1125,7 +1140,9 @@ class WithheldCellNamesTheMissingSittingTests(StoreCase):
             encoding="utf-8",
         )
         entries = [
-            {"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0},
+            {"report": {"protocol": {"dokumentnummer": n, "xml_header": {"sitzung_start": "09:00", "sitzung_end": "14:08"}},
+                        "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None,
+                                               "cut_rule_version": protocol_cut.CUT_RULE_VERSION},
                         "acquisition": {"votes": COMPLETE_VOTES}}}
             for n in seeded["completeness"]
         ]
@@ -1188,7 +1205,7 @@ class GapPrimitiveTests(unittest.TestCase):
 
     @staticmethod
     def state(votes: bool, speeches: bool = True, reason: str | None = None) -> dict:
-        return {"votes": votes, "speeches": speeches, "reasons": {"votes": reason, "speeches": None}}
+        return {"votes": votes, "speeches": speeches, "times": True, "reasons": {"votes": reason, "speeches": None, "times": None}}
 
     def completeness(self) -> dict:
         return {"21/1": self.state(False, reason="votes partial (scan_budget_exhausted)")}
@@ -1242,7 +1259,7 @@ class GapPrimitiveTests(unittest.TestCase):
         blind = facts.gap_notes(self.PERSISTED, self.completeness(), None)
         self.assertTrue(blind)
         self.assertTrue(all("DIP-Katalog" in note for note in blind.values()))
-        self.assertEqual({domain for _kind, _key, domain in blind}, {"votes", "speeches"})
+        self.assertEqual({domain for _kind, _key, domain in blind}, {"votes", "speeches", "times"})
 
     def test_a_period_only_the_catalog_knows_takes_its_date_and_newest_wahlperiode_from_the_catalog(self) -> None:
         catalog = facts.sitting_catalog(

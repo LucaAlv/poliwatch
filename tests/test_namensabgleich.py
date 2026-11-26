@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import _support  # noqa: F401
+import protocol_cut
 import person_registry
 import build_dip_pulse_site as build
 import derive
@@ -284,7 +285,7 @@ class PersonMetricsTests(unittest.TestCase):
             conn = pulse_store.connect(Path(tmp) / "store.sqlite")
             try:
                 report = {
-                    "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+                    "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
             "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
                     "agenda_items": [
                         {
@@ -326,7 +327,7 @@ class DebutOrderTests(unittest.TestCase):
             conn = pulse_store.connect(Path(tmp) / "store.sqlite")
             try:
                 report = {
-                    "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+                    "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
             "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
                     "agenda_items": [
                         {"index": 1, "top_id": "T1", "heading": "TOP 1", "xml_speakers": [speech("other-first-place", "Other Person"), speech("A-first-item-second-place")]},
@@ -344,7 +345,7 @@ class DebutOrderTests(unittest.TestCase):
 class PersistTests(unittest.TestCase):
     def report(self, *speakers: dict) -> dict:
         return {
-            "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+            "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
             "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
             "agenda_items": [
                 {

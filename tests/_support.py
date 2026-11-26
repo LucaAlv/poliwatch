@@ -29,6 +29,12 @@ import reviewed_vote_links  # noqa: E402
 # reviewed_vote_links.using.
 reviewed_vote_links.use([])
 
+import reviewed_end_times  # noqa: E402
+
+# And for the corrected end times (scripts/reviewed_end_times.json): an entry of
+# a real sitting refuses a synthetic report whose head prints another end.
+reviewed_end_times.use([])
+
 
 @contextlib.contextmanager
 def shipped_reviewed_units():
@@ -41,15 +47,20 @@ def shipped_reviewed_units():
 
 def stamp_reviewed(report: dict) -> dict:
     """Give a hand-built report the reviewed digest a parse under the active list
-    would record for its sitting, and the vote-link inputs version every parse
-    records, unless it has them. Without them the report reads as stale
-    (build_dip_pulse_site.stale_causes, P3b and "votes")."""
+    would record for its sitting, the vote-link inputs version and the cut rule
+    every parse records, unless it has them. Without them the report reads as
+    stale (build_dip_pulse_site.stale_causes, P3b, "votes" and "cut")."""
+    import protocol_cut
     import vote_links
 
     protocol = report.setdefault("protocol", {})
     number = str(protocol.get("dokumentnummer") or "").strip()
     protocol.setdefault("reviewed_digest", reviewed_units.sitting_digest(number))
-    report.setdefault("validation_summary", {}).setdefault("vote_inputs_version", vote_links.INPUTS_VERSION)
+    summary = report.setdefault("validation_summary", {})
+    summary.setdefault("vote_inputs_version", vote_links.INPUTS_VERSION)
+    # Read under the current rule for cut Protokoll files, and whole (E16).
+    summary.setdefault("cut_rule_version", protocol_cut.CUT_RULE_VERSION)
+    summary.setdefault("protocol_cut", None)
     return report
 
 

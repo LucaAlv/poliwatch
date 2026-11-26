@@ -1,0 +1,40 @@
+{
+  "entries": [
+    {
+      "sitting": "19/55",
+      "xml_end": "01:30",
+      "end": "01:28",
+      "pdf_url": "https://dserver.bundestag.de/btp/19/19055.pdf",
+      "pdf_md5": "8eea57bbf4299710b4dabd82d557abfb",
+      "pdf_page": 214,
+      "reason": "the final PDF prints (Schluss: 1.28 Uhr); the head of the first-edition XML says 01:30 (read 2026-11-24, docs/plans/zu-protokoll-gap/end-times.tsv)"
+    },
+    {
+      "sitting": "20/178",
+      "xml_end": "23:11",
+      "end": "23:12",
+      "pdf_url": "https://dserver.bundestag.de/btp/20/20178.pdf",
+      "pdf_md5": "489347d2871edcb8866faf11746d3014",
+      "pdf_page": 203,
+      "reason": "the final PDF prints (Schluss: 23.12 Uhr); the head of the first-edition XML says 23:11 (read 2026-11-23, page noted 2026-11-26)"
+    },
+    {
+      "sitting": "21/89",
+      "xml_end": "23:36",
+      "end": "23:37",
+      "pdf_url": "https://dserver.bundestag.de/btp/21/21089.pdf",
+      "pdf_md5": "69343172e5682c610303993b04f6535d",
+      "pdf_page": 206,
+      "reason": "the final PDF prints (Schluss: 23:37 Uhr); the head of the first-edition XML says 23:36 (read 2026-11-24, docs/plans/zu-protokoll-gap/end-times.tsv)"
+    },
+    {
+      "sitting": "21/96",
+      "xml_end": "00:16",
+      "end": "00:15",
+      "pdf_url": "https://dserver.bundestag.de/btp/21/21096.pdf",
+      "pdf_md5": "c237cbde7afeef863bd94f12f735856b",
+      "pdf_page": 214,
+      "reason": "the final PDF prints (Schluss: 00:15 Uhr); the head of the first-edition XML says 00:16 (read 2026-11-24, docs/plans/zu-protokoll-gap/end-times.tsv)"
+    }
+  ]
+}
