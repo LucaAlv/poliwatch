@@ -174,10 +174,22 @@ def _minutes_of(expression: str) -> str:
     )
 
 
-_SITZUNG_START = "json_extract(p.xml_header_json, '$.sitzung_start')"
+def _clock(expression: str) -> str:
+    """A sitting time as "H:MM": 19 WP 19 heads print "13.00", "2.09" or
+    "13.00 Uhr" (sitting_clock is the same rule in Python)."""
+    return f"REPLACE(REPLACE(TRIM({expression}), ' Uhr', ''), '.', ':')"
+
+
+def _is_clock(expression: str) -> str:
+    return f"({expression} GLOB '[0-9]:[0-5][0-9]' OR {expression} GLOB '[0-9][0-9]:[0-5][0-9]')"
+
+
+SITZUNG_START_SQL = _clock("json_extract(p.xml_header_json, '$.sitzung_start')")
 #: The end the printed PDF gives where scripts/reviewed_end_times.json corrects
 #: the XML head (D2), else the head's.
-_SITZUNG_END = "COALESCE(p.sitting_end_corrected, json_extract(p.xml_header_json, '$.sitzung_end'))"
+SITZUNG_END_SQL = _clock("COALESCE(p.sitting_end_corrected, json_extract(p.xml_header_json, '$.sitzung_end'))")
+_SITZUNG_START = SITZUNG_START_SQL
+_SITZUNG_END = SITZUNG_END_SQL
 #: 0 for a sitting number of the form WP/number, else 1 (sorted after them).
 _MALFORMED_NUMBER = (
     "CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*' AND p.document_number NOT GLOB '*[^0-9/]*' "
@@ -362,7 +374,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "SELECT p.id, p.document_number, p.date, p.pdf_url, p.id AS protocol_id,\n"
             f"       {_SITZUNG_START} AS sitzung_start,\n"
             f"       {_SITZUNG_END} AS sitzung_end,\n"
-            f"       CASE WHEN {_SITZUNG_START} LIKE '_%:__' AND {_SITZUNG_END} LIKE '_%:__'\n"
+            f"       CASE WHEN {_is_clock(_SITZUNG_START)} AND {_is_clock(_SITZUNG_END)}\n"
             f"         THEN (({_minutes_of(_SITZUNG_END)})\n"
             f"               - ({_minutes_of(_SITZUNG_START)}) + 1440) % 1440\n"
             "       END AS value,\n"
@@ -980,8 +992,18 @@ CUT_PROTOCOL = "cut_protocol"
 #: (18/23): ``laengste-sitzung`` cannot be judged for that sitting.
 NO_SITTING_TIMES = "no_sitting_times"
 
-#: A sitting time as the XML head prints it, "09:00" or "9:00".
-_SITTING_TIME = re.compile(r"\d{1,2}:\d{2}")
+#: A sitting time as ``sitting_clock`` reads it, "09:00" or "9:00".
+_SITTING_TIME = re.compile(r"[0-9]{1,2}:[0-5][0-9]")
+
+
+def sitting_clock(value: Any) -> str | None:
+    """A sitting time of the XML head as "H:MM" or "HH:MM", the rule
+    ``laengste-sitzung``'s SQL applies (``_clock``): "13.00", "2.09" and
+    "13.00 Uhr" count, as 19 WP 19 heads print them. None for anything else."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip(" ").replace(" Uhr", "").replace(".", ":")
+    return text if _SITTING_TIME.fullmatch(text) else None
 
 
 def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -1025,10 +1047,7 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
                 speeches, speeches_reason = False, CUT_PROTOCOL
         header = protocol.get("xml_header") or {}
         parsed = summary.get("xml_speech_count") is not None
-        times = parsed and all(
-            isinstance(header.get(key), str) and _SITTING_TIME.fullmatch(header[key].strip())
-            for key in ("sitzung_start", "sitzung_end")
-        )
+        times = parsed and all(sitting_clock(header.get(key)) for key in ("sitzung_start", "sitzung_end"))
         times_reason: str | None = None if times else ("XML not parsed" if not parsed else NO_SITTING_TIMES)
         acquisition = (report.get("acquisition") or {}).get("votes")
         votes_reason: str | None = None

@@ -338,6 +338,23 @@ class CompletenessTests(unittest.TestCase):
         state = facts.completeness_from_reports([unparsed])["18/24"]
         self.assertEqual((state["times"], state["reasons"]["times"]), (False, "XML not parsed"))
 
+    # Value: protects=19 WP 19 heads print "13.00", "2.09" or "13.00 Uhr": both times are there, so the sitting
+    #   counts for times and the SQL reads its length; fails_when=2019-W07 and 2019-W39 are withheld, or a longer
+    #   sitting is skipped (19/124, 9.00 to 2.09, 1,029 minutes); why_new=the times basis; seam=facts
+    def test_times_printed_with_a_dot_count(self):
+        state = facts.completeness_from_reports([judged("19/124", header={"sitzung_start": "9.00", "sitzung_end": "2.09"}),
+                                                 judged("19/117", header={"sitzung_start": "13.00 Uhr", "sitzung_end": "17:05"}),
+                                                 judged("19/1", header={"sitzung_start": "ab:cd", "sitzung_end": "17:05"})])
+        self.assertEqual((state["19/124"]["times"], state["19/117"]["times"], state["19/1"]["times"]), (True, True, False))
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE protocols (id, document_number, date, pdf_url, xml_header_json, sitting_end_corrected)")
+        for number, start, end in (("19/124", "9.00", "2.09"), ("19/117", "13.00 Uhr", "17:05"), ("19/1", "ab:cd", "17:05")):
+            conn.execute("INSERT INTO protocols VALUES (?, ?, '2019-11-07', NULL, ?, NULL)",
+                         (number, number, json.dumps({"sitzung_start": start, "sitzung_end": end})))
+        sql = facts.REGISTRY_BY_ID["laengste-sitzung"]["sql"]
+        self.assertEqual(dict(conn.execute(f"SELECT document_number, value FROM ({sql})")),
+                         {"19/124": 1029, "19/117": 245, "19/1": None})
+
     def test_laengste_sitzung_is_judged_by_times(self):
         metric = facts.REGISTRY_BY_ID["laengste-sitzung"]
         self.assertEqual((metric["coverage"], metric["version"]), ("times", 2))
