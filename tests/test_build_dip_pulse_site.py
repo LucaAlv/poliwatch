@@ -42,7 +42,7 @@ class DossierProgressTests(unittest.TestCase):
     def test_reports_new_cached_and_completed_dossiers(self) -> None:
         protocols = [
             {"id": "5805", "dokumentnummer": "21/87", "datum": "2026-06-25"},
-            {"id": "5806", "dokumentnummer": "21/88", "datum": "2026-06-26"},
+            {"id": "5806", "dokumentnummer": "21/88", "datum": "2026-06-26"},  # pregate-literal: EXPORT_FORMAT=26 a sitting date (2026-06-26), not the export format
         ]
         cached_report = {"protocol": protocols[1]}
         built: list[tuple[str, dict[str, Any] | None]] = []

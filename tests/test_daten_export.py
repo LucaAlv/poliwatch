@@ -2130,9 +2130,10 @@ class AccentedNameTests(unittest.TestCase):
                        VALUES ('ai1', 'p1', 1, 'T1', 'TOP', ?, ?)""", (now, now))
                 sequence = 0
                 for dip_id, titel, printed in self.PERSONS:
+                    identity = pulse_store.mp_identity(dip_person_id=dip_id)
                     pulse_store.upsert_mp(
                         conn, now=now, display_name=titel, party_id=party, dip_person_id=dip_id, is_mdb=True,
-                        identity_key=pulse_store.mp_identity(dip_person_id=dip_id), occurrence_id=f"fixture:dip:{dip_id}")
+                        identity_key=identity, occurrence_id=f"fixture:dip:{dip_id}")
                     redner = f"1100000{dip_id}"
                     for name in printed:
                         sequence += 1

@@ -613,7 +613,7 @@ class LaengsteSitzungTests(StoreCase):
                 # pregate-literal: EXPORT_FORMAT=16 an unrelated number (date, count or id), not the constant
                 # spells it for 2022's protocols: 16 h 30 min.  # pregate-literal: EXPORT_FORMAT=16 a duration in the comment (16 h 30 min), not the export format
                 {"document_number": "21/1", "date": "2025-03-25", "sitzung": ("9:00", "01:30")},
-                {"document_number": "21/2", "date": "2025-03-26", "sitzung": ("09:00", "14:08")},
+                {"document_number": "21/2", "date": "2025-03-26", "sitzung": ("09:00", "14:08")},  # pregate-literal: EXPORT_FORMAT=26 a sitting date (2025-03-26), not the export format
             ]
         )
         row = self.one(SITZUNG)
