@@ -11,6 +11,7 @@ from pathlib import Path
 
 import _support  # noqa: F401
 import protocol_cut as cut
+import reviewed_end_times
 import build_dip_pulse_site as site
 import facts
 import persist_dip_pulse_store as pulse_store
@@ -347,6 +348,98 @@ class CompletenessTests(unittest.TestCase):
         self.assertEqual(facts.gap_note([{"document_number": "18/23", "date": "2014-03-20",
                                           "reason": facts.NO_SITTING_TIMES}], "times"),
                          "Sitzung 18/23: Beginn oder Ende nicht im Protokoll")
+
+
+def end_entry(**overrides):
+    entry = {"sitting": "20/999", "xml_end": "12:00", "end": "11:58",
+             "pdf_url": "https://dserver.bundestag.de/btp/20/20999.pdf", "pdf_md5": "8eea57bbf4299710b4dabd82d557abfb",
+             "pdf_page": 214, "reason": "the PDF prints (Schluss: 11.58 Uhr)"}
+    entry.update(overrides)
+    return entry
+
+
+class ReviewedEndTimesListTests(unittest.TestCase):
+    # Value: protects=the list is read whole and refuses anything it cannot apply; fails_when=a typo moves a
+    #   published duration, or a refusal is a ValueError a caller swallows; why_new=D2 list; seam=list
+    def test_the_shipped_list_holds_the_four_corrections(self):
+        entries = reviewed_end_times.load()
+        self.assertEqual([(e.sitting, e.xml_end, e.end, e.pdf_page) for e in entries], [
+            ("19/55", "01:30", "01:28", 214), ("20/178", "23:11", "23:12", 203),
+            ("21/89", "23:36", "23:37", 206), ("21/96", "00:16", "00:15", 214)])
+
+    def test_malformed_entries_refuse(self):
+        for broken in ({"entries": [end_entry(end="1.28")]}, {"entries": [end_entry(pdf_md5="xyz")]},
+                       {"entries": [end_entry(pdf_page=0)]}, {"entries": [end_entry(pdf_url="http://evil.test/a.pdf")]},
+                       {"entries": [{**end_entry(), "extra": 1}]}, {"entries": [end_entry(reason="")]},
+                       {"entries": [end_entry(sitting="20/999/1")]}, [], {"entries": None}):
+            with self.subTest(broken=broken), self.assertRaises(reviewed_end_times.ReviewedEndTimesError):
+                reviewed_end_times.check(broken)
+        self.assertFalse(issubclass(reviewed_end_times.ReviewedEndTimesError, ValueError))
+
+    def test_a_repeated_sitting_and_an_end_equal_to_the_xml_refuse(self):
+        with self.assertRaisesRegex(reviewed_end_times.ReviewedEndTimesError, "twice"):
+            reviewed_end_times.check({"entries": [end_entry(), end_entry(end="11:57")]})
+        with self.assertRaisesRegex(reviewed_end_times.ReviewedEndTimesError, "equals xml_end"):
+            reviewed_end_times.check({"entries": [end_entry(end="12:00")]})
+
+
+def timed_report(end="12:00"):
+    report = cut_report(None)
+    report["protocol"]["xml_header"].update({"sitzung_start": "09:00", "sitzung_end": end})
+    return report
+
+
+class CorrectedEndTimeStoreTests(unittest.TestCase):
+    def store(self):
+        return StoreTests.store(self)
+
+    # Value: protects=the corrected end lands beside the XML head, which stays as printed; fails_when=the head is
+    #   overwritten (a reader comparing with the XML finds another time) or the entry is not applied; why_new=D2; seam=persist
+    def test_persist_applies_an_entry_and_leaves_the_xml_head_alone(self):
+        conn = self.store()
+        with reviewed_end_times.using(reviewed_end_times.check({"entries": [end_entry()]})):
+            pulse_store.persist_report(conn, timed_report(), None)
+        row = conn.execute("SELECT sitting_end_corrected, json_extract(xml_header_json, '$.sitzung_end') FROM protocols").fetchone()
+        self.assertEqual(tuple(row), ("11:58", "12:00"))
+
+    def test_a_sitting_without_an_entry_keeps_no_correction(self):
+        conn = self.store()
+        with reviewed_end_times.using(reviewed_end_times.check({"entries": [end_entry(sitting="21/1")]})):
+            pulse_store.persist_report(conn, timed_report(), None)
+        self.assertIsNone(conn.execute("SELECT sitting_end_corrected FROM protocols").fetchone()[0])
+
+    # Value: protects=an entry whose XML end no longer matches stops the run, so a replaced file is noticed and the
+    #   entry deleted; fails_when=a correction is applied to a file it was not read against; why_new=D2; seam=persist
+    def test_persist_refuses_an_entry_whose_xml_end_changed(self):
+        conn = self.store()
+        with reviewed_end_times.using(reviewed_end_times.check({"entries": [end_entry()]})):
+            with self.assertRaisesRegex(reviewed_end_times.ReviewedEndTimesError, "20/999 corrects the end 12:00.*prints '12:01'"):
+                pulse_store.persist_report(conn, timed_report("12:01"), None)
+
+    # Value: protects=a store persisted under other entries is stale and asks for a replay; fails_when=an edit of
+    #   the list leaves an old duration in the store; why_new=D2; seam=persist
+    def test_a_store_under_other_entries_is_stale(self):
+        conn = self.store()
+        with reviewed_end_times.using(reviewed_end_times.check({"entries": [end_entry()]})):
+            pulse_store.persist_report(conn, timed_report(), None)
+            pulse_store.require_current_speech_rules(conn)
+        with reviewed_end_times.using([]):
+            with self.assertRaisesRegex(RuntimeError, "20/999.*reviewed_end_times.json"):
+                pulse_store.require_current_speech_rules(conn)
+
+    # Value: protects=laengste-sitzung reads the corrected end: 19/55's shape, 09:00 to 01:28 past midnight, is 988
+    #   minutes, and a sitting without an entry keeps the XML's value; fails_when=the SQL reads the head alone;
+    #   why_new=D2; seam=facts SQL
+    def test_laengste_sitzung_reads_the_corrected_end(self):
+        conn = self.store()
+        entries = reviewed_end_times.check({"entries": [end_entry(xml_end="01:30", end="01:28")]})
+        with reviewed_end_times.using(entries):
+            pulse_store.persist_report(conn, timed_report("01:30"), None)
+        sql = facts.REGISTRY_BY_ID["laengste-sitzung"]["sql"]
+        row = conn.execute(f"SELECT sitzung_end, value FROM ({sql})").fetchone()
+        self.assertEqual(tuple(row), ("01:28", 988))
+        conn.execute("UPDATE protocols SET sitting_end_corrected = NULL")
+        self.assertEqual(tuple(conn.execute(f"SELECT sitzung_end, value FROM ({sql})").fetchone()), ("01:30", 990))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,12 @@ import reviewed_vote_links  # noqa: E402
 # reviewed_vote_links.using.
 reviewed_vote_links.use([])
 
+import reviewed_end_times  # noqa: E402
+
+# And for the corrected end times (scripts/reviewed_end_times.json): an entry of
+# a real sitting refuses a synthetic report whose head prints another end.
+reviewed_end_times.use([])
+
 
 @contextlib.contextmanager
 def shipped_reviewed_units():

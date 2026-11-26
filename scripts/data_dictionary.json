@@ -1267,7 +1267,7 @@
           "license": "dip"
         },
         "xml_header_json": {
-          "meaning": "Aus dem XML-Kopf übernommene Protokollmetadaten als JSON.",
+          "meaning": "Aus dem XML-Kopf übernommene Protokollmetadaten als JSON, wie die Datei sie druckt; auch die Endzeit bleibt unkorrigiert (die korrigierte steht in sitting_end_corrected).",
           "unit": "UTF-8-Text mit JSON-Struktur.",
           "source": "Plenarprotokoll-XML-Kopf, als JSON serialisiert.",
           "license": "dip"
@@ -1288,6 +1288,12 @@
           "meaning": "Rede-ID der letzten Rede, die eine abgebrochene Protokolldatei im Sitzungsverlauf druckt (nach Seite und Viertel im Inhaltsverzeichnis); NULL ohne Abbruch.",
           "unit": "Rede-ID des Plenarprotokoll-XML als Text oder NULL.",
           "source": "scripts/protocol_cut.py: Hinweis „Der gesamte und damit endgültige Stenografische Bericht … wird am … veröffentlicht“ im Plenarprotokoll-XML, geprüft gegen die DIP-Aktivitäten der Sitzung; geschrieben von scripts/persist_dip_pulse_store.py.",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
+        },
+        "sitting_end_corrected": {
+          "meaning": "Ende der Sitzung laut gedrucktem Plenarprotokoll (PDF), wo es vom Kopf der XML-Datei abweicht und scripts/reviewed_end_times.json es mit PDF-Seite und Prüfsumme belegt (vier Sitzungen: 19/55, 20/178, 21/89, 21/96); die Kennzahl „Längste Sitzung“ liest diese Zeit. NULL für jede andere Sitzung.",
+          "unit": "Uhrzeit HH:MM oder NULL.",
+          "source": "Gedrucktes Plenarprotokoll (PDF auf dserver.bundestag.de), „(Schluss: …)“, übernommen über die geprüfte Liste scripts/reviewed_end_times.json; geschrieben von scripts/persist_dip_pulse_store.py.",
           "license": "eigene-auswertung-uebernommene-quelldaten"
         },
         "created_at": {

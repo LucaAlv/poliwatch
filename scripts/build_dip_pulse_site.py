@@ -10664,7 +10664,7 @@ def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> d
         """
         SELECT p.id, p.document_number, p.date,
                json_extract(p.xml_header_json, '$.sitzung_start') AS sitzung_start,
-               json_extract(p.xml_header_json, '$.sitzung_end') AS sitzung_end
+               COALESCE(p.sitting_end_corrected, json_extract(p.xml_header_json, '$.sitzung_end')) AS sitzung_end
         FROM protocols p WHERE p.document_number = ?
         """,
         (str(document_number),),

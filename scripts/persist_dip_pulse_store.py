@@ -28,6 +28,7 @@ import antrag_text
 import publication_state as publication
 import vote_links
 import protocol_cut
+import reviewed_end_times
 from stable_ids import (
     canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
     document_number as document_number_canonical,
@@ -99,7 +100,7 @@ def require_current_schema(conn):
             raise registry.RegistryError("Incomplete person registry; restore the build-store backup")
         registry.require_current(conn)
     protocols = {row[1] for row in conn.execute("PRAGMA table_info(protocols)")}
-    if protocols and "xml_cut" not in protocols:
+    if protocols and not {"xml_cut", "sitting_end_corrected"} <= protocols:
         # Schema 15: no mark for a cut Protokoll file and no unprinted_contributions
         # (E16); the cached reports are read again under the cut rule.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
@@ -136,6 +137,14 @@ def require_current_speech_rules(conn: sqlite3.Connection) -> None:
         shown = ", ".join(stale_reviewed[:5]) + (f" and {len(stale_reviewed) - 5} more" if len(stale_reviewed) > 5 else "")
         raise RuntimeError(f"Persisted Reden of {shown} predate the current scripts/reviewed_units.json. "
                            "Run --offline --repersist with the complete cached XML/reports before facts, export or rendering.")
+    # The corrected end times are a persisted input too (scripts/reviewed_end_times.json, D2).
+    stale_end = [
+        str(number) for number, stored in conn.execute("SELECT document_number, sitting_end_corrected FROM protocols")
+        if stored != getattr(reviewed_end_times.for_sitting(str(number or "")), "end", None)
+    ] if "sitting_end_corrected" in {row[1] for row in conn.execute("PRAGMA table_info(protocols)")} else []
+    if stale_end:
+        raise RuntimeError(f"Persisted end times of {', '.join(sorted(stale_end)[:5])} predate the current "
+                           "scripts/reviewed_end_times.json. Run --offline --repersist before facts, export or rendering.")
     # The cut rule decides which sittings are marked and what unprinted_contributions holds (E16).
     stale_cut = conn.execute(
         "SELECT p.document_number FROM protocols p JOIN speech_rule_inputs r ON r.protocol_id = p.id "
@@ -281,6 +290,9 @@ def initialize(conn: sqlite3.Connection) -> None:
           xml_cut INTEGER NOT NULL DEFAULT 0 CHECK (xml_cut IN (0, 1)),
           xml_final_announced TEXT,
           xml_last_rede_id TEXT,
+          -- The end time the printed PDF gives where scripts/reviewed_end_times.json
+          -- corrects the XML head (HH:MM); NULL elsewhere. xml_header_json stays as printed.
+          sitting_end_corrected TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -1153,9 +1165,9 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
         """
         INSERT INTO protocols(
           id, document_number, date, title, verteildatum, pdf_url, xml_url,
-          xml_header_json, created_at, updated_at
+          xml_header_json, sitting_end_corrected, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           document_number = excluded.document_number,
           date = excluded.date,
@@ -1164,6 +1176,7 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
           pdf_url = excluded.pdf_url,
           xml_url = excluded.xml_url,
           xml_header_json = excluded.xml_header_json,
+          sitting_end_corrected = excluded.sitting_end_corrected,
           updated_at = excluded.updated_at
         """,
         (
@@ -1175,10 +1188,28 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
             clean(protocol.get("pdf_url")),
             clean(protocol.get("xml_url")),
             dumps(protocol.get("xml_header") or {}),
+            corrected_end(protocol),
             now,
             now,
         ),
     )
+
+
+def corrected_end(protocol: dict[str, Any]) -> str | None:
+    """The end time scripts/reviewed_end_times.json gives this sitting, or None.
+    Refuses an entry whose ``xml_end`` the report's XML head no longer prints:
+    the file may have been replaced, and the entry is read again or deleted."""
+    number = derive.clean_text(protocol.get("dokumentnummer"))
+    entry = reviewed_end_times.for_sitting(number)
+    if entry is None:
+        return None
+    printed = (protocol.get("xml_header") or {}).get("sitzung_end")
+    if printed != entry.xml_end:
+        raise reviewed_end_times.ReviewedEndTimesError(
+            f"scripts/reviewed_end_times.json: the entry of {number} corrects the end {entry.xml_end}, but the XML of "
+            f"{number} ({protocol.get('xml_url') or 'no xml_url'}) prints {printed!r}; delete the entry or read "
+            f"{entry.pdf_url} again")
+    return entry.end
 
 
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:

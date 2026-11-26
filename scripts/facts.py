@@ -175,7 +175,9 @@ def _minutes_of(expression: str) -> str:
 
 
 _SITZUNG_START = "json_extract(p.xml_header_json, '$.sitzung_start')"
-_SITZUNG_END = "json_extract(p.xml_header_json, '$.sitzung_end')"
+#: The end the printed PDF gives where scripts/reviewed_end_times.json corrects
+#: the XML head (D2), else the head's.
+_SITZUNG_END = "COALESCE(p.sitting_end_corrected, json_extract(p.xml_header_json, '$.sitzung_end'))"
 #: 0 for a sitting number of the form WP/number, else 1 (sorted after them).
 _MALFORMED_NUMBER = (
     "CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*' AND p.document_number NOT GLOB '*[^0-9/]*' "

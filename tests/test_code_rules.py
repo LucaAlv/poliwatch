@@ -382,6 +382,7 @@ GROUPS: dict[str, tuple[frozenset[str], str]] = {
         frozenset({
             "stable_ids", "publication_state", "python_version_guard", "reviewed_units", "dip_text",
             "release_version", "release_changes", "build_revision", "sqlite_open", "abgeordnetenwatch",
+            "reviewed_end_times",
         }),
         "helpers that import only each other",
     ),
