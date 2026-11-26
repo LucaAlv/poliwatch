@@ -20,7 +20,11 @@ import speech_kinds
 #: The version of the rule below. A cached report parsed under another (or none)
 #: is stale (build_dip_pulse_site.stale_causes), and so is a store persisted
 #: under another (persist_dip_pulse_store.require_current_speech_rules).
-CUT_RULE_VERSION = 1
+#: 2: a withheld Rede counts as printed in the "whole" test and in rule 3, and a
+#: place without a quadrant compares by page alone (``after_cut``).
+#: 3: the cut gives ``unplaced_reden`` (``unplaced``), None where DIP has not
+#: indexed the sitting.
+CUT_RULE_VERSION = 3
 
 NOTICE = re.compile(
     r"Der gesamte und damit endgültige Stenografische Bericht der (\d+)\.\s*Sitzung wird am "
@@ -155,6 +159,50 @@ def _distinct(aktivitaeten: list[dict[str, Any]] | None, sitting: str | None = N
     return distinct
 
 
+def after_cut(place: tuple[int, str] | None, cut_at: tuple[int, str]) -> bool:
+    """Whether a DIP place (page, quadrant or "") lies after the cut: on a later
+    page, or on the cut's page in a later quadrant when both quadrants are known.
+    A place without a page, or without a quadrant on the cut's own page, cannot
+    be shown to lie after it, and neither can anything on the cut's page when
+    the cut has no quadrant: there it may be the last printed Rede itself."""
+    if place is None:
+        return False
+    page, quadrant = place
+    if page != cut_at[0]:
+        return page > cut_at[0]
+    return bool(quadrant and cut_at[1]) and quadrant > cut_at[1]
+
+
+def before_cut(place: tuple[int, str] | None, cut_at: tuple[int, str]) -> bool:
+    """Whether a DIP place lies before the cut: on an earlier page, or on the
+    cut's page in an earlier quadrant when both quadrants are known."""
+    if place is None:
+        return False
+    page, quadrant = place
+    if page != cut_at[0]:
+        return page < cut_at[0]
+    return bool(quadrant and cut_at[1]) and quadrant < cut_at[1]
+
+
+def unplaced(reden: list[dict[str, Any]], cut_at: tuple[int, str], surname: str | None) -> int:
+    """How many of DIP's Reden can be shown to lie neither before nor after the
+    cut: those at its place (its quadrant, or its page where a quadrant is
+    missing) and those without a page, less one by the last printed Rede's
+    speaker, which is that Rede itself. Each may be printed or missing, so a
+    count of Reden after the cut is a floor by that many."""
+    at_cut = [a for a in reden if not after_cut(_place(a), cut_at) and not before_cut(_place(a), cut_at)]
+    own = speech_kinds._last_word(surname) if surname else ""
+    last_itself = any(own and speech_kinds._last_word(str(a.get("titel") or "")) == own for a in at_cut)
+    return len(at_cut) - (1 if last_itself else 0)
+
+
+def printed_reden(parsed: dict[str, Any]) -> int:
+    """The Reden the file prints: the stored ones and the withheld ones (ADR
+    0005), which DIP lists as "Rede" too."""
+    return sum(len(top.get("speeches") or []) + len(top.get("withheld") or [])
+               for top in parsed.get("agenda_items") or [])
+
+
 def _order(activity: dict[str, Any]) -> tuple[int, str, str]:
     place = _place(activity) or (0, "")
     return place[0], place[1], str(activity.get("id") or "")
@@ -164,13 +212,16 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
     """None when the sitting is whole: its XML prints no notice of a first
     edition, or it does and DIP's Aktivitäten are there and list no more "Rede"
     (the chair's left out) than the file's Reden and no more "Rede (zu Protokoll
-    gegeben)" than its Reden zu Protokoll (19/107). Otherwise the cut: the
+    gegeben)" than its Reden zu Protokoll (19/107); a withheld Rede is printed
+    (``printed_reden``). Otherwise the cut: the
     announced date, the last ``<rede>`` and its place, and the DIP entries in the
-    part the file does not print, in page order. A sitting DIP has not indexed
-    yet has no Aktivitäten: it is marked, with an empty list.
+    part the file does not print, in page order, and ``unplaced_reden``, the DIP
+    Reden that can lie on either side of the cut (``unplaced``): where it is not
+    0, the Reden listed are a floor. A sitting DIP has not indexed yet has no
+    Aktivitäten: it is marked, with an empty list and ``unplaced_reden`` None.
 
-    An entry is a "Rede" DIP places after the last ``<rede>`` (one in the same
-    quadrant may be that Rede's neighbour and is not counted), or a "Rede (zu
+    An entry is a "Rede" DIP places after the last ``<rede>`` (``after_cut``: one
+    in the same quadrant may be that Rede's neighbour and is not counted), or a "Rede (zu
     Protokoll gegeben)" that no stored one matches by surname within the
     sitting. Where the Inhaltsverzeichnis gives no page (20/210), the place is
     that of DIP's only "Rede" by the last speaker; none or several refuse."""
@@ -182,7 +233,7 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
     reden = sorted((a for a in activities if a.get("aktivitaetsart") == DIP_REDE and not CHAIR.search(str(a.get("titel") or ""))),
                    key=_order)
     written = sorted((a for a in activities if a.get("aktivitaetsart") == DIP_ZU_PROTOKOLL), key=_order)
-    speech_count = sum(len(top.get("speeches") or []) for top in parsed.get("agenda_items") or [])
+    speech_count = printed_reden(parsed)
     stored_written = [
         c for c in [*(c for top in parsed.get("agenda_items") or [] for c in top.get("contributions") or []),
                     *(parsed.get("sitting_contributions") or [])]
@@ -202,9 +253,12 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
                 f"{len(own)} DIP Reden of {last['surname'] or '(no name)'} to place it by, not one with a page")
         page, quadrant, place_from = placed[0][0], placed[0][1] or None, "dip"
     entries = []
+    unplaced_reden = None
     if page is not None:
         cut_at = (page, quadrant or "")
-        entries += [_entry(a, "rede") for a in reden if (_place(a) or (0, "")) > cut_at]
+        entries += [_entry(a, "rede") for a in reden if after_cut(_place(a), cut_at)]
+        if activities:
+            unplaced_reden = unplaced(reden, cut_at, last["surname"])
     remaining: dict[str, int] = {}
     for contribution in stored_written:
         name = speech_kinds._last_word((contribution.get("speaker") or {}).get("display_name"))
@@ -221,8 +275,16 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
         "page": page,
         "quadrant": quadrant,
         "place_from": place_from,
+        "unplaced_reden": unplaced_reden,
         "entries": entries,
     }
+
+
+def dip_indexed(report: dict[str, Any]) -> bool:
+    """Whether a report holds DIP's Aktivitäten for its sitting: without them a
+    cut's list is empty because DIP has not indexed the sitting, not because
+    nothing is missing (``facts.CUT_PROTOCOL_UNINDEXED``)."""
+    return any(isinstance(activity, dict) for activity in (report.get("api_records") or {}).get("aktivitaeten") or [])
 
 
 def cut_summary(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | None) -> dict[str, Any]:
@@ -238,8 +300,9 @@ RULE3_MIN = 5
 
 def unmarked_cut_evidence(root: ET.Element, aktivitaeten: list[dict[str, Any]] | None, speech_count: int) -> dict[str, Any] | None:
     """For a file without the notice: the counts that make it look cut (at least
-    ``RULE3_MIN`` DIP Reden after its last ``<rede>`` by page and quadrant, and at
-    least ``RULE3_MIN`` more DIP Reden, the chair's left out, than its Reden),
+    ``RULE3_MIN`` DIP Reden after its last ``<rede>`` by page and quadrant
+    (``after_cut``), and at least ``RULE3_MIN`` more DIP Reden, the chair's left
+    out, than ``speech_count``, its printed Reden with the withheld ones),
     else None. None too where the Inhaltsverzeichnis gives no page."""
     last = last_printed_rede(root)
     if last is None or last["page"] is None:
@@ -247,7 +310,7 @@ def unmarked_cut_evidence(root: ET.Element, aktivitaeten: list[dict[str, Any]] |
     reden = [a for a in _distinct(aktivitaeten) if a.get("aktivitaetsart") == DIP_REDE
              and not CHAIR.search(str(a.get("titel") or ""))]
     cut_at = (last["page"], last["quadrant"] or "")
-    after = sum(1 for a in reden if (_place(a) or (0, "")) > cut_at)
+    after = sum(1 for a in reden if after_cut(_place(a), cut_at))
     more = len(reden) - speech_count
     if after >= RULE3_MIN and more >= RULE3_MIN:
         return {"last_rede_id": last["rede_id"], "dip_reden_after": after, "dip_reden_more": more}

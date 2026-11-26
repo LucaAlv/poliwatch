@@ -112,19 +112,18 @@ class ProtokollGapCensusTests(unittest.TestCase):
 
     # Value: protects=the table per Wahlperiode in docs/data-methods.md, which becomes DATA.md, against the committed census;
     #   fails_when=one of the two is changed without the other; why_new=the figures are typed by hand; seam=none
-    def test_data_methods_gives_the_totals_of_the_committed_census(self):
+    # Value: protects=the committed census keeps the totals of E16, and data-methods types no count of cut files: DATA.md
+    #   generates them from the store (cut-protocols step 8), so a cut Thursday cannot leave a stale figure there;
+    #   fails_when=a hand-written per-Wahlperiode table returns, or the census drifts from 33 / 1,189 / 429; seam=docs
+    def test_the_census_totals_hold_and_data_methods_types_no_count(self):
         with (GAP / 'per-sitting.tsv').open(encoding='utf-8', newline='') as handle:
             rows = [row for row in csv.DictReader(handle, delimiter='\t') if row['teilausgabe'] == 'ja' and row['sitzung'] != '19/107']
+        self.assertEqual((len(rows), sum(int(row['dip_reden_danach']) for row in rows),
+                          sum(int(row['fehlend_zu_protokoll']) for row in rows)), (33, 1189, 429))
         methods = (_support.ROOT / 'docs' / 'data-methods.md').read_text(encoding='utf-8')
-        totals = []
-        for wahlperiode in ('19', '20', '21'):
-            cut = [row for row in rows if row['sitzung'].startswith(f'{wahlperiode}/')]
-            reden = sum(int(row['dip_reden_danach']) for row in cut)
-            written = sum(int(row['fehlend_zu_protokoll']) for row in cut)
-            self.assertRegex(methods, rf'(?m)^\| {wahlperiode} \| {len(cut)} \([^|]*\) \| {reden} \| {written} \|$')
-            totals.append((len(cut), reden, written))
-        self.assertEqual([sum(column) for column in zip(*totals)], [33, 1189, 429])
-
+        section = methods[methods.index('**Abgebrochene Protokolldateien.**'):methods.index('In der 18. Wahlperiode druckt')]
+        self.assertNotRegex(section, r'(?m)^\|')
+        self.assertNotRegex(section, r'\b(33|1\.189|429)\b')
 
 if __name__ == '__main__':
     unittest.main()

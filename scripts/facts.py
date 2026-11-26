@@ -1049,9 +1049,7 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
                 speeches, speeches_reason = False, "no cut check (report predates it)"
             elif summary["protocol_cut"]:
                 # Outranks withheld Reden: what the file lacks is larger and unknown.
-                indexed = any(isinstance(activity, dict)
-                              for activity in (report.get("api_records") or {}).get("aktivitaeten") or [])
-                speeches, speeches_reason = False, CUT_PROTOCOL if indexed else CUT_PROTOCOL_UNINDEXED
+                speeches, speeches_reason = False, (CUT_PROTOCOL if protocol_cut.dip_indexed(report) else CUT_PROTOCOL_UNINDEXED)
         header = protocol.get("xml_header") or {}
         parsed = summary.get("xml_speech_count") is not None
         times = parsed and all(sitting_clock(header.get(key)) for key in ("sitzung_start", "sitzung_end"))

@@ -788,8 +788,6 @@
     "xml_top_count": 1,
     "speech_kinds_version": 17,
     "vote_inputs_version": 1,
-    "protocol_cut": null,
-    "cut_rule_version": 1,
     "xml_speech_count": 14,
     "xml_contribution_counts": {
       "erwiderung": 1,
@@ -800,6 +798,8 @@
     "withheld_word_count": 0,
     "fragestunde_questions_without_person": 0,
     "fragestunde_unplaced_turns": 0,
+    "protocol_cut": null,
+    "cut_rule_version": 3,
     "xml_drucksache_count": 2,
     "unique_person_ids": 14,
     "extracted_text_char_count": 57748

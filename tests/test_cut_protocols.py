@@ -170,6 +170,63 @@ class ProtocolCutTests(unittest.TestCase):
         self.assertEqual((result["page"], result["quadrant"], result["place_from"]), (12, "B", "dip"))
         self.assertEqual([entry["dip_activity_id"] for entry in result["entries"]], ["a4", "a5", "a8"])
 
+    # Value: protects=a whole first edition holding a withheld Rede is not marked cut: DIP lists the withheld Rede,
+    #   the file prints it; fails_when=such a sitting is marked and CUT_PROTOCOL hides WITHHELD_REDEN;
+    #   why_new=TODOS cut-protocols item 2; seam=parser
+    def test_withheld_reden_count_as_printed_in_the_whole_test(self):
+        whole = parsed(NOTICE_READ, reden=3, zu_protokoll=("Dreher", "Esch"))
+        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4"}, {"rede_id": "ID5"}]
+        self.assertIsNone(cut.protocol_cut(whole, ACTIVITIES))
+        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4"}]
+        self.assertEqual([e["dip_activity_id"] for e in cut.protocol_cut(whole, ACTIVITIES)["entries"]], ["a4", "a5"])
+
+    # Value: protects=a cut place without a quadrant: only a later page is after it, so the last printed Rede and its
+    #   page neighbours are never listed as unprinted; a DIP Rede without a quadrant on the cut's page is not after it;
+    #   fails_when=the last Rede itself is listed as missing; why_new=TODOS cut-protocols item 3; seam=parser
+    def test_a_cut_place_without_a_quadrant_counts_only_later_pages(self):
+        notice = {**NOTICE_READ, "last_rede": {"rede_id": "ID2", "page": 12, "quadrant": None, "surname": "Berg"}}
+        result = cut.protocol_cut(parsed(notice), ACTIVITIES)
+        self.assertEqual([e["dip_activity_id"] for e in result["entries"] if e["kind"] == "rede"], ["a5"])
+        bare = [*ACTIVITIES, activity("b1", "Rede", "Fritz Fink, MdB, SPD", "12", "17"),
+                activity("b2", "Rede", "Gerd Gans, MdB, SPD", "13", "18")]
+        result = cut.protocol_cut(parsed(NOTICE_READ), bare)
+        self.assertEqual([e["dip_activity_id"] for e in result["entries"] if e["kind"] == "rede"], ["a4", "b2", "a5"])
+        self.assertEqual([cut.after_cut(place, (12, "B")) for place in ((12, ""), (12, "C"), (13, ""), (12, "A"))],
+                         [False, True, True, False])
+        self.assertEqual([cut.after_cut(place, (12, "")) for place in ((12, "D"), (12, ""), (13, ""), (11, "D"))],
+                         [False, False, True, False])
+
+    def test_rule_3_counts_only_later_pages_without_a_quadrant(self):
+        root = protocol_root(notice="", toc=xref("ID1", 10, "A") + xref("ID2", 12, ""))
+        same_page = [activity(f"s{n}", "Rede", f"Same Page{n}, MdB", "12C") for n in range(6)]
+        self.assertIsNone(cut.unmarked_cut_evidence(root, same_page, 0))
+        later = [activity(f"l{n}", "Rede", f"Later Page{n}, MdB", "13A") for n in range(6)]
+        self.assertEqual(cut.unmarked_cut_evidence(root, later, 0)["dip_reden_after"], 6)
+
+    # Value: protects=the count of DIP Reden after the cut is exact only where no DIP Rede lies at the cut's place
+    #   besides the last printed one; the rest are counted as unplaced, so a page can say "mindestens" there and
+    #   nowhere else; fails_when=a reader takes a floor for the number missing, or a dossier says "0 Reden fehlen" for
+    #   a sitting DIP lists more Reden of; why_new=code review of steps 7-10, finding 2; seam=parser
+    def test_dip_reden_at_the_cut_place_besides_the_last_printed_one_are_unplaced(self):
+        # a3 shares 12B with Berg's last printed Rede: before or after it, the quadrant cannot say.
+        self.assertEqual(cut.protocol_cut(parsed(NOTICE_READ), ACTIVITIES)["unplaced_reden"], 1)
+        alone = [a for a in ACTIVITIES if a["id"] != "a3"]
+        self.assertEqual(cut.protocol_cut(parsed(NOTICE_READ), alone)["unplaced_reden"], 0)
+        # Without a quadrant the cut's whole page is its place: a3 and a4 are unplaced, Berg's own Rede is not.
+        notice = {**NOTICE_READ, "last_rede": {"rede_id": "ID2", "page": 12, "quadrant": None, "surname": "Berg"}}
+        self.assertEqual(cut.protocol_cut(parsed(notice), ACTIVITIES)["unplaced_reden"], 2)
+        # A DIP Rede without a page, or without a quadrant on the cut's page, cannot be placed either; one on the cut's
+        # page in an earlier quadrant is printed.
+        extra = [*alone, activity("n1", "Rede", "Nora Nopage, MdB, SPD", ""),
+                 activity("n2", "Rede", "Olga Ohne, MdB, SPD", "12"), activity("n3", "Rede", "Paul Prior, MdB, SPD", "12A")]
+        self.assertEqual(cut.protocol_cut(parsed(NOTICE_READ, reden=4), extra)["unplaced_reden"], 2)
+        # No DIP Rede at the place matches the last speaker: every one there is unplaced.
+        stranger = [activity("s1", "Rede", "Sara Stranger, MdB, SPD", "12B"), *ACTIVITIES[3:]]
+        self.assertEqual(cut.protocol_cut(parsed(NOTICE_READ, reden=0), stranger)["unplaced_reden"], 1)
+
+    def test_a_sitting_dip_has_not_indexed_has_no_count_of_unplaced_reden(self):
+        self.assertIsNone(cut.protocol_cut(parsed(NOTICE_READ, reden=40), [])["unplaced_reden"])
+
     def test_without_pages_two_dip_reden_of_the_last_speaker_refuse(self):
         notice = {**NOTICE_READ, "last_rede": {"rede_id": "ID2", "page": None, "quadrant": None, "surname": "Berg"}}
         twice = [*ACTIVITIES, activity("b1", "Rede", "Bernd Berg, MdB, AfD", "14A", "12")]
@@ -224,10 +281,18 @@ class ParsedReportTests(unittest.TestCase):
         self.assertIn("cut", site.stale_causes(report))
         report["validation_summary"]["cut_rule_version"] = cut.CUT_RULE_VERSION
         self.assertNotIn("cut", site.stale_causes(report))
+        # Rule 1 counted a withheld Rede as missing and placed a quadrant-less cut on page 0 of its quadrant
+        # (TODOS cut-protocols items 2, 3 and 9): a report read under it is re-read.
+        report["validation_summary"]["cut_rule_version"] = 1
+        self.assertIn("cut", site.stale_causes(report))
+        # Rule 2 gave no count of the DIP Reden a cut cannot place (code review of steps 7 to 10, finding 2).
+        report["validation_summary"]["cut_rule_version"] = 2
+        self.assertIn("cut", site.stale_causes(report))
+        self.assertGreater(cut.CUT_RULE_VERSION, 2)
 
 
 CUT = {"announced": "2026-10-13", "last_rede_id": "R3", "page": 103, "quadrant": "B", "place_from": "inhaltsverzeichnis",
-       "entries": [
+       "unplaced_reden": 0, "entries": [
            {"dip_activity_id": "x1", "kind": "rede", "dip_person_id": "8173", "speaker": "Dora Dreher, MdB, Die Linke",
             "page": 104, "quadrant": "A"},
            {"dip_activity_id": "x2", "kind": "zu_protokoll", "dip_person_id": None, "speaker": "Emil Esch, MdB, CDU/CSU",
@@ -266,6 +331,26 @@ class StoreTests(unittest.TestCase):
             ("pp-test-1", "x2", "zu_protokoll", None, None, "Emil Esch, MdB, CDU/CSU", None, None),
         ])
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM speeches WHERE text LIKE '%Dreher%'").fetchone()[0], 0)
+
+    # Value: protects=the store keeps how many DIP Reden a cut cannot place, and NULL where DIP has not indexed the
+    #   sitting, so the export says "mindestens" or "offen" instead of an exact 0; fails_when=an unindexed sitting
+    #   exports as 0 Reden missing; why_new=code review of steps 7-10, findings 1 and 2; seam=persist
+    def test_the_store_keeps_the_unplaced_reden_and_null_for_a_sitting_dip_has_not_indexed(self):
+        conn = self.store()
+        pulse_store.persist_report(conn, cut_report({**CUT, "unplaced_reden": 2}), None)
+        self.assertEqual(conn.execute("SELECT xml_cut, xml_cut_unplaced_reden FROM protocols").fetchone()[:], (1, 2))
+        pulse_store.persist_report(conn, cut_report({**CUT, "unplaced_reden": None, "entries": []}), None)
+        self.assertEqual(conn.execute("SELECT xml_cut, xml_cut_unplaced_reden FROM protocols").fetchone()[:], (1, None))
+        pulse_store.persist_report(conn, cut_report(None), None)
+        self.assertEqual(conn.execute("SELECT xml_cut, xml_cut_unplaced_reden FROM protocols").fetchone()[:], (0, None))
+
+    def test_a_schema_16_store_is_refused(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT, xml_header_json TEXT, "
+                     "xml_cut INTEGER, sitting_end_corrected TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema"):
+            pulse_store.initialize(conn)
+        conn.close()
 
     def test_a_whole_sitting_has_no_mark_and_a_repersist_drops_old_rows(self):
         conn = self.store()
@@ -617,6 +702,7 @@ class GateTests(unittest.TestCase):
         report = cut_report(protocol_cut)
         report["api_records"] = {"aktivitaeten": list(aktivitaeten)}
         report["validation_summary"]["xml_speech_count"] = 3
+        report["validation_summary"]["withheld_rede_count"] = 0
         return report
 
     # Value: protects=the mark and the notice agree, and the receipt carries the counts; fails_when=a sitting is
@@ -649,6 +735,23 @@ class GateTests(unittest.TestCase):
         result = gate.cut_protocol_check(output, database)
         self.assertEqual([entry["dip_reden_after"] for entry in result["rule3"]], [8])
         self.assertIn("look cut by rule 3", " ".join(result["problems"]))
+        # A withheld Rede is printed: DIP's 8 against 3 stored and 1 withheld is 4 more, below rule 3's 5 (item 2).
+        report = self.gate_report(None, after)
+        report["validation_summary"]["withheld_rede_count"] = 1
+        output, database = self.output(xml, report)
+        self.assertEqual(gate.cut_protocol_check(output, database)["rule3"], [])
+
+    # Value: protects=the gate names a report without its count of Reden or withheld Reden instead of judging rule 3 by
+    #   a guess; fails_when=the type check is dropped and None + int raises; why_new=step 9 added the withheld count;
+    #   seam=none; no_claim=the real parser's output (report built by hand)
+    def test_a_report_without_the_withheld_count_is_named_not_judged(self):
+        xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8")
+        report = self.gate_report(None)
+        del report["validation_summary"]["withheld_rede_count"]
+        output, database = self.output(xml, report)
+        result = gate.cut_protocol_check(output, database)
+        self.assertIn("holds no count of Reden or withheld Reden", " ".join(result["problems"]))
+        self.assertEqual(result["rule3"], [])
 
     # Value: protects=no unprinted entry is a stored Rede over again; fails_when=a DIP Rede the file prints is listed as
     #   missing; why_new=step 6; seam=gate
@@ -684,6 +787,214 @@ class GateTests(unittest.TestCase):
             self.assertIn("read the PDF again", " ".join(gate.end_time_check(output, database)["problems"]))
         with mock.patch.object(gate.reviewed_end_times, "load", return_value=[]):
             self.assertIn("without an entry", " ".join(gate.end_time_check(output, database)["problems"]))
+
+
+
+import render_dip_pulse_html as pulse_html  # noqa: E402
+
+
+class CutSentenceTests(unittest.TestCase):
+    # Value: protects=the one sentence the Puls week and the person page share (owner, 2026-11-26): which sittings,
+    #   how many Reden laut DIP, where they are missing; fails_when=a reader takes a week's Redeanteil or a person's
+    #   count for complete; why_new=step 7; seam=renderer
+    def test_one_sitting_of_a_week(self):
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/99"], 66, None, "in Redeanteil und Rangfolge dieser Woche", scope="dieser Woche"),
+            "In Sitzung 21/99 endet die Protokolldatei vorzeitig; 66 Reden laut DIP fehlen in Redeanteil und Rangfolge dieser Woche.")
+
+    def test_several_sittings_and_both_kinds(self):
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/102", "21/105"], 118, None, "in Redeanteil und Rangfolge dieser Woche",
+                                        scope="dieser Woche"),
+            "In 2 Sitzungen dieser Woche (21/102, 21/105) endet die Protokolldatei vorzeitig; 118 Reden laut DIP fehlen "
+            "in Redeanteil und Rangfolge dieser Woche.")
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/96", "21/99"], 3, 1, "auf dieser Seite"),
+            "In 2 Sitzungen (21/96, 21/99) endet die Protokolldatei vorzeitig; 3 Reden und 1 zu Protokoll gegebene Rede "
+            "laut DIP fehlen auf dieser Seite.")
+
+    def test_one_missing_rede_is_singular_and_many_sittings_are_cut_short(self):
+        self.assertEqual(pulse_html.cut_gap_sentence(["21/99"], 0, 1, "auf dieser Seite"),
+                         "In Sitzung 21/99 endet die Protokolldatei vorzeitig; 1 zu Protokoll gegebene Rede laut DIP fehlt "
+                         "auf dieser Seite.")
+        numbers = [f"21/{n}" for n in range(10, 17)]
+        self.assertIn("In 7 Sitzungen (21/10, 21/11, 21/12, 21/13, 21/14 und 2 weitere) endet",
+                      pulse_html.cut_gap_sentence(numbers, 9, 0, "auf dieser Seite"))
+
+    # Value: protects=a count that is only a floor (DIP Reden the cut cannot place) says "mindestens"; fails_when=a
+    #   reader takes a floor for the number missing; why_new=code review of steps 7-10, finding 2; seam=renderer
+    def test_a_floor_says_mindestens(self):
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/99"], 66, None, "in Redeanteil und Rangfolge dieser Woche", scope="dieser Woche",
+                                        floor=True),
+            "In Sitzung 21/99 endet die Protokolldatei vorzeitig; mindestens 66 Reden laut DIP fehlen in Redeanteil und "
+            "Rangfolge dieser Woche.")
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/99"], 1, 2, "auf dieser Seite", floor=True),
+            "In Sitzung 21/99 endet die Protokolldatei vorzeitig; mindestens 1 Rede und 2 zu Protokoll gegebene Reden "
+            "laut DIP fehlen auf dieser Seite.")
+
+    def test_a_sitting_dip_has_not_indexed_says_so(self):
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/108"], 0, None, "in Redeanteil und Rangfolge dieser Woche",
+                                        scope="dieser Woche", unindexed=["21/108"]),
+            "In Sitzung 21/108 endet die Protokolldatei vorzeitig; was fehlt, hat DIP noch nicht erfasst.")
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/105", "21/108"], 12, None, "in Redeanteil und Rangfolge dieser Woche",
+                                        scope="dieser Woche", unindexed=["21/108"]),
+            "In 2 Sitzungen dieser Woche (21/105, 21/108) endet die Protokolldatei vorzeitig; 12 Reden laut DIP fehlen "
+            "in Redeanteil und Rangfolge dieser Woche, und 21/108 hat DIP noch nicht erfasst.")
+
+
+def dossier_report(protocol_cut=CUT, aktivitaeten=("present",)):
+    report = cut_report(protocol_cut)
+    report["protocol"]["xml_header"] = {**report["protocol"].get("xml_header", {}), "start_page": "101"}
+    report["api_records"] = {"aktivitaeten": [{"id": "z"}] if aktivitaeten else []}
+    return report
+
+
+class DossierNoteTests(unittest.TestCase):
+    # Value: protects=a cut sitting's dossier says where the file stops, how much DIP lists after it, links the PDF
+    #   at that page and lists DIP's speakers without making them look like Reden; fails_when=a reader takes the
+    #   dossier's Redeanteil or ranking for the whole sitting; why_new=step 7; seam=renderer
+    def test_the_note_names_the_place_the_counts_the_pdf_page_and_dips_speakers(self):
+        html = pulse_html.render_html(dossier_report())
+        note = html[html.index('<section class="cut-gap"'):html.index("</section>", html.index('<section class="cut-gap"'))]
+        self.assertIn("Protokolldatei endet vorzeitig", note)
+        self.assertIn("endet nach der Rede auf Seite 103 B", note)
+        self.assertIn("den endgültigen Bericht kündigt sie für den 13.10.2026 an", note)
+        self.assertIn("Laut DIP fehlen danach 1 Rede und 1 zu Protokoll gegebene Rede", note)
+        self.assertIn('href="https://www.bundestag.de/pp.pdf#page=3"', note)
+        self.assertIn("Von DIP genannt, nicht gedruckt (2)", note)
+        self.assertIn("<li>Dora Dreher, MdB, Die Linke · S. 104 A</li>", note)
+        self.assertIn("<li>Emil Esch, MdB, CDU/CSU · zu Protokoll</li>", note)
+        self.assertNotIn("speech-card", note)
+        self.assertNotIn("<a href=\"../abgeordnete", note)
+
+    def test_a_whole_sitting_has_no_note(self):
+        self.assertNotIn("<section class=\"cut-gap\"", pulse_html.render_html(dossier_report(None)))
+
+    def test_unindexed_and_dip_placed_cuts_say_so(self):
+        unindexed = {**CUT, "entries": []}
+        self.assertIn("DIP hat diese Sitzung noch nicht erfasst; wie viel fehlt, ist offen.",
+                      pulse_html.render_html(dossier_report(unindexed, aktivitaeten=())))
+        placed = {**CUT, "place_from": "dip"}
+        self.assertIn("endet nach der Rede auf Seite 103 B (Seite laut DIP)", pulse_html.render_html(dossier_report(placed)))
+        no_quadrant = {**CUT, "quadrant": None}
+        self.assertIn("endet nach der Rede auf Seite 103.", pulse_html.render_html(dossier_report(no_quadrant)))
+
+    # Value: protects=a cut whose count is a floor says "mindestens" and why; fails_when=the dossier says "fehlen danach
+    #   0 Reden" for a sitting DIP lists more Reden of; why_new=code review of steps 7-10, finding 2; seam=renderer
+    def test_unplaced_dip_reden_make_the_count_a_floor(self):
+        html = pulse_html.render_html(dossier_report({**CUT, "unplaced_reden": 2}))
+        self.assertIn("Laut DIP fehlen danach mindestens 1 Rede und 1 zu Protokoll gegebene Rede; keine Zahl auf dieser Seite "
+                      "enthält sie. 2 weitere Reden nennt DIP an der Stelle des Abbruchs, ohne dass sich sagen lässt, ob sie "
+                      "davor oder danach liegen.", html)
+        self.assertNotIn("mindestens", pulse_html.render_html(dossier_report()))
+
+
+class PulsWeekSentenceTests(unittest.TestCase):
+    # Value: protects=a Puls week holding a cut sitting says its Redeanteil and Rangfolge lack the Reden DIP lists;
+    #   fails_when=the week's shares read as complete; why_new=step 7; seam=renderer
+    def test_the_week_names_its_cut_sitting(self):
+        import io
+        from datetime import date
+        from test_build_dip_pulse_site import SittingWeekComparisonTests as W
+        entries = [W._entry("2026-06-11", "21/83", [W._item(1, [("SPD", 100)])]),
+                   W._entry("2026-06-12", "21/84", [W._item(1, [("CDU/CSU", 100)])])]
+        for entry in entries:
+            entry["report"]["validation_summary"].update({"xml_top_count": 1, "xml_speech_count": 1})
+        entries[0]["report"]["validation_summary"]["protocol_cut"] = copy.deepcopy(CUT)
+        entries[0]["report"]["api_records"] = {"aktivitaeten": [{"id": "z"}]}
+        with mock.patch("sys.stderr", new_callable=io.StringIO):
+            html = site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 24))
+        self.assertIn("In Sitzung 21/83 endet die Protokolldatei vorzeitig; 1 Rede laut DIP fehlt in Redeanteil und "
+                      "Rangfolge dieser Woche.", html)
+        entries[0]["report"]["validation_summary"]["protocol_cut"]["unplaced_reden"] = 1
+        with mock.patch("sys.stderr", new_callable=io.StringIO):
+            html = site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 24))
+        self.assertIn("In Sitzung 21/83 endet die Protokolldatei vorzeitig; mindestens 1 Rede laut DIP fehlt", html)
+        entries[0]["report"]["validation_summary"]["protocol_cut"] = None
+        with mock.patch("sys.stderr", new_callable=io.StringIO):
+            html = site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 24))
+        self.assertNotIn("Protokolldatei", html)
+
+
+class PersonPageTests(unittest.TestCase):
+    # Value: protects=a person page names the Reden and Reden zu Protokoll DIP lists for that person in cut files,
+    #   pooled over every row of the person; fails_when=a person's Reden count reads as complete; why_new=step 7;
+    #   seam=store+renderer
+    def test_the_store_pools_a_persons_unprinted_rows_and_the_page_says_so(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = pulse_store.connect(Path(tmp.name) / "s.sqlite")
+        self.addCleanup(conn.close)
+        report = cut_report(copy.deepcopy(CUT))
+        report["validation_summary"]["protocol_cut"]["entries"][1]["dip_person_id"] = "8173"
+        pulse_store.persist_report(conn, report, None)
+        conn.execute("UPDATE mps SET dip_person_id = '8173' WHERE id = (SELECT MIN(id) FROM mps)")
+        pulse_store.resolve_unprinted_people(conn)
+        conn.commit()
+        mps, _ = site.collect_abgeordnete(conn)
+        person = next(mp for mp in mps if mp.get("unprinted"))
+        self.assertEqual(person["unprinted"], {"rede": 1, "zu_protokoll": 1, "sittings": ["20/999"], "floor": False})
+        self.assertIn("In Sitzung 20/999 endet die Protokolldatei vorzeitig; 1 Rede und 1 zu Protokoll gegebene Rede "
+                      "laut DIP fehlen auf dieser Seite.", site.render_abgeordnete_detail(person))
+        others = [mp for mp in mps if not mp.get("unprinted")]
+        self.assertTrue(others)
+        self.assertNotIn("Protokolldatei", site.render_abgeordnete_detail(others[0]))
+        # A sitting whose cut leaves DIP Reden unplaced: one of them may be this person's, so the count is a floor.
+        conn.execute("UPDATE protocols SET xml_cut_unplaced_reden = 1")
+        person = next(mp for mp in site.collect_abgeordnete(conn)[0] if mp.get("unprinted"))
+        self.assertTrue(person["unprinted"]["floor"])
+        self.assertIn("vorzeitig; mindestens 1 Rede und 1 zu Protokoll gegebene Rede laut DIP fehlen",
+                      site.render_abgeordnete_detail(person))
+
+
+class CorrectedEndReceiptTests(unittest.TestCase):
+    # Value: protects=a Fakt whose sitting end the PDF corrects names both ends and the PDF page, so a reader who
+    #   checks the XML is not misled; fails_when=the receipt shows only the corrected end; why_new=step 7 (3b);
+    #   seam=renderer
+    def test_the_protocol_receipt_names_both_ends(self):
+        row = {"citation": {"document_number": "19/55", "sitting_end_corrected": "01:28", "xml_sitting_end": "01:30"},
+               "receipts": [{"entity_kind": "protocol", "document_number": "19/55", "position": 0}]}
+        with reviewed_end_times.using(reviewed_end_times.load()):
+            html = site._render_fact_sources(row, mp_lookup={}, document_numbers={"19/55"}, bill_slugs=set())
+        self.assertIn('Ende laut PDF 01:28 Uhr (<a href="https://dserver.bundestag.de/btp/19/19055.pdf#page=214">S. 214 ↗</a>), '
+                      "laut Protokolldatei 01:30 Uhr", html)
+        # The citation carries both ends from the store.
+        conn = StoreTests.store(self)
+        with reviewed_end_times.using(reviewed_end_times.check({"entries": [end_entry(xml_end="01:30", end="01:28")]})):
+            pulse_store.persist_report(conn, timed_report("01:30"), None)
+        conn.row_factory = sqlite3.Row
+        citation = site.resolve_fact_citation(conn, facts.REGISTRY_BY_ID["laengste-sitzung"], {
+            "receipts": [{"entity_kind": "protocol", "document_number": "20/999", "position": 0}]})
+        self.assertEqual((citation["sitzung_end"], citation["sitting_end_corrected"], citation["xml_sitting_end"]),
+                         ("01:28", "01:28", "01:30"))
+        row["citation"]["sitting_end_corrected"] = None
+        self.assertNotIn("Ende laut PDF", site._render_fact_sources(row, mp_lookup={}, document_numbers={"19/55"},
+                                                                    bill_slugs=set()))
+
+
+
+class FaktenWeekGapTests(unittest.TestCase):
+    # Value: protects=a Fakten week that posts a Fakt still names the metrics a cut sitting keeps incomplete, with the
+    #   gap note; fails_when=2026-W41 shows the längste Sitzung of 21/99 and nothing says its Reden metrics lack data;
+    #   why_new=step 7 browser check; seam=renderer
+    def test_a_posted_week_lists_its_incomplete_metrics(self):
+        base = {"period_kind": "week", "period_key": "2026-W41", "iso_year": 2026, "iso_week": 41, "wahlperiode": 21,
+                "receipts": []}
+        posted = {**base, "id": 1, "metric_id": "laengste-sitzung", "complete": 1, "publishable": 1, "rank": 1,
+                  "value": 967, "withheld": None}
+        held = {**base, "id": 2, "metric_id": "laengste-rede", "complete": 0, "publishable": 0, "rank": None,
+                "value": None, "withheld": "incomplete", "gap_note": "Sitzung 21/99: Protokolldatei abgebrochen"}
+        html = site.render_facts_week("2026-W41", [posted, held], {}, {}, {}, mp_lookup={}, document_numbers=set(),
+                                      bill_slugs=set())
+        self.assertIn("Nicht vollständig erfasst", html)
+        self.assertIn("unvollständig erfasst: Sitzung 21/99: Protokolldatei abgebrochen", html)
+        complete = {**held, "complete": 1, "withheld": "below_floor"}
+        self.assertNotIn("Nicht vollständig erfasst", site.render_facts_week(
+            "2026-W41", [posted, complete], {}, {}, {}, mp_lookup={}, document_numbers=set(), bill_slugs=set()))
 
 
 if __name__ == "__main__":

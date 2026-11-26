@@ -107,6 +107,7 @@ import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import vote_links
 import protocol_cut
+import reviewed_end_times
 import reviewed_vote_links
 import dip_cache
 import abgeordnetenwatch as aw
@@ -3761,6 +3762,7 @@ _COLUMN_SOURCE_DERIVED = {
     # Whether a Protokoll file is cut short, and what an unprinted entry is, are
     # protocol_cut's verdict over the XML's notice and DIP's Aktivitäten (E16).
     ("protocols", "xml_cut"),
+    ("protocols", "xml_cut_unplaced_reden"),
     ("unprinted_contributions", "kind"),
 }
 
@@ -3795,7 +3797,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 27
+EXPORT_FORMAT = 28
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -4752,6 +4754,43 @@ def _withheld_coverage(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"by_year": by_year, "by_fraktion": by_fraktion, "by_sitting": by_sitting, "units": units}
 
 
+def _cut_coverage(conn: sqlite3.Connection) -> dict[str, Any]:
+    """The cut Protokoll files (E16) and what DIP lists after each cut, per
+    Wahlperiode and per sitting, read from the store: the manifest, DATA.md and
+    the Daten page give these figures, so none is typed into a document. A
+    sitting DIP has not indexed (``xml_cut_unplaced_reden`` NULL) has no count:
+    its ``reden`` and ``zu_protokoll`` are None, and the Wahlperiode counts it
+    in ``unindexed`` and its sums leave it out. ``unplaced_reden`` above 0 makes
+    a sitting's ``reden`` a floor (``protocol_cut.unplaced``)."""
+    rows = conn.execute(
+        "SELECT p.document_number, p.date, p.xml_final_announced, p.xml_last_rede_id, p.sitting_end_corrected, "
+        "json_extract(p.xml_header_json, '$.sitzung_end'), p.xml_cut_unplaced_reden, "
+        "(SELECT COUNT(*) FROM unprinted_contributions u WHERE u.protocol_id = p.id AND u.kind = 'rede'), "
+        "(SELECT COUNT(*) FROM unprinted_contributions u WHERE u.protocol_id = p.id AND u.kind = 'zu_protokoll') "
+        "FROM protocols p WHERE p.xml_cut = 1"
+    ).fetchall()
+    by_sitting = sorted(
+        ({"document_number": number, "date": date_text, "announced": announced, "last_rede_id": last_rede,
+          "reden": None if unplaced is None else int(reden), "zu_protokoll": None if unplaced is None else int(written),
+          "unplaced_reden": unplaced, "sitting_end_corrected": corrected, "xml_sitting_end": xml_end}
+         for number, date_text, announced, last_rede, corrected, xml_end, unplaced, reden, written in rows),
+        key=lambda row: _document_number_order(row["document_number"]))
+    by_wp: dict[str, dict[str, Any]] = {}
+    for row in by_sitting:
+        wp = _protocol_wahlperiode(row["document_number"])
+        cell = by_wp.setdefault(wp, {"wp": wp, "sittings": 0, "unindexed": 0, "reden": 0, "zu_protokoll": 0,
+                                     "unplaced_reden": 0})
+        cell["sittings"] += 1
+        if row["unplaced_reden"] is None:
+            cell["unindexed"] += 1
+            continue
+        cell["reden"] += row["reden"]
+        cell["zu_protokoll"] += row["zu_protokoll"]
+        cell["unplaced_reden"] += row["unplaced_reden"]
+    by_wahlperiode = [cell for _wp, cell in sorted(by_wp.items(), key=lambda item: (not item[0].isdigit(), int(item[0]) if item[0].isdigit() else 0))]
+    return {"by_wahlperiode": by_wahlperiode, "by_sitting": by_sitting}
+
+
 # Each column's DATA.md licence layer must fit the source tag datenstand.json
 # ships for it, so the two files never give one column different terms.
 def _check_license_layers(manifest_tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> None:
@@ -4873,6 +4912,54 @@ def _pct(share: float | None) -> str:
     return "unbekannt" if share is None else f"{share * 100:.2f} %"
 
 
+def _cut_count(count: int | None, *, floor: bool, open_: bool) -> str:
+    """A count of DIP entries after the cut as DATA.md and the Daten page print
+    it: "offen" where DIP has indexed none of the sittings, "mindestens N" where
+    some are not indexed or a cut leaves DIP Reden unplaced, else N. An open
+    count is None."""
+    return "offen" if open_ else f"mindestens {count}" if floor else str(count)
+
+
+def _codebook_cut(coverage: dict[str, Any]) -> list[str]:
+    """The cut Protokoll files (E16) per Wahlperiode and per sitting, from the
+    manifest's ``coverage.cut_protocols``: generated, so the figures follow
+    every cut Thursday the store holds."""
+    cut = coverage.get("cut_protocols") or {"by_wahlperiode": [], "by_sitting": []}
+    lines = ["", "### Abgebrochene Protokolldateien", "",
+             "Eine **abgebrochene Protokolldatei** ist eine Protokoll-XML, die als Erstausgabe vor dem Ende ihrer Sitzung "
+             "endet und nicht durch die endgültige ersetzt wurde (`protocols.xml_cut = 1`; „Abgebrochene "
+             "Protokolldateien“ unter den Methoden). Die Zahlen sind DIP-Aktivitäten im nicht gedruckten Teil "
+             "(`unprinted_contributions`): Reden nach der letzten gedruckten Rede und zu Protokoll gegebene Reden, denen "
+             "keine gespeicherte entspricht. Sie stehen in keiner Zählung. „mindestens“: DIP nennt an der Stelle des "
+             "Abbruchs Reden, die sich weder davor noch danach legen lassen (`protocols.xml_cut_unplaced_reden`), oder "
+             "eine Sitzung der Zeile hat DIP noch nicht erfasst; „offen“: DIP hat die Sitzung noch nicht erfasst, keine "
+             "Zahl ist bekannt. „Ende laut PDF“ nennt das Sitzungsende, das die "
+             "geprüfte Liste `scripts/reviewed_end_times.json` aus dem gedruckten Protokoll übernimmt, mit dem der Datei in "
+             "Klammern; „–“: keine Korrektur.", ""]
+    if not cut["by_sitting"]:
+        return lines + ["In diesem Datenbestand endet keine Protokolldatei vorzeitig."]
+    lines += ["| WP | Sitzungen | Reden laut DIP nicht gedruckt | zu Protokoll gegebene Reden nicht gedruckt |",
+              "| --- | ---: | ---: | ---: |"]
+    for row in cut["by_wahlperiode"]:
+        open_ = row["unindexed"] == row["sittings"]
+        sittings = f"{row['sittings']} ({row['unindexed']} von DIP noch nicht erfasst)" if row["unindexed"] else str(row["sittings"])
+        reden = _cut_count(row["reden"], floor=bool(row["unindexed"] or row["unplaced_reden"]), open_=open_)
+        written = _cut_count(row["zu_protokoll"], floor=bool(row["unindexed"]), open_=open_)
+        lines.append(f"| {row['wp']} | {sittings} | {reden} | {written} |")
+    lines += ["", "| Sitzung | Datum | Letzte gedruckte Rede | Reden nicht gedruckt | zu Protokoll nicht gedruckt | "
+              "Endgültiger Bericht angekündigt für | Ende laut PDF |",
+              "| --- | --- | --- | ---: | ---: | --- | --- |"]
+    for row in cut["by_sitting"]:
+        open_ = row["unplaced_reden"] is None
+        end = (f"{row['sitting_end_corrected']} (Datei {row['xml_sitting_end'] or 'ohne Zeit'})"
+               if row.get("sitting_end_corrected") else "–")
+        reden = _cut_count(row["reden"], floor=bool(row["unplaced_reden"]), open_=open_)
+        written = _cut_count(row["zu_protokoll"], floor=False, open_=open_)
+        lines.append(f"| {row['document_number']} | {row['date'] or 'unbekannt'} | {_md_cell(row['last_rede_id'] or 'unbekannt')} | "
+                     f"{reden} | {written} | {row['announced'] or 'unbekannt'} | {end} |")
+    return lines
+
+
 def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
     """N9 (ADR 0005): coverage by sittings and by Reden, the withheld share by
     own words per year, Fraktion and sitting, and the sittings kept out."""
@@ -4916,6 +5003,7 @@ def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
                          f"{row['words_withheld']} | {row['words_stored']} | {_pct(row['share'])} |")
     else:
         lines += ["", "In diesem Datenbestand ist keine Rede zurückgehalten."]
+    lines += _codebook_cut(coverage)
     excluded = coverage.get("excluded") or []
     lines += ["", "### Ausgeschlossene Sitzungen", "",
               "Eine Sitzung bleibt nur ganz draußen, wenn ihre Quelle fehlerhaft ist oder sich ein Fehler nicht auf einzelne "
@@ -5506,6 +5594,7 @@ def _run_export(
         total_rows = sum(table["row_count"] for table in tables_info)
         wahlperioden = _snapshot_coverage(snapshot_conn)
         withheld_coverage = _withheld_coverage(snapshot_conn)
+        cut_coverage = _cut_coverage(snapshot_conn)
     finally:
         snapshot_conn.close()
     vacuum_path.unlink()
@@ -5566,6 +5655,9 @@ def _run_export(
             # N9 (ADR 0005): the withheld share by own words, per year, per
             # Fraktion and year, and per sitting with a withheld Rede.
             "withheld": withheld_coverage,
+            # The cut Protokoll files (E16): what DIP lists after each cut, per
+            # Wahlperiode and per sitting (protocols.xml_cut, unprinted_contributions).
+            "cut_protocols": cut_coverage,
         },
         # Every withheld Rede by key, so a release names the ones it adds (D5, D9).
         "withheld_reden": withheld_coverage.pop("units"),
@@ -5750,6 +5842,28 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         coverage_line += (
             f" &middot; {pulse_html.format_int(held)} {'Rede' if held == 1 else 'Reden'} zurückgehalten ({pulse_html.format_int(held_words)} Wörter, "
             f"{share * 100:.2f} % der Redewörter; nicht mitgezählt, Text in withheld_units)"
+        )
+    cut_sittings = (coverage.get("cut_protocols") or {}).get("by_sitting") or []
+    if cut_sittings:
+        # A sitting DIP has not indexed has no count (reden None): the sums leave
+        # it out and become floors, as does a cut that leaves DIP Reden unplaced.
+        indexed = [row for row in cut_sittings if row["unplaced_reden"] is not None]
+        unindexed = len(cut_sittings) - len(indexed)
+        head = pulse_html.format_count(len(cut_sittings), "Protokolldatei endet", "Protokolldateien enden")
+        if not indexed:
+            detail = "was fehlt, hat DIP noch nicht erfasst"
+        else:
+            reden = pulse_html.format_count(sum(row["reden"] for row in indexed), "Rede", "Reden")
+            written = pulse_html.format_count(sum(row["zu_protokoll"] for row in indexed), "zu Protokoll gegebene Rede",
+                                              "zu Protokoll gegebene Reden")
+            reden_floor = "mindestens " if unindexed or any(row["unplaced_reden"] for row in indexed) else ""
+            written_floor = "mindestens " if unindexed else ""
+            detail = f"laut DIP {reden_floor}{reden} und {written_floor}{written} nicht gedruckt"
+            if unindexed:
+                detail += f", {pulse_html.format_count(unindexed, 'Sitzung', 'Sitzungen')} von DIP noch nicht erfasst"
+        coverage_line += (
+            f" &middot; {pulse_html.esc(head)} vorzeitig ({pulse_html.esc(detail)}; nicht mitgezählt, Liste in "
+            "unprinted_contributions)"
         )
     scope_exceptions = ", bis auf die ausgeschlossenen Sitzungen (unten)" if excluded else ""
     bausteine_line = " &middot; ".join(
@@ -7776,6 +7890,18 @@ def render_front_page(
             f'<p class="week-note">{pulse_html.format_count(len(undated), "neuere Sitzung", "neuere Sitzungen")} '
             "ohne Datum nicht ber&uuml;cksichtigt</p>"
         )
+    # A sitting of the week whose Protokoll file stops partway (E16): its Reden
+    # after the cut are in neither Redeanteil nor Rangfolge, so the week says so.
+    cuts = [(sitting_label(entry), pulse_html.report_cut(entry.get("report") or {})) for entry in week_entries]
+    cuts = [(number, cut) for number, cut in cuts if cut]
+    if cuts:
+        undated_note += (
+            '<p class="week-note week-cut">' + pulse_html.esc(pulse_html.cut_gap_sentence(
+                [number for number, _cut in cuts], sum(cut["reden"] for _number, cut in cuts), None,
+                "in Redeanteil und Rangfolge dieser Woche", scope="dieser Woche",
+                unindexed=[number for number, cut in cuts if not cut["indexed"]],
+                floor=any(cut["unplaced_reden"] for _number, cut in cuts))) + "</p>"
+        )
     # The planned Sitzungswochen (data/sitzungskalender.json). Without a cache, or with
     # no planned week from the shown week on, the line, its style and its script are
     # all empty strings and the page is byte-identical to one built without them.
@@ -9771,6 +9897,19 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     ).fetchall():
         contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
+    # What DIP lists in the part a cut Protokoll file does not print (E16), per
+    # MP and kind: named on a profile page, never added to its counts. A sitting
+    # whose cut leaves DIP Reden unplaced may hold more of the person's.
+    unprinted_by_mp: dict[str, list[tuple[str, str, str]]] = {}
+    unplaced_sittings: set[str] = set()
+    for row in conn.execute(
+        "SELECT u.mp_id, u.kind, p.document_number, p.date, p.xml_cut_unplaced_reden FROM unprinted_contributions u "
+        "JOIN protocols p ON p.id = u.protocol_id WHERE u.mp_id IS NOT NULL ORDER BY p.date, p.document_number, u.id"
+    ):
+        unprinted_by_mp.setdefault(row["mp_id"], []).append((row["kind"], row["document_number"], row["date"] or ""))
+        if row["xml_cut_unplaced_reden"]:
+            unplaced_sittings.add(row["document_number"])
+
     contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
         "SELECT c.id, c.mp_id, c.kind, c.fraktion, c.sprechrolle, p.document_number, p.date "
@@ -9857,6 +9996,16 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             for kind, n in contributions_by_mp.get(r["id"], {}).items():
                 contribution_counts[kind] = contribution_counts.get(kind, 0) + n
 
+        unprinted_rows = [unit for r in members for unit in unprinted_by_mp.get(r["id"], [])]
+        unprinted = None
+        if unprinted_rows:
+            unprinted = {
+                "rede": sum(1 for kind, _n, _d in unprinted_rows if kind == "rede"),
+                "zu_protokoll": sum(1 for kind, _n, _d in unprinted_rows if kind == "zu_protokoll"),
+                "sittings": [number for number, _date in sorted({(n, d) for _k, n, d in unprinted_rows}, key=lambda nd: (nd[1], nd[0]))],
+                "floor": any(n in unplaced_sittings for _k, n, _d in unprinted_rows),
+            }
+
         # Pool votes, de-duplicated by vote id (the same vote can be reachable
         # through more than one row), then tally the directions for the header.
         merged_votes: list[dict[str, Any]] = []
@@ -9925,6 +10074,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "contribution_counts": dict(sorted(contribution_counts.items())),
             "contribution_links": [c for r in members for c in contribution_links_by_mp.get(r["id"], [])],
             "contribution_count": sum(contribution_counts.values()),
+            "unprinted": unprinted,
             "votes": merged_votes,
             "vote_tally": tally,
         }
@@ -10025,6 +10175,8 @@ def abgeordnete_styles() -> str:
     .redner-group { margin-top:32px; }
     .redner-group h2 { margin:0 0 6px; font-size:20px; }
     .redner-group p { margin:0; color:var(--muted); }
+    /* What DIP lists in cut Protokoll files (E16): a gap said in words, above the list. */
+    .cut-note { margin:0 0 12px; font-size:14px; line-height:1.5; max-width:72ch; }
     .mp-table th, .mp-table td {
       text-align:left;
       padding:9px 10px;
@@ -10472,6 +10624,13 @@ def render_abgeordnete_detail(
         back_links = (
             '<a href="index.html#weitere-redner">Weitere Rednerinnen und Redner</a>' if has_spoken(mp) else ""
         ) + '<a href="index.html">Alle Abgeordnete</a>'
+    unprinted = mp.get("unprinted")
+    unprinted_note = (
+        '<p class="cut-note">' + pulse_html.esc(pulse_html.cut_gap_sentence(
+            unprinted["sittings"], unprinted["rede"], unprinted["zu_protokoll"], "auf dieser Seite",
+            floor=unprinted["floor"])) + "</p>"
+        if unprinted else ""
+    )
     domains = publication_domains or {}
     notices = "".join(
         (
@@ -10516,6 +10675,7 @@ def render_abgeordnete_detail(
         </section>
         <section class="panel">
           <h2>Reden im Bundestag</h2>
+          {unprinted_note}
           <ul class="doc-list">{''.join(speeches) if speeches else '<li>In den bisher erfassten Plenarprotokollen wurden keine Reden erkannt.</li>'}</ul>
         </section>
         {render_contributions_panel(mp)}
@@ -10797,7 +10957,9 @@ def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> d
         f"""
         SELECT p.id, p.document_number, p.date,
                {facts.SITZUNG_START_SQL} AS sitzung_start,
-               {facts.SITZUNG_END_SQL} AS sitzung_end
+               {facts.SITZUNG_END_SQL} AS sitzung_end,
+               p.sitting_end_corrected,
+               json_extract(p.xml_header_json, '$.sitzung_end') AS xml_sitting_end
         FROM protocols p WHERE p.document_number = ?
         """,
         (str(document_number),),
@@ -10887,6 +11049,8 @@ def resolve_fact_citation(
             "date": resolved["date"],
             "sitzung_start": resolved["sitzung_start"],
             "sitzung_end": resolved["sitzung_end"],
+            "sitting_end_corrected": resolved["sitting_end_corrected"],
+            "xml_sitting_end": resolved["xml_sitting_end"],
         }
     if kind == "proceeding":
         resolved_occurrences = [
@@ -11009,6 +11173,20 @@ def _render_fact_series(
     return f'<div class="series"><span class="eyebrow">Verlauf</span><ol>{"".join(items)}</ol></div>'
 
 
+def _corrected_end_text(document_number: Any, citation: dict[str, Any]) -> str:
+    """The receipt line of a sitting whose end the printed PDF corrects (D2,
+    scripts/reviewed_end_times.json): both ends and the PDF page the list
+    names, so a reader who checks the XML finds why it says another time."""
+    entry = reviewed_end_times.for_sitting(str(document_number or ""))
+    page = ""
+    if entry is not None:
+        href = pulse_html.safe_href(f"{entry.pdf_url}#page={entry.pdf_page}")
+        page = f' (<a href="{pulse_html.esc(href)}">S. {entry.pdf_page} ↗</a>)' if href else f" (S. {entry.pdf_page})"
+    xml_end = citation.get("xml_sitting_end")
+    file_text = f", laut Protokolldatei {pulse_html.esc(xml_end)} Uhr" if xml_end else ""
+    return f"Ende laut PDF {pulse_html.esc(citation['sitting_end_corrected'])} Uhr{page}{file_text}"
+
+
 def _render_fact_sources(
     row: dict[str, Any],
     *,
@@ -11063,6 +11241,8 @@ def _render_fact_sources(
             name = mp.get("display_name") or "Unbekannt"
             name_html = f'<a href="{pulse_html.esc(mp_href)}">{pulse_html.esc(name)}</a>' if mp_href else pulse_html.esc(name)
             bits.insert(0, name_html)
+        if receipt["entity_kind"] == "protocol" and citation.get("sitting_end_corrected"):
+            bits.append(_corrected_end_text(document_number, citation))
         if receipt["entity_kind"] == "vote":
             vote_url = pulse_html.safe_href(receipt.get("official_url"))
             if vote_url:
@@ -11235,6 +11415,19 @@ def render_facts_week(
                     bill_slugs=bill_slugs,
                 )
             )
+        # The metrics the period cannot be judged for, with the sitting that keeps
+        # each incomplete (a cut Protokoll file, withheld Reden, ...): a posted Fakt
+        # must not hide that the period's other metrics are missing data.
+        incomplete = [
+            (metric, by_metric_id[metric["id"]]) for metric in period_registry
+            if metric["id"] in by_metric_id and not by_metric_id[metric["id"]].get("complete")
+        ]
+        if incomplete:
+            items = "".join(
+                f"<li><strong>{pulse_html.esc(metric['title'])}</strong><span>{pulse_html.esc(_fact_status_text(row)[0])}</span></li>"
+                for metric, row in incomplete
+            )
+            sections.append(f'<section class="incomplete-metrics"><h2>Nicht vollständig erfasst</h2><ul class="method-list">{items}</ul></section>')
         content = "".join(sections)
     else:
         floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)

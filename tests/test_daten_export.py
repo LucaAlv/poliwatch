@@ -1138,6 +1138,83 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(after["split_rede_ids"], before["split_rede_ids"] + 1)
         self.assertEqual(after["synthetic_rede_ids"], before["synthetic_rede_ids"])
 
+    # Value (cut-protocols step 8): protects=the cut Protokoll files travel store -> manifest (coverage.cut_protocols)
+    #   -> DATA.md tables -> Daten line, generated from the store, so no figure is typed into DATA.md;
+    #   fails_when=a release names a stale count of cut files or none; why_new=step 8; seam=export
+    def test_cut_protocol_files_reach_the_manifest_the_codebook_and_the_daten_page(self) -> None:
+        import test_cut_protocols as tc
+        conn = pulse_store.connect(self.db_path)
+        try:
+            pulse_store.persist_report(conn, tc.cut_report(), None)
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertEqual(manifest["export_format"], b.EXPORT_FORMAT)
+        cut = manifest["coverage"]["cut_protocols"]
+        self.assertEqual(cut["by_wahlperiode"], [{"wp": "20", "sittings": 1, "unindexed": 0, "reden": 1, "zu_protokoll": 1,
+                                                  "unplaced_reden": 0}])
+        self.assertEqual([{key: row[key] for key in ("document_number", "announced", "last_rede_id", "reden", "zu_protokoll",
+                                                      "unplaced_reden", "sitting_end_corrected")} for row in cut["by_sitting"]],
+                         [{"document_number": "20/999", "announced": "2026-10-13", "last_rede_id": "R3", "reden": 1,
+                           "zu_protokoll": 1, "unplaced_reden": 0, "sitting_end_corrected": None}])
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text(encoding="utf-8")
+        self.assertIn("### Abgebrochene Protokolldateien", codebook)
+        self.assertIn("| 20 | 1 | 1 | 1 |", codebook)
+        self.assertIn("| 20/999 |", codebook)
+        self.assertIn("| R3 | 1 | 1 | 2026-10-13 | – |", codebook)
+        html = b.render_daten_datenstand(manifest)
+        self.assertIn("1 Protokolldatei endet vorzeitig (laut DIP 1 Rede und 1 zu Protokoll gegebene Rede nicht gedruckt; "
+                      "nicht mitgezählt, Liste in unprinted_contributions)", html)
+        empty = self.export(force=True)
+        self.assertNotIn("vorzeitig", b.render_daten_datenstand({**empty, "coverage": {**empty["coverage"], "cut_protocols": {
+            "by_wahlperiode": [], "by_sitting": []}}}))
+
+    # Value (code review of steps 7 to 10, findings 1 and 2): protects=a cut sitting DIP has not indexed exports as
+    #   "offen", not as 0, and one whose count is a floor as "mindestens", in the manifest, DATA.md and the Daten line,
+    #   as the dossier and the Puls week say it; fails_when=the release reviewer reads 0 for a count nobody knows;
+    #   seam=export
+    def test_an_unindexed_cut_sitting_has_no_count_and_a_floor_says_mindestens(self) -> None:
+        import test_cut_protocols as tc
+        conn = pulse_store.connect(self.db_path)
+        try:
+            pulse_store.persist_report(conn, tc.cut_report({**tc.CUT, "unplaced_reden": None, "entries": []}), None)
+        finally:
+            conn.close()
+        manifest = self.export()
+        cut = manifest["coverage"]["cut_protocols"]
+        self.assertEqual(cut["by_wahlperiode"], [{"wp": "20", "sittings": 1, "unindexed": 1, "reden": 0, "zu_protokoll": 0,
+                                                  "unplaced_reden": 0}])
+        self.assertEqual({key: cut["by_sitting"][0][key] for key in ("reden", "zu_protokoll", "unplaced_reden")},
+                         {"reden": None, "zu_protokoll": None, "unplaced_reden": None})
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text(encoding="utf-8")
+        self.assertIn("| 20 | 1 (1 von DIP noch nicht erfasst) | offen | offen |", codebook)
+        self.assertIn("| R3 | offen | offen | 2026-10-13 | – |", codebook)
+        self.assertIn("1 Protokolldatei endet vorzeitig (was fehlt, hat DIP noch nicht erfasst; nicht mitgezählt",
+                      b.render_daten_datenstand(manifest))
+        # Beside an indexed sitting, an unindexed one turns the sums into floors.
+        self.assertIn("| 20 | 2 (1 von DIP noch nicht erfasst) | mindestens 3 | mindestens 4 |", b._codebook_cut({"cut_protocols": {
+            "by_wahlperiode": [{"wp": "20", "sittings": 2, "unindexed": 1, "reden": 3, "zu_protokoll": 4, "unplaced_reden": 0}],
+            "by_sitting": cut["by_sitting"]}}))
+        self.assertIn("(laut DIP mindestens 3 Reden und mindestens 4 zu Protokoll gegebene Reden nicht gedruckt, 1 Sitzung "
+                      "von DIP noch nicht erfasst;", b.render_daten_datenstand({**manifest, "coverage": {
+                          **manifest["coverage"], "cut_protocols": {"by_wahlperiode": [], "by_sitting": [
+                              *cut["by_sitting"], {**cut["by_sitting"][0], "reden": 3, "zu_protokoll": 4,
+                                                   "unplaced_reden": 0}]}}}))
+        conn = pulse_store.connect(self.db_path)
+        try:
+            pulse_store.persist_report(conn, tc.cut_report({**tc.CUT, "unplaced_reden": 2}), None)
+        finally:
+            conn.close()
+        manifest = self.export(force=True)
+        cut = manifest["coverage"]["cut_protocols"]
+        self.assertEqual(cut["by_wahlperiode"], [{"wp": "20", "sittings": 1, "unindexed": 0, "reden": 1, "zu_protokoll": 1,
+                                                  "unplaced_reden": 2}])
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text(encoding="utf-8")
+        self.assertIn("| 20 | 1 | mindestens 1 | 1 |", codebook)
+        self.assertIn("| R3 | mindestens 1 | 1 | 2026-10-13 | – |", codebook)
+        self.assertIn("(laut DIP mindestens 1 Rede und 1 zu Protokoll gegebene Rede nicht gedruckt;",
+                      b.render_daten_datenstand(manifest))
+
     # Value (D2): protects=a sitting kept out by the reviewed exclusion list is a visible,
     # counted coverage gap on the Daten page; fails_when=the export forgets it or the page
     # does not name it; seam=export_distribution_data + render_daten_datenstand.
@@ -1337,7 +1414,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 27)
+        self.assertEqual(manifest["export_format"], 28)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
