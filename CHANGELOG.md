@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.58.0] - 2026-11-26
+
+Readers now see where a Bundestag Protokoll file stops before its sitting ends. In 33 sittings the XML is a first edition that was never replaced. A dossier, a Puls week, a Personenseite and the Daten page now say so, and they name what DIP lists in the unprinted part: 1,189 Reden and 429 Reden zu Protokoll on the 806-sitting store. None of these is counted in a figure. On the replay no stored figure, Rede, vote or Fakt moves (0 of 1,944 Fakten). Export format 28, schema 17, cut rule 3; a store needs one `--offline --repersist`.
+
+### Added
+
+- **A cut sitting's dossier shows a note "Protokolldatei endet vorzeitig".** It gives the page where the file stops, the date the final report was announced for, how many Reden and Reden zu Protokoll DIP lists after the cut, a link to the PDF at that page and the list of DIP's speakers. It looks like a gap, not like a Rede.
+- **A Puls week and a Personenseite name their cut sittings in one sentence**, with the number of Reden DIP lists as missing there. The Daten page's coverage line adds the cut files next to the withheld Reden.
+- **DATA.md and the export manifest list the cut files per Wahlperiode and per sitting** (`coverage.cut_protocols`, export format 28), generated from the store, so a new cut sitting cannot leave a hand-typed figure stale.
+- **A Fakt whose sitting end the printed PDF corrects shows both ends** and the PDF page, so a reader who checks the XML sees why it gives another time.
+- **A Fakten week that posts a Fakt lists the metrics it cannot judge**, with the reason (for example a cut file or withheld Reden).
+
+### Changed
+
+- **A count after a cut says "mindestens" where it is a floor, and "offen" where DIP has not indexed the sitting yet.** The new column `protocols.xml_cut_unplaced_reden` (schema 17) holds how many DIP Reden a cut cannot place before or after it. On today's store every cut sitting is indexed and every count is exact.
+- **A withheld Rede counts as printed when the rule decides whether a first edition is whole**, and a place without a quadrant compares by page alone (cut rule 3). The same 33 sittings stay marked.
+
 ## [0.46.57.0] - 2026-11-26
 
 Six Personenseiten now carry the accents the Bundestag prints in their heading: "Zada Salihović", "Sevim Dağdelen", "Aydan Özoğuz", "Adis Ahmetović", "Ana-Maria Trăsnea" and "Anikó Glogowski-Merten". The Daten recipes r1 and r3 show the same label. On the Abgeordnete list, a search typed without accents still finds them. Export format 27 adds the column `mp_canonical.accented_name`. Counts and rankings stay the same.
