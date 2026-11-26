@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.57.0] - 2026-11-26
+
+Six Personenseiten now carry the accents the Bundestag prints in their heading: "Zada Salihović", "Sevim Dağdelen", "Aydan Özoğuz", "Adis Ahmetović", "Ana-Maria Trăsnea" and "Anikó Glogowski-Merten". The Daten recipes r1 and r3 show the same label. On the Abgeordnete list, a search typed without accents still finds them. Export format 27 adds the column `mp_canonical.accented_name`. Counts and rankings stay the same.
+
+### Changed
+
+- **A Personenseite's heading takes the accents another printing of the person adds, and nothing else.** DIP's roster drops some accents that the Plenarprotokolle and roll-call lists print. A heading now uses the accented spelling when a printing of the same person differs from it by added accents only. A roll call's "surname, given name" counts too. Titles, a Wahlkreiszusatz such as "(Minden)" and other surnames never change a heading, and an umlaut does not count as an added accent.
+- **Recipes r1 and r3 show the same label as the heading**, and the export writes it to the new column `mp_canonical.accented_name` (export format 27). It is empty where no printing adds an accent. Recipe r3 still breaks a tie by the unaccented source name, so an accent this rule adds never changes who is in its five.
+
+### Fixed
+
+- **The Abgeordnete list's search ignores accents in the query and in the names.** With the new headings, "Dagdelen" or "Salihovic" would have found nobody. "Mijatovic" and "Muller" did not find "Mijatović" and "Müller" before either; they do now.
+
 ## [0.46.55.0] - 2026-11-26
 
 A Stimme that a roll-call page files under the wrong Fraktion is moved only where the MdB-Stammdaten clearly prove the right one. A rebuild no longer drops that correction silently when the Stammdaten file is missing, and the seat check now compares the page's own counts. On the 806-sitting store (736 roll-calls) no stored figure moves: still 157 Stimmen re-filed in 87 roll-calls. Schema 16 and export format 26 as before.
