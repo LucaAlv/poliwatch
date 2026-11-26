@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.55.0] - 2026-11-26
+
+A Stimme that a roll-call page files under the wrong Fraktion is moved only where the MdB-Stammdaten clearly prove the right one. A rebuild no longer drops that correction silently when the Stammdaten file is missing, and the seat check now compares the page's own counts. On the 806-sitting store (736 roll-calls) no stored figure moves: still 157 Stimmen re-filed in 87 roll-calls. Schema 16 and export format 26 as before.
+
+### Changed
+
+- **The Stammdaten prove a group only up to 90 days before their Stand, and only on days a record covers.** The file does not say how late it enters a change, so for a vote in the last 90 days before the Stand (for the Stand of 29.04.2026, from 30.01.2026) the page's group stands. The same holds on days of a Mandat that no Fraktion, Gruppe or Fraktionslos record covers. Such days fall after a record that ends with nothing after it, between two records, or before the record of a second Mandat in the same Wahlperiode. An explicit Fraktionslos record still proves fraktionslos. The newest re-filed Stimme lies 1,623 days before the Stand, so none of the 157 moves.
+- **The seat check compares both the page's counts and the re-filed ones with the seats on the vote's day.** Roll-calls whose only difference is a re-filed Stimme now read as `refiled` (87) instead of agreeing (720 → 633), and the private report lists every re-filed Stimme, including two opposite moves that cancel out. A vote in the 90 days before the Stand reads as `near_stand`, and moves that contradict the stored counts read as `moves_inconsistent` (none today).
+
+### Fixed
+
+- **A rebuild without the Stammdaten file refuses to undo the corrections a store holds.** If the store was built with a file and none is cached now, a rebuild (online or `--offline --repersist`) stops, names the file's Stand, sha256 and path, and leaves the store untouched. The new flag `--without-stammdaten` rebuilds anyway. Every re-filed Stimme then goes back under the page's group and the seat tables stay empty. It cannot be combined with `--enrich mdb-stammdaten`. The store gate's clone refuses the same case before it copies anything.
+- **One rebuild reads the Stammdaten file once.** The re-filing, the seat tables and the seat check used to read it separately, so a file replaced mid-rebuild could mix two files. All three now use the one file read at the start, and an unreadable file stops the rebuild with the store unchanged.
+
 ## [0.46.54.0] - 2026-11-26
 
 33 sittings have a Protokoll file that stops partway: the Bundestag published a first edition, announced the final one, and never replaced the file (source error E16). These sittings are now marked, no longer count as complete for speeches, and what DIP lists for the missing part is stored in a list of its own. Published Fakten go from 587 to 571 (806-sitting store). Reden (61,104), Reden zu Protokoll (4,164), Beiträge and votes are unchanged. Schema 16, export format 26; a store needs one `--offline --repersist`.
