@@ -15,6 +15,18 @@ Six Personenseiten now carry the accents the Bundestag prints in their heading: 
 
 - **The Abgeordnete list's search ignores accents in the query and in the names.** With the new headings, "Dagdelen" or "Salihovic" would have found nobody. "Mijatovic" and "Muller" did not find "Mijatović" and "Müller" before either; they do now.
 
+## [0.46.56.0] - 2026-11-26
+
+Ten Reden zu Protokoll from the 18. Wahlperiode were printed inside someone else's Rede or outside any Rede, so two of them were stored under the wrong person and eight were missing. Each now has a Rede of its own under its writer. Two more Reden had neither speaker nor text and now have both. On the 806-sitting store, Reden zu Protokoll go from 4,164 to 4,174 (WP 18: 2,086 → 2,096). Reden (61,104), votes and all 1,944 Fakten are unchanged. Speech rule 17, schema 16, export format 26; a store needs one `--offline --repersist`.
+
+### Fixed
+
+- **Ralph Lenkert's and Michaela Engelmeier's written Reden are no longer stored under Michael Thews and Johannes Steiniger.** In 18/23 Thews keeps 7,421 characters and Lenkert gets his 3,741. In 18/63 Steiniger keeps 5,465 and Engelmeier gets her 4,463.
+- **Eight written Reden that were stored nowhere are now stored:** Huber (18/17), Petry (18/34), Schuster (18/46), Koschyk (18/47), Schmidt (18/66 and 18/112), Mutlu (18/115) and Hakverdi (18/155), each with the page DIP gives.
+- **Astrid Freudenstein's (18/63) and Maria Böhmer's (18/76) written Reden have their speaker and text**, 4,053 and 4,578 characters. Before, both rows were empty.
+- **A written Rede at the start of an annex gets the page the annex starts on.** One more row has a page: Stamm-Fibich's continuation in 19/36, page 3543.
+- **A new Protokoll whose annex prints a written Rede in such a shape is refused, not stored wrong.** It is refused until the Rede is listed. A Redner-ID the Bundestag prints as a merged record ("1 999990001") counts as one person, as everywhere else in the parse.
+
 ## [0.46.55.0] - 2026-11-26
 
 A Stimme that a roll-call page files under the wrong Fraktion is moved only where the MdB-Stammdaten clearly prove the right one. A rebuild no longer drops that correction silently when the Stammdaten file is missing, and the seat check now compares the page's own counts. On the 806-sitting store (736 roll-calls) no stored figure moves: still 157 Stimmen re-filed in 87 roll-calls. Schema 16 and export format 26 as before.

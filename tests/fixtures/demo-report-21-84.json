@@ -786,7 +786,7 @@
   "warnings": [],
   "validation_summary": {
     "xml_top_count": 1,
-    "speech_kinds_version": 16,
+    "speech_kinds_version": 17,
     "vote_inputs_version": 1,
     "protocol_cut": null,
     "cut_rule_version": 1,

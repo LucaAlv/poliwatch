@@ -128,15 +128,32 @@ Found by `code-review high main` and the `/ship` review (Codex, red team, native
 **Priority:** P3
 **Depends on:** None
 
-### WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own
+### Bullet points of written Reden printed between two `<rede>`s
 
-**What:** `docs/source-errors.md` E17. Lenkert's text is stored under Thews (18/23 `ID1802308800`) and Engelmeier's under Steiniger (18/63 `ID1806311300`); eight are stored nowhere (18/17, 18/34, 18/46, 18/47, 18/66, 18/112, 18/115, 18/155); 18/63 `ID1806309700` (Freudenstein) and 18/76 `ID1807611000` (Böhmer) are rows with no speaker and no text. Split or wrap them by a reviewed list, as `loose_*` does. E3 counts three `<rede>`s without a `<redner>` in 716 files; the 806 held now have six (18/63 `ID1806309700`, 18/117 `ID1811703000` and 18/118 `ID1811802900` besides; the last two are written Erklärungen nach § 31): update its scale.
+**What:** Found by the E17 census (`docs/plans/e17-wp18-texts.md`, 2026-11-26). In five zu-Protokoll annex blocks the bullet points of a written Rede stand as `<p klasse="J">` paragraphs directly in the block, after the `<rede>` they most likely belong to: 18/136 Anlage block 6 (two after Strebl's `ID1813611300`, four after Kapschack's `ID1813611400`), 18/206 block 6 (three after Binding's `ID1820612300`), 18/209 block 20 (eight after Klimke's `ID1820916300`), 18/243 block 9 (four after Bahr's `ID1824313700`) and 19/104 block 9 (three after Höferlin's `ID1910418500`). Nothing reads them, so those words are stored nowhere; the Rede before is stored without them. Neither the owner nor the place in the Rede is marked: each Rede's last paragraph has to be read against the PDF (it may end with the colon that opens the list). Fix by a reviewed list like `annex_rede` (append to, or insert into, the named `<rede>`), test first; the guard of `mark_annex_texts` does not see plain paragraphs.
 
-**Why:** Two rows give a person words someone else submitted; the others are missing or empty.
+**Why:** 24 paragraphs of five Reden are missing from their text and word counts.
 
 **Effort:** S
-**Priority:** P1 (owner, 2026-11-24: fixed before the first release; wrong attribution)
-**Depends on:** `claude/rede-count-leftovers` merged (it changes `speech_kinds.py`, `validate_dip_protocol.py` and `reviewed_units.*`)
+**Priority:** P3
+**Depends on:** None
+
+### E17 annex texts: what the code review of 2026-11-26 leaves open
+
+**What:** Found by `code-review` (high) and the `/ship` review of `claude/e17-wp18-texts-8bc435`; none is reached by the 806 held sittings.
+1. **Keys of annex Reden without an id can shift.** `raw_rede_inventory` keys an id-less annex `<rede>` `annex:<block>:<n>` before any tree edit; `written_contributions` counts `<n>` again after `mark_annex_texts` has inserted a split part (after its host) or a wrapped text (at `place`). Every id-less `<rede>` after the insertion moves on by one, and the new unit can take the old key `annex:<block>:<place>`, so `reconcile_reden` refuses the sitting. No held annex `<rede>` lacks an id. Fix: carry the inventory key per element through the edit, or have `mark_annex_texts` refuse an entry whose block holds an id-less `<rede>` after its place; test first.
+2. **Two texts in one place cannot be listed.** `reviewed_units._check` keys an `annex_rede` entry by (sitting, `rede_id`), so a second entry for the same `A<n>` block or host `<rede>` with another `label` is refused as "listed twice", and the guard keeps refusing that sitting. Fix: key annex entries by (sitting, `rede_id`, `label`), as name kinds add `name`; `mark_annex_texts` then needs to apply two entries of one host in order of their place.
+3. **`ANNEX_HEADINGS` duplicates a literal.** `validate_dip_protocol.py` defines `ANNEX_HEADINGS` for `mark_annex_texts`, and `written_contributions` repeats `{"Anlage_2", "Anlage_3", "Anlage_Strich"}` where a heading resets the TOP context. Use the constant in both places.
+4. **"two writers" understates the guard.** `docs/data-methods.md` ("Rednermarken zweier Redner-IDs") and `docs/source-errors.md` E17 "Our side" ("two writers' markers") describe the guard; the code refuses any `<rede>` whose markers carry other than one Redner-ID (`len(ids) != 1`). Write "zweier oder mehr" / "two or more".
+5. **Unidentified markers in the guard** (Codex on the /ship fix 185a33a). The guard keys each marker by `redner_key`, which reads a missing, empty or blank id as `None`. A `<rede>` mixing such a marker with a real id makes `sorted(ids)` raise `TypeError` in the message instead of `UnlistedAnnexTextError` (before 185a33a only a missing id did), and one with a missing and an empty id now reads as one writer instead of two. None of the 4,045 zu-Protokoll markers in the 806 held files has a missing, empty or merged id. Fix: key an unidentified marker by its raw attribute (`redner_key(r) or f"no id {r.get('id')!r}"`), or refuse any unidentified marker in a `<rede>` that holds another; add tests for both entry checks with a merged id.
+6. **Two `A<n>` entries of one block listed out of document order get the same id** (`annex:<block>:<place>` counts the `<rede>`s before the text when the entry is applied). Fix: apply a sitting's entries in document order, or stop when an id is already in `created`. Found by the /ship red team and native adversarial reader.
+7. **Untested paths** (/ship coverage audit): a heading with no text paragraph after it; a block wrap ending at an Anlage heading; the `UnlistedAnnexTextError` arms of `build_report` and `reparse_cached_xml`; `check_withhold_one.check_sitting` with an `annex_rede` entry. `ReplayTests` stands below the `unittest.main()` block of `tests/test_annex_texts.py`, so running the file directly skips it.
+
+**Why:** 1 and 2 would refuse a future sitting with no fix through the list; 5 and 6 would crash or misread a future sitting; 3, 4 and 7 are drift, wording and tests.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Census script of the Protokoll gap: hygiene
 
@@ -2765,6 +2782,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
+- WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own (source-errors E17, P1): built 2026-11-26 on branch `claude/e17-wp18-texts-8bc435`. Twelve entries of kind `annex_rede` in `scripts/reviewed_units.json`, placed by `mark_annex_texts`; an unlisted structural shape refuses its sitting; speech rule 17. `zu_protokoll` 4,164 → 4,174, Lenkert's and Engelmeier's words leave Thews and Steiniger, Freudenstein's and Böhmer's rows get speaker and text; Reden and Fakten unchanged (`docs/plans/e17-wp18-texts.md`, "Outcome"). What it leaves open: "Bullet points of written Reden printed between two `<rede>`s".
 - Roster MdB records that never join their speaker (56 empty duplicate Personenseiten): v0.46.53.0, 2026-11-25. 41 pairs by a name rule with a namesake guard, 15 by reviewed `same_person` entries; empty MdB persons 56 → 0, `docs/plans/roster-duplicates/report.md`. What it leaves open: "Roster duplicates: what the build and its code review leave open".
 - Paragraph breaks and WP 18 block quotes (owner decision 4 of 2026-11-23, "ADR 0003 legal questions" question 7): v0.46.50.0, 2026-11-23. Printed paragraphs separated by one line feed in the wording, `<zitat>` read; speech rule 15, export format 25. What it leaves open: "Paragraph breaks and block quotes: what the code review left open".
 - Turns DIP types otherwise (owner decisions of 2026-11-23, 1 to 3; "Oral Erklärungen nach § 31: Rede or not?"): v0.46.49.0, 2026-11-23. 514 entries of scripts/reviewed_units.json, Kind `erklaerung`, 24 bare motions `procedural`, the DIP row guard (`docs/plans/beitraege-as-reden.md`). What it leaves open: "Turns DIP types otherwise: what the build of 2026-11-23 leaves open".

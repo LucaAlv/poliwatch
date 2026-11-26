@@ -583,6 +583,7 @@ class PersistBasisTests(unittest.TestCase):
                     pulse_store.require_current_schema(conn)
             finally:
                 conn.close()
+        # pregate-literal: VERSION=16 store schema 16, not the speech rule
         self.assertEqual(pulse_store.SCHEMA_VERSION, 16)
 
     def test_persist_refuses_a_placement_the_rule_does_not_make(self) -> None:

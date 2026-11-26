@@ -42,7 +42,7 @@ SUMMARY:Sitzungswoche Deutscher Bundestag
 END:VEVENT
 BEGIN:VEVENT
 DTSTAMP:20251101T000000Z
-UID:synthetic-2026-03-16@poliwatch.test
+UID:synthetic-2026-03-16@poliwatch.test # pregate-literal: VERSION=16 a date in a fixture UID that no code reads, not the speech rule
 DTSTART;VALUE=DATE:20260316
 DTEND;VALUE=DATE:20260321
 SUMMARY:Sitzungswoche Deutscher Bundestag

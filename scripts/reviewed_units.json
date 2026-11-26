@@ -478,6 +478,15 @@
       "name": "Heiko Maas, Bundesminister der Justiz und für Verbraucherschutz"
     },
     {
+      "sitting": "18/17",
+      "rede_id": "ID1801712700",
+      "redner_id": "11004308",
+      "kind": "annex_rede",
+      "reason": "Huber's written Rede printed with his marker inside Fabritius's <rede> in Anlage 10; the Inhaltsverzeichnis lists it as ID1801712800, which no <rede> carries; DIP Aktivität 357647, Rede (zu Protokoll gegeben) in DIP, page 1365C (docs/source-errors.md E17)",
+      "name": "Charles M. Huber (CDU/CSU)",
+      "label": "Charles M. Huber (CDU/CSU)"
+    },
+    {
       "sitting": "18/18",
       "rede_id": "ID1801802000",
       "redner_id": "11004079",
@@ -654,6 +663,15 @@
       "redner_id": "11000756",
       "kind": "erklaerung",
       "reason": "Gysi's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/23",
+      "rede_id": "ID1802308800",
+      "redner_id": "11004091",
+      "kind": "annex_rede",
+      "reason": "Lenkert's written Rede printed as plain text (<p klasse=\"J_Abstand\">, no marker) at the end of Thews's <rede> in Anlage 3; the Inhaltsverzeichnis lists it as ID1802308900, which no <rede> carries; DIP Aktivität 360758, Rede (zu Protokoll gegeben) in DIP, page 1889B (E17)",
+      "name": "Ralph Lenkert (DIE LINKE)",
+      "label": "Ralph Lenkert (DIE LINKE)"
     },
     {
       "sitting": "18/24",
@@ -1203,6 +1221,15 @@
       "kind": "loose_rede",
       "reason": "a whole Rede printed outside any <rede>: the minister opens the debate (loose-speaker-markers.tsv)",
       "attach": "wrap"
+    },
+    {
+      "sitting": "18/34",
+      "rede_id": "A2",
+      "redner_id": "11004605",
+      "kind": "annex_rede",
+      "reason": "Anlage 2 prints Petry's written Rede with no <rede> and no marker; its heading names him ('des Abgeordneten Christian Petry (SPD) zur Beratung ... (33. Sitzung, Tagesordnungspunkt 17)'); DIP Aktivität 364615, Rede (zu Protokoll gegeben) in DIP, filed under 18/34, page 2931D (E17)",
+      "name": "Christian Petry (SPD)",
+      "label": "Christian Petry (SPD)"
     },
     {
       "sitting": "18/35",
@@ -1942,6 +1969,24 @@
       "reason": "DIP lists Rede zu Protokoll (p. 4298A); read 2026-11-23"
     },
     {
+      "sitting": "18/46",
+      "rede_id": "A16",
+      "redner_id": "11004149",
+      "kind": "annex_rede",
+      "reason": "Anlage 16 prints Schuster's marker and written Rede directly in the block, before Özdemir's <rede> ID1804618000; DIP Aktivität 372039, Rede (zu Protokoll gegeben) in DIP, page 4325C (E17)",
+      "name": "Armin Schuster (Weil am Rhein) (CDU/CSU)",
+      "label": "Armin Schuster (Weil am Rhein) (CDU/CSU)"
+    },
+    {
+      "sitting": "18/47",
+      "rede_id": "A5",
+      "redner_id": "11001186",
+      "kind": "annex_rede",
+      "reason": "Anlage 4 (the sitting's fifth annex block) prints Koschyk's written Rede with no <rede> and no marker; its heading names him ('des Abgeordneten Hartmut Koschyk (CDU/ CSU) zur Beratung ... (Tagesordnungspunkt 28)'); DIP Aktivität 371849, Rede (zu Protokoll gegeben) in DIP, page 4412B (E17)",
+      "name": "Hartmut Koschyk (CDU/CSU)",
+      "label": "Hartmut Koschyk (CDU/ CSU)"
+    },
+    {
       "sitting": "18/51",
       "rede_id": "ID1805108300",
       "redner_id": "11003065",
@@ -2228,6 +2273,24 @@
       "page": "5869A"
     },
     {
+      "sitting": "18/63",
+      "rede_id": "ID1806309700",
+      "redner_id": "11004277",
+      "kind": "annex_rede",
+      "reason": "the <rede> of Anlage 6 has no marker and opens with 'Astrid Freudenstein (CDU/CSU) :'; the Inhaltsverzeichnis lists ID1806309700 under her <redner>; DIP Aktivität 381071, Rede (zu Protokoll gegeben) in DIP, page 5932C (E17, E3)",
+      "name": "Dr. Astrid Freudenstein (CDU/CSU)",
+      "label": "Astrid Freudenstein (CDU/CSU)"
+    },
+    {
+      "sitting": "18/63",
+      "rede_id": "ID1806311300",
+      "redner_id": "11004266",
+      "kind": "annex_rede",
+      "reason": "Engelmeier's written Rede printed as plain text (<p klasse=\"N_Anlage\">, no marker) at the end of Steiniger's <rede> in Anlage 9; DIP Aktivität 381193, Rede (zu Protokoll gegeben) in DIP, page 5949B (E17)",
+      "name": "Michaela Engelmeier (SPD)",
+      "label": "Michaela Engelmeier (SPD)"
+    },
+    {
       "sitting": "18/64",
       "rede_id": "N1",
       "redner_id": "",
@@ -2364,6 +2427,15 @@
       "reason": "DIP lists Rede zu Protokoll (p. 6175D); read 2026-11-23"
     },
     {
+      "sitting": "18/66",
+      "rede_id": "ID1806614200",
+      "redner_id": "11004402",
+      "kind": "annex_rede",
+      "reason": "Schmidt's written Rede printed with her marker inside Pätzold's <rede> in Anlage 5; DIP Aktivität 382230, Rede (zu Protokoll gegeben) in DIP, page 6317C (E17)",
+      "name": "Gabriele Schmidt (Ühlingen) (CDU/CSU)",
+      "label": "Gabriele Schmidt (Ühlingen) (CDU/CSU)"
+    },
+    {
       "sitting": "18/68",
       "rede_id": "ID1806804800",
       "redner_id": "11004266",
@@ -2426,6 +2498,15 @@
       "kind": "loose_procedural",
       "reason": "a procedural turn printed outside any <rede>: accepts the election as Wehrbeauftragter (loose-speaker-markers.tsv)",
       "attach": "none"
+    },
+    {
+      "sitting": "18/76",
+      "rede_id": "ID1807611000",
+      "redner_id": "11002630",
+      "kind": "annex_rede",
+      "reason": "the <rede> of Anlage 11 has no marker and opens with 'Dr. Maria Böhmer (Staatsministerin AA) :'; the Inhaltsverzeichnis lists ID1807611000 under her <redner>; the name gives her role as her markers in the WP 18 Sitzungsverläufe print it, so she counts for the Bundesregierung; DIP Aktivität 386806, Rede (zu Protokoll gegeben) in DIP, page 7366D (E17, E3)",
+      "name": "Dr. Maria Böhmer, Staatsministerin im Auswärtigen Amt",
+      "label": "Dr. Maria Böhmer (Staatsministerin AA)"
     },
     {
       "sitting": "18/82",
@@ -2775,6 +2856,15 @@
       "reason": "DIP lists Erwiderung (p. 10824C); read twice, readers differed, adjudicated, 2026-11-23: answers Oellers's Kurzintervention"
     },
     {
+      "sitting": "18/112",
+      "rede_id": "ID1811211800",
+      "redner_id": "11004402",
+      "kind": "annex_rede",
+      "reason": "Schmidt's written Rede printed with her marker inside Strebl's <rede> in Anlage 7; DIP Aktivität 403352, Rede (zu Protokoll gegeben) in DIP, page 10849A (E17)",
+      "name": "Gabriele Schmidt (Ühlingen) (CDU/CSU)",
+      "label": "Gabriele Schmidt (Ühlingen) (CDU/CSU)"
+    },
+    {
       "sitting": "18/115",
       "rede_id": "M1",
       "redner_id": "11004324",
@@ -2796,6 +2886,15 @@
       "redner_id": "11004309",
       "kind": "erklaerung",
       "reason": "Hupach's mündliche Erklärung nach § 31 GO printed outside any <rede>; owner decision 2026-11-23 (docs/plans/beitraege-as-reden.md)"
+    },
+    {
+      "sitting": "18/115",
+      "rede_id": "ID1811515000",
+      "redner_id": "11004360",
+      "kind": "annex_rede",
+      "reason": "Mutlu's written Rede printed with his marker inside Hein's <rede> in Anlage 17; DIP Aktivität 405115, Rede (zu Protokoll gegeben) in DIP, page 11240B (E17)",
+      "name": "Özcan Mutlu (BÜNDNIS 90/DIE GRÜNEN)",
+      "label": "Özcan Mutlu (BÜNDNIS 90/DIE GRÜNEN)"
     },
     {
       "sitting": "18/121",
@@ -2894,6 +2993,15 @@
       "redner_id": "11004427",
       "kind": "erwiderung",
       "reason": "DIP lists Erwiderung (p. 14824D); read 2026-11-23"
+    },
+    {
+      "sitting": "18/155",
+      "rede_id": "A2",
+      "redner_id": "11004289",
+      "kind": "annex_rede",
+      "reason": "Anlage 2 prints Hakverdi's written Rede with no <rede> and no marker; its first paragraph opens with 'Metin Hakverdi (SPD):'; DIP Aktivität 425443, Rede (zu Protokoll gegeben) in DIP, page 15339C (E17)",
+      "name": "Metin Hakverdi (SPD)",
+      "label": "Metin Hakverdi (SPD)"
     },
     {
       "sitting": "18/158",

@@ -780,6 +780,7 @@ class PublishTests(ReleaseTestCase):
         self.assertIn("not a directory", stderr)
         self.assertEqual(release.read_text(encoding="utf-8"), "not a directory")
 
+    # pregate-literal: VERSION=16 text, not the speech rule
     # Value: protects=a release refuses an export whose licence string (manifest field license) is not the short string of the LICENSE-DATA.md its commit holds, in a dry run and under --publish; fails_when=a leftover $BUNDESTAG_PULSE_DATA_LICENSE or a deliberate --data-license override ships another string in datenstand.json, the Daten page and DATA.md than the licence file states; why_new=the gate tied the file to the commit but not the string to the file (Impressum/licence items 3 and 16); seam=verify_export via main; no_claim=string content
     def test_a_release_refuses_a_licence_string_that_is_not_the_commits_short_string(self) -> None:
         for label, string in (("another string", "Quelldaten: frei verwendbar."), ("padded", self.manifest_license() + " "), ("empty", "")):

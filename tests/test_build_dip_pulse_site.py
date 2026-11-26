@@ -3367,6 +3367,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
     def test_homepage_latest_generated_sitting_and_plain_semantics(self) -> None:
         old = self._entry("2026-05-20", "21/70", [])
         newest = self._entry("2026-06-12", "21/84", [])
+        # pregate-literal: VERSION=16 a date, not the speech rule
         markup = build_dip_pulse_site.render_landing_page([old, newest], today=date(2026, 6, 16))  # pregate-literal: EXPORT_FORMAT=16 a date (2026-06-16), not the export format
         sitting = self._home_section(markup, "latest-sitting")
         self.assertIn('href="protocols/plenarprotokoll-21-84.html">Sitzungsprotokoll öffnen', sitting)

@@ -53,6 +53,7 @@ class FirstEditionNoticeTests(unittest.TestCase):
 
     def test_19_55_spells_the_date_without_a_space(self):
         notice = NOTICE.replace("13. Oktober", "16.Oktober")
+        # pregate-literal: VERSION=16 a date, not the speech rule
         self.assertEqual(cut.first_edition_notice(protocol_root(notice))["announced"], "2026-10-16")
 
     def test_a_file_without_the_notice_has_none(self):
