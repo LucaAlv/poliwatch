@@ -2189,7 +2189,7 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
         start, how = places[0]
         if how == "marker":
             marker = children[start]
-            if marker.find("redner").get("id") != entry["redner_id"]:
+            if redner_key(marker.find("redner")) != entry["redner_id"]:
                 raise reviewed_units.ReviewedUnitsError(
                     f"{where}: the marker carries Redner-ID {marker.find('redner').get('id')}, not {entry['redner_id']}")
             if entry["name"] != entry["label"]:
@@ -2210,7 +2210,7 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
             owner = host.find("./p[@klasse='redner']/redner")
             if start == 0 and owner is marker.find("redner") and how != "marker":
                 continue  # a <rede> without a marker that the label opens: it keeps its id
-            if owner is None or owner.get("id") == entry["redner_id"] or start == 0:
+            if owner is None or redner_key(owner) == entry["redner_id"] or start == 0:
                 raise reviewed_units.ReviewedUnitsError(f"{where}: the label opens the writer of the <rede> itself; nothing to split")
             ordinal = sum(1 for child in children[:start + 1] if is_marker(child))
             part = ET.Element("rede", {"id": f"{entry['rede_id']}:{ordinal}"})
@@ -2237,7 +2237,8 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
                                              f"\"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
             if child.tag != "rede":
                 continue
-            ids = {marker.find("redner").get("id") for marker in child.findall("p[@klasse='redner']")
+            # One writer per person: a merged record's ids name their first (redner_key).
+            ids = {redner_key(marker.find("redner")) for marker in child.findall("p[@klasse='redner']")
                    if marker.find("redner") is not None}
             if len(ids) != 1:
                 raise UnlistedAnnexTextError(

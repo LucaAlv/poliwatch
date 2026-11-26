@@ -200,6 +200,14 @@ class GuardTests(unittest.TestCase):
         body = f'<rede id="R1">{FABRITIUS}Erster.</p>{FABRITIUS}Weiter.</p></rede>'
         self.assertEqual([u[:2] for u in written(parse(block(body)))], [('R1', '1')])
 
+    # Value: protects=a merged record's ids ("1 999990001") name their first, as redner_key reads them, so the same writer's
+    #   markers with and without the merged id are one writer; fails_when=the guard compares whole id attributes and refuses the
+    #   sitting (Codex, /ship 2026-11-26); why_new=new guard; seam=none
+    def test_a_merged_record_id_is_the_same_writer(self):
+        merged = marker('1 999990001', 'Bernd', 'Fabritius', 'CDU/CSU')
+        body = f'<rede id="R1">{FABRITIUS}Erster.</p>{merged}Weiter.</p></rede>'
+        self.assertEqual([u[:2] for u in written(parse(block(body)))], [('R1', '1')])
+
 
 class EntryErrorTests(unittest.TestCase):
     """An entry the source does not match stops the run: the list needs correcting."""
