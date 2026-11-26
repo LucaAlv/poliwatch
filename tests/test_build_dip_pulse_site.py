@@ -67,7 +67,7 @@ class DossierProgressTests(unittest.TestCase):
         output = stderr.getvalue()
         self.assertIn("[dossiers] Processing 2 dossier(s).", output)
         self.assertIn("[1/2] Downloading new dossier: BT-PlPr. 21/87 (ID 5805) from 2026-06-25.", output)
-        self.assertIn("[2/2] Refreshing cached dossier: BT-PlPr. 21/88 (ID 5806) from 2026-06-26.", output)
+        self.assertIn("[2/2] Refreshing cached dossier: BT-PlPr. 21/88 (ID 5806) from 2026-06-26.", output)  # pregate-literal: EXPORT_FORMAT=26 a sitting date (2026-06-26), not the export format
         self.assertIn("[dossiers] Completed 2/2 dossier(s)", output)
         self.assertEqual(built, [("5805", None), ("5806", cached_report)])
         self.assertEqual(len(entries), 2)

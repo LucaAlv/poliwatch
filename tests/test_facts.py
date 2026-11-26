@@ -1623,9 +1623,9 @@ class CompletenessTests(StoreCase):
             "Sitzung 18/3: 2 Reden zurückgehalten",
         )
         self.assertEqual(
-            facts.gap_note([{"document_number": "18/26", "date": "2014-01-01", "reason": "withheld_reden",
+            facts.gap_note([{"document_number": "18/26", "date": "2014-01-01", "reason": "withheld_reden",  # pregate-literal: EXPORT_FORMAT=26 Drucksache-style sitting number 18/26, not the export format
                              "withheld_reden": "1"}], "speeches"),
-            "Sitzung 18/26: 1 Rede zurückgehalten",
+            "Sitzung 18/26: 1 Rede zurückgehalten",  # pregate-literal: EXPORT_FORMAT=26 sitting 18/26, not the export format
         )
         self.assertEqual(
             facts.gap_note([{"document_number": "18/3", "date": "2014-01-01", "reason": "XML speeches not parsed"}], "speeches"),
