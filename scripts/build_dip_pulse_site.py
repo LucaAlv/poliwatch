@@ -107,6 +107,7 @@ import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import vote_links
 import protocol_cut
+import reviewed_end_times
 import reviewed_vote_links
 import dip_cache
 import abgeordnetenwatch as aw
@@ -7776,6 +7777,17 @@ def render_front_page(
             f'<p class="week-note">{pulse_html.format_count(len(undated), "neuere Sitzung", "neuere Sitzungen")} '
             "ohne Datum nicht ber&uuml;cksichtigt</p>"
         )
+    # A sitting of the week whose Protokoll file stops partway (E16): its Reden
+    # after the cut are in neither Redeanteil nor Rangfolge, so the week says so.
+    cuts = [(sitting_label(entry), pulse_html.report_cut(entry.get("report") or {})) for entry in week_entries]
+    cuts = [(number, cut) for number, cut in cuts if cut]
+    if cuts:
+        undated_note += (
+            '<p class="week-note week-cut">' + pulse_html.esc(pulse_html.cut_gap_sentence(
+                [number for number, _cut in cuts], sum(cut["reden"] for _number, cut in cuts), None,
+                "in Redeanteil und Rangfolge dieser Woche", scope="dieser Woche",
+                unindexed=[number for number, cut in cuts if not cut["indexed"]])) + "</p>"
+        )
     # The planned Sitzungswochen (data/sitzungskalender.json). Without a cache, or with
     # no planned week from the shown week on, the line, its style and its script are
     # all empty strings and the page is byte-identical to one built without them.
@@ -9771,6 +9783,15 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     ).fetchall():
         contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
+    # What DIP lists in the part a cut Protokoll file does not print (E16), per
+    # MP and kind: named on a profile page, never added to its counts.
+    unprinted_by_mp: dict[str, list[tuple[str, str, str]]] = {}
+    for row in conn.execute(
+        "SELECT u.mp_id, u.kind, p.document_number, p.date FROM unprinted_contributions u "
+        "JOIN protocols p ON p.id = u.protocol_id WHERE u.mp_id IS NOT NULL ORDER BY p.date, p.document_number, u.id"
+    ):
+        unprinted_by_mp.setdefault(row["mp_id"], []).append((row["kind"], row["document_number"], row["date"] or ""))
+
     contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
         "SELECT c.id, c.mp_id, c.kind, c.fraktion, c.sprechrolle, p.document_number, p.date "
@@ -9857,6 +9878,15 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             for kind, n in contributions_by_mp.get(r["id"], {}).items():
                 contribution_counts[kind] = contribution_counts.get(kind, 0) + n
 
+        unprinted_rows = [unit for r in members for unit in unprinted_by_mp.get(r["id"], [])]
+        unprinted = None
+        if unprinted_rows:
+            unprinted = {
+                "rede": sum(1 for kind, _n, _d in unprinted_rows if kind == "rede"),
+                "zu_protokoll": sum(1 for kind, _n, _d in unprinted_rows if kind == "zu_protokoll"),
+                "sittings": [number for number, _date in sorted({(n, d) for _k, n, d in unprinted_rows}, key=lambda nd: (nd[1], nd[0]))],
+            }
+
         # Pool votes, de-duplicated by vote id (the same vote can be reachable
         # through more than one row), then tally the directions for the header.
         merged_votes: list[dict[str, Any]] = []
@@ -9925,6 +9955,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "contribution_counts": dict(sorted(contribution_counts.items())),
             "contribution_links": [c for r in members for c in contribution_links_by_mp.get(r["id"], [])],
             "contribution_count": sum(contribution_counts.values()),
+            "unprinted": unprinted,
             "votes": merged_votes,
             "vote_tally": tally,
         }
@@ -10472,6 +10503,12 @@ def render_abgeordnete_detail(
         back_links = (
             '<a href="index.html#weitere-redner">Weitere Rednerinnen und Redner</a>' if has_spoken(mp) else ""
         ) + '<a href="index.html">Alle Abgeordnete</a>'
+    unprinted = mp.get("unprinted")
+    unprinted_note = (
+        '<p class="cut-note">' + pulse_html.esc(pulse_html.cut_gap_sentence(
+            unprinted["sittings"], unprinted["rede"], unprinted["zu_protokoll"], "auf dieser Seite")) + "</p>"
+        if unprinted else ""
+    )
     domains = publication_domains or {}
     notices = "".join(
         (
@@ -10516,6 +10553,7 @@ def render_abgeordnete_detail(
         </section>
         <section class="panel">
           <h2>Reden im Bundestag</h2>
+          {unprinted_note}
           <ul class="doc-list">{''.join(speeches) if speeches else '<li>In den bisher erfassten Plenarprotokollen wurden keine Reden erkannt.</li>'}</ul>
         </section>
         {render_contributions_panel(mp)}
@@ -10797,7 +10835,9 @@ def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> d
         f"""
         SELECT p.id, p.document_number, p.date,
                {facts.SITZUNG_START_SQL} AS sitzung_start,
-               {facts.SITZUNG_END_SQL} AS sitzung_end
+               {facts.SITZUNG_END_SQL} AS sitzung_end,
+               p.sitting_end_corrected,
+               json_extract(p.xml_header_json, '$.sitzung_end') AS xml_sitting_end
         FROM protocols p WHERE p.document_number = ?
         """,
         (str(document_number),),
@@ -10887,6 +10927,8 @@ def resolve_fact_citation(
             "date": resolved["date"],
             "sitzung_start": resolved["sitzung_start"],
             "sitzung_end": resolved["sitzung_end"],
+            "sitting_end_corrected": resolved["sitting_end_corrected"],
+            "xml_sitting_end": resolved["xml_sitting_end"],
         }
     if kind == "proceeding":
         resolved_occurrences = [
@@ -11009,6 +11051,20 @@ def _render_fact_series(
     return f'<div class="series"><span class="eyebrow">Verlauf</span><ol>{"".join(items)}</ol></div>'
 
 
+def _corrected_end_text(document_number: Any, citation: dict[str, Any]) -> str:
+    """The receipt line of a sitting whose end the printed PDF corrects (D2,
+    scripts/reviewed_end_times.json): both ends and the PDF page the list
+    names, so a reader who checks the XML finds why it says another time."""
+    entry = reviewed_end_times.for_sitting(str(document_number or ""))
+    page = ""
+    if entry is not None:
+        href = pulse_html.safe_href(f"{entry.pdf_url}#page={entry.pdf_page}")
+        page = f' (<a href="{pulse_html.esc(href)}">S. {entry.pdf_page} ↗</a>)' if href else f" (S. {entry.pdf_page})"
+    xml_end = citation.get("xml_sitting_end")
+    file_text = f", laut Protokolldatei {pulse_html.esc(xml_end)} Uhr" if xml_end else ""
+    return f"Ende laut PDF {pulse_html.esc(citation['sitting_end_corrected'])} Uhr{page}{file_text}"
+
+
 def _render_fact_sources(
     row: dict[str, Any],
     *,
@@ -11063,6 +11119,8 @@ def _render_fact_sources(
             name = mp.get("display_name") or "Unbekannt"
             name_html = f'<a href="{pulse_html.esc(mp_href)}">{pulse_html.esc(name)}</a>' if mp_href else pulse_html.esc(name)
             bits.insert(0, name_html)
+        if receipt["entity_kind"] == "protocol" and citation.get("sitting_end_corrected"):
+            bits.append(_corrected_end_text(document_number, citation))
         if receipt["entity_kind"] == "vote":
             vote_url = pulse_html.safe_href(receipt.get("official_url"))
             if vote_url:

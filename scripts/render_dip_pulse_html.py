@@ -1846,6 +1846,118 @@ def format_count(count: int, singular: str, plural: str) -> str:
     return f"{format_int(n)} {singular if n == 1 else plural}"
 
 
+#: How many sitting numbers a cut sentence lists before "und N weitere".
+CUT_SITTINGS_SHOWN = 5
+
+
+def _sitting_order(number: str) -> tuple[int, ...]:
+    return tuple(int(part) if part.isdigit() else 0 for part in str(number).split("/"))
+
+
+def cut_gap_sentence(
+    sittings: list[str],
+    reden: int,
+    zu_protokoll: int | None,
+    where: str,
+    *,
+    scope: str = "",
+    unindexed: list[str] | tuple[str, ...] = (),
+) -> str:
+    """The one sentence a page whose Reden span a cut Protokoll file shows
+    (docs/plans/cut-protocols.md step 7, owner 2026-11-26): which sittings, how
+    many Reden (and, where ``zu_protokoll`` is not None, Reden zu Protokoll) DIP
+    lists in the part the file does not print, and ``where`` they are missing.
+    ``unindexed`` names sittings DIP has not indexed yet, whose count is open."""
+    numbers = sorted(dict.fromkeys(str(n) for n in sittings), key=_sitting_order)
+    if len(numbers) == 1:
+        head = f"In Sitzung {numbers[0]}"
+    else:
+        shown = ", ".join(numbers[:CUT_SITTINGS_SHOWN])
+        if len(numbers) > CUT_SITTINGS_SHOWN:
+            shown += f" und {len(numbers) - CUT_SITTINGS_SHOWN} weitere"
+        head = f"In {len(numbers)} Sitzungen{' ' + scope if scope else ''} ({shown})"
+    open_ = sorted(dict.fromkeys(str(n) for n in unindexed), key=_sitting_order)
+    if open_ and len(open_) == len(numbers):
+        return f"{head} endet die Protokolldatei vorzeitig; was fehlt, hat DIP noch nicht erfasst."
+    parts = []
+    if reden or not zu_protokoll:
+        parts.append(format_count(reden, "Rede", "Reden"))
+    if zu_protokoll:
+        parts.append(format_count(zu_protokoll, "zu Protokoll gegebene Rede", "zu Protokoll gegebene Reden"))
+    verb = "fehlt" if reden + (zu_protokoll or 0) == 1 else "fehlen"
+    tail = f", und {', '.join(open_)} hat DIP noch nicht erfasst" if open_ else ""
+    return f"{head} endet die Protokolldatei vorzeitig; {' und '.join(parts)} laut DIP {verb} {where}{tail}."
+
+
+def report_cut(report: dict[str, Any]) -> dict[str, Any] | None:
+    """The report's cut (``validation_summary.protocol_cut``) with its counts:
+    ``reden`` and ``zu_protokoll`` DIP lists after it, and ``indexed``, whether
+    the report holds DIP's Aktivitäten at all. None for a whole sitting."""
+    cut = (report.get("validation_summary") or {}).get("protocol_cut")
+    if not cut:
+        return None
+    entries = cut.get("entries") or []
+    return {
+        **cut,
+        "reden": sum(1 for entry in entries if entry.get("kind") == "rede"),
+        "zu_protokoll": sum(1 for entry in entries if entry.get("kind") == "zu_protokoll"),
+        "indexed": bool((report.get("api_records") or {}).get("aktivitaeten")),
+    }
+
+
+def pdf_page_href(protocol: dict[str, Any], page: Any) -> str | None:
+    """The protocol's PDF at a printed page (the file's page, counted from the
+    XML head's start page), else the PDF itself, else None."""
+    pdf = safe_href(protocol.get("pdf_url"))
+    start_page = (protocol.get("xml_header") or {}).get("start_page")
+    try:
+        physical_page = int(page) - int(start_page) + 1 if page and start_page else None
+    except (TypeError, ValueError):
+        physical_page = None
+    return pdf + f"#page={physical_page}" if pdf and physical_page and physical_page > 0 else pdf
+
+
+def render_cut_gap(report: dict[str, Any]) -> str:
+    """The note a cut sitting's dossier shows under its head (step 7): where the
+    file stops, what it announces, what DIP lists after it, the PDF at that page
+    and DIP's speakers. A gap in DESIGN.md's sense, not a warning; no row looks
+    like a Rede. Empty for a whole sitting."""
+    cut = report_cut(report)
+    if cut is None:
+        return ""
+    protocol = report.get("protocol") or {}
+    page, quadrant = cut.get("page"), cut.get("quadrant")
+    place = f"Seite {page}{' ' + quadrant if quadrant else ''}" if page else ""
+    if place and cut.get("place_from") == "dip":
+        place += " (Seite laut DIP)"
+    stop = f"Die Protokolldatei des Bundestages endet nach der Rede auf {place}." if place else (
+        "Die Protokolldatei des Bundestages endet vor dem Ende der Sitzung.")
+    announced = format_date(cut.get("announced"))
+    edition = (f" Sie ist eine Erstausgabe; den endgültigen Bericht kündigt sie für den {announced} an, "
+               "er erschien nur als PDF.") if announced else " Sie ist eine Erstausgabe; der endgültige Bericht erschien nur als PDF."
+    if not cut["indexed"]:
+        missing = " DIP hat diese Sitzung noch nicht erfasst; wie viel fehlt, ist offen."
+    else:
+        counts = (f"{format_count(cut['reden'], 'Rede', 'Reden')} und "
+                  f"{format_count(cut['zu_protokoll'], 'zu Protokoll gegebene Rede', 'zu Protokoll gegebene Reden')}")
+        missing = f" Laut DIP fehlen danach {counts}; keine Zahl auf dieser Seite enthält sie."
+    href = pdf_page_href(protocol, page)
+    link = (f'<p><a href="{esc(href)}">Im PDF ab Seite {esc(page)} ↗</a></p>' if href and page else
+            f'<p><a href="{esc(href)}">Vollständiges Protokoll als PDF ↗</a></p>' if href else "")
+    rows = []
+    for entry in cut.get("entries") or []:
+        bits = [str(entry.get("speaker") or "Ohne Namen")]
+        if entry.get("page"):
+            bits.append(f"S. {entry['page']}{' ' + entry['quadrant'] if entry.get('quadrant') else ''}")
+        if entry.get("kind") == "zu_protokoll":
+            bits.append("zu Protokoll")
+        rows.append(f"<li>{esc(' · '.join(bits))}</li>")
+    listing = (f'<details class="cut-list"><summary>Von DIP genannt, nicht gedruckt ({format_int(len(rows))})</summary>'
+               f'<ol>{"".join(rows)}</ol></details>') if rows else ""
+    return (f'<section class="cut-gap" aria-labelledby="cut-gap-title"><h2 id="cut-gap-title">Protokolldatei endet vorzeitig</h2>'
+            f"<p>{esc(stop + edition + missing)}</p>{link}{listing}</section>")
+
+
 def is_question_format(item: dict[str, Any]) -> bool:
     """Befragung / Fragestunde / Regierungsbefragung: never ranked. The parser
     decides (speech_kinds.top_format) so a continuation with no heading counts;
@@ -1874,10 +1986,7 @@ def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], 
             label = f"{label} · {role}" if role else label
         label = esc(label)
         page = (c.get("source_page") or {}).get("page")
-        pdf = safe_href(protocol.get("pdf_url"))
-        start_page = (protocol.get("xml_header") or {}).get("start_page")
-        physical_page = int(page) - int(start_page) + 1 if page and start_page else None
-        href = pdf + f"#page={physical_page}" if pdf and physical_page and physical_page > 0 else pdf
+        href = pdf_page_href(protocol, page)
         source_label = f"Originalprotokoll · S. {page}" if page else "Originalprotokoll"
         source = f'<a href="{esc(href)}">{esc(source_label)}</a>' if href else ""
         parent = c.get("parent_rede_id")
@@ -3750,6 +3859,22 @@ def render_html(
       padding:18px;
       scroll-margin-top:var(--aside-gap); /* pairs with the aside's sticky offset */
     }}
+    /* A cut Protokoll file (E16): a gap in DESIGN.md's sense, a dashed box on the
+       ground with a short title and the reason in words, not a warning. */
+    .cut-gap {{
+      margin:0 0 16px;
+      padding:14px 16px;
+      border:1px dashed var(--muted);
+      border-radius:8px;
+      font-size:14px;
+      line-height:1.5;
+    }}
+    .cut-gap h2 {{ margin:0 0 6px; font-size:17px; }}
+    .cut-gap p {{ margin:0 0 8px; max-width:72ch; }}
+    .cut-gap a {{ color:inherit; text-decoration:underline; text-underline-offset:2px; }}
+    .cut-gap summary {{ cursor:pointer; color:var(--muted); min-height:44px; display:flex; align-items:center; }}
+    .cut-gap ol {{ margin:4px 0 0; padding-left:1.4em; color:var(--muted); columns:2 18rem; column-gap:24px; }}
+    .cut-gap li {{ break-inside:avoid; overflow-wrap:anywhere; }}
     .top-head {{
       display:grid;
       grid-template-columns:minmax(0,1fr) 96px;
@@ -4338,6 +4463,7 @@ def render_html(
         <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>
+    {render_cut_gap(report)}
     {session_summary_sections}
     <div class="layout">
       <aside id="aufmerksamkeitsrang"{aside_attrs}>
