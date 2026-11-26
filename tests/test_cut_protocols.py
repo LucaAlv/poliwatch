@@ -297,6 +297,7 @@ def judged(number="21/99", protocol_cut=None, header=None, **summary):
         "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": protocol_cut,
                                "cut_rule_version": cut.CUT_RULE_VERSION, "roll_call_scan_end": "list_end", **summary},
         "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-10-09T10:00:00Z"}},
+        "api_records": {"aktivitaeten": copy.deepcopy(ACTIVITIES)},
     }
     return report
 
@@ -309,6 +310,18 @@ class CompletenessTests(unittest.TestCase):
         self.assertEqual((state["speeches"], state["reasons"]["speeches"]), (False, facts.CUT_PROTOCOL))
         self.assertTrue(state["votes"])
         self.assertTrue(state["times"])
+
+    # Value: protects=a cut sitting DIP has not indexed yet carries a reason of its own, so a re-fetch can read its
+    #   Aktivitäten (which may show it whole, as 19/107); fails_when=it stays marked with an empty list for good;
+    #   why_new=review of steps 1-6; seam=facts
+    def test_a_cut_dip_has_not_indexed_has_its_own_reason(self):
+        report = judged(protocol_cut=CUT)
+        report["api_records"]["aktivitaeten"] = []
+        state = facts.completeness_from_reports([report])["21/99"]
+        self.assertEqual((state["speeches"], state["reasons"]["speeches"]), (False, facts.CUT_PROTOCOL_UNINDEXED))
+        del report["api_records"]
+        state = facts.completeness_from_reports([report])["21/99"]
+        self.assertEqual(state["reasons"]["speeches"], facts.CUT_PROTOCOL_UNINDEXED)
 
     def test_a_cut_outranks_withheld_reden(self):
         state = facts.completeness_from_reports([judged(protocol_cut=CUT, withheld_rede_count=2)])["21/99"]
@@ -365,6 +378,9 @@ class CompletenessTests(unittest.TestCase):
     def test_the_gap_notes_name_the_cut_file_and_missing_times(self):
         self.assertEqual(facts.gap_note([{"document_number": "21/99", "date": "2026-10-08", "reason": facts.CUT_PROTOCOL}],
                                         "speeches"), "Sitzung 21/99: Protokolldatei abgebrochen")
+        self.assertEqual(facts.gap_note([{"document_number": "21/99", "date": "2026-10-08",
+                                          "reason": facts.CUT_PROTOCOL_UNINDEXED}], "speeches"),
+                         "Sitzung 21/99: Protokolldatei abgebrochen")
         self.assertEqual(facts.gap_note([{"document_number": "18/23", "date": "2014-03-20",
                                           "reason": facts.NO_SITTING_TIMES}], "times"),
                          "Sitzung 18/23: Beginn oder Ende nicht im Protokoll")
@@ -464,10 +480,11 @@ class CorrectedEndTimeStoreTests(unittest.TestCase):
 
 class BackfillTests(unittest.TestCase):
     @staticmethod
-    def cut_entry(n):
+    def cut_entry(n, aktivitaeten=ACTIVITIES):
         from test_backfill import COMPLETE_VOTES, report_for
         report = report_for(n, acquisition=COMPLETE_VOTES)
         report["validation_summary"]["protocol_cut"] = copy.deepcopy(CUT)
+        report.setdefault("api_records", {})["aktivitaeten"] = copy.deepcopy(aktivitaeten)
         return {"report": report}
 
     @staticmethod
@@ -484,6 +501,14 @@ class BackfillTests(unittest.TestCase):
         acquirable, _waiting, _vote_only, structural, held = site.incomplete_sitting_protocols(
             [self.cut_entry(1)], [self.catalog(1)])
         self.assertEqual(([p["dokumentnummer"] for p in held], acquirable, structural), (["21/1"], [], []))
+
+    # Value: protects=a cut sitting fetched before DIP indexed its Aktivitäten is fetched again, so the rule can read
+    #   them; fails_when=it stays out of every backfill once it leaves the --limit window, marked with an empty list;
+    #   why_new=review of steps 1-6; seam=incomplete_sitting_protocols
+    def test_a_cut_sitting_without_aktivitaeten_is_acquired_again(self):
+        acquirable, _waiting, _vote_only, structural, held = site.incomplete_sitting_protocols(
+            [self.cut_entry(1, aktivitaeten=[])], [self.catalog(1)])
+        self.assertEqual(([p["dokumentnummer"] for p in acquirable], structural, held), (["21/1"], [], []))
 
     # Value: protects=a cut file the Bundestag replaced is fetched again: DIP's xml_hash no longer matches the md5 of
     #   the cached file; fails_when=a replaced, whole file never reaches the store; why_new=step 5; seam=replaced_cut_files

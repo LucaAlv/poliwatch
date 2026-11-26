@@ -988,6 +988,11 @@ WITHHELD_REDEN = "withheld_reden"
 #: same file releases it.
 CUT_PROTOCOL = "cut_protocol"
 
+#: The same for a cut sitting whose report holds no DIP Aktivitäten (DIP had not
+#: indexed it when it was fetched): a re-fetch reads them, so it is acquirable,
+#: and they may show the sitting whole (as 19/107).
+CUT_PROTOCOL_UNINDEXED = "cut_protocol_unindexed"
+
 #: The times reason code of a parsed XML that prints no start or no end time
 #: (18/23): ``laengste-sitzung`` cannot be judged for that sitting.
 NO_SITTING_TIMES = "no_sitting_times"
@@ -1044,7 +1049,9 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
                 speeches, speeches_reason = False, "no cut check (report predates it)"
             elif summary["protocol_cut"]:
                 # Outranks withheld Reden: what the file lacks is larger and unknown.
-                speeches, speeches_reason = False, CUT_PROTOCOL
+                indexed = any(isinstance(activity, dict)
+                              for activity in (report.get("api_records") or {}).get("aktivitaeten") or [])
+                speeches, speeches_reason = False, CUT_PROTOCOL if indexed else CUT_PROTOCOL_UNINDEXED
         header = protocol.get("xml_header") or {}
         parsed = summary.get("xml_speech_count") is not None
         times = parsed and all(sitting_clock(header.get(key)) for key in ("sitzung_start", "sitzung_end"))
@@ -1267,7 +1274,7 @@ def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) 
             else:
                 noun = "Rede" if count == "1" else "Reden"
                 parts.append(f"Sitzung {number}: {count} {noun} zurückgehalten")
-        elif reason == CUT_PROTOCOL:
+        elif reason in (CUT_PROTOCOL, CUT_PROTOCOL_UNINDEXED):
             parts.append(f"Sitzung {number}: Protokolldatei abgebrochen")
         elif reason == NO_SITTING_TIMES:
             parts.append(f"Sitzung {number}: Beginn oder Ende nicht im Protokoll")

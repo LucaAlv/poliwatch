@@ -573,7 +573,8 @@ _BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
 #: Gaps that a re-fetch of the same files reproduces (ADR 0005, E16): withheld
 #: Reden (a parser rule or the reviewed list releases them), a cut Protokoll
 #: file (only a replaced file does, see ``replaced_cut_files``) and an XML head
-#: without a sitting time.
+#: without a sitting time. A cut file whose report holds no DIP Aktivitäten
+#: (``facts.CUT_PROTOCOL_UNINDEXED``) is not among them: a re-fetch reads them.
 _UNACQUIRABLE = {("speeches", facts.WITHHELD_REDEN), ("speeches", facts.CUT_PROTOCOL), ("times", facts.NO_SITTING_TIMES)}
 
 

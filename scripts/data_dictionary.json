@@ -1285,7 +1285,7 @@
           "license": "eigene-auswertung-uebernommene-quelldaten"
         },
         "xml_last_rede_id": {
-          "meaning": "Rede-ID der letzten Rede, die eine abgebrochene Protokolldatei im Sitzungsverlauf druckt (nach Seite und Viertel im Inhaltsverzeichnis); NULL ohne Abbruch.",
+          "meaning": "Rede-ID der letzten Rede, die eine abgebrochene Protokolldatei im Sitzungsverlauf druckt: die späteste nach Seite und Viertel im Inhaltsverzeichnis oder, wo das Inhaltsverzeichnis keine Seiten nennt (20/210), die letzte in der Reihenfolge der Datei; NULL ohne Abbruch.",
           "unit": "Rede-ID des Plenarprotokoll-XML als Text oder NULL.",
           "source": "scripts/protocol_cut.py: Hinweis „Der gesamte und damit endgültige Stenografische Bericht … wird am … veröffentlicht“ im Plenarprotokoll-XML, geprüft gegen die DIP-Aktivitäten der Sitzung; geschrieben von scripts/persist_dip_pulse_store.py.",
           "license": "eigene-auswertung-uebernommene-quelldaten"
