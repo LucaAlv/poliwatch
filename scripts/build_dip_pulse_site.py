@@ -106,6 +106,7 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import vote_links
+import protocol_cut
 import reviewed_vote_links
 import dip_cache
 import abgeordnetenwatch as aw
@@ -2129,7 +2130,9 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
     sitting (R3), or has no reviewed_digest at all (P3b: every parse since rule 8
     records one, so its absence proves nothing about the list), "votes" when it
     was parsed before the vote-link rule read what it reads now from the XML
-    (``vote_links.INPUTS_VERSION``). Empty when current."""
+    (``vote_links.INPUTS_VERSION``), "cut" when it was read before the rule
+    that marks a first edition cut short (``protocol_cut.CUT_RULE_VERSION``, E16).
+    Empty when current."""
     causes = []
     summary = report.get("validation_summary") or {}
     if summary.get("speech_kinds_version") != speech_kinds.VERSION:
@@ -2140,6 +2143,8 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
         causes.append("reviewed")
     if summary.get("vote_inputs_version") != vote_links.INPUTS_VERSION:
         causes.append("votes")
+    if summary.get("cut_rule_version") != protocol_cut.CUT_RULE_VERSION:
+        causes.append("cut")
     return tuple(causes)
 
 
@@ -2160,6 +2165,7 @@ def stale_clauses(stale: list[dict[str, Any]]) -> list[str]:
         ("rule", f"predate the current speech-counting rule ({speech_kinds.VERSION})"),
         ("reviewed", "were parsed under other entries of scripts/reviewed_units.json than it holds now"),
         ("votes", f"predate the current inputs of the vote-link rule ({vote_links.INPUTS_VERSION})"),
+        ("cut", f"predate the current rule for cut Protokoll files ({protocol_cut.CUT_RULE_VERSION})"),
     ):
         numbers = sorted(_report_number(entry) for entry in stale if cause in stale_causes(entry["report"]))
         if numbers:
