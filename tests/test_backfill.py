@@ -1201,6 +1201,7 @@ class GapPrimitiveTests(unittest.TestCase):
         {"document_number": "21/1", "date": "2025-01-02"},
         {"document_number": "21/2", "date": "2025-01-09"},
     ]
+    # pregate-literal: VERSION=16 a sitting date, not the speech rule
     LISTED = PERSISTED + [{"document_number": "21/3", "date": "2025-01-16"}]  # pregate-literal: EXPORT_FORMAT=16 a sitting date (2025-01-16), not the export format
 
     @staticmethod

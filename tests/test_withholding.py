@@ -420,6 +420,7 @@ class OutputTests(unittest.TestCase):
     #   each is confirmed; an older manifest without the list counts as none; fails_when=the layers do not hand data on; why_new=R4; seam=none
     def test_the_release_lists_and_caps_newly_withheld_reden(self):
         units = [{"document_number": "18/7", "rede_id": f"R{i}", "reason": "refused_nested_contribution"} for i in range(1, 4)]
+        # pregate-literal: VERSION=16 export format 16, not the speech rule
         previous = {"tag": "2026.11.01", "export_format": 16}
         for count, expect_problem in ((1, False), (3, True)):
             manifest = {"tag": "2026.11.02", "export_format": 17, "withheld_reden": units[:count]}

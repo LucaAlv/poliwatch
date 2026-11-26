@@ -140,6 +140,7 @@ class ReadZipTests(unittest.TestCase):
                 data = bytearray(path.read_bytes())
                 # Overwrite the start of the compressed stream, after the 30-byte local header and the name.
                 start = 30 + len("MDB_STAMMDATEN.XML") + skip
+                # pregate-literal: VERSION=16 a byte count, not the speech rule
                 data[start:start + 16] = b"\xff" * 16
                 path.write_bytes(bytes(data))
                 with self.assertRaisesRegex(derive.StammdatenError, "not a zip file"):
