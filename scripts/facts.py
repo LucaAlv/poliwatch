@@ -380,7 +380,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "erste-reden",
-        "version": 3,
+        "version": 4,
         "title": "Die meisten ersten Reden der Woche",
         "unit": "Abgeordnete mit ihrer ersten Rede",
         "direction": "max",
@@ -400,6 +400,13 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # week of the real debut is already incomplete for speeches, and every
         # later Rede is not a first one. withheld_units.sequence and
         # speeches.sequence are one numbering within a TOP (ADR 0005 D3).
+        #
+        # v4 (docs/plans/cut-protocols.md step 4): a Rede DIP lists in the part
+        # of a sitting its cut Protokoll file does not print
+        # (unprinted_contributions, kind "rede") counts as one too, as a
+        # withheld Rede does. It has no TOP or position, so it ranks after every
+        # printed Rede of its sitting (item index past any real one, then page),
+        # and it binds by the mps row of its DIP person, not by a Redner-ID.
         "sql": (
             "WITH speaker AS (\n"
             "  SELECT s.id AS speech_id, NULL AS withheld_id, 0 AS withheld,\n"
@@ -425,6 +432,16 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "  JOIN protocols p ON p.id = w.protocol_id\n"
             "  JOIN agenda_items ai ON ai.id = w.agenda_item_id\n"
             "  WHERE w.xml_redner_id <> ''\n"
+            "  UNION ALL\n"
+            "  SELECT NULL, u.id, 1,\n"
+            "         p.date, p.document_number,\n"
+            f"         {_MALFORMED_NUMBER},\n"
+            "         2147483647, COALESCE(u.page, 2147483647),\n"
+            "         'p#' || mc.canonical_id\n"
+            "  FROM unprinted_contributions u\n"
+            "  JOIN mp_canonical mc ON mc.mp_id = u.mp_id\n"
+            "  JOIN protocols p ON p.id = u.protocol_id\n"
+            "  WHERE u.kind = 'rede'\n"
             "),\n"
             "first_day AS (\n"
             "  SELECT person_key, MIN(day) AS day FROM speaker GROUP BY person_key\n"

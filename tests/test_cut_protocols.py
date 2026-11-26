@@ -3,6 +3,7 @@
 check of it and the list of what DIP names after the cut."""
 
 import copy
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -440,6 +441,77 @@ class CorrectedEndTimeStoreTests(unittest.TestCase):
         self.assertEqual(tuple(row), ("01:28", 988))
         conn.execute("UPDATE protocols SET sitting_end_corrected = NULL")
         self.assertEqual(tuple(conn.execute(f"SELECT sitzung_end, value FROM ({sql})").fetchone()), ("01:30", 990))
+
+
+class BackfillTests(unittest.TestCase):
+    @staticmethod
+    def cut_entry(n):
+        from test_backfill import COMPLETE_VOTES, report_for
+        report = report_for(n, acquisition=COMPLETE_VOTES)
+        report["validation_summary"]["protocol_cut"] = copy.deepcopy(CUT)
+        return {"report": report}
+
+    @staticmethod
+    def catalog(n, xml_hash=None):
+        from test_backfill import catalog_protocol
+        protocol = catalog_protocol(f"21/{n}", f"pp-{n}", f"2026-06-{10 + n:02d}")
+        if xml_hash is not None:
+            protocol["xml_hash"] = xml_hash
+        return protocol
+
+    # Value: protects=a backfill does not fetch a cut file again and again; fails_when=every run re-downloads the 33
+    #   sittings and they stay cut; why_new=step 5; seam=incomplete_sitting_protocols
+    def test_a_cut_sitting_is_left_alone(self):
+        acquirable, _waiting, _vote_only, structural, held = site.incomplete_sitting_protocols(
+            [self.cut_entry(1)], [self.catalog(1)])
+        self.assertEqual(([p["dokumentnummer"] for p in held], acquirable, structural), (["21/1"], [], []))
+
+    # Value: protects=a cut file the Bundestag replaced is fetched again: DIP's xml_hash no longer matches the md5 of
+    #   the cached file; fails_when=a replaced, whole file never reaches the store; why_new=step 5; seam=replaced_cut_files
+    def test_a_cut_file_whose_catalog_hash_changed_is_acquired_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            path = site.xml_cache_path(output_dir, "21/1")
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"<dbtplenarprotokoll/>")
+            md5 = hashlib.md5(b"<dbtplenarprotokoll/>").hexdigest()
+            entries = [self.cut_entry(1), self.cut_entry(2)]
+            same = site.replaced_cut_files(output_dir, entries, [self.catalog(1, md5), self.catalog(2, md5)])
+            self.assertEqual(same, set())
+            changed = site.replaced_cut_files(output_dir, entries, [self.catalog(1, "0" * 32), self.catalog(2, None)])
+            self.assertEqual(changed, {"21/1"})
+        acquirable, *_rest, held = site.incomplete_sitting_protocols(
+            entries, [self.catalog(2), self.catalog(1)], replaced=changed)
+        self.assertEqual(([p["dokumentnummer"] for p in acquirable], [p["dokumentnummer"] for p in held]),
+                         (["21/1"], ["21/2"]))
+
+    # Value: protects=the run names the cut files apart from withheld Reden; fails_when=they read as withheld Reden or
+    #   as sittings a backfill would fix; why_new=step 5; seam=format_incomplete_report
+    def test_the_run_names_the_cut_files_on_a_line_of_their_own(self):
+        from test_backfill import catalog_protocol
+        gaps = {"21/99": {"date": "2026-10-08", "reasons": {"speeches": facts.CUT_PROTOCOL}},
+                "18/3": {"date": "2013-11-18", "reasons": {"speeches": facts.WITHHELD_REDEN}}}
+        catalog = [catalog_protocol(n, f"pp-{n}", gap["date"]) for n, gap in gaps.items()]
+        text = "\n".join(site.format_incomplete_report({"incomplete_periods": [], "sitting_gaps": gaps},
+                                                       output_dir=Path("site"), catalog_protocols=catalog,
+                                                       vote_scan_pages=30))
+        self.assertIn("1 sittings hold a Protokoll file that stops partway (E16): only a replaced file closes them, "
+                      "not a backfill (21/99)", text)
+        self.assertIn("1 sittings hold withheld Reden", text)
+        self.assertIn("Fix: none available now", text)
+
+    def test_the_backfill_says_why_it_leaves_each_sitting(self):
+        from test_backfill import report_for
+        withheld = report_for(2)
+        withheld["validation_summary"]["withheld_rede_count"] = 1
+        no_times = report_for(3)
+        entries = [self.cut_entry(1), {"report": withheld}, {"report": no_times}]
+        lines = site.unacquirable_lines([self.catalog(n) for n in (1, 2, 3)], entries, {"21/4"})
+        self.assertEqual([line.split(":")[0] for line in lines], [
+            "[backfill] leaving 1 sitting(s) whose Protokoll file stops partway (E16)",
+            "[backfill] leaving 1 sitting(s) held back only by withheld Reden (ADR 0005)",
+            "[backfill] leaving 1 sitting(s) whose XML prints no start or end time",
+            "[backfill] acquiring 1 cut sitting(s) again"])
 
 
 if __name__ == "__main__":

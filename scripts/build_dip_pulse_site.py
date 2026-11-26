@@ -623,13 +623,17 @@ def incomplete_sitting_protocols(
     votes: bool = True,
     scan_pages: int | None = None,
     wahlperiode: int | None = None,
+    replaced: Collection[str] = (),
 ) -> tuple[
     list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]
 ]:
     """(acquirable, waiting, vote_only, structural, withheld): the sittings to
     acquire, those DIP has no XML for yet, those held back only by votes while
     votes are off, those a rescan at these settings reproduces, and those held
-    back only by withheld Reden (ADR 0005), which no acquisition releases."""
+    back only by what no acquisition releases (``_UNACQUIRABLE``: withheld
+    Reden, a cut Protokoll file, a head without times). ``replaced``
+    (``replaced_cut_files``) names cut sittings whose file DIP lists with
+    another hash now: they are acquired again whatever else holds them."""
     stored = []
     for entry in entries:
         protocol = (entry.get("report") or {}).get("protocol") or {}
@@ -652,7 +656,9 @@ def incomplete_sitting_protocols(
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
         if gap is None or (wahlperiode and wahlperiode_of(protocol) != wahlperiode):
             continue
-        if not _acquirable_reasons(gap):
+        if normalized_document_number(protocol.get("dokumentnummer")) in replaced:
+            (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
+        elif not _acquirable_reasons(gap):
             withheld.append(protocol)
         elif _structural_gap(gap, scan_pages):
             structural.append(protocol)
@@ -663,6 +669,63 @@ def incomplete_sitting_protocols(
         else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
     return acquirable, waiting, vote_only, structural, withheld
+
+
+def replaced_cut_files(output_dir: Path, entries: list[dict[str, Any]], catalog: list[dict[str, Any]]) -> set[str]:
+    """The cut sittings (E16) whose cached XML is not the file DIP's catalog lists
+    now: its ``xml_hash`` (an md5) differs from the md5 of the cached file, so the
+    Bundestag may have replaced the first edition. Nothing is known without a
+    hash or a cached file. The catalog of a closed Wahlperiode can be up to
+    ``CATALOG_FULL_FETCH_DAYS`` old."""
+    hashes = {
+        normalized_document_number(protocol.get("dokumentnummer")): str(protocol.get("xml_hash") or "").strip().lower()
+        for protocol in catalog
+    }
+    replaced = set()
+    for entry in entries:
+        report = entry.get("report") or {}
+        if not (report.get("validation_summary") or {}).get("protocol_cut"):
+            continue
+        number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+        listed = hashes.get(number)
+        path = xml_cache_path(output_dir, number) if number else None
+        if not listed or path is None or not path.is_file():
+            continue
+        if hashlib.md5(path.read_bytes()).hexdigest() != listed:
+            replaced.add(number)
+    return replaced
+
+
+def unacquirable_lines(held: list[dict[str, Any]], entries: list[dict[str, Any]], replaced: Collection[str]) -> list[str]:
+    """What a backfill says of the sittings it leaves because no acquisition
+    closes their gap, one line per cause, read from each cached report: a cut
+    Protokoll file (E16), withheld Reden (ADR 0005), or an XML head without a
+    sitting time. ``replaced`` adds the cut sittings it fetches again."""
+    summaries = {
+        normalized_document_number(((entry.get("report") or {}).get("protocol") or {}).get("dokumentnummer")):
+            (entry.get("report") or {}).get("validation_summary") or {}
+        for entry in entries
+    }
+    groups: dict[str, list[str]] = {"cut": [], "withheld": [], "times": []}
+    for protocol in held:
+        number = normalized_document_number(protocol.get("dokumentnummer"))
+        summary = summaries.get(number) or {}
+        cause = "cut" if summary.get("protocol_cut") else "withheld" if summary.get("withheld_rede_count") else "times"
+        groups[cause].append(number)
+    lines = []
+    if groups["cut"]:
+        lines.append(f"[backfill] leaving {len(groups['cut'])} sitting(s) whose Protokoll file stops partway (E16): "
+                     f"only a file the Bundestag replaces closes them ({_first_numbers(groups['cut'], 12)}).")
+    if groups["withheld"]:
+        lines.append(f"[backfill] leaving {len(groups['withheld'])} sitting(s) held back only by withheld Reden (ADR 0005): "
+                     "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.")
+    if groups["times"]:
+        lines.append(f"[backfill] leaving {len(groups['times'])} sitting(s) whose XML prints no start or end time: "
+                     f"laengste-sitzung cannot judge them ({_first_numbers(groups['times'], 12)}).")
+    if replaced:
+        lines.append(f"[backfill] acquiring {len(replaced)} cut sitting(s) again: DIP lists their XML with another hash "
+                     f"now, so the file may have been replaced ({_first_numbers(sorted(replaced), 12)}).")
+    return lines
 
 
 def backfill_scope_lines(
@@ -940,6 +1003,7 @@ def format_incomplete_report(
     raised_pages = max(2 * vote_scan_pages, vote_scan_pages + 30) if exhausted and vote_scan_pages else vote_scan_pages
     structural = [number for number, gap in gaps.items() if _structural_gap(gap, raised_pages)]
     withheld = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.WITHHELD_REDEN]
+    cut = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.CUT_PROTOCOL]
     # The votes reasons of the structural line; a sitting that is structural
     # only for its withheld Reden gets the withheld line instead.
     vote_structural = [number for number in structural if _acquirable_reasons(gaps[number])]
@@ -963,6 +1027,11 @@ def format_incomplete_report(
         lines.append(
             f"  {len(withheld)} sittings hold withheld Reden (ADR 0005): a parser rule or the reviewed list "
             f"releases them, not a backfill ({_first_numbers(withheld, 12)})"
+        )
+    if cut:
+        lines.append(
+            f"  {len(cut)} sittings hold a Protokoll file that stops partway (E16): only a replaced file closes them, "
+            f"not a backfill ({_first_numbers(cut, 12)})"
         )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
@@ -15355,12 +15424,14 @@ def main() -> int:
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
+            replaced = replaced_cut_files(output_dir, stored_entries, protocols)
             acquisition_scope, waiting, vote_only, structural, withheld = incomplete_sitting_protocols(
                 stored_entries,
                 [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
                 wahlperiode=protocol_wahlperiode,
+                replaced=replaced,
             )
             for line in backfill_scope_lines(protocols, stored_entries, acquisition_scope, protocol_wahlperiode):
                 print(line, file=sys.stderr)
@@ -15371,12 +15442,8 @@ def main() -> int:
                     f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
                     file=sys.stderr,
                 )
-            if withheld:
-                print(
-                    f"[backfill] leaving {len(withheld)} sitting(s) held back only by withheld Reden (ADR 0005): "
-                    "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.",
-                    file=sys.stderr,
-                )
+            for line in unacquirable_lines(withheld, stored_entries, replaced):
+                print(line, file=sys.stderr)
             if vote_only:
                 print(
                     f"[backfill] skipping {len(vote_only)} sitting(s) held back only by votes: votes are off "

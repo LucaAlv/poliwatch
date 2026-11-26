@@ -99,6 +99,7 @@ WHOLE = {"protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_V
 #: Both sitting times in the XML head, what basis "times" asks for.
 TIMES = {"sitzung_start": "09:00", "sitzung_end": "14:08"}
 
+
 class StoreCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -834,6 +835,42 @@ class ErsteRedenTests(StoreCase):
                     "withheld": [{"redner_id": "x-Ada Lovelace", "rede_id": "IDA0", **withheld}],
                 }])
                 self.assertEqual(self.debut_values(), expected)
+
+    # --- docs/plans/cut-protocols.md step 4: a Rede DIP lists after a cut file's last <rede> ---
+
+    def unprinted(self, number, speaker, page=999, kind="rede"):
+        conn = self.writable()
+        protocol_id = self.seeded["protocol_ids"][number]
+        mp_id = self.seeded["mp_ids"].get(speaker)
+        conn.execute(
+            "INSERT INTO unprinted_contributions(id, protocol_id, dip_activity_id, kind, mp_id, dip_person_id, speaker,"
+            " page, page_quadrant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'A', 'now', 'now')",
+            (f"u-{number}-{speaker}-{kind}", protocol_id, f"a-{speaker}-{kind}", kind, mp_id, speaker, page))
+        conn.commit()
+
+    # Value: protects=a person whose first Rede lies in the part a cut file does not print posts no debut later (the
+    #   seven of 21/14, 21/31 and 21/47); fails_when=erste-reden reads printed Reden only and 2025-W28 stays too high;
+    #   why_new=step 4; seam=the metric SQL
+    def test_an_unprinted_first_rede_removes_the_person_from_every_debut_count(self) -> None:
+        self.seed(self.withheld_people())
+        self.unprinted("21/1", "Ada Lovelace")
+        first, second = self.debut_rows()
+        self.assertEqual((first["value"], second["value"]), (1, 1))
+        self.assertEqual(second["citation"]["speakers"], ["Grace Hopper"])
+
+    def test_an_unprinted_rede_ranks_after_every_printed_rede_of_its_sitting(self) -> None:
+        self.seed(self.withheld_people())
+        self.unprinted("21/2", "Ada Lovelace", page=1)
+        self.assertEqual(self.debut_values(), [1, 2])
+
+    def test_an_unprinted_zu_protokoll_or_unbound_entry_binds_no_one(self) -> None:
+        self.seed(self.withheld_people())
+        self.unprinted("21/1", "Ada Lovelace", kind="zu_protokoll")
+        self.unprinted("21/1", "Nobody Known")
+        self.assertEqual(self.debut_values(), [1, 2])
+
+    def test_erste_reden_is_at_version_4(self) -> None:
+        self.assertEqual(facts.REGISTRY_BY_ID[ERSTE]["version"], 4)
 
     # Value: protects=a withheld Rede binds only the person with its Redner-ID; fails_when=the union joins withheld rows to the wrong person or to none; why_new=cross-binding guard; seam=the metric SQL
     def test_another_persons_withheld_rede_leaves_a_debut_standing(self) -> None:
