@@ -2156,8 +2156,9 @@ class AccentedNameTests(unittest.TestCase):
                                  "VALUES (?, 'p1', 'none', ?, ?)", (f"vote-{number}", now, now))
                     conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES (?, ?, ?, 'yes')",
                                  (f"vote-{number}", voter, party))
-            conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
-                         (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+            conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols",
+                         (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]),
+                          pulse_store.protocol_cut.CUT_RULE_VERSION))
             person_registry.reconcile(conn)
             conn.commit()
         finally:
