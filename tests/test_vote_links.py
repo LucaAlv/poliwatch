@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import _support
+import protocol_cut
 import build_dip_pulse_site as build
 import speech_kinds
 import validate_dip_protocol as dip
@@ -342,7 +343,7 @@ class VoteInputsStaleTests(unittest.TestCase):
     # Value: protects=a report parsed before the rule read called_drucksachen is re-read from its XML (cause "votes"), so step 2 never runs on a field the cached JSON lacks; fails_when=stale_causes ignores vote_inputs_version; why_new=PR C adds a parse field without a speech-rule bump (plan section 7); seam=stale_causes
     def test_a_report_without_the_vote_inputs_version_is_stale_for_votes(self) -> None:
         protocol = {"dokumentnummer": "21/7", "xml_url": "https://example.test/21-7.xml"}
-        current = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}
+        current = {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None, "vote_inputs_version": vote_links.INPUTS_VERSION}
         fresh = _support.stamp_reviewed({"protocol": dict(protocol), "validation_summary": dict(current)})
         self.assertEqual(build.stale_causes(fresh), ())
         old = _support.stamp_reviewed({"protocol": dict(protocol), "validation_summary": {**current, "vote_inputs_version": None}})
@@ -486,6 +487,8 @@ class ChokePointTests(unittest.TestCase):
     def test_a_kept_report_with_an_old_placement_persists_the_rule_s(self) -> None:
         stale = _support.stamp_reviewed(fixture_report())
         stale.setdefault("validation_summary", {})["speech_kinds_version"] = speech_kinds.VERSION
+        stale.setdefault("validation_summary", {})["cut_rule_version"] = protocol_cut.CUT_RULE_VERSION
+        stale.setdefault("validation_summary", {}).setdefault("protocol_cut", None)
         stale["agenda_items"][1]["votes"] = stale["agenda_items"][0]["votes"]
         stale["agenda_items"][0]["votes"] = []
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
@@ -580,7 +583,7 @@ class PersistBasisTests(unittest.TestCase):
                     pulse_store.require_current_schema(conn)
             finally:
                 conn.close()
-        self.assertEqual(pulse_store.SCHEMA_VERSION, 15)
+        self.assertEqual(pulse_store.SCHEMA_VERSION, 16)
 
     def test_persist_refuses_a_placement_the_rule_does_not_make(self) -> None:
         built = fixture_report()

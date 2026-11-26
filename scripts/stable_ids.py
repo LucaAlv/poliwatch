@@ -71,6 +71,12 @@ def withheld_turn_id(protocol_id: Any, rede_id: str, marker: Any) -> str:
     return stable_key("withheld-turn", str(protocol_id), rede_id, int(marker))
 
 
+def unprinted_contribution_id(protocol_id: Any, dip_activity_id: Any) -> str:
+    """A DIP entry in the part of a sitting its cut Protokoll file does not print
+    (docs/source-errors.md E16), by DIP's Aktivität id."""
+    return stable_key("unprinted", str(protocol_id), str(dip_activity_id))
+
+
 def contribution_occurrence_id(protocol_id: Any, item_index: Any, sequence: Any, rede_id: Any) -> str:
     """A Beitrag by its rede id; a Fragestunde turn has none and goes by its
     source item index and sequence within the item."""

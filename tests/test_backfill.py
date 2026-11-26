@@ -22,6 +22,7 @@ from unittest import mock
 
 import _facts_fixture
 import _support
+import protocol_cut
 import build_dip_pulse_site as build
 import facts
 import persist_dip_pulse_store as pulse_store
@@ -60,7 +61,7 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
         for vote in item.get("votes") or []:
             vote["id"] = f"{n}{vote['id']}"
             vote["detail_url"] = f"{vote['detail_url']}{n}"
-    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION}
+    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
     _support.stamp_reviewed(report)
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}

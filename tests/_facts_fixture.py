@@ -375,7 +375,7 @@ def seed_weeks(
             {"document_number": spec["document_number"], "date": spec["date"]} for spec in weeks
         ]
         result["catalog"] = catalog_for(result["catalog_sittings"])
-        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         conn.commit()
         return result
     finally:

@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import protocol_cut
 import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
@@ -453,7 +454,7 @@ class CachedStammdatenTests(unittest.TestCase):
                     fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)], vote_id="501")
         refused = vote(member("Kamann, Uwe", "fraktionslos", "no"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", yes=1)],
                        vote_id="502")
-        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
                   "protocol": {"id": "p19-30", "dokumentnummer": "19/30", "datum": "2018-06-01"},
                   "agenda_items": [{"index": 1, "heading": "Test", "votes": [good, refused]}]}
         entries = [{"report": report, "report_path": Path(self._tmp.name) / "plenarprotokoll-19-30.json"}]

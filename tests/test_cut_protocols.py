@@ -2,11 +2,17 @@
 (docs/plans/cut-protocols.md, docs/source-errors.md E16): the notice, DIP's
 check of it and the list of what DIP names after the cut."""
 
+import copy
+import json
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 
 import _support  # noqa: F401
 import protocol_cut as cut
 import build_dip_pulse_site as site
+import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 
 NOTICE = ('Der gesamte und damit end­gültige Stenografische Bericht der 99. Sitzung wird am '
@@ -196,6 +202,85 @@ class ParsedReportTests(unittest.TestCase):
         self.assertIn("cut", site.stale_causes(report))
         report["validation_summary"]["cut_rule_version"] = cut.CUT_RULE_VERSION
         self.assertNotIn("cut", site.stale_causes(report))
+
+
+CUT = {"announced": "2026-10-13", "last_rede_id": "R3", "page": 103, "quadrant": "B", "place_from": "inhaltsverzeichnis",
+       "entries": [
+           {"dip_activity_id": "x1", "kind": "rede", "dip_person_id": "8173", "speaker": "Dora Dreher, MdB, Die Linke",
+            "page": 104, "quadrant": "A"},
+           {"dip_activity_id": "x2", "kind": "zu_protokoll", "dip_person_id": None, "speaker": "Emil Esch, MdB, CDU/CSU",
+            "page": None, "quadrant": None},
+       ]}
+
+
+def cut_report(protocol_cut=CUT):
+    report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+    summary = report.setdefault("validation_summary", {})
+    summary.update({"protocol_cut": copy.deepcopy(protocol_cut), "cut_rule_version": cut.CUT_RULE_VERSION,
+                    "speech_kinds_version": dip.speech_kinds.VERSION})
+    return _support.stamp_reviewed(report)
+
+
+class StoreTests(unittest.TestCase):
+    def store(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = pulse_store.connect(Path(tmp.name) / "store.sqlite")
+        self.addCleanup(conn.close)
+        return conn
+
+    # Value: protects=a cut sitting is marked in protocols and its DIP entries are rows of their own, never Reden;
+    #   fails_when=the mark or the 1,618 rows are lost, or they land in speeches/contributions; why_new=schema 16; seam=persist
+    def test_a_cut_sitting_is_marked_and_its_dip_entries_are_stored_apart(self):
+        conn = self.store()
+        pulse_store.persist_report(conn, cut_report(), None)
+        self.assertEqual(tuple(map(tuple, conn.execute("SELECT xml_cut, xml_final_announced, xml_last_rede_id FROM protocols"))),
+                         ((1, "2026-10-13", "R3"),))
+        rows = [tuple(r) for r in conn.execute(
+            "SELECT protocol_id, dip_activity_id, kind, mp_id, dip_person_id, speaker, page, page_quadrant "
+            "FROM unprinted_contributions ORDER BY dip_activity_id")]
+        self.assertEqual(rows, [
+            ("pp-test-1", "x1", "rede", None, "8173", "Dora Dreher, MdB, Die Linke", 104, "A"),
+            ("pp-test-1", "x2", "zu_protokoll", None, None, "Emil Esch, MdB, CDU/CSU", None, None),
+        ])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM speeches WHERE text LIKE '%Dreher%'").fetchone()[0], 0)
+
+    def test_a_whole_sitting_has_no_mark_and_a_repersist_drops_old_rows(self):
+        conn = self.store()
+        pulse_store.persist_report(conn, cut_report(), None)
+        pulse_store.persist_report(conn, cut_report(None), None)
+        self.assertEqual(tuple(map(tuple, conn.execute("SELECT xml_cut, xml_final_announced, xml_last_rede_id FROM protocols"))),
+                         ((0, None, None),))
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM unprinted_contributions").fetchone()[0], 0)
+
+    # Value: protects=the person of an entry resolves by DIP person id after every report and the roster are in,
+    #   so the order of sittings never decides it; fails_when=an entry persisted before its person's mps row stays
+    #   unbound, or a fresh and an incremental build differ; why_new=new table; seam=persist
+    def test_entries_bind_to_the_mps_row_of_their_dip_person_once_all_are_in(self):
+        conn = self.store()
+        pulse_store.persist_report(conn, cut_report(), None)
+        mp_id = conn.execute("SELECT id FROM mps ORDER BY id LIMIT 1").fetchone()[0]
+        conn.execute("UPDATE mps SET dip_person_id = '8173' WHERE id = ?", (mp_id,))
+        pulse_store.resolve_unprinted_people(conn)
+        self.assertEqual([tuple(r) for r in conn.execute(
+            "SELECT dip_activity_id, mp_id FROM unprinted_contributions ORDER BY 1")], [("x1", mp_id), ("x2", None)])
+
+    # Value: protects=a store persisted under another cut rule is stale, as one under another speech rule is;
+    #   fails_when=a store from an older rule reads as current and its marks are wrong; why_new=new rule; seam=persist
+    def test_a_store_under_another_cut_rule_is_stale(self):
+        conn = self.store()
+        pulse_store.persist_report(conn, cut_report(), None)
+        pulse_store.require_current_speech_rules(conn)
+        conn.execute("UPDATE speech_rule_inputs SET cut_rule_version = ?", (cut.CUT_RULE_VERSION - 1,))
+        with self.assertRaisesRegex(RuntimeError, "cut Protokoll files"):
+            pulse_store.require_current_speech_rules(conn)
+
+    def test_a_schema_15_store_is_refused(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT, xml_header_json TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema"):
+            pulse_store.initialize(conn)
+        conn.close()
 
 
 if __name__ == "__main__":

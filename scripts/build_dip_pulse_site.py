@@ -161,6 +161,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen, mündliche Erklärungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
     "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005). Nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
+    "unprinted_contributions": "Was DIP im Teil einer Sitzung nennt, den ihre abgebrochene Protokolldatei nicht druckt (protocols.xml_cut = 1): Reden nach der letzten gedruckten Rede und zu Protokoll gegebene Reden, die keiner gespeicherten entsprechen, je mit Redner wie DIP ihn nennt, Seite und DIP-Kennungen. Ohne Wortlaut und in keiner Zählung: Sie sind keine Reden des Datensatzes.",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, mündliche Erklärung (erklaerung), Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
@@ -2061,6 +2062,8 @@ def _rebuild_database_from_entries(
         except RuntimeError as exc:
             raise DatabaseRebuildError(str(exc)) from exc
         registry.reconcile(store)
+        # After every report and the roster: an entry's person never depends on sitting order (E16).
+        pulse_store.resolve_unprinted_people(store)
         store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
@@ -3653,6 +3656,10 @@ _COLUMN_SOURCE_DERIVED = {
     # interval rules (handover day, Mandat clipping, S5), not copied.
     ("mdb_zugehoerigkeiten", "valid_from"),
     ("mdb_zugehoerigkeiten", "valid_until"),
+    # Whether a Protokoll file is cut short, and what an unprinted entry is, are
+    # protocol_cut's verdict over the XML's notice and DIP's Aktivitäten (E16).
+    ("protocols", "xml_cut"),
+    ("unprinted_contributions", "kind"),
 }
 
 
@@ -3686,7 +3693,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 25
+EXPORT_FORMAT = 26
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.

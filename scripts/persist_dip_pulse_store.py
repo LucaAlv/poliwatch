@@ -27,15 +27,16 @@ import politikfelder
 import antrag_text
 import publication_state as publication
 import vote_links
+import protocol_cut
 from stable_ids import (
     canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
     document_number as document_number_canonical,
     roster_occurrence_id, source_index, speech_occurrence_id, speech_rede_id, stable_key,
-    withheld_occurrence_id, withheld_turn_id,
+    unprinted_contribution_id, withheld_occurrence_id, withheld_turn_id,
 )
 
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -97,6 +98,11 @@ def require_current_schema(conn):
         if not set(registry.REGISTRY_TABLES) <= tables:
             raise registry.RegistryError("Incomplete person registry; restore the build-store backup")
         registry.require_current(conn)
+    protocols = {row[1] for row in conn.execute("PRAGMA table_info(protocols)")}
+    if protocols and "xml_cut" not in protocols:
+        # Schema 15: no mark for a cut Protokoll file and no unprinted_contributions
+        # (E16); the cached reports are read again under the cut rule.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     documents = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
     if documents and "herausgeber" not in documents:
         # Schema 3 keyed a document by number and URL; its ids and junctions
@@ -130,6 +136,15 @@ def require_current_speech_rules(conn: sqlite3.Connection) -> None:
         shown = ", ".join(stale_reviewed[:5]) + (f" and {len(stale_reviewed) - 5} more" if len(stale_reviewed) > 5 else "")
         raise RuntimeError(f"Persisted Reden of {shown} predate the current scripts/reviewed_units.json. "
                            "Run --offline --repersist with the complete cached XML/reports before facts, export or rendering.")
+    # The cut rule decides which sittings are marked and what unprinted_contributions holds (E16).
+    stale_cut = conn.execute(
+        "SELECT p.document_number FROM protocols p JOIN speech_rule_inputs r ON r.protocol_id = p.id "
+        "WHERE r.cut_rule_version IS NOT ? ORDER BY p.document_number LIMIT 1", (protocol_cut.CUT_RULE_VERSION,)
+    ).fetchone() if exists else None
+    if stale_cut:
+        raise RuntimeError(f"Persisted sittings such as {stale_cut[0]} predate the current rule for cut Protokoll files "
+                           f"({protocol_cut.CUT_RULE_VERSION}). Run --offline --repersist with the complete cached "
+                           "XML/reports before facts, export or rendering.")
     # The Antrag passages are a persisted input too: a store persisted by another
     # extractor holds passages the pages would no longer quote.
     stale = conn.execute(
@@ -261,8 +276,31 @@ def initialize(conn: sqlite3.Connection) -> None:
           pdf_url TEXT,
           xml_url TEXT,
           xml_header_json TEXT NOT NULL DEFAULT '{}',
+          -- 1 when the Protokoll XML is a first edition that stops partway
+          -- through the sitting (E16, protocol_cut): its Reden are incomplete.
+          xml_cut INTEGER NOT NULL DEFAULT 0 CHECK (xml_cut IN (0, 1)),
+          xml_final_announced TEXT,
+          xml_last_rede_id TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
+        );
+
+        -- What DIP lists in the part of a sitting its cut Protokoll file does
+        -- not print (E16): Reden after the file's last <rede> and Reden zu
+        -- Protokoll no stored one matches. No text, in no count: they are no Reden.
+        CREATE TABLE IF NOT EXISTS unprinted_contributions (
+          id TEXT PRIMARY KEY NOT NULL,
+          protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+          dip_activity_id TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('rede', 'zu_protokoll')),
+          mp_id TEXT REFERENCES mps(id) ON DELETE SET NULL,
+          dip_person_id TEXT,
+          speaker TEXT NOT NULL,
+          page INTEGER,
+          page_quadrant TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(protocol_id, dip_activity_id)
         );
 
         CREATE TABLE IF NOT EXISTS agenda_items (
@@ -372,7 +410,9 @@ def initialize(conn: sqlite3.Connection) -> None:
           protocol_id TEXT PRIMARY KEY NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
           version INTEGER,
           -- reviewed_units.digest of the reviewed-list entries the parse applied
-          reviewed_digest TEXT
+          reviewed_digest TEXT,
+          -- protocol_cut.CUT_RULE_VERSION the report was read under
+          cut_rule_version INTEGER
         );
 
         -- Reden the parser withheld (ADR 0005): a refused Rede, or one on the
@@ -616,6 +656,8 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_vote_members_mp ON vote_members(mp_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
         CREATE INDEX IF NOT EXISTS idx_votes_detail_url ON votes(detail_url);
+        CREATE INDEX IF NOT EXISTS idx_unprinted_protocol ON unprinted_contributions(protocol_id);
+        CREATE INDEX IF NOT EXISTS idx_unprinted_mp ON unprinted_contributions(mp_id);
         """
         % {
             "labels": _sql_list(politikfelder.ALLOWED_LABELS),
@@ -1971,6 +2013,45 @@ def persist_vote_passages(
         conn.execute("UPDATE votes SET passage_state = ? WHERE id = ?", (answer.state, vote_id))
 
 
+def persist_unprinted(conn: sqlite3.Connection, report: dict[str, Any], protocol_id: str, now: str) -> None:
+    """The mark of a cut Protokoll file on ``protocols`` and the DIP entries in
+    the part it does not print (E16, ``validation_summary.protocol_cut``). A
+    whole sitting is unmarked and has none. ``mp_id`` stays empty here:
+    ``resolve_unprinted_people`` binds it once every report and the roster are
+    in, so the order of the sittings cannot decide it."""
+    cut = (report.get("validation_summary") or {}).get("protocol_cut")
+    conn.execute("DELETE FROM unprinted_contributions WHERE protocol_id = ?", (protocol_id,))
+    conn.execute(
+        "UPDATE protocols SET xml_cut = ?, xml_final_announced = ?, xml_last_rede_id = ? WHERE id = ?",
+        (1, clean(cut.get("announced")), clean(cut.get("last_rede_id")), protocol_id) if cut
+        else (0, None, None, protocol_id),
+    )
+    for entry in (cut or {}).get("entries") or []:
+        conn.execute(
+            """
+            INSERT INTO unprinted_contributions(
+              id, protocol_id, dip_activity_id, kind, mp_id, dip_person_id, speaker, page, page_quadrant,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                unprinted_contribution_id(protocol_id, entry["dip_activity_id"]), protocol_id,
+                str(entry["dip_activity_id"]), entry["kind"], canonical_dip_person_id(entry.get("dip_person_id")),
+                clean(entry.get("speaker")) or "", entry.get("page"), clean(entry.get("quadrant")), now, now,
+            ),
+        )
+
+
+def resolve_unprinted_people(conn: sqlite3.Connection) -> None:
+    """Bind every unprinted entry to the ``mps`` row of its DIP person, where
+    one has that ``dip_person_id``; the rest stay unbound."""
+    conn.execute(
+        "UPDATE unprinted_contributions SET mp_id = "
+        "(SELECT m.id FROM mps m WHERE m.dip_person_id = unprinted_contributions.dip_person_id)"
+    )
+
+
 def persist_report(
     conn: sqlite3.Connection, report: dict[str, Any], vorgang_cache: dict[str, Any] | None = None
 ) -> None:
@@ -2001,12 +2082,15 @@ def persist_report(
     _warn_merged_redner_ids(report)
     with conn:
         replace_protocol(conn, report, now)
-        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs(protocol_id, version, reviewed_digest) VALUES (?, ?, ?)",
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs(protocol_id, version, reviewed_digest, cut_rule_version) "
+                     "VALUES (?, ?, ?, ?)",
                      (protocol_id, (report.get("validation_summary") or {}).get("speech_kinds_version"),
                       # Every parse records the entries it applied; a report
                       # without the key predates rule 8 and is refused by version.
                       protocol["reviewed_digest"] if "reviewed_digest" in protocol
-                      else reviewed_units.sitting_digest(str(protocol.get("dokumentnummer") or ""))))
+                      else reviewed_units.sitting_digest(str(protocol.get("dokumentnummer") or "")),
+                      (report.get("validation_summary") or {}).get("cut_rule_version")))
+        persist_unprinted(conn, report, protocol_id, now)
         persist_sampled_people(conn, report, now)
         persist_contributions(conn, protocol_id, {"index": 0, "xml_contributions": report.get("xml_contributions") or []}, None, now, protocol)
         # The report is a complete snapshot for this sitting. Remove old votes

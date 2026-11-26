@@ -640,7 +640,8 @@ def site_report(xml, entries, number):
                          'pdf_url': 'https://dserver.bundestag.de/btp/21/21002.pdf'},
             'agenda_items': [dict(index=t['index'], **dip.xml_top_fields(t)) for t in parsed['agenda_items']],
             'xml_contributions': parsed.get('sitting_contributions', []),
-            'validation_summary': dip.contribution_summary(parsed['agenda_items'], parsed.get('sitting_contributions'))}
+            'validation_summary': {**dip.contribution_summary(parsed['agenda_items'], parsed.get('sitting_contributions')),
+                                   **dip.protocol_cut.cut_summary(parsed, [])}}
 
 
 class SiteTests(unittest.TestCase):

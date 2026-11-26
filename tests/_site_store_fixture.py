@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import _support  # noqa: F401
+import protocol_cut
 import build_dip_pulse_site as site
 import facts
 import speech_kinds
@@ -76,6 +77,8 @@ def persistable(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         protocol = report.setdefault("protocol", {})
         protocol.setdefault("id", f"test-{protocol.get('dokumentnummer') or len(complete)}")
         report.setdefault("validation_summary", {}).setdefault("speech_kinds_version", speech_kinds.VERSION)
+        report.setdefault("validation_summary", {}).setdefault("cut_rule_version", protocol_cut.CUT_RULE_VERSION)
+        report.setdefault("validation_summary", {}).setdefault("protocol_cut", None)
         _support.stamp_reviewed(report)
         complete.append(entry)
     return complete

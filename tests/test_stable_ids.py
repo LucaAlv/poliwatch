@@ -267,6 +267,8 @@ def documents_report():
     and DIP links BT 20/456."""
     r = json.loads((_support.FIXTURES / 'report.json').read_text(encoding='utf-8'))
     r.setdefault('validation_summary', {})['speech_kinds_version'] = speech_kinds.VERSION
+    r.setdefault('validation_summary', {})['cut_rule_version'] = protocol_cut.CUT_RULE_VERSION
+    r.setdefault('validation_summary', {}).setdefault('protocol_cut', None)
     r['validation_summary']['vote_inputs_version'] = vote_links.INPUTS_VERSION
     r['validation_summary']['cut_rule_version'] = protocol_cut.CUT_RULE_VERSION
     r['validation_summary']['protocol_cut'] = None

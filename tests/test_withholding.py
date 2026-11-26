@@ -50,7 +50,8 @@ def report(parsed, number="18/7"):
                          "reviewed_digest": parsed["reviewed_digest"]},
             "agenda_items": [dict(index=t["index"], **dip.xml_top_fields(t)) for t in parsed["agenda_items"]],
             "xml_contributions": parsed.get("sitting_contributions", []),
-            "validation_summary": dip.contribution_summary(parsed["agenda_items"], parsed.get("sitting_contributions"))}
+            "validation_summary": {**dip.contribution_summary(parsed["agenda_items"], parsed.get("sitting_contributions")),
+                                   **dip.protocol_cut.cut_summary(parsed, [])}}
 
 
 def entry(rid, redner="", sitting_number="18/7"):
