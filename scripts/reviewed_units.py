@@ -46,6 +46,17 @@ entry with a ``kind``:
   is one ``split_nested_reden`` made: the Inhaltsverzeichnis then gives only the
   place of the rest. Elsewhere it is empty, and the first part's own page stands.
 
+- ``annex_rede`` (``docs/source-errors.md`` E17, ``docs/plans/e17-wp18-texts.md``):
+  a written Rede that a zu-Protokoll annex prints without a ``<rede>`` of its own,
+  read by ``validate_dip_protocol.mark_annex_texts``. ``rede_id`` names where it
+  stands: the annex ``<rede>`` that holds it, or ``A<n>`` for annex block ``n``
+  (every ``anlagen-text`` of the sitting, 1-based) when it stands in no
+  ``<rede>``. The entry adds ``label``, the words that name the writer where the
+  text begins, as printed (a marker's label, the start of a paragraph up to its
+  colon, or words of the block heading), and ``name``, the tag the unit's marker
+  carries (``validate_dip_protocol.name_tag_marker``), which for a printed marker
+  is its label. ``redner_id`` is the writer's.
+
 ``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
 unit the sitting does not hold, or whose owner differs, stops the run
 (``validate_dip_protocol``): the list, not the source, needs correcting.
@@ -108,11 +119,15 @@ UNIT_KINDS = frozenset({"rede", "kurzintervention", "erwiderung", "erklaerung", 
 #: A ``<rede>`` that goes on with the Rede before it in its TOP, which the XML ended
 #: at a remark of the chair (ADR 0004, amendment 2026-11-23 on split Reden): the two are one Rede.
 OWN_WORDS = "own_words"
-KINDS = frozenset({WITHHOLD, OWN_WORDS}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
+#: A written Rede a zu-Protokoll annex prints without a ``<rede>`` of its own
+#: (docs/source-errors.md E17): it becomes one, by ``mark_annex_texts``.
+ANNEX_REDE = "annex_rede"
+KINDS = frozenset({WITHHOLD, OWN_WORDS, ANNEX_REDE}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
 ENTRY_KEYS = frozenset({"sitting", "rede_id", "redner_id", "kind", "reason"})
 NAME_ENTRY_KEYS = ENTRY_KEYS | {"name"}
 LOOSE_ENTRY_KEYS = ENTRY_KEYS | {"attach"}
 OWN_WORDS_ENTRY_KEYS = ENTRY_KEYS | {"page"}
+ANNEX_ENTRY_KEYS = ENTRY_KEYS | {"name", "label"}
 SITTING_RE = re.compile(r"^\d{2}/\d{1,3}$")
 REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+(?::\d+)*$")
 WHOLE_REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
@@ -120,6 +135,7 @@ REDNER_ID_RE = re.compile(r"^\d+$")
 NAME_REDNER_ID_RE = re.compile(r"^(?:\d+|dip:[1-9]\d*)$")
 NAME_REDE_ID_RE = re.compile(r"^(?:[A-Za-z0-9]+|N[1-9]\d*)$")
 LOOSE_REDE_ID_RE = re.compile(r"^M[1-9]\d*$")
+ANNEX_REDE_ID_RE = re.compile(r"^(?:A[1-9]\d*|(?!A\d+$)[A-Za-z0-9]+)$")
 PAGE_RE = re.compile(r"^([1-9]\d{0,5})([A-D])$")
 
 _cache: dict[Path, dict[str, list[dict[str, str]]]] = {}
@@ -143,8 +159,9 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         name_kind = isinstance(entry, dict) and entry.get("kind") in NAME_KINDS
         loose_kind = isinstance(entry, dict) and entry.get("kind") in LOOSE_KINDS
         own_words = isinstance(entry, dict) and entry.get("kind") == OWN_WORDS
+        annex_kind = isinstance(entry, dict) and entry.get("kind") == ANNEX_REDE
         keys = (NAME_ENTRY_KEYS if name_kind else LOOSE_ENTRY_KEYS if loose_kind
-                else OWN_WORDS_ENTRY_KEYS if own_words else ENTRY_KEYS)
+                else OWN_WORDS_ENTRY_KEYS if own_words else ANNEX_ENTRY_KEYS if annex_kind else ENTRY_KEYS)
         if not isinstance(entry, dict) or set(entry) != keys:
             raise ReviewedUnitsError(f"{label} must have exactly the keys {', '.join(sorted(keys))}")
         for key in keys:
@@ -160,6 +177,12 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
             if entry["attach"] not in LOOSE_ATTACH[entry["kind"]]:
                 raise ReviewedUnitsError(f"{label}: {entry['attach']!r} is no place for a {entry['kind']} entry; "
                                          f"its attach must be one of {', '.join(sorted(LOOSE_ATTACH[entry['kind']]))}")
+        elif annex_kind:
+            if not ANNEX_REDE_ID_RE.fullmatch(entry["rede_id"]):
+                raise ReviewedUnitsError(f"{label}: an annex_rede entry names an annex <rede> or A<block>, not {entry['rede_id']!r}")
+            for key in ("name", "label"):
+                if entry[key] != entry[key].strip(" :"):
+                    raise ReviewedUnitsError(f"{label}: {key} {entry[key]!r} is printed words without a colon or outer spaces")
         elif not REDE_ID_RE.fullmatch(entry["rede_id"]) and not (name_kind and NAME_REDE_ID_RE.fullmatch(entry["rede_id"])):
             raise ReviewedUnitsError(f"{label}: rede_id {entry['rede_id']!r} is not a <rede> id or a split part <id>:<n>")
         if entry["kind"] not in KINDS:
