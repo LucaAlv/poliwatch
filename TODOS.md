@@ -121,6 +121,20 @@ Found by `code-review` on the working tree of `claude/paragraph-breaks` (Standar
 **Priority:** P3
 **Depends on:** None
 
+### E17 annex texts: what the code review of 2026-11-26 leaves open
+
+**What:** Found by `code-review` (high) of `claude/e17-wp18-texts-8bc435`; none is reached by the 806 held sittings.
+1. **Keys of annex Reden without an id can shift.** `raw_rede_inventory` keys an id-less annex `<rede>` `annex:<block>:<n>` before any tree edit; `written_contributions` counts `<n>` again after `mark_annex_texts` has inserted a split part (after its host) or a wrapped text (at `place`). Every id-less `<rede>` after the insertion moves on by one, and the new unit can take the old key `annex:<block>:<place>`, so `reconcile_reden` refuses the sitting. No held annex `<rede>` lacks an id. Fix: carry the inventory key per element through the edit, or have `mark_annex_texts` refuse an entry whose block holds an id-less `<rede>` after its place; test first.
+2. **Two texts in one place cannot be listed.** `reviewed_units._check` keys an `annex_rede` entry by (sitting, `rede_id`), so a second entry for the same `A<n>` block or host `<rede>` with another `label` is refused as "listed twice", and the guard keeps refusing that sitting. Fix: key annex entries by (sitting, `rede_id`, `label`), as name kinds add `name`; `mark_annex_texts` then needs to apply two entries of one host in order of their place.
+3. **`ANNEX_HEADINGS` duplicates a literal.** `validate_dip_protocol.py` defines `ANNEX_HEADINGS` for `mark_annex_texts`, and `written_contributions` repeats `{"Anlage_2", "Anlage_3", "Anlage_Strich"}` where a heading resets the TOP context. Use the constant in both places.
+4. **"two writers" understates the guard.** `docs/data-methods.md` ("Rednermarken zweier Redner-IDs") and `docs/source-errors.md` E17 "Our side" ("two writers' markers") describe the guard; the code refuses any `<rede>` whose markers carry other than one Redner-ID (`len(ids) != 1`). Write "zweier oder mehr" / "two or more".
+
+**Why:** 1 and 2 would refuse a future sitting with no fix through the list; 3 and 4 are drift and wording.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Census script of the Protokoll gap: hygiene
 
 **What:** `docs/plans/zu-protokoll-gap/census.py`: the docstring names neither the TSV columns nor that `fehlend_zu_protokoll` can be negative; a missing page prints as `0`, so `dip_reden_danach` 0 reads as none after (20/7, 20/97, 18/223, 19/161 print no pages; only stderr says so); one Counter mixes contribution kinds and table names; `anfangsseite` of a Vorgangsposition is compared as it stands, so a page given as text would stop the run (Codex, 2026-11-24; all 43,423 cached are numbers); the soft hyphen in the regex is a literal U+00AD.
@@ -2721,7 +2735,7 @@ None of them goes through `derive_presentation_state` (`publication_state.py` 96
 
 One line per finished item, giving the version and PR that shipped it, or the date it closed. When you finish an item, replace its entry with one line here. What changed belongs in CHANGELOG.md and the PR. The full entries up to the 2026-11-02 cleanup are in git history (`git show c932255:TODOS.md`).
 
-- WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own (source-errors E17, P1): built 2026-11-26 on branch `claude/e17-wp18-texts-8bc435`. Twelve entries of kind `annex_rede` in `scripts/reviewed_units.json`, placed by `mark_annex_texts`; an unlisted structural shape refuses its sitting. `zu_protokoll` 4,164 → 4,174, Lenkert's and Engelmeier's words leave Thews and Steiniger, Freudenstein's and Böhmer's rows get speaker and text; Reden and Fakten unchanged (`docs/plans/e17-wp18-texts.md`, "Outcome"). What it leaves open: "Bullet points of written Reden printed between two `<rede>`s".
+- WP 18: ten Reden zu Protokoll printed without a `<rede>` of their own (source-errors E17, P1): built 2026-11-26 on branch `claude/e17-wp18-texts-8bc435`. Twelve entries of kind `annex_rede` in `scripts/reviewed_units.json`, placed by `mark_annex_texts`; an unlisted structural shape refuses its sitting; speech rule 17. `zu_protokoll` 4,164 → 4,174, Lenkert's and Engelmeier's words leave Thews and Steiniger, Freudenstein's and Böhmer's rows get speaker and text; Reden and Fakten unchanged (`docs/plans/e17-wp18-texts.md`, "Outcome"). What it leaves open: "Bullet points of written Reden printed between two `<rede>`s".
 - Roster MdB records that never join their speaker (56 empty duplicate Personenseiten): v0.46.53.0, 2026-11-25. 41 pairs by a name rule with a namesake guard, 15 by reviewed `same_person` entries; empty MdB persons 56 → 0, `docs/plans/roster-duplicates/report.md`. What it leaves open: "Roster duplicates: what the build and its code review leave open".
 - Paragraph breaks and WP 18 block quotes (owner decision 4 of 2026-11-23, "ADR 0003 legal questions" question 7): v0.46.50.0, 2026-11-23. Printed paragraphs separated by one line feed in the wording, `<zitat>` read; speech rule 15, export format 25. What it leaves open: "Paragraph breaks and block quotes: what the code review left open".
 - Turns DIP types otherwise (owner decisions of 2026-11-23, 1 to 3; "Oral Erklärungen nach § 31: Rede or not?"): v0.46.49.0, 2026-11-23. 514 entries of scripts/reviewed_units.json, Kind `erklaerung`, 24 bare motions `procedural`, the DIP row guard (`docs/plans/beitraege-as-reden.md`). What it leaves open: "Turns DIP types otherwise: what the build of 2026-11-23 leaves open".

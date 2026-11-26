@@ -308,3 +308,17 @@ class RealSittingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReplayTests(unittest.TestCase):
+    # Value: protects=a store parsed before the annex page rule and the annex guard re-reads every sitting, so an incremental
+    #   run fills 19/36 ID193616800's page (3543) as a fresh build does and checks every cached sitting against the guard;
+    #   fails_when=the speech rule stays at 16, so only the ten sittings whose reviewed digest changed are re-read;
+    #   why_new=code review of 2026-11-26 (the page rule and the guard change parses outside the listed sittings); seam=stale_causes
+    def test_a_report_parsed_before_the_annex_rules_is_stale(self):
+        import build_dip_pulse_site as build
+        import vote_links
+        protocol = {"dokumentnummer": "19/36", "xml_url": "https://example.test/19-36.xml"}
+        summary = {"speech_kinds_version": 16, "vote_inputs_version": vote_links.INPUTS_VERSION}
+        old = _support.stamp_reviewed({"protocol": protocol, "validation_summary": summary})
+        self.assertEqual(build.stale_causes(old), ("rule",))

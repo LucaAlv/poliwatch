@@ -59,7 +59,7 @@ An entry whose label is not found once, whose marker carries another Redner-ID, 
 | Freudenstein, Böhmer | their `<rede>` id, as today |
 | Petry, Schuster, Koschyk, Hakverdi | `annex:2:1`, `annex:16:1`, `annex:5:1`, `annex:2:1` |
 
-No speech-rule bump: the parse changes only where an entry applies, and the reviewed digests of the ten sittings force their replay. No new export format or schema: no column changes.
+Speech rule 16 → 17. The entries change the parse only where one applies, and the reviewed digests of the ten sittings force their replay, but the block page rule above and the guard apply to every sitting: without the bump an incremental run re-read only the ten, kept 19/36 `ID193616800` without a page (a fresh build gives 3543) and never checked a cached sitting against the guard (code review of 2026-11-26). No new export format or schema: no column changes.
 
 ## Figures expected to move
 
