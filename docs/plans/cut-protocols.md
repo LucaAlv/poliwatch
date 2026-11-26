@@ -46,6 +46,22 @@ Branch `claude/cut-protocols-6541f3`, on `claude/cut-protocols-baseline`. Store 
 
 **Left to step 7:** the receipt line of a Fakt with a corrected end ("Ende laut PDF 1.28 Uhr, laut Protokolldatei 01:30 Uhr"): no page prints a clock time yet, so it is reader-facing work. The citation already reads the corrected end.
 
+## Steps 7 to 10 built (2026-11-26)
+
+Branch `claude/cut-protocols-7-10-9fbef1`, on main ec946fe (v0.46.57.0). Store schema 16 (unchanged), export format 27 → 28, cut rule 1 → 2. Re-check both numbers against origin/main before shipping.
+
+**Replay.** Baseline `.context/main-57-baseline`: `.context/cut-protocols-after` replayed with `--offline --repersist --today 2026-11-25` on ec946fe (8 min). After: a clone of it replayed the same way on 669aa5f (`.context/cut-7-10-after`, 8 min), then re-rendered `--offline` on d162733 (the Fakten week fix, pages only). `compare_store_values.py`, `--cohort all` and `shared`: every row count, Rede, Beitrag, vote, vote group, Redeanteil, withheld Rede and Fakt equal. Baseline and after: 806 sittings, 61,104 Reden, 4,174 `zu_protokoll`, 33 marked, 1,189 `rede` and 429 `zu_protokoll` in `unprinted_contributions` (row for row identical), four corrected end times, 571 of 1,944 Fakten published.
+
+**What moves, old → new:**
+- `speech_rule_inputs.cut_rule_version`: 1 → 2 on all 806 sittings (items 2, 3, 9).
+- Export format 27 → 28; the manifest gains `coverage.cut_protocols` (WP 19: 1 sitting, 41 Reden, 0 zu Protokoll; WP 20: 11, 389, 148; WP 21: 21, 759, 281), DATA.md its tables, the Daten page its line. Of the CSVs only `speech_rule_inputs` (the version) and `datenstand` (format, source digest) differ, besides the timestamps a repersist writes.
+- **Rule change effects of items 2 and 3: none on the 806 sittings.** No marked sitting holds a withheld Rede, and every cut place and every DIP Rede compared in the 33 has a quadrant, so the same 33 are marked with the same rows.
+- **Fakten: none.** [facts-after-steps-7-10.tsv](cut-protocols/facts-after-steps-7-10.tsv) holds the header only: 0 of 1,944 `facts` rows differ in completeness, value, denominator, percentile, withheld reason, publishability or rank.
+
+**Census rerun** (`docs/plans/zu-protokoll-gap/`, on the after replay): 37 rows, was 47 on 2026-11-23. The ten WP 18 rows went with E17 (#223); 19/107, 20/185 and 21/108 store one Rede fewer (167 → 166, 134 → 133, 137 → 136) since #217. Totals unchanged: 33 sittings, 1,189 Reden after the cut, 429 Reden zu Protokoll.
+
+**Browser** (gstack's headless browser, the replayed site over a local HTTP server, 375 × 812 and 1280 × 900, light and dark): dossier 21/99 (note, PDF link `#page=176`, the 97 speakers in two columns on desktop), Puls KW 46 (21/108: 37 Reden), Fakten 2026-W41 and 2026-W39 (receipt "Ende laut PDF 00:15 Uhr (S. 214 ↗), laut Protokolldatei 00:16 Uhr"), Daten, person page p-002188 (8 sittings, 10 Reden). No horizontal scroll, no console errors. The check found one gap, fixed in d162733: a Fakten week that posts a Fakt (2026-W41, the längste Sitzung of 21/99) listed no metric the cut keeps incomplete; it now lists them with the gap note.
+
 ## Steps 7 to 10 read against v0.46.57.0 (2026-11-26, before the build)
 
 Branch `claude/cut-protocols-7-10-9fbef1`, cut from main at ec946fe (v0.46.57.0). Since the plan was written main gained E17 (#223), E4 (#221) and the accent headings (#222). What that changes for steps 7 to 10:
@@ -164,7 +180,7 @@ Each is one commit with its tests. Tests first where a rule is named.
 ## Acceptance
 
 - 33 sittings marked, the list of E16; 19/107 is not.
-- 1,189 `rede` and 429 `zu_protokoll` rows; 61,104 Reden and 4,164 `zu_protokoll` unchanged.
+- 1,189 `rede` and 429 `zu_protokoll` rows; 61,104 Reden and `zu_protokoll` unchanged (4,164 at steps 1 to 6, 4,174 since E17).
 - 31 weeks and 20 months lose completeness for speeches and no other; none gains it.
 - The four end times are in `sitting_end_corrected`, `xml_header_json` is unchanged, and `laengste-sitzung` has 152 published Fakten (WP 18 42, WP 19 46, WP 20 43, WP 21 21) with 2018-W41 at 988 (was 990), 2024-W26 852 (851), 2026-W28 877 (876), 2026-W39 915 (916) and the percentile of 2024-W41 at 0.587 (0.603 under `times` without the corrections, 0.597 today). No other value moves for the corrections. Simulated 2026-11-24 on the v0.46.49.0 replay; on v0.46.53.0 the 114 published Fakten and these five values before the build are the same.
 - The seven people of step 4 have no debut row.

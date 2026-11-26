@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 import derive
 import politikfelder
+import protocol_cut
 import antrag_text
 from stable_ids import contribution_occurrence_id, source_index, speech_occurrence_id, speech_rede_id
 from stable_ids import document_issuer, document_number as stable_document_number
@@ -1902,7 +1903,7 @@ def report_cut(report: dict[str, Any]) -> dict[str, Any] | None:
         **cut,
         "reden": sum(1 for entry in entries if entry.get("kind") == "rede"),
         "zu_protokoll": sum(1 for entry in entries if entry.get("kind") == "zu_protokoll"),
-        "indexed": bool((report.get("api_records") or {}).get("aktivitaeten")),
+        "indexed": protocol_cut.dip_indexed(report),
     }
 
 

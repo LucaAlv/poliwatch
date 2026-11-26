@@ -249,6 +249,13 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
     }
 
 
+def dip_indexed(report: dict[str, Any]) -> bool:
+    """Whether a report holds DIP's Aktivitäten for its sitting: without them a
+    cut's list is empty because DIP has not indexed the sitting, not because
+    nothing is missing (``facts.CUT_PROTOCOL_UNINDEXED``)."""
+    return any(isinstance(activity, dict) for activity in (report.get("api_records") or {}).get("aktivitaeten") or [])
+
+
 def cut_summary(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | None) -> dict[str, Any]:
     """The ``validation_summary`` keys of the rule, for a built and a re-parsed
     report alike: the cut (or None) and the rule's version."""
