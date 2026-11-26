@@ -3796,7 +3796,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 27
+EXPORT_FORMAT = 28
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -4753,6 +4753,33 @@ def _withheld_coverage(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"by_year": by_year, "by_fraktion": by_fraktion, "by_sitting": by_sitting, "units": units}
 
 
+def _cut_coverage(conn: sqlite3.Connection) -> dict[str, Any]:
+    """The cut Protokoll files (E16) and what DIP lists after each cut, per
+    Wahlperiode and per sitting, read from the store: the manifest, DATA.md and
+    the Daten page give these figures, so none is typed into a document."""
+    rows = conn.execute(
+        "SELECT p.document_number, p.date, p.xml_final_announced, p.xml_last_rede_id, p.sitting_end_corrected, "
+        "json_extract(p.xml_header_json, '$.sitzung_end'), "
+        "(SELECT COUNT(*) FROM unprinted_contributions u WHERE u.protocol_id = p.id AND u.kind = 'rede'), "
+        "(SELECT COUNT(*) FROM unprinted_contributions u WHERE u.protocol_id = p.id AND u.kind = 'zu_protokoll') "
+        "FROM protocols p WHERE p.xml_cut = 1"
+    ).fetchall()
+    by_sitting = sorted(
+        ({"document_number": number, "date": date_text, "announced": announced, "last_rede_id": last_rede,
+          "reden": int(reden), "zu_protokoll": int(written), "sitting_end_corrected": corrected, "xml_sitting_end": xml_end}
+         for number, date_text, announced, last_rede, corrected, xml_end, reden, written in rows),
+        key=lambda row: _document_number_order(row["document_number"]))
+    by_wp: dict[str, dict[str, Any]] = {}
+    for row in by_sitting:
+        wp = _protocol_wahlperiode(row["document_number"])
+        cell = by_wp.setdefault(wp, {"wp": wp, "sittings": 0, "reden": 0, "zu_protokoll": 0})
+        cell["sittings"] += 1
+        cell["reden"] += row["reden"]
+        cell["zu_protokoll"] += row["zu_protokoll"]
+    by_wahlperiode = [cell for _wp, cell in sorted(by_wp.items(), key=lambda item: (not item[0].isdigit(), int(item[0]) if item[0].isdigit() else 0))]
+    return {"by_wahlperiode": by_wahlperiode, "by_sitting": by_sitting}
+
+
 # Each column's DATA.md licence layer must fit the source tag datenstand.json
 # ships for it, so the two files never give one column different terms.
 def _check_license_layers(manifest_tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> None:
@@ -4874,6 +4901,36 @@ def _pct(share: float | None) -> str:
     return "unbekannt" if share is None else f"{share * 100:.2f} %"
 
 
+def _codebook_cut(coverage: dict[str, Any]) -> list[str]:
+    """The cut Protokoll files (E16) per Wahlperiode and per sitting, from the
+    manifest's ``coverage.cut_protocols``: generated, so the figures follow
+    every cut Thursday the store holds."""
+    cut = coverage.get("cut_protocols") or {"by_wahlperiode": [], "by_sitting": []}
+    lines = ["", "### Abgebrochene Protokolldateien", "",
+             "Eine **abgebrochene Protokolldatei** ist eine Protokoll-XML, die als Erstausgabe vor dem Ende ihrer Sitzung "
+             "endet und nicht durch die endgültige ersetzt wurde (`protocols.xml_cut = 1`; „Abgebrochene "
+             "Protokolldateien“ unter den Methoden). Die Zahlen sind DIP-Aktivitäten im nicht gedruckten Teil "
+             "(`unprinted_contributions`): Reden nach der letzten gedruckten Rede und zu Protokoll gegebene Reden, denen "
+             "keine gespeicherte entspricht. Sie stehen in keiner Zählung. „Ende laut PDF“ nennt das Sitzungsende, das die "
+             "geprüfte Liste `scripts/reviewed_end_times.json` aus dem gedruckten Protokoll übernimmt, mit dem der Datei in "
+             "Klammern; „–“: keine Korrektur.", ""]
+    if not cut["by_sitting"]:
+        return lines + ["In diesem Datenbestand endet keine Protokolldatei vorzeitig."]
+    lines += ["| WP | Sitzungen | Reden laut DIP nicht gedruckt | zu Protokoll gegebene Reden nicht gedruckt |",
+              "| --- | ---: | ---: | ---: |"]
+    for row in cut["by_wahlperiode"]:
+        lines.append(f"| {row['wp']} | {row['sittings']} | {row['reden']} | {row['zu_protokoll']} |")
+    lines += ["", "| Sitzung | Datum | Letzte gedruckte Rede | Reden nicht gedruckt | zu Protokoll nicht gedruckt | "
+              "Endgültiger Bericht angekündigt für | Ende laut PDF |",
+              "| --- | --- | --- | ---: | ---: | --- | --- |"]
+    for row in cut["by_sitting"]:
+        end = (f"{row['sitting_end_corrected']} (Datei {row['xml_sitting_end'] or 'ohne Zeit'})"
+               if row.get("sitting_end_corrected") else "–")
+        lines.append(f"| {row['document_number']} | {row['date'] or 'unbekannt'} | {_md_cell(row['last_rede_id'] or 'unbekannt')} | "
+                     f"{row['reden']} | {row['zu_protokoll']} | {row['announced'] or 'unbekannt'} | {end} |")
+    return lines
+
+
 def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
     """N9 (ADR 0005): coverage by sittings and by Reden, the withheld share by
     own words per year, Fraktion and sitting, and the sittings kept out."""
@@ -4917,6 +4974,7 @@ def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
                          f"{row['words_withheld']} | {row['words_stored']} | {_pct(row['share'])} |")
     else:
         lines += ["", "In diesem Datenbestand ist keine Rede zurückgehalten."]
+    lines += _codebook_cut(coverage)
     excluded = coverage.get("excluded") or []
     lines += ["", "### Ausgeschlossene Sitzungen", "",
               "Eine Sitzung bleibt nur ganz draußen, wenn ihre Quelle fehlerhaft ist oder sich ein Fehler nicht auf einzelne "
@@ -5507,6 +5565,7 @@ def _run_export(
         total_rows = sum(table["row_count"] for table in tables_info)
         wahlperioden = _snapshot_coverage(snapshot_conn)
         withheld_coverage = _withheld_coverage(snapshot_conn)
+        cut_coverage = _cut_coverage(snapshot_conn)
     finally:
         snapshot_conn.close()
     vacuum_path.unlink()
@@ -5567,6 +5626,9 @@ def _run_export(
             # N9 (ADR 0005): the withheld share by own words, per year, per
             # Fraktion and year, and per sitting with a withheld Rede.
             "withheld": withheld_coverage,
+            # The cut Protokoll files (E16): what DIP lists after each cut, per
+            # Wahlperiode and per sitting (protocols.xml_cut, unprinted_contributions).
+            "cut_protocols": cut_coverage,
         },
         # Every withheld Rede by key, so a release names the ones it adds (D5, D9).
         "withheld_reden": withheld_coverage.pop("units"),
@@ -5751,6 +5813,16 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         coverage_line += (
             f" &middot; {pulse_html.format_int(held)} {'Rede' if held == 1 else 'Reden'} zurückgehalten ({pulse_html.format_int(held_words)} Wörter, "
             f"{share * 100:.2f} % der Redewörter; nicht mitgezählt, Text in withheld_units)"
+        )
+    cut_sittings = (coverage.get("cut_protocols") or {}).get("by_sitting") or []
+    if cut_sittings:
+        reden = sum(row["reden"] for row in cut_sittings)
+        written = sum(row["zu_protokoll"] for row in cut_sittings)
+        coverage_line += (
+            f" &middot; {pulse_html.esc(pulse_html.format_count(len(cut_sittings), 'Protokolldatei endet', 'Protokolldateien enden'))} vorzeitig "
+            f"(laut DIP {pulse_html.esc(pulse_html.format_count(reden, 'Rede', 'Reden'))} und "
+            f"{pulse_html.esc(pulse_html.format_count(written, 'zu Protokoll gegebene Rede', 'zu Protokoll gegebene Reden'))} "
+            "nicht gedruckt; nicht mitgezählt, Liste in unprinted_contributions)"
         )
     scope_exceptions = ", bis auf die ausgeschlossenen Sitzungen (unten)" if excluded else ""
     bausteine_line = " &middot; ".join(
@@ -10056,6 +10128,8 @@ def abgeordnete_styles() -> str:
     .redner-group { margin-top:32px; }
     .redner-group h2 { margin:0 0 6px; font-size:20px; }
     .redner-group p { margin:0; color:var(--muted); }
+    /* What DIP lists in cut Protokoll files (E16): a gap said in words, above the list. */
+    .cut-note { margin:0 0 12px; font-size:14px; line-height:1.5; max-width:72ch; }
     .mp-table th, .mp-table td {
       text-align:left;
       padding:9px 10px;

@@ -1884,7 +1884,8 @@ def cut_gap_sentence(
         parts.append(format_count(reden, "Rede", "Reden"))
     if zu_protokoll:
         parts.append(format_count(zu_protokoll, "zu Protokoll gegebene Rede", "zu Protokoll gegebene Reden"))
-    verb = "fehlt" if reden + (zu_protokoll or 0) == 1 else "fehlen"
+    # None: the caller names Reden only (Redeanteil counts no Beitrag), so none are added.
+    verb = "fehlt" if reden + (0 if zu_protokoll is None else zu_protokoll) == 1 else "fehlen"
     tail = f", und {', '.join(open_)} hat DIP noch nicht erfasst" if open_ else ""
     return f"{head} endet die Protokolldatei vorzeitig; {' und '.join(parts)} laut DIP {verb} {where}{tail}."
 
