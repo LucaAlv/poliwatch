@@ -42,6 +42,8 @@ Branch `claude/cut-protocols-6541f3`, on `claude/cut-protocols-baseline`. Store 
 
 **Values that move:** `laengste-sitzung` 2018-W41 990 → 988, 2024-W26 851 → 852, 2026-W28 876 → 877, 2026-W39 916 → 915 (the four PDF end times), 2019-W45 598 → 1,029 (dot times); `erste-reden` 2025-W28 28 → 27, 2025-W39 7 → 6, 2025-W51 1 → 0 (step 4). The percentile of `laengste-sitzung` 2024-W41 is 0.587 (0.597 before), as planned.
 
+**Store gate** (`validate_store_gate.py --today 2026-11-25` on a clone of the replayed store, 30 min): all 20 checks pass, among them the new `cut_protocols_hold` (33 marked, 1,189 and 429 rows, 19/107 whole by the rule, rule 3 finds nothing) and `corrected_end_times_hold` (four entries applied, each `pdf_md5` the catalog's `pdf_hash`), order independence and an unchanged second replay that keeps the store.
+
 **Left to step 7:** the receipt line of a Fakt with a corrected end ("Ende laut PDF 1.28 Uhr, laut Protokolldatei 01:30 Uhr"): no page prints a clock time yet, so it is reader-facing work. The citation already reads the corrected end.
 
 ## What changes
