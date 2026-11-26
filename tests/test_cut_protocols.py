@@ -741,6 +741,18 @@ class GateTests(unittest.TestCase):
         output, database = self.output(xml, report)
         self.assertEqual(gate.cut_protocol_check(output, database)["rule3"], [])
 
+    # Value: protects=the gate names a report without its count of Reden or withheld Reden instead of judging rule 3 by
+    #   a guess; fails_when=the type check is dropped and None + int raises; why_new=step 9 added the withheld count;
+    #   seam=none; no_claim=the real parser's output (report built by hand)
+    def test_a_report_without_the_withheld_count_is_named_not_judged(self):
+        xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8")
+        report = self.gate_report(None)
+        del report["validation_summary"]["withheld_rede_count"]
+        output, database = self.output(xml, report)
+        result = gate.cut_protocol_check(output, database)
+        self.assertIn("holds no count of Reden or withheld Reden", " ".join(result["problems"]))
+        self.assertEqual(result["rule3"], [])
+
     # Value: protects=no unprinted entry is a stored Rede over again; fails_when=a DIP Rede the file prints is listed as
     #   missing; why_new=step 6; seam=gate
     def test_an_unprinted_entry_on_a_stored_redes_place_fails(self):
