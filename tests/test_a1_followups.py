@@ -623,7 +623,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             store.persist_report(conn, r)
             self.assertEqual(sk.VERSION, 17)
             # pregate-literal: VERSION=16 store schema 16, not the speech rule
-            self.assertEqual(store.SCHEMA_VERSION, 16)
+            self.assertEqual(store.SCHEMA_VERSION, 17)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()

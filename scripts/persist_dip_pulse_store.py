@@ -37,7 +37,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -103,6 +103,10 @@ def require_current_schema(conn):
     if protocols and not {"xml_cut", "sitting_end_corrected"} <= protocols:
         # Schema 15: no mark for a cut Protokoll file and no unprinted_contributions
         # (E16); the cached reports are read again under the cut rule.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if protocols and "xml_cut_unplaced_reden" not in protocols:
+        # Schema 16: no count of the DIP Reden a cut cannot place, so a floor
+        # and a sitting DIP has not indexed would read as exact counts.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     documents = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
     if documents and "herausgeber" not in documents:
@@ -290,6 +294,11 @@ def initialize(conn: sqlite3.Connection) -> None:
           xml_cut INTEGER NOT NULL DEFAULT 0 CHECK (xml_cut IN (0, 1)),
           xml_final_announced TEXT,
           xml_last_rede_id TEXT,
+          -- How many DIP Reden a cut file's cut cannot place before or after it
+          -- (protocol_cut.unplaced): 0 when its count of Reden after the cut is
+          -- exact, more when that count is a floor; NULL when DIP has not indexed
+          -- the sitting (the count is open) and for a sitting that is not cut.
+          xml_cut_unplaced_reden INTEGER CHECK (xml_cut_unplaced_reden >= 0),
           -- The end time the printed PDF gives where scripts/reviewed_end_times.json
           -- corrects the XML head (HH:MM); NULL elsewhere. xml_header_json stays as printed.
           sitting_end_corrected TEXT,
@@ -2045,17 +2054,20 @@ def persist_vote_passages(
 
 
 def persist_unprinted(conn: sqlite3.Connection, report: dict[str, Any], protocol_id: str, now: str) -> None:
-    """The mark of a cut Protokoll file on ``protocols`` and the DIP entries in
-    the part it does not print (E16, ``validation_summary.protocol_cut``). A
+    """The mark of a cut Protokoll file on ``protocols``, with the count of DIP
+    Reden its cut cannot place (NULL where DIP has not indexed the sitting), and
+    the DIP entries in the part it does not print (E16,
+    ``validation_summary.protocol_cut``). A
     whole sitting is unmarked and has none. ``mp_id`` stays empty here:
     ``resolve_unprinted_people`` binds it once every report and the roster are
     in, so the order of the sittings cannot decide it."""
     cut = (report.get("validation_summary") or {}).get("protocol_cut")
     conn.execute("DELETE FROM unprinted_contributions WHERE protocol_id = ?", (protocol_id,))
     conn.execute(
-        "UPDATE protocols SET xml_cut = ?, xml_final_announced = ?, xml_last_rede_id = ? WHERE id = ?",
-        (1, clean(cut.get("announced")), clean(cut.get("last_rede_id")), protocol_id) if cut
-        else (0, None, None, protocol_id),
+        "UPDATE protocols SET xml_cut = ?, xml_final_announced = ?, xml_last_rede_id = ?, xml_cut_unplaced_reden = ? "
+        "WHERE id = ?",
+        (1, clean(cut.get("announced")), clean(cut.get("last_rede_id")), cut["unplaced_reden"], protocol_id) if cut
+        else (0, None, None, None, protocol_id),
     )
     for entry in (cut or {}).get("entries") or []:
         conn.execute(

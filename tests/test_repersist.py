@@ -1245,7 +1245,7 @@ class RepersistTests(unittest.TestCase):
         conn = sqlite3.connect(self.database)
         try:
             # pregate-literal: VERSION=16 store schema 16, not the speech rule
-            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 16)
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 17)
             self.assertGreater(conn.execute("SELECT COUNT(*) FROM vote_fractions").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_fractions WHERE rank < 1").fetchone()[0], 0)
         finally:

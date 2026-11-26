@@ -1863,12 +1863,14 @@ def cut_gap_sentence(
     *,
     scope: str = "",
     unindexed: list[str] | tuple[str, ...] = (),
+    floor: bool = False,
 ) -> str:
     """The one sentence a page whose Reden span a cut Protokoll file shows
     (docs/plans/cut-protocols.md step 7, owner 2026-11-26): which sittings, how
     many Reden (and, where ``zu_protokoll`` is not None, Reden zu Protokoll) DIP
     lists in the part the file does not print, and ``where`` they are missing.
-    ``unindexed`` names sittings DIP has not indexed yet, whose count is open."""
+    ``unindexed`` names sittings DIP has not indexed yet, whose count is open;
+    ``floor``, that DIP lists Reden a cut cannot place, so ``reden`` is a floor."""
     numbers = sorted(dict.fromkeys(str(n) for n in sittings), key=_sitting_order)
     if len(numbers) == 1:
         head = f"In Sitzung {numbers[0]}"
@@ -1881,8 +1883,8 @@ def cut_gap_sentence(
     if open_ and len(open_) == len(numbers):
         return f"{head} endet die Protokolldatei vorzeitig; was fehlt, hat DIP noch nicht erfasst."
     parts = []
-    if reden or not zu_protokoll:
-        parts.append(format_count(reden, "Rede", "Reden"))
+    if reden or not zu_protokoll or floor:
+        parts.append(("mindestens " if floor else "") + format_count(reden, "Rede", "Reden"))
     if zu_protokoll:
         parts.append(format_count(zu_protokoll, "zu Protokoll gegebene Rede", "zu Protokoll gegebene Reden"))
     # None: the caller names Reden only (Redeanteil counts no Beitrag), so none are added.
@@ -1894,7 +1896,8 @@ def cut_gap_sentence(
 def report_cut(report: dict[str, Any]) -> dict[str, Any] | None:
     """The report's cut (``validation_summary.protocol_cut``) with its counts:
     ``reden`` and ``zu_protokoll`` DIP lists after it, and ``indexed``, whether
-    the report holds DIP's Aktivitäten at all. None for a whole sitting."""
+    the report holds DIP's Aktivitäten at all; ``unplaced_reden`` is the cut's
+    (``protocol_cut.unplaced``). None for a whole sitting."""
     cut = (report.get("validation_summary") or {}).get("protocol_cut")
     if not cut:
         return None
@@ -1942,7 +1945,11 @@ def render_cut_gap(report: dict[str, Any]) -> str:
     else:
         counts = (f"{format_count(cut['reden'], 'Rede', 'Reden')} und "
                   f"{format_count(cut['zu_protokoll'], 'zu Protokoll gegebene Rede', 'zu Protokoll gegebene Reden')}")
-        missing = f" Laut DIP fehlen danach {counts}; keine Zahl auf dieser Seite enthält sie."
+        floor = "mindestens " if cut["unplaced_reden"] else ""
+        missing = f" Laut DIP fehlen danach {floor}{counts}; keine Zahl auf dieser Seite enthält sie."
+        if cut["unplaced_reden"]:
+            missing += (f" {format_count(cut['unplaced_reden'], 'weitere Rede', 'weitere Reden')} nennt DIP an der Stelle "
+                        "des Abbruchs, ohne dass sich sagen lässt, ob sie davor oder danach liegen.")
     href = pdf_page_href(protocol, page)
     link = (f'<p><a href="{esc(href)}">Im PDF ab Seite {esc(page)} ↗</a></p>' if href and page else
             f'<p><a href="{esc(href)}">Vollständiges Protokoll als PDF ↗</a></p>' if href else "")

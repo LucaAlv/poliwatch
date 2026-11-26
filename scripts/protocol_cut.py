@@ -22,7 +22,9 @@ import speech_kinds
 #: under another (persist_dip_pulse_store.require_current_speech_rules).
 #: 2: a withheld Rede counts as printed in the "whole" test and in rule 3, and a
 #: place without a quadrant compares by page alone (``after_cut``).
-CUT_RULE_VERSION = 2
+#: 3: the cut gives ``unplaced_reden`` (``unplaced``), None where DIP has not
+#: indexed the sitting.
+CUT_RULE_VERSION = 3
 
 NOTICE = re.compile(
     r"Der gesamte und damit endgültige Stenografische Bericht der (\d+)\.\s*Sitzung wird am "
@@ -171,6 +173,29 @@ def after_cut(place: tuple[int, str] | None, cut_at: tuple[int, str]) -> bool:
     return bool(quadrant and cut_at[1]) and quadrant > cut_at[1]
 
 
+def before_cut(place: tuple[int, str] | None, cut_at: tuple[int, str]) -> bool:
+    """Whether a DIP place lies before the cut: on an earlier page, or on the
+    cut's page in an earlier quadrant when both quadrants are known."""
+    if place is None:
+        return False
+    page, quadrant = place
+    if page != cut_at[0]:
+        return page < cut_at[0]
+    return bool(quadrant and cut_at[1]) and quadrant < cut_at[1]
+
+
+def unplaced(reden: list[dict[str, Any]], cut_at: tuple[int, str], surname: str | None) -> int:
+    """How many of DIP's Reden can be shown to lie neither before nor after the
+    cut: those at its place (its quadrant, or its page where a quadrant is
+    missing) and those without a page, less one by the last printed Rede's
+    speaker, which is that Rede itself. Each may be printed or missing, so a
+    count of Reden after the cut is a floor by that many."""
+    at_cut = [a for a in reden if not after_cut(_place(a), cut_at) and not before_cut(_place(a), cut_at)]
+    own = speech_kinds._last_word(surname) if surname else ""
+    last_itself = any(own and speech_kinds._last_word(str(a.get("titel") or "")) == own for a in at_cut)
+    return len(at_cut) - (1 if last_itself else 0)
+
+
 def printed_reden(parsed: dict[str, Any]) -> int:
     """The Reden the file prints: the stored ones and the withheld ones (ADR
     0005), which DIP lists as "Rede" too."""
@@ -190,8 +215,10 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
     gegeben)" than its Reden zu Protokoll (19/107); a withheld Rede is printed
     (``printed_reden``). Otherwise the cut: the
     announced date, the last ``<rede>`` and its place, and the DIP entries in the
-    part the file does not print, in page order. A sitting DIP has not indexed
-    yet has no Aktivitäten: it is marked, with an empty list.
+    part the file does not print, in page order, and ``unplaced_reden``, the DIP
+    Reden that can lie on either side of the cut (``unplaced``): where it is not
+    0, the Reden listed are a floor. A sitting DIP has not indexed yet has no
+    Aktivitäten: it is marked, with an empty list and ``unplaced_reden`` None.
 
     An entry is a "Rede" DIP places after the last ``<rede>`` (``after_cut``: one
     in the same quadrant may be that Rede's neighbour and is not counted), or a "Rede (zu
@@ -226,9 +253,12 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
                 f"{len(own)} DIP Reden of {last['surname'] or '(no name)'} to place it by, not one with a page")
         page, quadrant, place_from = placed[0][0], placed[0][1] or None, "dip"
     entries = []
+    unplaced_reden = None
     if page is not None:
         cut_at = (page, quadrant or "")
         entries += [_entry(a, "rede") for a in reden if after_cut(_place(a), cut_at)]
+        if activities:
+            unplaced_reden = unplaced(reden, cut_at, last["surname"])
     remaining: dict[str, int] = {}
     for contribution in stored_written:
         name = speech_kinds._last_word((contribution.get("speaker") or {}).get("display_name"))
@@ -245,6 +275,7 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
         "page": page,
         "quadrant": quadrant,
         "place_from": place_from,
+        "unplaced_reden": unplaced_reden,
         "entries": entries,
     }
 

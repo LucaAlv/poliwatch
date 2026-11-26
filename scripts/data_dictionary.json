@@ -1296,6 +1296,12 @@
           "source": "scripts/protocol_cut.py: Hinweis „Der gesamte und damit endgültige Stenografische Bericht … wird am … veröffentlicht“ im Plenarprotokoll-XML, geprüft gegen die DIP-Aktivitäten der Sitzung; geschrieben von scripts/persist_dip_pulse_store.py.",
           "license": "eigene-auswertung-uebernommene-quelldaten"
         },
+        "xml_cut_unplaced_reden": {
+          "meaning": "Bei einer abgebrochenen Protokolldatei die Zahl der DIP-Reden, die sich weder vor noch hinter die letzte gedruckte Rede legen lassen: die an ihrer Stelle (in ihrem Seitenviertel oder, wo ein Viertel fehlt, auf ihrer Seite) ohne die eine des letzten Redners, die diese Rede selbst ist, und die ohne Seite. 0: die Zahl der Reden nach dem Abbruch in unprinted_contributions ist genau; mehr: sie ist eine Untergrenze. NULL, wenn DIP die Sitzung noch nicht erfasst hat (die Zahl ist offen), und ohne Abbruch.",
+          "unit": "Ganzzahl ab 0 oder NULL.",
+          "source": "scripts/protocol_cut.py (unplaced): Seite und Seitenviertel der DIP-Aktivitäten „Rede“ der Sitzung, verglichen mit der letzten gedruckten Rede; geschrieben von scripts/persist_dip_pulse_store.py.",
+          "license": "eigene-auswertung"
+        },
         "sitting_end_corrected": {
           "meaning": "Ende der Sitzung laut gedrucktem Plenarprotokoll (PDF), wo es vom Kopf der XML-Datei abweicht und scripts/reviewed_end_times.json es mit PDF-Seite und Prüfsumme belegt (vier Sitzungen: 19/55, 20/178, 21/89, 21/96); die Kennzahl „Längste Sitzung“ liest diese Zeit. NULL für jede andere Sitzung.",
           "unit": "Uhrzeit HH:MM oder NULL.",

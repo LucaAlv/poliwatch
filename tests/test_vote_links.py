@@ -584,7 +584,7 @@ class PersistBasisTests(unittest.TestCase):
             finally:
                 conn.close()
         # pregate-literal: VERSION=16 store schema 16, not the speech rule
-        self.assertEqual(pulse_store.SCHEMA_VERSION, 16)
+        self.assertEqual(pulse_store.SCHEMA_VERSION, 17)
 
     def test_persist_refuses_a_placement_the_rule_does_not_make(self) -> None:
         built = fixture_report()
