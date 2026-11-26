@@ -149,6 +149,8 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             # speech_kinds_version, the Reden count and the Beiträge per Kind,
             # over the extracted TOP alone, from the helper a real report uses.
             **dip.contribution_summary([source_item]),
+            # 21/84 prints no notice of a first edition: the rule reads it whole (E16).
+            **dip.protocol_cut.cut_summary(parsed, []),
             "xml_drucksache_count": len(documents),
             "unique_person_ids": len(
                 {

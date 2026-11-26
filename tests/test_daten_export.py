@@ -809,7 +809,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             conn.execute(
                 "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
                 "VALUES ('5700', '9/1', '1980-01-01', 'Alte Sitzung', '{}', ?, ?)", (now, now))
-            conn.execute("INSERT INTO speech_rule_inputs(protocol_id, version, reviewed_digest) VALUES ('5700', ?, ?)", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]),))
+            conn.execute("INSERT INTO speech_rule_inputs(protocol_id, version, reviewed_digest, cut_rule_version) VALUES ('5700', ?, ?, ?)", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
             conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN '5801' ELSE '5802' END")
             totals = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                       for table in ("agenda_items", "speeches", "contributions", "votes", "vote_members")}
@@ -832,7 +832,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                 conn.execute(
                     "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
                     "VALUES (?, ?, ?, 'Weitere Sitzung', '{}', ?, ?)", (protocol_id, number, date, now, now))
-            conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+            conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         (row,) = [row for row in self.export()["coverage"]["wahlperioden"] if row["wp"] == "20"]
         self.assertEqual((row["wp"], row["sittings"], row["date_from"], row["date_to"]), ("20", 5, "2024-03-01", "2024-09-30"))
 
@@ -1029,8 +1029,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                 conn.execute("INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)"
                              " VALUES ('ai-5803', '5803', 1, 'T1', 'TOP 1', ?, ?)", (now, now))
                 self._add_speech(conn, "5803", "R-late", fraktion="fraktionslos")
-                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
-                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         finally:
             conn.close()
         # (2+2+1)/12, (2+1+2)/12, (0+1+1)/12.
@@ -1042,8 +1042,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                 now = pulse_store.utc_now()
                 conn.execute("INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)"
                              " VALUES ('5701', '20/1', '2021-10-25', 'Vor dem Mandat', '{}', ?, ?)", (now, now))
-                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
-                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         finally:
             conn.close()
         self.assertEqual(set(self._r2_seat_shares().values()), {None})
@@ -1102,8 +1102,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                 conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count,"
                              " text, fraktion, created_at, updated_at) VALUES ('s-1805', '1805', 'ai-1805', 'R1805', 1, ?,"
                              " 500, 'Alt', 'SPD', ?, ?)", (mp_id, now, now))
-                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
-                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         finally:
             conn.close()
         manifest = self.export()
@@ -1214,7 +1214,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                    VALUES ('speech-5900', '5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
                 (ai, mp_id, now, now),
             )
-        conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+        conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         person_registry.reconcile(conn)
         conn.commit()
         conn.close()
@@ -1286,13 +1286,13 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_thirty_five_csvs_named_and_headered(self) -> None:
+    def test_all_thirty_six_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 35)
+        self.assertEqual(len(csv_files), 36)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
@@ -1337,7 +1337,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 25)
+        self.assertEqual(manifest["export_format"], 26)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1910,6 +1910,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             "person_bindings": ["id"], "person_records": ["id"], "persons": ["id"],
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
+            "unprinted_contributions": ["id"],
             "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
             "vote_link_reviews": ["vote_id", "protocol", "top_id", "top_occurrence"],
             "vote_members": ["vote_id", "mp_id"], "vote_passages": ["vote_id", "document_id"],

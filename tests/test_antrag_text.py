@@ -509,7 +509,7 @@ class PersistTests(unittest.TestCase):
     # Value: protects=a store persisted by another extractor version is refused before facts, export or render; fails_when=the version check goes; why_new=EXTRACTOR_VERSION; seam=none
     def test_a_stale_extractor_version_is_refused(self) -> None:
         conn, _path = self.persisted(cache())
-        conn.execute("UPDATE speech_rule_inputs SET version = ?", (speech_kinds.VERSION,))
+        conn.execute("UPDATE speech_rule_inputs SET version = ?, cut_rule_version = ?", (speech_kinds.VERSION, pulse_store.protocol_cut.CUT_RULE_VERSION))
         conn.execute("UPDATE documents SET forderung_version = 0 WHERE forderung_state IS NOT NULL")
         with self.assertRaisesRegex(RuntimeError, "Stale persisted Antrag passages"):
             pulse_store.require_current_speech_rules(conn)

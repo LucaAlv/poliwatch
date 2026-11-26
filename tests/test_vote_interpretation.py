@@ -27,6 +27,7 @@ import _site_store_fixture
 import build_dip_pulse_site as build
 import derive
 import speech_kinds
+import protocol_cut
 import vote_links
 import validate_dip_protocol as dip
 from _support import FIXTURES
@@ -987,7 +988,7 @@ class RepairedReportsTests(unittest.TestCase):
         self.repersist()
         (self.output_dir / "data" / "xml" / "plenarprotokoll-20-157.xml").unlink()
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
-        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION}
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "vote_inputs_version": vote_links.INPUTS_VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         before = self.stored_votes()
         self.repersist()

@@ -714,7 +714,8 @@ An online build, like `--offline --repersist`, always stages a fresh `data/bunde
 - `agenda_item_documents`
 - `speeches` (Reden only)
 - `contributions` (Beiträge that are no Rede: Zwischenfragen, written submissions, Kurzinterventionen, Erwiderungen, mündliche Erklärungen, questions/answers of a Befragung or Fragestunde, and Ansprachen of the presidium or a guest (a reviewed list names them), typed by `kind`; classified by `scripts/speech_kinds.py`)
-- `speech_rule_inputs` (the counting-rule version actually persisted for each protocol; consumers reject missing or stale versions)
+- `speech_rule_inputs` (the counting-rule version actually persisted for each protocol, and from schema 16 the cut-rule version (`cut_rule_version`); consumers reject missing or stale versions)
+- `unprinted_contributions` (schema 16, E16: what DIP lists in the part of a sitting its cut Protokoll file does not print, as `rede` or `zu_protokoll` rows keyed by protocol and DIP Aktivität, bound to an `mps` row by DIP person where one has it; no text, in no count)
 - `votes`
 - `agenda_item_votes`
 - `agenda_item_politikfelder` and `vote_politikfelder` (the 1 to 3 Politikfelder of each TOP and vote, or one `untagged` row, with `rank` and `source`; derived by `scripts/politikfelder.py` from the DIP Sachgebiet labels in `proceedings.sachgebiet`, never by a model; see "Politikfelder" in CONTEXT.md)
@@ -732,6 +733,7 @@ An online build, like `--offline --repersist`, always stages a fresh `data/bunde
 - schema 13 adds `votes.application_result`, `votes.abweichler_count` and `vote_members.abweichung`, written at persist by `derive.vote_outcome`, `derive.vote_abweichler_count` and `derive.vote_member_abweichungen` and rewritten after a `vote_fractions` merge, so recipe r3, the Fakt *Die meisten Abweichler der Woche* and the votes archive read the figures the vote panel shows
 - schema 14 adds `agenda_item_votes.basis` (`drucksache_xml`, `drucksache_vorgang` or `title`): why `vote_links` linked the vote to that TOP. The online build, the re-parse and the carry-forward of cached reports place votes through the same rule, and persist refuses a report whose placement disagrees with it, or that holds one vote both under a TOP and in `sitting_votes`
 - schema 15 (vote PR C1) adds the bases `einzelplan` and `drucksache_call` and `votes.top_link_step` (`none`, `match`, `call`, `einzelplan`, `narrowed`): which step of the six-step rule decided the vote's TOPs. Every report is placed by the rule right before persist, so a rule change reaches the store without a re-read. `agenda_item_votes.review_note` and `vote_link_reviews` are created empty; vote PR C2 fills them for the one-off drops and flags (`scripts/reviewed_vote_links.py`)
+- schema 16 (cut Protokoll files, E16) adds `protocols.xml_cut`, `xml_final_announced` and `xml_last_rede_id`, the mark of a first-edition file that stops partway through its sitting (`scripts/protocol_cut.py`), `protocols.sitting_end_corrected`, the end time `scripts/reviewed_end_times.json` gives from the printed PDF where the XML head differs (`xml_header_json` stays as printed), the table `unprinted_contributions` and `speech_rule_inputs.cut_rule_version`. A store persisted under another cut-rule version, or whose corrected end times differ from the reviewed file, is refused until `--offline --repersist`
 - `fact_metrics`
 - `facts`
 - `fact_sources`
