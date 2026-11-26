@@ -63,9 +63,8 @@ def _surname(rede: ET.Element) -> str:
 def first_edition_notice(root: ET.Element) -> dict[str, Any] | None:
     """None when the file prints no notice of a first edition. Else the date the
     notice announces the final edition for (ISO) and the file's last ``<rede>``
-    of the Sitzungsverlauf: the latest by page and quadrant in the
-    Inhaltsverzeichnis, or, where it prints no pages (20/210), the last in
-    order, without a place. Annex Reden are never the last one.
+    of the Sitzungsverlauf (``last_printed_rede``). Annex Reden are never the
+    last one.
 
     Refuses a notice that names another sitting, or two different dates."""
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
@@ -83,10 +82,20 @@ def first_edition_notice(root: ET.Element) -> dict[str, Any] | None:
         dates.add(f"{year}-{MONTHS[month.casefold()]:02d}-{int(day):02d}")
     if len(dates) != 1:
         raise ProtocolCutError(f"{sitting}: the notice of a first edition gives two dates ({', '.join(sorted(dates))})")
+    last = last_printed_rede(root)
+    if last is None:
+        raise ProtocolCutError(f"{sitting}: a first edition without a <rede> in its Sitzungsverlauf")
+    return {"announced": dates.pop(), "last_rede": last}
+
+
+def last_printed_rede(root: ET.Element) -> dict[str, Any] | None:
+    """The file's last ``<rede>`` of the Sitzungsverlauf, None without one: the
+    latest by page and quadrant in the Inhaltsverzeichnis, or, where it prints
+    no pages (20/210), the last in order, without a place."""
     verlauf = root.find("sitzungsverlauf")
     redes = list(verlauf.iter("rede")) if verlauf is not None else []
     if not redes:
-        raise ProtocolCutError(f"{sitting}: a first edition without a <rede> in its Sitzungsverlauf")
+        return None
     by_id = {rede.get("id"): rede for rede in redes}
     placed = []
     vorspann = root.find("vorspann")
@@ -100,7 +109,7 @@ def first_edition_notice(root: ET.Element) -> dict[str, Any] | None:
     else:
         last = {"rede_id": redes[-1].get("id"), "page": None, "quadrant": None}
     last["surname"] = _surname(by_id[last["rede_id"]])
-    return {"announced": dates.pop(), "last_rede": last}
+    return last
 
 
 def _place(activity: dict[str, Any]) -> tuple[int, str] | None:
@@ -200,3 +209,26 @@ def cut_summary(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | Non
     """The ``validation_summary`` keys of the rule, for a built and a re-parsed
     report alike: the cut (or None) and the rule's version."""
     return {"protocol_cut": protocol_cut(parsed, aktivitaeten), "cut_rule_version": CUT_RULE_VERSION}
+
+
+#: Rule 3 of docs/plans/cut-protocols.md: a file without the notice that looks
+#: cut stops the gate for a person to read. It marks nothing.
+RULE3_MIN = 5
+
+
+def unmarked_cut_evidence(root: ET.Element, aktivitaeten: list[dict[str, Any]] | None, speech_count: int) -> dict[str, Any] | None:
+    """For a file without the notice: the counts that make it look cut (at least
+    ``RULE3_MIN`` DIP Reden after its last ``<rede>`` by page and quadrant, and at
+    least ``RULE3_MIN`` more DIP Reden, the chair's left out, than its Reden),
+    else None. None too where the Inhaltsverzeichnis gives no page."""
+    last = last_printed_rede(root)
+    if last is None or last["page"] is None:
+        return None
+    reden = [a for a in aktivitaeten or [] if isinstance(a, dict) and a.get("aktivitaetsart") == DIP_REDE
+             and not CHAIR.search(str(a.get("titel") or ""))]
+    cut_at = (last["page"], last["quadrant"] or "")
+    after = sum(1 for a in reden if (_place(a) or (0, "")) > cut_at)
+    more = len(reden) - speech_count
+    if after >= RULE3_MIN and more >= RULE3_MIN:
+        return {"last_rede_id": last["rede_id"], "dip_reden_after": after, "dip_reden_more": more}
+    return None

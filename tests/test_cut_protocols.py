@@ -9,12 +9,14 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import protocol_cut as cut
 import reviewed_end_times
 import build_dip_pulse_site as site
 import facts
+import validate_store_gate as gate
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 
@@ -512,6 +514,88 @@ class BackfillTests(unittest.TestCase):
             "[backfill] leaving 1 sitting(s) held back only by withheld Reden (ADR 0005)",
             "[backfill] leaving 1 sitting(s) whose XML prints no start or end time",
             "[backfill] acquiring 1 cut sitting(s) again"])
+
+
+class GateTests(unittest.TestCase):
+    def output(self, xml, report, *, catalog=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output = Path(tmp.name)
+        data = output / "data"
+        (data / "xml").mkdir(parents=True)
+        number = report["protocol"]["dokumentnummer"]
+        (data / "xml" / f"plenarprotokoll-{number.replace('/', '-')}.xml").write_text(xml, encoding="utf-8")
+        (data / f"plenarprotokoll-{number.replace('/', '-')}.json").write_text(json.dumps(report), encoding="utf-8")
+        (data / "plenarprotokoll-catalog.json").write_text(json.dumps({"protocols": catalog or []}), encoding="utf-8")
+        conn = pulse_store.connect(data / "bundestag-pulse.sqlite")
+        try:
+            pulse_store.persist_report(conn, report, None)
+            conn.commit()
+        finally:
+            conn.close()
+        return output, data / "bundestag-pulse.sqlite"
+
+    def gate_report(self, protocol_cut, aktivitaeten=()):
+        report = cut_report(protocol_cut)
+        report["api_records"] = {"aktivitaeten": list(aktivitaeten)}
+        report["validation_summary"]["xml_speech_count"] = 3
+        return report
+
+    # Value: protects=the mark and the notice agree, and the receipt carries the counts; fails_when=a sitting is
+    #   marked whose file is whole, or the 33 and the two counts are missing from the receipt; why_new=step 6; seam=gate
+    def test_a_marked_sitting_with_the_notice_passes_and_is_counted(self):
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        result = gate.cut_protocol_check(output, database)
+        self.assertEqual((result["problems"], result["sittings"], result["rede"], result["zu_protokoll"], result["marked"]),
+                         ([], 1, 1, 1, ["20/999"]))
+
+    def test_a_marked_sitting_without_the_notice_fails(self):
+        xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8")
+        output, database = self.output(xml, self.gate_report(CUT))
+        self.assertIn("prints no notice", " ".join(gate.cut_protocol_check(output, database)["problems"]))
+
+    def test_the_notice_without_a_mark_fails_unless_the_rule_reads_it_whole(self):
+        output, database = self.output(cut_fixture_xml(), self.gate_report(None))
+        self.assertIn("not marked", " ".join(gate.cut_protocol_check(output, database)["problems"]))
+        printed = [activity(f"r{n}", "Rede", "X Y, MdB", "101A") for n in range(3)]
+        output, database = self.output(cut_fixture_xml(), self.gate_report(None, printed))
+        result = gate.cut_protocol_check(output, database)
+        self.assertEqual((result["problems"], result["notice_but_whole"]), ([], ["20/999"]))
+
+    # Value: protects=rule 3: a file without the notice that looks cut stops the gate for a person; fails_when=a cut
+    #   file the Bundestag printed without the notice counts as whole unnoticed; why_new=step 6; seam=gate
+    def test_a_file_without_the_notice_that_looks_cut_fails(self):
+        xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8").replace("<xref ", '<xref ref-type="rede" ')
+        after = [activity(f"x{n}", "Rede", f"Late Speaker{n}, MdB", f"{110 + n}A") for n in range(8)]
+        output, database = self.output(xml, self.gate_report(None, after))
+        result = gate.cut_protocol_check(output, database)
+        self.assertEqual([entry["dip_reden_after"] for entry in result["rule3"]], [8])
+        self.assertIn("look cut by rule 3", " ".join(result["problems"]))
+
+    # Value: protects=no unprinted entry is a stored Rede over again; fails_when=a DIP Rede the file prints is listed as
+    #   missing; why_new=step 6; seam=gate
+    def test_an_unprinted_entry_on_a_stored_redes_place_fails(self):
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        with sqlite3.connect(database) as conn:
+            mp_id, page, quadrant = conn.execute("SELECT mp_id, page, page_quadrant FROM speeches LIMIT 1").fetchone()
+            conn.execute("UPDATE unprinted_contributions SET mp_id = ?, page = ?, page_quadrant = ? WHERE dip_activity_id = 'x1'",
+                         (mp_id, page, quadrant))
+        self.assertIn("share person, place and sitting", " ".join(gate.cut_protocol_check(output, database)["problems"]))
+
+    # Value: protects=the corrected end times hold in the store and against DIP's pdf_hash; fails_when=a PDF replaced
+    #   since the reading goes unnoticed, or the column holds a time no entry gives; why_new=step 6 (3b); seam=gate
+    def test_the_end_time_entries_hold_against_the_store_and_the_catalog(self):
+        entries = reviewed_end_times.check({"entries": [end_entry()]})
+        catalog = [{"dokumentnummer": "20/999", "pdf_hash": "8eea57bbf4299710b4dabd82d557abfb"}]
+        with reviewed_end_times.using(entries):
+            output, database = self.output(cut_fixture_xml(), timed_report(), catalog=catalog)
+        with mock.patch.object(gate.reviewed_end_times, "load", return_value=entries):
+            self.assertEqual(gate.end_time_check(output, database)["problems"], [])
+            (output / "data" / "plenarprotokoll-catalog.json").write_text(
+                json.dumps({"protocols": [{"dokumentnummer": "20/999", "pdf_hash": "0" * 32}]}), encoding="utf-8")
+            self.assertIn("read the PDF again", " ".join(gate.end_time_check(output, database)["problems"]))
+        with mock.patch.object(gate.reviewed_end_times, "load", return_value=[]):
+            self.assertIn("without an entry", " ".join(gate.end_time_check(output, database)["problems"]))
 
 
 if __name__ == "__main__":
