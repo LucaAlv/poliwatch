@@ -555,7 +555,7 @@ class RebuildStammdatenTests(unittest.TestCase):
         # One report object across rebuilds, as the offline path reuses it: a stale mark must not survive.
         the_vote = vote(member("Kamann, Uwe", "AfD", "yes"), member("Müller, Max", "AfD", "no"),
                         fractions=[fraction("AfD", yes=1, no=1)], day="2019-06-01", vote_id="501")
-        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+        report = {"validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None},
                   "protocol": {"id": "p19-30", "dokumentnummer": "19/30", "datum": "2019-06-01"},
                   "agenda_items": [{"index": 1, "heading": "Test", "votes": [the_vote]}]}
         self.entries = [{"report": report, "report_path": Path(self._tmp.name) / "plenarprotokoll-19-30.json"}]
