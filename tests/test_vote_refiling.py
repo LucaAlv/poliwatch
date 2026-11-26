@@ -48,13 +48,10 @@ def vote(*members: dict, fractions: list[dict] | None = None, day: str = "2018-0
 KAMANN = [row("Uwe Kamann", "AfD", "2017-10-24", "2019-01-03"), row("Uwe Kamann", "fraktionslos", "2019-01-03", "2021-10-26")]
 
 
-def source(rows: list[dict], stand: str = STAND) -> derive.RefilingSource:
-    """The lookup for hand-written rows, each standing for a recorded Fraktion or Gruppe membership."""
-    recorded_from: dict[tuple[int, str], str] = {}
-    for r in rows:
-        key = (r["wahlperiode"], r["mdb_id"])
-        recorded_from[key] = min(recorded_from.get(key, r["valid_from"]), r["valid_from"])
-    return derive.refiling_source(rows, stand, recorded_from)
+def source(rows: list[dict], stand: str = STAND, unrecorded: dict | None = None) -> derive.RefilingSource:
+    """The lookup for hand-written rows, each standing for a recorded Fraktion or Gruppe membership unless
+    ``unrecorded`` lists its days as rule-3 days, (Wahlperiode, MdB id) to (first day, end) pairs."""
+    return derive.refiling_source(rows, stand, unrecorded or {})
 
 
 def filed(the_vote: dict, rows: list[dict], *, wahlperiode: int = 19, stand: str = STAND) -> list[dict]:
@@ -135,15 +132,16 @@ class RefileRuleTests(unittest.TestCase):
         the_vote["date"] = "2023-12-06"
         self.assertEqual(filed(the_vote, [row("Heidi Reichinnek", "Gruppe Die Linke", "2021-10-26", "2023-12-06", wp=20), *rows], wahlperiode=20), [])
 
-    # Value: protects=a vote after the Stand: the file cannot know a later change and its open row is only carried
-    #   forward, so the fresher page stands (checklist class 2); fails_when=the Stand is not checked; why_new=19 votes
-    #   lie after the Stand; seam=none
-    def test_a_vote_after_the_stand_keeps_the_page(self) -> None:
+    # Value: protects=a vote in the 90 days before the Stand, or after it, keeps the page: the file may not record a
+    #   change yet, and its open row is only carried forward (TODOS E4 deferred item 2; checklist class 2);
+    #   fails_when=the window is off by one, or the Stand day itself still proves; why_new=the window replaces the
+    #   Stand-day guard; seam=refile_vote_members
+    def test_only_a_vote_more_than_90_days_before_the_stand_moves(self) -> None:
         rows = [row("Ada Muster", "AfD", "2025-03-25", None, wp=21)]
-        the_vote = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", no=1)], day="2026-06-25")
-        self.assertEqual(filed(the_vote, rows, wahlperiode=21), [])
-        the_vote["date"] = "2026-04-29"  # the file covers the whole of its day
-        self.assertEqual(len(filed(the_vote, rows, wahlperiode=21)), 1)
+        for day, moves in (("2026-01-28", True), ("2026-01-29", True), ("2026-01-30", False),
+                           ("2026-04-29", False), ("2026-06-25", False)):
+            the_vote = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("AfD", no=1), fraction("fraktionslos", no=1)], day=day)
+            self.assertEqual(len(filed(the_vote, rows, wahlperiode=21)), int(moves), day)
 
     # Value: protects=no proof, no move: namesakes in one Wahlperiode, a name the Stammdaten lack, another
     #   Wahlperiode's row, a day no row covers, no date or an unreadable one, a member listed twice; fails_when=any of
@@ -377,11 +375,9 @@ class CachedStammdatenTests(unittest.TestCase):
             build.refile_entry_votes([entry], self.database)
         self.assertNotIn("refiled_to", members[0])
 
-    def filed_from(self, records: list[dict], the_vote: dict) -> list[tuple[str, str]]:
-        entry = {"report": {"protocol": {"dokumentnummer": "19/30"}, "agenda_items": [{"votes": [the_vote]}]}}
-        cached = stammdaten.Stammdaten(records=records, stand=STAND, sha256="ab" * 32)
-        with mock.patch.object(build, "read_cached_stammdaten", return_value=cached):
-            build.refile_entry_votes([entry], self.database)
+    @staticmethod
+    def filed_from(records: list[dict], the_vote: dict) -> list[tuple[str, str]]:
+        derive.refile_vote_members(the_vote, 19, derive.stammdaten_refiling_source(records, STAND, since_wahlperiode=18))
         return [(m["name"], m["refiled_to"]) for m in the_vote["members"] if "refiled_to" in m]
 
     @staticmethod
@@ -396,10 +392,10 @@ class CachedStammdatenTests(unittest.TestCase):
     # Value: protects=a Mandat the file lists before any Fraktion or Gruppe record is no proof of fraktionslos: the
     #   page's SPD row stands (TODOS E4 deferred item 2); fails_when=_proved_group treats an uncovered Mandat
     #   stretch with no record in the Wahlperiode as fraktionslos; why_new=a refreshed file can enter a Mandat before
-    #   its Fraktion; seam=refile_entry_votes with read_cached_stammdaten patched
+    #   its Fraktion; seam=stammdaten_refiling_source
     # Value (extension): protects=the same holds for the days before an MdB's first record when the record comes in
     #   later (Mandat from 24.10.2017, SPD entered from 01.12.2017); fails_when=only a Wahlperiode with no record at
-    #   all is guarded; why_new=a late entry is the same lag; no_claim=a gap after a record, which stays proof
+    #   all is guarded; why_new=a late entry is the same lag
     def test_a_mandat_with_no_record_yet_is_no_proof_of_fraktionslos(self) -> None:
         spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
         page = lambda day: vote(member("Muster, Ada", "SPD"), fractions=[fraction("SPD", no=1)], day=day)  # noqa: E731
@@ -409,21 +405,79 @@ class CachedStammdatenTests(unittest.TestCase):
         page_fraktionslos = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
         self.assertEqual(self.filed_from([self.mdb([self.record(spd, "01.12.2017")])], page_fraktionslos), [("Muster, Ada", "SPD")])
 
-    # Value: protects=fraktionslos stays provable: an explicit Fraktionslos record from the Mandat's first day (Petry,
-    #   Mieruch) and the gap after a Fraktion record ends (Kamann's file has no Fraktionslos record) both move a page's
-    #   AfD row; fails_when=the guard drops every fraktionslos row, or every uncovered stretch; why_new=the guard
-    #   must not cost the six real fraktionslos MdBs; seam=refile_entry_votes
-    def test_a_fraktionslos_record_or_a_gap_after_a_record_still_proves_fraktionslos(self) -> None:
+    # Value: protects=fraktionslos stays provable from an explicit Fraktionslos record (Petry, Mieruch from the
+    #   Mandat's first day), but the days after a Fraktion record ends with no record after it prove nothing: the
+    #   file may not have entered the next one yet (TODOS E4 deferred item 9, tail); fails_when=the guard drops every
+    #   fraktionslos row, or a rule-3 tail moves a page's AfD row; why_new=rule 2 of the window decision;
+    #   seam=stammdaten_refiling_source
+    def test_a_fraktionslos_record_proves_fraktionslos_and_an_uncovered_tail_does_not(self) -> None:
         afd = lambda day: vote(member("Muster, Ada", "AfD"), fractions=[fraction("AfD", no=1)], day=day)  # noqa: E731
         self.assertEqual(self.filed_from([self.mdb([self.record("Fraktionslos", "24.10.2017")])], afd("2018-06-01")),
                          [("Muster, Ada", "fraktionslos")])
         left = [self.record("Fraktion Alternative für Deutschland", "24.10.2017", "02.01.2019")]
-        self.assertEqual(self.filed_from([self.mdb(left)], afd("2019-06-01")), [("Muster, Ada", "fraktionslos")])
+        self.assertEqual(self.filed_from([self.mdb(left)], afd("2019-06-01")), [])
+        # The record itself still proves its own days.
+        fraktionslos = vote(member("Muster, Ada", "fraktionslos"), fractions=[fraction("fraktionslos", no=1)], day="2018-06-01")
+        self.assertEqual(self.filed_from([self.mdb(left)], fraktionslos), [("Muster, Ada", "AfD")])
+
+    # Value: protects=a gap between two records (A ends 31.03.2019, B starts 01.05.2019) proves nothing for its days,
+    #   while both records prove theirs, and the same gap entered as Fraktionslos does prove fraktionslos (TODOS E4
+    #   deferred item 9, gap); fails_when=a rule-3 gap day moves a page row, or the guard reaches the records around
+    #   it; why_new=rule 2 of the window decision; seam=stammdaten_refiling_source
+    def test_a_gap_between_two_records_proves_nothing_for_its_days(self) -> None:
+        afd, spd = "Fraktion Alternative für Deutschland", "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        page = lambda group, day: vote(member("Muster, Ada", group), fractions=[fraction(group, no=1)], day=day)  # noqa: E731
+        gap = [self.record(afd, "24.10.2017", "31.03.2019"), self.record(spd, "01.05.2019")]
+        self.assertEqual(self.filed_from([self.mdb(gap)], page("SPD", "2019-04-15")), [])
+        self.assertEqual(self.filed_from([self.mdb(gap)], page("AfD", "2019-06-01")), [("Muster, Ada", "SPD")])
+        entered = [*gap, self.record("Fraktionslos", "01.04.2019", "30.04.2019")]
+        self.assertEqual(self.filed_from([self.mdb(entered)], page("SPD", "2019-04-15")), [("Muster, Ada", "fraktionslos")])
+
+    # Value: protects=the lead-in of a second Mandat in the Wahlperiode, before its record, proves nothing, and the
+    #   record proves its days (TODOS E4 deferred item 9, re-entry); fails_when=the guard is keyed to the first record
+    #   of the Wahlperiode, which the first Mandat already passed; why_new=rule 2 of the window decision;
+    #   seam=stammdaten_refiling_source
+    def test_a_re_entry_mandat_before_its_record_proves_nothing(self) -> None:
+        spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        mdb = self.mdb([])
+        mdb["WAHLPERIODEN"] = [
+            {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019", "INSTITUTIONEN": [self.record(spd, "24.10.2017", "31.12.2019")]},
+            {"WP": "19", "MDBWP_VON": "01.06.2020", "MDBWP_BIS": "26.10.2021", "INSTITUTIONEN": [self.record(spd, "01.09.2020")]},
+        ]
+        page = lambda group, day: vote(member("Muster, Ada", group), fractions=[fraction(group, no=1)], day=day)  # noqa: E731
+        self.assertEqual(self.filed_from([mdb], page("SPD", "2020-07-01")), [])
+        self.assertEqual(self.filed_from([mdb], page("fraktionslos", "2020-10-01")), [("Muster, Ada", "SPD")])
+
+    # Value: protects=the day an explicit Fraktionslos record takes over from rule-3 days is a change day and proves
+    #   nothing, though the seat rows merge the two into one fraktionslos row that hides the boundary; the day after
+    #   proves fraktionslos; fails_when=_proved_group reads only the merged seat rows; why_new=Codex plan review
+    #   finding 6; seam=stammdaten_refiling_source
+    def test_the_day_a_record_takes_over_from_uncovered_days_proves_nothing(self) -> None:
+        records = [self.record("Fraktion Alternative für Deutschland", "24.10.2017", "31.12.2018"), self.record("Fraktionslos", "01.02.2019")]
+        afd = lambda day: vote(member("Muster, Ada", "AfD"), fractions=[fraction("AfD", no=1)], day=day)  # noqa: E731
+        self.assertEqual(self.filed_from([self.mdb(records)], afd("2019-01-15")), [])
+        self.assertEqual(self.filed_from([self.mdb(records)], afd("2019-02-01")), [])
+        self.assertEqual(self.filed_from([self.mdb(records)], afd("2019-02-02")), [("Muster, Ada", "fraktionslos")])
+
+    # Value: protects=the seat rows do not change with the refiling guard: rule-3 days still count as fraktionslos
+    #   seats and merge with an adjacent Fraktionslos record; fails_when=the evidence split leaks into
+    #   mdb_zugehoerigkeiten or party_seats; why_new=_mandate_stretches now tags its stretches; seam=mdb_zugehoerigkeiten
+    def test_the_seat_rows_are_unchanged_by_the_guard(self) -> None:
+        afd, spd = "Fraktion Alternative für Deutschland", "Fraktion der Sozialdemokratischen Partei Deutschlands"
+        spans = lambda records: [(r["party"], r["valid_from"], r["valid_until"])  # noqa: E731
+                                 for r in derive.mdb_zugehoerigkeiten([self.mdb(records)], since_wahlperiode=18)]
+        self.assertEqual(spans([self.record(afd, "24.10.2017", "31.03.2019"), self.record(spd, "01.05.2019")]), [
+            ("AfD", "2017-10-24", "2019-04-01"), ("fraktionslos", "2019-04-01", "2019-05-01"), ("SPD", "2019-05-01", "2021-10-27")])
+        self.assertEqual(spans([self.record(afd, "24.10.2017", "31.12.2018"), self.record("Fraktionslos", "01.02.2019")]), [
+            ("AfD", "2017-10-24", "2019-01-01"), ("fraktionslos", "2019-01-01", "2021-10-27")])
+        self.assertEqual(spans([self.record(afd, "24.10.2017", "02.01.2019")]), [
+            ("AfD", "2017-10-24", "2019-01-03"), ("fraktionslos", "2019-01-03", "2021-10-27")])
+        self.assertEqual(derive.party_seats(derive.mdb_zugehoerigkeiten([self.mdb([])], since_wahlperiode=18)), [
+            {"party": "fraktionslos", "wahlperiode": 19, "valid_from": "2017-10-24", "valid_until": "2021-10-27", "seats": 1}])
 
     # Value: protects=an MdB with two Mandate in one Wahlperiode (left and came back) keeps the proof of the first
     #   one: a page row on a day of the first Mandat is still re-filed, in either element order; fails_when=
-    #   first_record_days keeps the last WAHLPERIODE element's day, so the later Mandat's record hides the earlier
-    #   ones; why_new=Codex reproduced it in the ship review; seam=refile_entry_votes
+    #   the later Mandat's lead-in or record hides the earlier Mandat's days; why_new=Codex reproduced it in the ship review; seam=refile_entry_votes
     def test_a_second_mandat_in_the_wahlperiode_keeps_the_first_mandats_proof(self) -> None:
         spd = "Fraktion der Sozialdemokratischen Partei Deutschlands"
         first = {"WP": "19", "MDBWP_VON": "24.10.2017", "MDBWP_BIS": "31.12.2019",

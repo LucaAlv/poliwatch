@@ -118,18 +118,20 @@ class CrossCheckTests(StoreFixture):
             ("1004", "AfD", -1, "shift_between_groups"), ("1004", "fraktionslos", 1, "shift_between_groups"),
         ])
 
-    # Value: protects=D6: a roll-call dated after the Stammdaten's Stand that disagrees is
-    #   drift, filed as such whatever its shape (it warns and never fails the gate), while
-    #   a roll-call on the Stand day itself is still judged by its shape; fails_when=the
-    #   Stand is compared as a timestamp string against a date, or the shape test runs
-    #   first; why_new=C1 step 5; seam=stammdaten.crosscheck
-    def test_a_disagreement_after_the_stand_is_drift(self) -> None:
+    # Value: protects=D6: a roll-call in the 90 days before the Stammdaten's Stand, or after it, that disagrees is
+    #   near the Stand, filed as such whatever its shape (it warns and never fails the gate), while one 90 days
+    #   before is still judged by its shape: the same boundary as the refiling (TODOS E4 deferred item 2);
+    #   fails_when=the cross-check and the refiling use different boundaries, or the shape test runs first;
+    #   why_new=C1 step 5, window from E4 item 2; seam=stammdaten.crosscheck
+    def test_a_disagreement_in_the_90_days_before_the_stand_is_near_the_stand(self) -> None:
         self.stammdaten(bundestag(SPD=3, AfD=1), stand="2025-08-01T08:03:03+00:00")
-        self.vote("1005", "2025-08-01", SPD=2, AfD=1)
-        self.vote("1006", "2025-08-02", SPD=2, AfD=2)
+        self.vote("1005", "2025-05-03", SPD=2, AfD=1)
+        self.vote("1006", "2025-05-04", SPD=2, AfD=2)
+        self.vote("1007", "2025-08-02", SPD=2, AfD=1)
         result = stammdaten.crosscheck(self.conn)
         self.assertEqual([(row["vote_id"], row["party"], row["cause"]) for row in result.disagreements], [
-            ("1005", "SPD", "roll_call_short"), ("1006", "AfD", "after_stand"), ("1006", "SPD", "after_stand"),
+            ("1005", "SPD", "roll_call_short"), ("1006", "AfD", "near_stand"), ("1006", "SPD", "near_stand"),
+            ("1007", "SPD", "near_stand"),
         ])
 
     # Value: protects=absent is not zero: a roll-call dated where no seat count exists, one
@@ -182,36 +184,36 @@ class ReportTests(StoreFixture):
 
     # Value: protects=the build writes every disagreement with its cause to a report in
     #   the store's private directory (D9: never published), counts the roll-calls by
-    #   cause in one summary line, and warns for drift after the Stand (D6) and for a
+    #   cause in one summary line, and warns for disagreements near the Stand (D6) and for a
     #   disagreement in no known shape, without failing; the report holds no build time,
     #   so an unchanged store gives the same file; fails_when=the report is published,
     #   lost, stamped, or an unexplained roll-call passes silently; why_new=C1 step 5;
     #   seam=build.log_seat_crosscheck
     def test_the_report_lists_every_disagreement_and_the_summary_counts_causes(self) -> None:
         self.stammdaten(bundestag(SPD=3, AfD=1), stand="2025-08-01T08:03:03+00:00")
-        self.vote("1020", "2025-06-26", SPD=3, AfD=1)
-        self.vote("1021", "2025-06-26", SPD=3, AfD=2)
+        self.vote("1020", "2025-04-26", SPD=3, AfD=1)
+        self.vote("1021", "2025-04-26", SPD=3, AfD=2)
         self.vote("1022", "2025-08-02", SPD=2, AfD=1)
-        self.vote("1023", "2025-06-26", SPD=3, Unbekannt=1)
+        self.vote("1023", "2025-04-26", SPD=3, Unbekannt=1)
         err, path = self.log()
         self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {
             "stand": "2025-08-01T08:03:03+00:00", "sha256": "0" * 64,
             "compared": 3, "agree": 1,
-            "roll_calls_by_cause": {"after_stand": ["1022"], "change_on_vote_day": [], "shift_between_groups": [],
+            "roll_calls_by_cause": {"near_stand": ["1022"], "change_on_vote_day": [], "shift_between_groups": [],
                                     "roll_call_short": [], "unexplained": ["1021"]},
             "not_compared": {"without_seat_count": [], "without_totals": [], "with_unbekannt": ["1023"]},
             "disagreements": [
-                {"vote_id": "1021", "date": "2025-06-26", "wahlperiode": 21, "party": "AfD",
+                {"vote_id": "1021", "date": "2025-04-26", "wahlperiode": 21, "party": "AfD",
                  "stammdaten_seats": 1, "roll_call_total": 2, "difference": 1, "cause": "unexplained"},
                 {"vote_id": "1022", "date": "2025-08-02", "wahlperiode": 21, "party": "SPD",
-                 "stammdaten_seats": 3, "roll_call_total": 2, "difference": -1, "cause": "after_stand"},
+                 "stammdaten_seats": 3, "roll_call_total": 2, "difference": -1, "cause": "near_stand"},
             ],
         })
         self.assertIn("stammdaten: cross-check of 3 roll-calls against the seat counts: 1 agree, 2 disagree "
-                      "(1 after the Stand, 1 unexplained); 1 not compared", err)
+                      "(1 near the Stand, 1 unexplained); 1 not compared", err)
         self.assertIn("warning: [stammdaten] disagreement with the seat counts in no known shape, 1 roll-call: 1021", err)
-        self.assertIn("warning: [stammdaten] disagreement after the Stand (01.08.2025) with the carried-forward seat "
-                      "counts (drift), 1 roll-call: 1022", err)
+        self.assertIn("warning: [stammdaten] disagreement after 03.05.2025, 90 days before the Stand (01.08.2025): the "
+                      "file may not record a change yet, 1 roll-call: 1022", err)
         self.assertIn("warning: [stammdaten] not compared, a group named Unbekannt, 1 roll-call: 1023", err)
         first = path.read_bytes()
         self.log()

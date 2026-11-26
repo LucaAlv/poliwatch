@@ -163,7 +163,7 @@ def _now() -> datetime:
 def _stand(version: str, name: str) -> str:
     """The Stand ``VERSION`` stamps, as ISO UTC. Raises StammdatenError for a
     stamp that is no Unix timestamp, or one before EARLIEST_STAND or later than
-    a day from now, which would otherwise drive ``after_stand``, the manifest
+    a day from now, which would otherwise drive ``near_stand``, the refiling window, the manifest
     and the Daten page."""
     try:
         instant = datetime.fromtimestamp(int(version), timezone.utc) if _ascii_digits(version) else None
@@ -277,10 +277,11 @@ def seat_rows(records: list[dict[str, Any]], *, since_wahlperiode: int) -> tuple
 
 
 #: The causes a disagreeing roll-call is filed under, in the order they are
-#: tried (``crosscheck``): drift after the Stand (D6), a Zugehörigkeit change
+#: tried (``crosscheck``): a day after ``derive.last_proved_day``, which the
+#: file may not have caught up with yet (D6, E4 item 2), a Zugehörigkeit change
 #: dated on the vote's day, members filed under another group (the totals
 #: agree), members missing from the roll-call, and anything else.
-CAUSES = ("after_stand", "change_on_vote_day", "shift_between_groups", "roll_call_short", "unexplained")
+CAUSES = ("near_stand", "change_on_vote_day", "shift_between_groups", "roll_call_short", "unexplained")
 #: The cross-check report, beside the cached file: never published (D9).
 CROSSCHECK_NAME = "seat-crosscheck.json"
 
@@ -326,8 +327,8 @@ def crosscheck(conn: sqlite3.Connection) -> CrossCheck | None:
     provenance = conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
     if provenance is None:
         return None
-    # The Stand is a UTC instant; the file covers the whole of its day.
-    stand_day = datetime.fromisoformat(provenance[0]).astimezone(timezone.utc).date().isoformat()
+    # The same boundary as the refiling: a later day proves nothing.
+    last_proved_day = derive.last_proved_day(provenance[0])
     totals: dict[str, dict[str, int]] = {}
     for vote_id, party, total in conn.execute(
         "SELECT vf.vote_id, p.name, vf.total_count FROM vote_fractions vf JOIN parties p ON p.id = vf.party_id"
@@ -369,8 +370,8 @@ def crosscheck(conn: sqlite3.Connection) -> CrossCheck | None:
                        if listed.get(party, 0) != seats.get(party, 0)}
         if not differences:
             continue
-        if day > stand_day:
-            cause = "after_stand"
+        if day > last_proved_day:
+            cause = "near_stand"
         else:
             changes = dict(conn.execute(
                 """SELECT p.name, COUNT(*) FROM mdb_zugehoerigkeiten z JOIN parties p ON p.id = z.party_id

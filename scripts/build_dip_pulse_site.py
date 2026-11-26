@@ -2590,7 +2590,7 @@ def refresh_drucksache_texts(
 
 #: How the summary line names each cross-check cause (stammdaten.CAUSES).
 _CROSSCHECK_CAUSE_LABELS = {
-    "after_stand": "after the Stand",
+    "near_stand": "near the Stand",
     "change_on_vote_day": "change on the vote's day",
     "shift_between_groups": "shift between groups",
     "roll_call_short": "roll-call short",
@@ -2623,7 +2623,7 @@ def write_crosscheck_report(path: Path, text: str | None) -> bool:
 def log_seat_crosscheck(database_path: Path) -> None:
     """C1 step 5: the store's seat counts against its roll-call totals. Writes
     every disagreement to ``stammdaten.crosscheck_path`` (private, D9), prints
-    one summary line, and warns for disagreements after the Stand (drift, D6),
+    one summary line, and warns for disagreements near the Stand (D6, E4 item 2),
     in no known shape, or not comparable. Never fails the build: a new
     misattribution on a roll-call page must not stop a routine update."""
     path = stammdaten.crosscheck_path(database_path)
@@ -2661,9 +2661,11 @@ def log_seat_crosscheck(database_path: Path) -> None:
           f"{report['agree']} agree, {disagreeing} disagree" + (f" ({causes})" if causes else "")
           + (f"; {skipped} not compared" if skipped else "") + (f"; report: {path}" if written else ""), file=sys.stderr)
     stand_day = datetime.fromisoformat(result.stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
+    proved_until = date.fromisoformat(derive.last_proved_day(result.stand)).strftime("%d.%m.%Y")
     for ids, message in (
         (by_cause["unexplained"], "disagreement with the seat counts in no known shape"),
-        (by_cause["after_stand"], f"disagreement after the Stand ({stand_day}) with the carried-forward seat counts (drift)"),
+        (by_cause["near_stand"], f"disagreement after {proved_until}, {derive.STAMMDATEN_LAG_DAYS} days before the Stand "
+                                 f"({stand_day}): the file may not record a change yet"),
         (result.with_unbekannt, "not compared, a group named Unbekannt"),
         (result.without_seat_count, "not compared, no seat count on the date"),
         (result.without_totals, "not compared, no group totals"),
