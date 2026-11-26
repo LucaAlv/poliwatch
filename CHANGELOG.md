@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.54.0] - 2026-11-26
+
+33 sittings have a Protokoll file that stops partway: the Bundestag published a first edition, announced the final one, and never replaced the file (source error E16). These sittings are now marked, no longer count as complete for speeches, and what DIP lists for the missing part is stored in a list of its own. Published Fakten go from 587 to 571 (806-sitting store). Reden (61,104), Reden zu Protokoll (4,164), Beiträge and votes are unchanged. Schema 16, export format 26; a store needs one `--offline --repersist`.
+
+### Changed
+
+- **A week or month with a cut Protokoll file no longer counts as complete for speeches.** 31 weeks and 20 months lose completeness, and none gains it. The Fakten that rank speeches lose the most: `laengste-debatte` 97 → 77, `laengste-rede` 115 → 99, `aktivste-abgeordnete` 44 → 33, `meistdiskutierter-vorgang` 47 → 37, `erste-reden` 36 → 35. A sitting fetched before DIP indexed its activities is fetched again until it has them.
+- **The Reden DIP lists after the end of a cut file are stored, but not as Reden.** The new table `unprinted_contributions` holds 1,189 Reden and 429 Reden zu Protokoll from the 33 sittings, each with its DIP person and page. They count in no figure, except that `erste-reden` treats such a Rede as an earlier debut. Seven people whose first Rede is missing from the file no longer debut later. 2025-W28 goes from 28 to 27, 2025-W39 from 7 to 6 and 2025-W51 from 1 to 0.
+- **`laengste-sitzung` needs only the sitting's start and end time**, not complete speeches, so more weeks are published: WP 18 22 → 42, WP 19 29 → 50, WP 20 43 → 43, WP 21 20 → 21 (114 → 156).
+- **Four sitting end times follow the printed PDF where the Protokoll file is wrong**, from a reviewed list: 19/55 ends at 01:28 (the file says 01:30), 20/178 at 23:12 (23:11), 21/89 at 23:37 (23:36) and 21/96 at 00:15 (00:16). The stored head keeps what the file prints. Four values move: 2018-W41 990 → 988, 2024-W26 851 → 852, 2026-W28 876 → 877, 2026-W39 916 → 915.
+- New columns `protocols.xml_cut`, `xml_final_announced`, `xml_last_rede_id` and `sitting_end_corrected`.
+
+### Fixed
+
+- **Sitting times printed with a dot ("13.00 Uhr", "2.09") count.** 19 WP 19 heads print them this way, and `laengste-sitzung` read them as no time. 2019-W45 goes from 598 to 1,029 minutes and is published, as are 2019-W42, W43 and W46. No value published before was wrong.
+
 ## [0.46.53.0] - 2026-11-25
 
 56 members of the Bundestag had more than one Personenseite: one or two with their Reden, and an empty one with their Wahlperioden from DIP. Each now has one page with everything. On the 806-sitting store the empty pages go from 56 to 0; Reden (61,104), Beiträge (46,499), votes and every Stimme are unchanged, and nothing moves between Fraktionen. Export format 25 and schema 15 as before; a store needs one `--offline --repersist`.
