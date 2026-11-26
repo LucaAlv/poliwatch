@@ -115,6 +115,7 @@ class RetainedScopeTests(unittest.TestCase):
         def rebuild(*args, **kwargs):
             self.order.append("rebuild")
             self.rebuild_cache.append(kwargs.get("vorgang_cache"))
+            self.rebuild_options = kwargs
             return real_rebuild(*args, **kwargs)
 
         argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(self.output_dir), *extra]
@@ -155,6 +156,18 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.output_dir / "protocols").glob("*.html")), sorted(pages_before))
         for n in (1, 2, 3):
             self.assertTrue((self.output_dir / "data" / f"plenarprotokoll-21-{n}.json").exists())
+
+    # Value: protects=the online build hands --without-stammdaten to its rebuild, as --offline --repersist does,
+    #   and leaves it off by default (TODOS E4 deferred item 1, sibling path); fails_when=main's online call drops
+    #   the flag, so an online build over a store built with a file can never be rebuilt without it; why_new=item 1;
+    #   seam=main with rebuild_database_from_entries wrapped
+    def test_the_online_build_passes_without_stammdaten_to_the_rebuild(self) -> None:
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition={**COMPLETE_VOTES, "acquired_at": "2026-09-29T10:00:00Z"}))
+        for extra, expected in (((), False), (("--without-stammdaten",), True)):
+            with self.subTest(extra=extra):
+                code, *_rest, stderr = self.run_main("--document-number", "21/2", *extra, generated=[refreshed])
+                self.assertEqual(code, 0, stderr)
+                self.assertIs(self.rebuild_options["without_stammdaten"], expected)
 
     # Value: protects=an online build whose staged rebuild is refused (here: another writer holds the store lock) exits 1 with an error line and leaves the store as it was; fails_when=main lets DatabaseRebuildError escape as a traceback (only SprechrolleError and DipError are caught around the rebuild); why_new=only the offline --repersist path and rebuild_database_from_entries itself were tested for rebuild failures; seam=none
     def test_an_online_build_reports_a_refused_rebuild_instead_of_a_traceback(self) -> None:
