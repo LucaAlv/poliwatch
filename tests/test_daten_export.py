@@ -1337,7 +1337,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 25)
+        self.assertEqual(manifest["export_format"], 26)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -2014,7 +2014,7 @@ class RecipeRepresentativeTests(unittest.TestCase):
             CREATE TABLE parties (id TEXT PRIMARY KEY, name TEXT);
             CREATE TABLE mps (id TEXT PRIMARY KEY, identity_key TEXT, person_id TEXT, display_name TEXT,
                               party_id TEXT, is_mdb INTEGER, xml_redner_id TEXT);
-            CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY, canonical_id TEXT, has_page INTEGER);
+            CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY, canonical_id TEXT, has_page INTEGER, accented_name TEXT);
             CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT);
             CREATE TABLE votes (id TEXT PRIMARY KEY, protocol_id TEXT);
             CREATE TABLE agenda_items (id TEXT PRIMARY KEY, protocol_id TEXT);
@@ -2028,7 +2028,7 @@ class RecipeRepresentativeTests(unittest.TestCase):
         )
         for mp_id, (person, identity, name, is_mdb, xml) in members:
             conn.execute("INSERT INTO mps VALUES (?, ?, ?, ?, 'spd', ?, ?)", (mp_id, identity, person, name, is_mdb, xml))
-            conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1)", (mp_id, person))
+            conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1, NULL)", (mp_id, person))
             conn.execute("INSERT INTO speeches VALUES (?, 'pp-1', 100)", (mp_id,))
             conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no', 1)", (mp_id,))
         try:
@@ -2088,3 +2088,163 @@ class RecipeRepresentativeTests(unittest.TestCase):
                 self.assertEqual([(mp["name"], mp["has_page"]) for mp in mps], [("Aydan Özoguz", True)])
             finally:
                 conn.close()
+
+
+class AccentedNameTests(unittest.TestCase):
+    """DIP's roster leaves off accents the Bundestag prints. The Personenseite's
+    heading and the r1/r3 label take them from another printing of the person
+    that differs by added accents only."""
+
+    PERSONS = (
+        # DIP person id, DIP titel, names the Redner lines print
+        ("1", "Zada Salihovic, MdB, SPD", ("Zada Salihovi\u0107",)),
+        # Both spellings on one Redner-ID: the record's own name is the unaccented one.
+        ("2", "Sevim Dagdelen, MdB, SPD", ("Sevim Dagdelen", "Sevim Da\u011fdelen")),
+        ("3", "Boris Mijatovi\u0107, MdB, SPD", ("Boris Mijatovic",)),
+        ("4", "Achim Post (Minden), MdB, SPD", ("Achim Post",)),
+    )
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.db_path = self.tmp / "pulse.sqlite"
+        patcher = mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        conn = pulse_store.connect(self.db_path)
+        try:
+            pulse_store.initialize(conn)
+            now = pulse_store.utc_now()
+            with conn:
+                party = pulse_store.upsert_party(conn, "SPD", now)
+                conn.execute(
+                    """INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)
+                       VALUES ('p1', '21/1', '2025-06-01', 't', '{}', ?, ?)""", (now, now))
+                conn.execute(
+                    """INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)
+                       VALUES ('ai1', 'p1', 1, 'T1', 'TOP', ?, ?)""", (now, now))
+                sequence = 0
+                for dip_id, titel, printed in self.PERSONS:
+                    pulse_store.upsert_mp(
+                        conn, now=now, display_name=titel, party_id=party, dip_person_id=dip_id, is_mdb=True,
+                        identity_key=pulse_store.mp_identity(dip_person_id=dip_id), occurrence_id=f"fixture:dip:{dip_id}")
+                    redner = f"1100000{dip_id}"
+                    for name in printed:
+                        sequence += 1
+                        speaker = pulse_store.upsert_mp(
+                            conn, now=now, display_name=name, party_id=party, xml_redner_id=redner,
+                            identity_key=pulse_store.mp_identity(xml_redner_id=redner),
+                            occurrence_id=f"fixture:xml:{redner}:{sequence}")
+                        conn.execute(
+                            """INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
+                               paragraph_count, char_count, text, snippet, created_at, updated_at)
+                               VALUES (?, 'p1', 'ai1', ?, ?, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
+                            (f"speech-{sequence}", f"R{sequence}", sequence, speaker, now, now))
+            conn.execute("INSERT INTO speech_rule_inputs SELECT id, ?, ? FROM protocols",
+                         (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+            person_registry.reconcile(conn)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def collect(self) -> list[dict]:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            return b.collect_abgeordnete(conn)[0]
+        finally:
+            conn.close()
+
+    def exported(self) -> tuple[dict, sqlite3.Connection]:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            lookup = b.collect_abgeordnete(conn)[1]
+        finally:
+            conn.close()
+        exports = self.tmp / "exports"
+        manifest = b.export_distribution_data(
+            self.db_path, exports, mp_lookup=lookup, readiness={**READINESS, "votes": "unavailable"},
+            catalog_count=1, dossier_count=1, license_text="", commit="abc123")
+        raw = self.tmp / "unpacked.sqlite"
+        with gzip.open(exports / manifest["generation"] / manifest["files"][0]["name"], "rb") as src, raw.open("wb") as dst:
+            dst.write(src.read())
+        dist = sqlite3.connect(raw)
+        self.addCleanup(dist.close)
+        return manifest, dist
+
+    # Value: protects=a heading shows the accents the protocols print and the r1 label is that heading plus DIP's tail, in the rows shown and in the published SQL; fails_when=either side keeps DIP's spelling, reads only the speaker record's representative name, strips an accent the roster has or drops a Wahlkreiszusatz; why_new=the representative tests fix which row names a person, none that its accents can come from another printing; seam=none
+    def test_the_heading_and_the_recipe_label_take_the_accents_the_protocols_print(self) -> None:
+        pages = {mp["name"] for mp in self.collect()}
+        self.assertEqual(pages, {"Zada Salihovi\u0107", "Sevim Da\u011fdelen", "Boris Mijatovi\u0107", "Achim Post (Minden)"})
+
+        manifest, dist = self.exported()
+        expected = {
+            "Zada Salihovi\u0107, MdB, SPD", "Sevim Da\u011fdelen, MdB, SPD",
+            "Boris Mijatovi\u0107, MdB, SPD", "Achim Post (Minden), MdB, SPD",
+        }
+        r1 = next(r for r in manifest["recipes"] if r["id"] == "r1-meiste-reden")
+        self.assertEqual({row["display_name"] for row in r1["rows"]}, expected)
+        # The published SQL gives the same rows on the published file alone.
+        self.assertEqual({row[2] for row in dist.execute(r1["sql"])}, expected)
+        # Only a person whose accents come from another printing has the column;
+        # every row of that person has it, and mps keeps the source spelling.
+        self.assertEqual(
+            sorted(dist.execute("SELECT DISTINCT canonical_id, accented_name FROM mp_canonical WHERE accented_name IS NOT NULL").fetchall(), key=lambda r: r[1]),
+            sorted(((dist.execute("SELECT person_id FROM mps WHERE display_name = ?", (titel,)).fetchone()[0], accented)
+                    for titel, accented in (("Sevim Dagdelen, MdB, SPD", "Sevim Da\u011fdelen, MdB, SPD"),
+                                            ("Zada Salihovic, MdB, SPD", "Zada Salihovi\u0107, MdB, SPD"))), key=lambda r: r[1]))
+        self.assertEqual(dist.execute(
+            "SELECT COUNT(*) FROM mp_canonical GROUP BY canonical_id HAVING COUNT(DISTINCT accented_name IS NULL) > 1").fetchall(), [])
+
+    # Value: protects=a stale roster record, which the recipes cannot see, gives a live person's heading no spelling, so page and recipe agree; fails_when=collect_abgeordnete reads spellings from records without an mps row beside live ones; why_new=only heading code reads stale roster evidence, and no test compared the two labels for such a person; seam=a person_records row without an mps row, as a refreshed roster that dropped the member leaves it
+    def test_a_stale_roster_record_gives_a_live_person_no_spelling(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                person = conn.execute("SELECT person_id FROM mps WHERE display_name = 'Boris Mijatovic'").fetchone()[0]
+                conn.execute("DELETE FROM mps WHERE person_id = ? AND is_mdb = 1", (person,))
+                conn.execute("UPDATE person_records SET evidence_json = ? WHERE id NOT IN (SELECT id FROM mps) AND person_id = ?",
+                             (json.dumps({"display_name": "Boris Mijatovi\u0107, MdB, SPD", "party": "SPD", "ever_mdb": True}), person))
+        finally:
+            conn.close()
+        names = {mp["name"] for mp in self.collect()}
+        self.assertIn("Boris Mijatovic", names)
+        self.assertNotIn("Boris Mijatovi\u0107", names)
+
+    # Value: protects=a name typed without its accents still finds the person in the Abgeordnete list; fails_when=the list filter compares the typed text or the row's text with accents on; why_new=only the bill and sitting searches folded accents, and a heading that gains accents would drop out of the unaccented search; seam=none; no_claim=the script's behaviour, which a browser check covers
+    def test_the_abgeordnete_list_search_ignores_accents_on_both_sides(self) -> None:
+        script = b.render_abgeordnete_script()
+        self.assertIn('text.toLowerCase().normalize("NFD").replace(/\\p{M}/gu, "")', script)
+        self.assertIn('const q = fold((search ? search.value : "").trim());', script)
+        self.assertIn("fold(row.dataset.search).includes(q)", script)
+
+    # Value: protects=only added accents change a name; fails_when=the rule folds the diaeresis, drops an accent the label has, takes a roll call's word order, a title, a bracket or another surname, or depends on the order of the printings; why_new=the end-to-end test holds four persons, not the refusals; seam=none
+    def test_only_added_accents_change_a_label(self) -> None:
+        cases = (
+            ("Aniko Glogowski-Merten, MdB, FDP", ["Anik\u00f3 Merten", "Anik\u00f3 Glogowski-Merten"],
+             "Anik\u00f3 Glogowski-Merten, MdB, FDP"),
+            ("Ana-Maria Trasnea", ["Ana-Maria Tr\u0103snea"], "Ana-Maria Tr\u0103snea"),
+            # A decomposed printing comes out composed.
+            ("Zada Salihovic", ["Zada Salihovic\u0301"], "Zada Salihovi\u0107"),
+            # The accented spelling with the most accents.
+            ("Aydan Ozoguz", ["Aydan Ozo\u011fuz", "Aydan \u00d3zo\u011fuz"], "Aydan \u00d3zo\u011fuz"),
+            ("Bea Muller", ["Bea M\u00fcller"], None),
+            ("Boris Mijatovi\u0107", ["Boris Mijatovic"], None),
+            ("Zo\u00e9 Kovac", ["Zoe Kova\u010d"], None),
+            ("Zo\u00e9 Test", ["Zoe\u0301 Test"], None),
+            ("Zada Salihovic", ["Salihovi\u0107, Zada"], None),
+            ("Zada Salihovic", ["Dr. Zada Salihovi\u0107"], None),
+            ("Achim Post (Minden)", ["Achim Post"], None),
+            ("Aniko Glogowski-Merten", ["Anik\u00f3 Merten"], None),
+            ("Zada Salihovic", [], None),
+            ("", ["\u0301"], None),
+        )
+        for label, printed, expected in cases:
+            with self.subTest(label=label, printed=printed):
+                self.assertEqual(person_registry.accented_label(label, printed), expected)
+                self.assertEqual(person_registry.accented_label(label, printed[::-1]), expected)
+        # Two spellings with one accent each: one of them, whatever the order.
+        either = ["Ana Tr\u0103snea", "Ana Tr\u00e2snea"]
+        self.assertEqual(person_registry.accented_label("Ana Trasnea", either),
+                         person_registry.accented_label("Ana Trasnea", either[::-1]))
+        # A DIP titel in another printing is read without its tail.
+        self.assertEqual(person_registry.accented_label("Zada Salihovic", ["Zada Salihovi\u0107, MdB, SPD"]), "Zada Salihovi\u0107")

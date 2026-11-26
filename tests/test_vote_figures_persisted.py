@@ -219,7 +219,7 @@ class ReadersUseTheColumnsTests(unittest.TestCase):
 
     def r3_rows(self, conn: sqlite3.Connection) -> list[tuple]:
         conn.execute("DROP TABLE IF EXISTS temp.mp_canonical")
-        conn.execute("CREATE TEMP TABLE mp_canonical AS SELECT id AS mp_id, person_id AS canonical_id, 1 AS has_page FROM mps")
+        conn.execute("CREATE TEMP TABLE mp_canonical AS SELECT id AS mp_id, person_id AS canonical_id, 1 AS has_page, NULL AS accented_name FROM mps")
         return [tuple(row)[2:] for row in conn.execute(self.R3["sql"].rstrip().removesuffix("LIMIT 5;"))]
 
     def test_r3_counts_the_persisted_abweichungen(self) -> None:

@@ -9,7 +9,7 @@ import stat
 from contextlib import contextmanager
 from datetime import date
 from functools import lru_cache
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
 import re
 import sqlite3
@@ -1000,13 +1000,52 @@ _WAHLKREISZUSATZ = re.compile(r"(?<=\S) +\(([^()]+)\)$")
 _DIAERESIS = "\u0308"
 
 
+def _without_accents(text: str) -> str:
+    """``text`` without accents other than the diaeresis."""
+    return unicodedata.normalize("NFC", "".join(
+        char for char in unicodedata.normalize("NFD", text) if char == _DIAERESIS or not unicodedata.combining(char)))
+
+
 def _bucket_name(name: str) -> str:
     """A normalised name as its bucket reads it: without the Wahlkreiszusatz and
     without accents other than the diaeresis, which one source prints and another
     leaves off ("Anikó", "Aniko"; "Salihović", "Salihovic")."""
-    decomposed = unicodedata.normalize("NFD", _WAHLKREISZUSATZ.sub("", name))
-    return unicodedata.normalize("NFC", "".join(
-        char for char in decomposed if char == _DIAERESIS or not unicodedata.combining(char)))
+    return _without_accents(_WAHLKREISZUSATZ.sub("", name))
+
+
+def _adds_accents(spelling: str, name: str) -> bool:
+    """Whether ``spelling`` is ``name`` with accents added and nothing else
+    changed: the same letters, every accent of ``name`` still on its letter."""
+    mine, theirs = (unicodedata.normalize("NFD", text) for text in (name, spelling))
+    rest = iter(theirs)
+    return (bool(mine) and mine != theirs and _without_accents(name) == _without_accents(spelling)
+            and all(char in rest for char in mine))
+
+
+def printed_names(row: Mapping[str, Any]) -> list[str]:
+    """Every name printed for a record: of an mps row joined to its record's
+    ``evidence_json``, or of a stale record's evidence."""
+    evidence = json.loads(row["evidence_json"]) if row.get("evidence_json") else dict(row)
+    return [str(name) for name, _ in _name_party_pairs(evidence) if name]
+
+
+def accented_label(label: str, names: Iterable[str]) -> str | None:
+    """``label``, the name a Person is shown under, with the accents another of
+    the Person's printed ``names`` puts on it; None when none adds one. DIP's
+    roster leaves off accents the Bundestag prints ("Zada Salihovic", "Zada
+    Salihović"). A name counts only as the label's name with accents added
+    (``_adds_accents``): the diaeresis is a letter, and a title, a bracket, another
+    surname or the roll call's "surname, given name" is another name. The label's
+    ", MdB" tail stays. Of several, the most accents, then string order. The
+    Personenseite's heading and recipes r1 and r3 both take it from here."""
+    text = str(label or "").strip()
+    name = clean_mp_name(text)
+    spellings = [unicodedata.normalize("NFC", spelling) for spelling in map(clean_mp_name, names)
+                 if _adds_accents(spelling, name)]
+    if not spellings:
+        return None
+    best = min(spellings, key=lambda spelling: (-len(unicodedata.normalize("NFD", spelling)), spelling))
+    return best + text[len(name):]
 
 
 def _printed_name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
