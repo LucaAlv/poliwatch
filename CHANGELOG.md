@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.55.0] - 2026-11-26
+
+A Stimme that a roll-call page files under the wrong Fraktion is moved only where the MdB-Stammdaten clearly prove the right one. A rebuild no longer drops that correction silently when the Stammdaten file is missing, and the seat check now compares the page's own counts. On the 806-sitting store (736 roll-calls) no stored figure moves: still 157 Stimmen re-filed in 87 roll-calls. Schema 16 and export format 26 as before.
+
+### Changed
+
+- **The Stammdaten prove a group only up to 90 days before their Stand, and only on days a record covers.** The file does not say how late it enters a change, so for a vote in the last 90 days before the Stand (for the Stand of 29.04.2026, from 30.01.2026) the page's group stands. The same holds on days of a Mandat that no Fraktion, Gruppe or Fraktionslos record covers. Such days fall after a record that ends with nothing after it, between two records, or before the record of a second Mandat in the same Wahlperiode. An explicit Fraktionslos record still proves fraktionslos. The newest re-filed Stimme lies 1,623 days before the Stand, so none of the 157 moves.
+- **The seat check compares both the page's counts and the re-filed ones with the seats on the vote's day.** Roll-calls whose only difference is a re-filed Stimme now read as `refiled` (87) instead of agreeing (720 → 633), and the private report lists every re-filed Stimme, including two opposite moves that cancel out. A vote in the 90 days before the Stand reads as `near_stand`, and moves that contradict the stored counts read as `moves_inconsistent` (none today).
+
+### Fixed
+
+- **A rebuild without the Stammdaten file refuses to undo the corrections a store holds.** If the store was built with a file and none is cached now, a rebuild (online or `--offline --repersist`) stops, names the file's Stand, sha256 and path, and leaves the store untouched. The new flag `--without-stammdaten` rebuilds anyway. Every re-filed Stimme then goes back under the page's group and the seat tables stay empty. It cannot be combined with `--enrich mdb-stammdaten`. The store gate's clone refuses the same case before it copies anything.
+- **One rebuild reads the Stammdaten file once.** The re-filing, the seat tables and the seat check used to read it separately, so a file replaced mid-rebuild could mix two files. All three now use the one file read at the start, and an unreadable file stops the rebuild with the store unchanged.
+
+## [0.46.54.0] - 2026-11-26
+
+33 sittings have a Protokoll file that stops partway: the Bundestag published a first edition, announced the final one, and never replaced the file (source error E16). These sittings are now marked, no longer count as complete for speeches, and what DIP lists for the missing part is stored in a list of its own. Published Fakten go from 587 to 571 (806-sitting store). Reden (61,104), Reden zu Protokoll (4,164), Beiträge and votes are unchanged. Schema 16, export format 26; a store needs one `--offline --repersist`.
+
+### Changed
+
+- **A week or month with a cut Protokoll file no longer counts as complete for speeches.** 31 weeks and 20 months lose completeness, and none gains it. The Fakten that rank speeches lose the most: `laengste-debatte` 97 → 77, `laengste-rede` 115 → 99, `aktivste-abgeordnete` 44 → 33, `meistdiskutierter-vorgang` 47 → 37, `erste-reden` 36 → 35. A sitting fetched before DIP indexed its activities is fetched again until it has them.
+- **The Reden DIP lists after the end of a cut file are stored, but not as Reden.** The new table `unprinted_contributions` holds 1,189 Reden and 429 Reden zu Protokoll from the 33 sittings, each with its DIP person and page. They count in no figure, except that `erste-reden` treats such a Rede as an earlier debut. Seven people whose first Rede is missing from the file no longer debut later. 2025-W28 goes from 28 to 27, 2025-W39 from 7 to 6 and 2025-W51 from 1 to 0.
+- **`laengste-sitzung` needs only the sitting's start and end time**, not complete speeches, so more weeks are published: WP 18 22 → 42, WP 19 29 → 50, WP 20 43 → 43, WP 21 20 → 21 (114 → 156).
+- **Four sitting end times follow the printed PDF where the Protokoll file is wrong**, from a reviewed list: 19/55 ends at 01:28 (the file says 01:30), 20/178 at 23:12 (23:11), 21/89 at 23:37 (23:36) and 21/96 at 00:15 (00:16). The stored head keeps what the file prints. Four values move: 2018-W41 990 → 988, 2024-W26 851 → 852, 2026-W28 876 → 877, 2026-W39 916 → 915.
+- New columns `protocols.xml_cut`, `xml_final_announced`, `xml_last_rede_id` and `sitting_end_corrected`.
+
+### Fixed
+
+- **Sitting times printed with a dot ("13.00 Uhr", "2.09") count.** 19 WP 19 heads print them this way, and `laengste-sitzung` read them as no time. 2019-W45 goes from 598 to 1,029 minutes and is published, as are 2019-W42, W43 and W46. No value published before was wrong.
+
 ## [0.46.53.0] - 2026-11-25
 
 56 members of the Bundestag had more than one Personenseite: one or two with their Reden, and an empty one with their Wahlperioden from DIP. Each now has one page with everything. On the 806-sitting store the empty pages go from 56 to 0; Reden (61,104), Beiträge (46,499), votes and every Stimme are unchanged, and nothing moves between Fraktionen. Export format 25 and schema 15 as before; a store needs one `--offline --repersist`.

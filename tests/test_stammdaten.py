@@ -211,7 +211,7 @@ class ReadZipTests(unittest.TestCase):
                 self.assertEqual(stammdaten.read_zip(self.zip({"MDB_STAMMDATEN.XML": xml})).stand, "2026-04-29T08:03:03+00:00")
 
     # Value: protects=a VERSION stamp before 2017 or later than a day from now is refused, so it never becomes
-    #   the Stand that drives after_stand, the manifest, the Daten page and r2's caveat date; the bounds
+    #   the Stand that drives near_stand, the manifest, the Daten page and r2's caveat date; the bounds
     #   themselves read; fails_when=read_zip accepts any VERSION that fits a datetime (0 is 1970, 99999999999
     #   is the year 5138, which silences the drift warning); why_new=TODOS C1 deferred item 37; seam=stammdaten._now
     def test_a_stand_before_2017_or_after_tomorrow_is_refused(self) -> None:

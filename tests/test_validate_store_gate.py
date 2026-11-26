@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import protocol_cut
 import _daten_fixture
 import antrag_text
 import build_dip_pulse_site as site
@@ -64,7 +65,7 @@ class PersistOnlyRosterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "gate"
             report = antrag_report()
-            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
             _support.stamp_reviewed(report)
             report_path, _, _ = site.report_paths(output, report["protocol"]["dokumentnummer"])
             report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +92,7 @@ class PersistOnlyRosterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "gate"
             report = antrag_report()
-            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
             _support.stamp_reviewed(report)
             report_path, _, _ = site.report_paths(output, report["protocol"]["dokumentnummer"])
             report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +189,8 @@ class ReviewedVoteLinkCheckTests(unittest.TestCase):
     def test_a_stale_entry_fails_and_the_release_condition_is_only_reported(self) -> None:
         report = _support.stamp_reviewed(json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8")))
         report["validation_summary"]["speech_kinds_version"] = speech_kinds.VERSION
+        report["validation_summary"]["cut_rule_version"] = protocol_cut.CUT_RULE_VERSION
+        report["validation_summary"].setdefault("protocol_cut", None)
 
         def entry(top_id: str, verdict: str, **fields) -> dict:
             return {"protocol": "20/999", "vote_id": "12345", "top_id": top_id, "top_occurrence": 1,
@@ -242,7 +245,7 @@ class PersistOnlyAntragCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             report = antrag_report()
-            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
             _support.stamp_reviewed(report)
             cache = antrag_cache()
             outputs = [root / "gate", root / "normal"]
@@ -474,7 +477,7 @@ class WithheldGateTest(unittest.TestCase):
         parsed = dip.parse_protocol_xml(xml, reviewed=[])
         report = {"protocol": {"id": "18/7", "dokumentnummer": "18/7", "datum": "2015-04-23", "reviewed_digest": parsed["reviewed_digest"]},
                   "agenda_items": [dict(index=t["index"], **dip.xml_top_fields(t)) for t in parsed["agenda_items"]],
-                  "xml_contributions": [], "validation_summary": dip.contribution_summary(parsed["agenda_items"])}
+                  "xml_contributions": [], "validation_summary": {**dip.contribution_summary(parsed["agenda_items"]), **dip.protocol_cut.cut_summary(parsed, [])}}
         path = Path(tmp) / "store.sqlite"
         conn = pulse_store.connect(path)
         pulse_store.persist_report(conn, report)
@@ -670,6 +673,39 @@ class ClonePathSafetyTest(unittest.TestCase):
             gate._data_clone(source, target)
             self.assertEqual([path.name for path in cloned.iterdir()], [])
 
+
+    # Value: protects=a source store built with a MdB-Stammdaten file is cloned only with that very file: no file, or
+    #   a file with another sha256, is refused before anything is cloned, so the clone's rebuild does not quietly
+    #   drop the correction or re-file from another file (TODOS E4 deferred item 1, sibling path); a store built
+    #   without one, and the matching file, clone; fails_when=_data_clone only checks that a file present at the
+    #   source was copied; why_new=item 1; seam=_data_clone
+    def test_a_source_store_built_with_a_file_needs_that_file(self) -> None:
+        import hashlib
+
+        import person_registry as registry
+        import stammdaten
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, target = Path(tmp) / "site", Path(tmp) / "scratch" / "fresh"
+            (source / "data").mkdir(parents=True)
+            conn = sqlite3.connect(source / gate.STORE)
+            conn.execute("CREATE TABLE mdb_stammdaten_stand (sha256 TEXT, stand TEXT)")
+            conn.commit()
+            gate._data_clone(source, target)  # built without a file, none cached
+            conn.execute("INSERT INTO mdb_stammdaten_stand VALUES (?, ?)", (hashlib.sha256(b"zip bytes").hexdigest(), "2026-04-29T08:03:03+00:00"))
+            conn.commit()
+            conn.close()
+            with self.assertRaisesRegex(ValueError, "built with a MdB-Stammdaten file"):
+                gate._data_clone(source, Path(tmp) / "scratch" / "none")
+            self.assertFalse((Path(tmp) / "scratch" / "none").exists())
+            private = registry.private_dir(source / gate.STORE)
+            private.mkdir(mode=0o700)
+            (private / stammdaten.CACHE_NAME).write_bytes(b"other bytes")
+            with self.assertRaisesRegex(ValueError, "built with a MdB-Stammdaten file"):
+                gate._data_clone(source, Path(tmp) / "scratch" / "other")
+            (private / stammdaten.CACHE_NAME).write_bytes(b"zip bytes")
+            gate._data_clone(source, target)
+            self.assertEqual(stammdaten.cache_path(target / gate.STORE).read_bytes(), b"zip bytes")
 
 class LinkAuditTest(unittest.TestCase):
     # Value: protects=every page a replay renders links only to pages and anchors that exist;

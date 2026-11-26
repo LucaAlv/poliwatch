@@ -22,7 +22,8 @@ def report_from(fixture: str, number: str, day: str) -> dict:
                      "pdf_url": f"https://dserver.bundestag.de/btp/{wahlperiode}/{wahlperiode}{int(sitting):03d}.pdf"},
         "agenda_items": [dict(index=top["index"], **dip.xml_top_fields(top)) for top in parsed["agenda_items"]],
         "xml_contributions": parsed.get("sitting_contributions", []),
-        "validation_summary": dip.contribution_summary(parsed["agenda_items"], parsed.get("sitting_contributions")),
+        "validation_summary": {**dip.contribution_summary(parsed["agenda_items"], parsed.get("sitting_contributions")),
+                               **dip.protocol_cut.cut_summary(parsed, [])},
     }
 
 

@@ -16,6 +16,7 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import _support
+import protocol_cut
 import derive
 import render_dip_pulse_html as render
 import speech_kinds
@@ -108,7 +109,7 @@ def report_with_speaker_and_vote() -> dict[str, Any]:
 class AbgeordneteIdentityTests(unittest.TestCase):
     def test_roster_speaker_and_messy_vote_rows_share_a_page_after_rebuild(self) -> None:
         report = report_with_speaker_and_vote()
-        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
         item = report["agenda_items"][0]
         item["index"] = 1
         speaker = item["xml_speakers"][0]["speaker"]
@@ -197,7 +198,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
 
     def test_vote_guess_is_recomputed_when_a_namesake_appears(self) -> None:
         report = report_with_speaker_and_vote()
-        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+        report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
         report["agenda_items"][0]["votes"][0]["members"][0]["name"] = "von Beispiel, Erika"
         ambiguous = copy.deepcopy(report)
         other = copy.deepcopy(ambiguous["agenda_items"][0]["xml_speakers"][0])

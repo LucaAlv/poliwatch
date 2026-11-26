@@ -37,6 +37,7 @@ from typing import Any, Callable, Literal, NamedTuple
 import derive
 import publication_state as publication
 import reviewed_units
+import protocol_cut
 import speech_kinds
 import vote_links
 from stable_ids import source_index
@@ -2322,6 +2323,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     loose_ordinals = loose_marker_ordinals(root)
     mark_stage_direction_names(root)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    # Read before any rule moves a <rede>: the notice of a first edition and the file's last Rede (E16).
+    first_edition = protocol_cut.first_edition_notice(root)
     sitting_entries = reviewed_units.for_sitting(sitting) if reviewed is None else reviewed
     # Withhold entries name a unit as emitted; ADR 0004's kinds a whole source
     # <rede>, marked before classification (mark_reviewed_units).
@@ -2750,6 +2753,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
         },
         "toc_block_count": len(toc),
         "agenda_items": agenda_items,
+        "first_edition": first_edition,
     }
 
 
@@ -4720,6 +4724,7 @@ def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> No
         summary["xml_contribution_counts"], (report.get("api_records") or {}).get("aktivitaeten") or []
     )
     summary["contribution_dip_mismatches"] = mismatches
+    summary.update(protocol_cut.cut_summary(parsed_xml, (report.get("api_records") or {}).get("aktivitaeten")))
     report["warnings"] = [
         warning for warning in report.get("warnings") or [] if not warning.startswith(KIND_MISMATCH_WARNING)
     ] + kind_mismatch_warnings(mismatches)
@@ -5232,6 +5237,8 @@ def build_report(
             "tops_with_api_positions": tops_with_api_positions,
             "tops_with_api_linked_drucksachen": tops_with_api_drucksachen,
             **enrichment["api_totals"],
+            # Whether the XML is a first edition that stops partway (E16), by DIP's Aktivitäten.
+            **protocol_cut.cut_summary(parsed_xml, enrichment["api_records"].get("aktivitaeten")),
         },
         "warnings": enrichment["warnings"],
         "sampled_people": enrichment["sampled_people"],

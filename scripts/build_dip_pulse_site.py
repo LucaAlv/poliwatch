@@ -106,6 +106,7 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import vote_links
+import protocol_cut
 import reviewed_vote_links
 import dip_cache
 import abgeordnetenwatch as aw
@@ -160,6 +161,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen, mündliche Erklärungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
     "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005). Nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
+    "unprinted_contributions": "Was DIP im Teil einer Sitzung nennt, den ihre abgebrochene Protokolldatei nicht druckt (protocols.xml_cut = 1): Reden nach der letzten gedruckten Rede und zu Protokoll gegebene Reden, die keiner gespeicherten entsprechen, je mit Redner wie DIP ihn nennt, Seite und DIP-Kennungen. Ohne Wortlaut und in keiner Zählung: Sie sind keine Reden des Datensatzes.",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, mündliche Erklärung (erklaerung), Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
@@ -568,15 +570,18 @@ def v1_coverage_floor(catalog: list[dict[str, Any]]) -> str | None:
 _BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
 
 
+#: Gaps that a re-fetch of the same files reproduces (ADR 0005, E16): withheld
+#: Reden (a parser rule or the reviewed list releases them), a cut Protokoll
+#: file (only a replaced file does, see ``replaced_cut_files``) and an XML head
+#: without a sitting time. A cut file whose report holds no DIP Aktivitäten
+#: (``facts.CUT_PROTOCOL_UNINDEXED``) is not among them: a re-fetch reads them.
+_UNACQUIRABLE = {("speeches", facts.WITHHELD_REDEN), ("speeches", facts.CUT_PROTOCOL), ("times", facts.NO_SITTING_TIMES)}
+
+
 def _acquirable_reasons(gap: dict[str, Any]) -> dict[str, str]:
-    """The gap's reasons without withheld Reden (ADR 0005): re-fetching never
-    releases a withheld Rede, only a parser rule or a reviewed-list change does,
-    through --offline --repersist."""
-    return {
-        domain: reason
-        for domain, reason in gap["reasons"].items()
-        if not (domain == "speeches" and reason == facts.WITHHELD_REDEN)
-    }
+    """The gap's reasons without those a re-fetch never closes
+    (``_UNACQUIRABLE``)."""
+    return {domain: reason for domain, reason in gap["reasons"].items() if (domain, reason) not in _UNACQUIRABLE}
 
 
 def _structural_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
@@ -619,13 +624,17 @@ def incomplete_sitting_protocols(
     votes: bool = True,
     scan_pages: int | None = None,
     wahlperiode: int | None = None,
+    replaced: Collection[str] = (),
 ) -> tuple[
     list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]
 ]:
     """(acquirable, waiting, vote_only, structural, withheld): the sittings to
     acquire, those DIP has no XML for yet, those held back only by votes while
     votes are off, those a rescan at these settings reproduces, and those held
-    back only by withheld Reden (ADR 0005), which no acquisition releases."""
+    back only by what no acquisition releases (``_UNACQUIRABLE``: withheld
+    Reden, a cut Protokoll file, a head without times). ``replaced``
+    (``replaced_cut_files``) names cut sittings whose file DIP lists with
+    another hash now: they are acquired again whatever else holds them."""
     stored = []
     for entry in entries:
         protocol = (entry.get("report") or {}).get("protocol") or {}
@@ -648,7 +657,9 @@ def incomplete_sitting_protocols(
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
         if gap is None or (wahlperiode and wahlperiode_of(protocol) != wahlperiode):
             continue
-        if not _acquirable_reasons(gap):
+        if normalized_document_number(protocol.get("dokumentnummer")) in replaced:
+            (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
+        elif not _acquirable_reasons(gap):
             withheld.append(protocol)
         elif _structural_gap(gap, scan_pages):
             structural.append(protocol)
@@ -659,6 +670,68 @@ def incomplete_sitting_protocols(
         else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
     return acquirable, waiting, vote_only, structural, withheld
+
+
+def replaced_cut_files(output_dir: Path, entries: list[dict[str, Any]], catalog: list[dict[str, Any]]) -> set[str]:
+    """The cut sittings (E16) whose cached XML is not the file DIP's catalog lists
+    now: its ``xml_hash`` (an md5) differs from the md5 of the cached file, so the
+    Bundestag may have replaced the first edition. Nothing is known without a
+    hash or a cached file. The catalog of a closed Wahlperiode can be up to
+    ``CATALOG_FULL_FETCH_DAYS`` old."""
+    hashes = {
+        normalized_document_number(protocol.get("dokumentnummer")): str(protocol.get("xml_hash") or "").strip().lower()
+        for protocol in catalog
+    }
+    replaced = set()
+    for entry in entries:
+        report = entry.get("report") or {}
+        if not (report.get("validation_summary") or {}).get("protocol_cut"):
+            continue
+        number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+        listed = hashes.get(number)
+        path = xml_cache_path(output_dir, number) if number else None
+        if not listed or path is None or not path.is_file():
+            continue
+        data = path.read_bytes()
+        read = (report.get("protocol") or {}).get("xml_sha256")
+        # A run stopped between writing the new XML and its report leaves a
+        # report read from another file than the one cached.
+        if hashlib.md5(data).hexdigest() != listed or (
+                read and read != dip.xml_source_sha256(data.decode("utf-8", errors="replace"))):
+            replaced.add(number)
+    return replaced
+
+
+def unacquirable_lines(held: list[dict[str, Any]], entries: list[dict[str, Any]], replaced: Collection[str]) -> list[str]:
+    """What a backfill says of the sittings it leaves because no acquisition
+    closes their gap, one line per cause, read from each cached report: a cut
+    Protokoll file (E16), withheld Reden (ADR 0005), or an XML head without a
+    sitting time. ``replaced`` adds the cut sittings it fetches again."""
+    summaries = {
+        normalized_document_number(((entry.get("report") or {}).get("protocol") or {}).get("dokumentnummer")):
+            (entry.get("report") or {}).get("validation_summary") or {}
+        for entry in entries
+    }
+    groups: dict[str, list[str]] = {"cut": [], "withheld": [], "times": []}
+    for protocol in held:
+        number = normalized_document_number(protocol.get("dokumentnummer"))
+        summary = summaries.get(number) or {}
+        cause = "cut" if summary.get("protocol_cut") else "withheld" if summary.get("withheld_rede_count") else "times"
+        groups[cause].append(number)
+    lines = []
+    if groups["cut"]:
+        lines.append(f"[backfill] leaving {len(groups['cut'])} sitting(s) whose Protokoll file stops partway (E16): "
+                     f"only a file the Bundestag replaces closes them ({_first_numbers(groups['cut'], 12)}).")
+    if groups["withheld"]:
+        lines.append(f"[backfill] leaving {len(groups['withheld'])} sitting(s) held back only by withheld Reden (ADR 0005): "
+                     "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.")
+    if groups["times"]:
+        lines.append(f"[backfill] leaving {len(groups['times'])} sitting(s) whose XML prints no start or end time: "
+                     f"laengste-sitzung cannot judge them ({_first_numbers(groups['times'], 12)}).")
+    if replaced:
+        lines.append(f"[backfill] acquiring {len(replaced)} cut sitting(s) again: DIP lists their XML with another hash "
+                     f"now, so the file may have been replaced ({_first_numbers(sorted(replaced), 12)}).")
+    return lines
 
 
 def backfill_scope_lines(
@@ -936,6 +1009,7 @@ def format_incomplete_report(
     raised_pages = max(2 * vote_scan_pages, vote_scan_pages + 30) if exhausted and vote_scan_pages else vote_scan_pages
     structural = [number for number, gap in gaps.items() if _structural_gap(gap, raised_pages)]
     withheld = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.WITHHELD_REDEN]
+    cut = [number for number, gap in gaps.items() if gap["reasons"].get("speeches") == facts.CUT_PROTOCOL]
     # The votes reasons of the structural line; a sitting that is structural
     # only for its withheld Reden gets the withheld line instead.
     vote_structural = [number for number in structural if _acquirable_reasons(gaps[number])]
@@ -959,6 +1033,11 @@ def format_incomplete_report(
         lines.append(
             f"  {len(withheld)} sittings hold withheld Reden (ADR 0005): a parser rule or the reviewed list "
             f"releases them, not a backfill ({_first_numbers(withheld, 12)})"
+        )
+    if cut:
+        lines.append(
+            f"  {len(cut)} sittings hold a Protokoll file that stops partway (E16): only a replaced file closes them, "
+            f"not a backfill ({_first_numbers(cut, 12)})"
         )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
@@ -1705,7 +1784,8 @@ def _entry_label(entry: dict[str, Any]) -> str:
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, upgrade=False, vorgang_cache=None, excluded_document_numbers=()) -> Rebuilt:
+                                  today=None, upgrade=False, vorgang_cache=None, excluded_document_numbers=(),
+                                  without_stammdaten=False) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1719,7 +1799,13 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched. A stored protocol
     whose document number is in ``excluded_document_numbers`` (the reviewed
-    exclusions, D2) is not missing evidence: it leaves the store."""
+    exclusions, D2) is not missing evidence: it leaves the store.
+
+    The cached MdB-Stammdaten are read once, for the refiling, the seat counts
+    and the Stand alike. With no file cached, a store built with one is not
+    replaced unless ``without_stammdaten`` (``--without-stammdaten``) says to
+    drop its correction (TODOS E4 deferred item 1); the flag never hides a
+    cached file."""
     # One spelling for the lock, the staging directory and the swap: a rebuild
     # through a symlink to the store replaces the store, not the link.
     database_path = Path(database_path).resolve()
@@ -1728,7 +1814,8 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
                 catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade,
-                vorgang_cache=vorgang_cache, excluded_document_numbers=excluded_document_numbers)
+                vorgang_cache=vorgang_cache, excluded_document_numbers=excluded_document_numbers,
+                without_stammdaten=without_stammdaten)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1739,19 +1826,6 @@ def read_cached_stammdaten(database_path: Path) -> stammdaten.Stammdaten | None:
     cached. Raises StammdatenError for a cached file that cannot be read."""
     path = stammdaten.cache_path(database_path)
     return stammdaten.read_zip(path) if path.is_file() else None
-
-
-def refile_entry_votes(entries: list[dict[str, Any]], database_path: Path) -> None:
-    """Mark in ``entries`` the roll-call members the cached MdB-Stammdaten place in
-    another group than the page does (``derive.refile_vote_members``). Runs before
-    a report is persisted or rendered, and also clears the marks a cached report
-    holds when no file is cached. Raises DatabaseRebuildError for a cached file
-    that cannot be read."""
-    try:
-        cached = read_cached_stammdaten(database_path)
-    except derive.StammdatenError as exc:
-        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
-    refile_entries_from(entries, cached)
 
 
 def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten | None) -> str | None:
@@ -1785,16 +1859,19 @@ def stammdaten_store_mismatch(database_path: Path, cached: stammdaten.Stammdaten
     if cached is None:
         return (f"no MdB-Stammdaten file is cached, but the store was built with one (Stand {row[0]}, sha256 {row[1][:12]}…), "
                 "so the vote panels would put back the Stimmen the store re-filed. "
-                f"{rebuild} without it, or restore that file to {stammdaten.cache_path(database_path)} and re-run.")
+                "Fix: run --offline --repersist --without-stammdaten to rebuild the store from the cached reports without "
+                f"it, or restore that file to {stammdaten.cache_path(database_path)} and re-run.")
     return (f"the cached MdB-Stammdaten file (Stand {cached.stand}, sha256 {cached.sha256[:12]}…) is not the file the store "
             f"was built with (Stand {row[0]}, sha256 {row[1][:12]}…), so the vote panels would file Stimmen differently "
             f"from the store. {rebuild} and the cached file.")
 
 
 def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammdaten | None) -> None:
-    """``refile_entry_votes`` with the Stammdaten already read (None: no file
-    is cached, so the marks a cached report holds are cleared). Raises
-    DatabaseRebuildError for records the derivation refuses."""
+    """Mark in ``entries`` the roll-call members the MdB-Stammdaten ``cached``
+    place in another group than the page does (``derive.refile_vote_members``).
+    Runs before a report is persisted or rendered; None (no file is cached)
+    clears the marks a cached report holds. Raises DatabaseRebuildError for
+    records the derivation refuses."""
     try:
         source = (derive.stammdaten_refiling_source(cached.records, cached.stand, since_wahlperiode=V1_FIRST_WAHLPERIODE)
                   if cached else None)
@@ -1814,15 +1891,11 @@ def refile_entries_from(entries: list[dict[str, Any]], cached: stammdaten.Stammd
               f"{', '.join(sorted(set(refused)))}", file=sys.stderr)
 
 
-def rebuild_seat_counts(store: sqlite3.Connection, database_path: Path) -> None:
-    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the cached
-    MdB-Stammdaten into the staged store (C1). With no cached file the tables
-    stay empty and a warning says so; a file that cannot be read, or breaks an
-    interval or size rule, raises DatabaseRebuildError, so nothing is swapped in."""
-    try:
-        cached = read_cached_stammdaten(database_path)
-    except derive.StammdatenError as exc:
-        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+def rebuild_seat_counts(store: sqlite3.Connection, cached: stammdaten.Stammdaten | None) -> None:
+    """Derive ``mdb_zugehoerigkeiten`` and ``party_seats`` from the MdB-Stammdaten
+    ``cached`` (read once per rebuild) into the staged store (C1). With no file
+    the tables stay empty and a warning says so; a file that breaks an interval
+    or size rule raises DatabaseRebuildError, so nothing is swapped in."""
     if cached is None:
         print("warning: [stammdaten] keine Sitzzahlen (MdB-Stammdaten nicht geladen): "
               "mdb_zugehoerigkeiten and party_seats stay empty and every Stimme counts for the group its roll-call page lists; "
@@ -1916,9 +1989,11 @@ def _rebuild_database_from_entries(
     upgrade: bool = False,
     vorgang_cache: dict[str, Any] | None = None,
     excluded_document_numbers: Collection[str] = (),
+    without_stammdaten: bool = False,
 ) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
     excluded = {normalized_document_number(number) for number in excluded_document_numbers}
+    built_with = None
     if database_path.exists():
         try:
             probe = facts.open_readonly(database_path)
@@ -1927,6 +2002,10 @@ def _rebuild_database_from_entries(
                 # A downloaded release given as --database-path is refused here,
                 # before anything is staged; the swap below would replace it.
                 pulse_store.require_build_store(probe, database_path)
+                # The file the store was built with, if any. A store whose schema
+                # predates the table (the --repersist upgrade) was built without one.
+                if probe.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mdb_stammdaten_stand'").fetchone():
+                    built_with = probe.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
             except RuntimeError as exc:
                 raise DatabaseRebuildError(str(exc)) from exc
             finally:
@@ -1965,7 +2044,19 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
-    refile_entry_votes(entries, database_path)
+    # Read once: the refiling, the seat counts and the Stand must come from one
+    # file even if a refresh replaces it during the rebuild (E4 item 3).
+    try:
+        cached = read_cached_stammdaten(database_path)
+    except derive.StammdatenError as exc:
+        raise DatabaseRebuildError(f"The cached MdB-Stammdaten cannot be read: {exc}") from exc
+    if cached is None and built_with is not None and not without_stammdaten:
+        raise DatabaseRebuildError(
+            f"no MdB-Stammdaten file is cached, but the store {database_path} was built with one (Stand {built_with[0]}, "
+            f"sha256 {built_with[1][:12]}…); a rebuild without it would put every re-filed Stimme back under the page's "
+            "group and leave the seat counts empty. Fix: restore that file to "
+            f"{stammdaten.cache_path(database_path)} and re-run, or re-run with --without-stammdaten to rebuild without it")
+    refile_entries_from(entries, cached)
     temp_path = _staged_store_path(database_path)
     store = pulse_store.connect(temp_path)
     try:
@@ -2054,12 +2145,14 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
-        rebuild_seat_counts(store, database_path)
+        rebuild_seat_counts(store, cached)
         try:
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
             raise DatabaseRebuildError(str(exc)) from exc
         registry.reconcile(store)
+        # After every report and the roster: an entry's person never depends on sitting order (E16).
+        pulse_store.resolve_unprinted_people(store)
         store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
@@ -2129,7 +2222,9 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
     sitting (R3), or has no reviewed_digest at all (P3b: every parse since rule 8
     records one, so its absence proves nothing about the list), "votes" when it
     was parsed before the vote-link rule read what it reads now from the XML
-    (``vote_links.INPUTS_VERSION``). Empty when current."""
+    (``vote_links.INPUTS_VERSION``), "cut" when it was read before the rule
+    that marks a first edition cut short (``protocol_cut.CUT_RULE_VERSION``, E16).
+    Empty when current."""
     causes = []
     summary = report.get("validation_summary") or {}
     if summary.get("speech_kinds_version") != speech_kinds.VERSION:
@@ -2140,6 +2235,8 @@ def stale_causes(report: dict[str, Any]) -> tuple[str, ...]:
         causes.append("reviewed")
     if summary.get("vote_inputs_version") != vote_links.INPUTS_VERSION:
         causes.append("votes")
+    if summary.get("cut_rule_version") != protocol_cut.CUT_RULE_VERSION:
+        causes.append("cut")
     return tuple(causes)
 
 
@@ -2160,6 +2257,7 @@ def stale_clauses(stale: list[dict[str, Any]]) -> list[str]:
         ("rule", f"predate the current speech-counting rule ({speech_kinds.VERSION})"),
         ("reviewed", "were parsed under other entries of scripts/reviewed_units.json than it holds now"),
         ("votes", f"predate the current inputs of the vote-link rule ({vote_links.INPUTS_VERSION})"),
+        ("cut", f"predate the current rule for cut Protokoll files ({protocol_cut.CUT_RULE_VERSION})"),
     ):
         numbers = sorted(_report_number(entry) for entry in stale if cause in stale_causes(entry["report"]))
         if numbers:
@@ -2590,7 +2688,8 @@ def refresh_drucksache_texts(
 
 #: How the summary line names each cross-check cause (stammdaten.CAUSES).
 _CROSSCHECK_CAUSE_LABELS = {
-    "after_stand": "after the Stand",
+    "near_stand": "near the Stand",
+    "refiled": "re-filed",
     "change_on_vote_day": "change on the vote's day",
     "shift_between_groups": "shift between groups",
     "roll_call_short": "roll-call short",
@@ -2623,7 +2722,8 @@ def write_crosscheck_report(path: Path, text: str | None) -> bool:
 def log_seat_crosscheck(database_path: Path) -> None:
     """C1 step 5: the store's seat counts against its roll-call totals. Writes
     every disagreement to ``stammdaten.crosscheck_path`` (private, D9), prints
-    one summary line, and warns for disagreements after the Stand (drift, D6),
+    one summary line (with the Stimmen E4 re-filed, listed in the report), and
+    warns for disagreements near the Stand (D6, E4 item 2),
     in no known shape, or not comparable. Never fails the build: a new
     misattribution on a roll-call page must not stop a routine update."""
     path = stammdaten.crosscheck_path(database_path)
@@ -2647,24 +2747,30 @@ def log_seat_crosscheck(database_path: Path) -> None:
             by_cause[row["cause"]].append(row["vote_id"])
     disagreeing = sum(len(ids) for ids in by_cause.values())
     not_compared = {"without_seat_count": result.without_seat_count, "without_totals": result.without_totals,
-                    "with_unbekannt": result.with_unbekannt}
+                    "with_unbekannt": result.with_unbekannt, "moves_inconsistent": result.moves_inconsistent}
     report = {
         "stand": result.stand, "sha256": result.sha256,
         "compared": result.compared, "agree": result.compared - disagreeing,
         "roll_calls_by_cause": by_cause, "not_compared": not_compared,
         "disagreements": result.disagreements,
+        "refiled": result.refiled,
     }
     written = write_crosscheck_report(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     causes =", ".join(f"{len(ids)} {_CROSSCHECK_CAUSE_LABELS[cause]}" for cause, ids in by_cause.items() if ids)
     skipped = sum(map(len, not_compared.values()))
+    moved_in = len({move["vote_id"] for move in result.refiled})
     print(f"stammdaten: cross-check of {_roll_calls(result.compared)} against the seat counts: "
           f"{report['agree']} agree, {disagreeing} disagree" + (f" ({causes})" if causes else "")
+          + (f"; {len(result.refiled)} Stimmen re-filed in {_roll_calls(moved_in)}" if result.refiled else "")
           + (f"; {skipped} not compared" if skipped else "") + (f"; report: {path}" if written else ""), file=sys.stderr)
     stand_day = datetime.fromisoformat(result.stand).astimezone(timezone.utc).strftime("%d.%m.%Y")
+    proved_until = date.fromisoformat(derive.last_proved_day(result.stand)).strftime("%d.%m.%Y")
     for ids, message in (
         (by_cause["unexplained"], "disagreement with the seat counts in no known shape"),
-        (by_cause["after_stand"], f"disagreement after the Stand ({stand_day}) with the carried-forward seat counts (drift)"),
+        (by_cause["near_stand"], f"disagreement after {proved_until}, {derive.STAMMDATEN_LAG_DAYS} days before the Stand "
+                                 f"({stand_day}): the file may not record a change yet"),
         (result.with_unbekannt, "not compared, a group named Unbekannt"),
+        (result.moves_inconsistent, "not compared, the re-filed Stimmen and the group totals disagree"),
         (result.without_seat_count, "not compared, no seat count on the date"),
         (result.without_totals, "not compared, no group totals"),
     ):
@@ -2821,6 +2927,7 @@ def repersist_cached_reports(
     today: date | None = None,
     vorgang_cache: dict[str, Any] | None = None,
     roster_ingest: Callable[[sqlite3.Connection], None] | None = None,
+    without_stammdaten: bool = False,
 ) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -2838,7 +2945,7 @@ def repersist_cached_reports(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
         today=today, upgrade=True, vorgang_cache=vorgang_cache, excluded_document_numbers=recorded,
-        roster_ingest=roster_ingest,
+        roster_ingest=roster_ingest, without_stammdaten=without_stammdaten,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
@@ -3647,6 +3754,10 @@ _COLUMN_SOURCE_DERIVED = {
     # interval rules (handover day, Mandat clipping, S5), not copied.
     ("mdb_zugehoerigkeiten", "valid_from"),
     ("mdb_zugehoerigkeiten", "valid_until"),
+    # Whether a Protokoll file is cut short, and what an unprinted entry is, are
+    # protocol_cut's verdict over the XML's notice and DIP's Aktivitäten (E16).
+    ("protocols", "xml_cut"),
+    ("unprinted_contributions", "kind"),
 }
 
 
@@ -3680,7 +3791,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 26
+EXPORT_FORMAT = 27
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -10678,10 +10789,10 @@ def _fact_proceeding_citation(
 def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> dict[str, Any] | None:
     """document_number, unique."""
     row = conn.execute(
-        """
+        f"""
         SELECT p.id, p.document_number, p.date,
-               json_extract(p.xml_header_json, '$.sitzung_start') AS sitzung_start,
-               json_extract(p.xml_header_json, '$.sitzung_end') AS sitzung_end
+               {facts.SITZUNG_START_SQL} AS sitzung_start,
+               {facts.SITZUNG_END_SQL} AS sitzung_end
         FROM protocols p WHERE p.document_number = ?
         """,
         (str(document_number),),
@@ -14239,6 +14350,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--without-stammdaten",
+        action="store_true",
+        help=(
+            "Rebuild the store although no MdB-Stammdaten file is cached and the store was built with one: "
+            "every re-filed Stimme goes back under the group its roll-call page lists and the seat counts stay "
+            "empty. Without it such a rebuild refuses. A cached file is still used; cannot be combined with "
+            "--enrich mdb-stammdaten."
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=0,
@@ -15026,6 +15147,10 @@ def main() -> int:
     except FeatureError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if getattr(args, "without_stammdaten", False) and "mdb-stammdaten" in enrichments:
+        print("error: --without-stammdaten rebuilds without the MdB-Stammdaten and --enrich mdb-stammdaten fetches them; "
+              "pass one of the two", file=sys.stderr)
+        return 2
     if getattr(args, "list_features", False):
         print("warning: --list-features is deprecated; use --list-capabilities. Removal: 0.6.0.", file=sys.stderr)
         print_capability_table(enrichments)
@@ -15150,6 +15275,7 @@ def main() -> int:
                     output_dir, database_path, protocols, preserve_roster=True,
                     today=resolve_today(getattr(args, "today", None)),
                     vorgang_cache=vorgang_cache,
+                    without_stammdaten=getattr(args, "without_stammdaten", False),
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
@@ -15192,7 +15318,7 @@ def main() -> int:
             except derive.StammdatenError as exc:
                 print(f"ERROR [cached input]: The cached MdB-Stammdaten cannot be read: {exc}. "
                       "Fix: refresh the file with --enrich mdb-stammdaten, or remove it and rebuild the store "
-                      "with --offline --repersist; then re-run.", file=sys.stderr)
+                      "with --offline --repersist --without-stammdaten; then re-run.", file=sys.stderr)
                 return 1
             mismatch = stammdaten_store_mismatch(database_path, cached_stammdaten)
             if mismatch:
@@ -15202,7 +15328,7 @@ def main() -> int:
                 refile_entries_from(cached_entries, cached_stammdaten)
             except DatabaseRebuildError as exc:
                 print(f"ERROR [cached input]: {exc}. Fix: refresh the file with --enrich mdb-stammdaten, or remove it "
-                      "and rebuild the store with --offline --repersist; then re-run.", file=sys.stderr)
+                      "and rebuild the store with --offline --repersist --without-stammdaten; then re-run.", file=sys.stderr)
                 return 1
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before
@@ -15372,12 +15498,14 @@ def main() -> int:
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
+            replaced = replaced_cut_files(output_dir, stored_entries, protocols)
             acquisition_scope, waiting, vote_only, structural, withheld = incomplete_sitting_protocols(
                 stored_entries,
                 [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
                 wahlperiode=protocol_wahlperiode,
+                replaced=replaced,
             )
             for line in backfill_scope_lines(protocols, stored_entries, acquisition_scope, protocol_wahlperiode):
                 print(line, file=sys.stderr)
@@ -15388,12 +15516,8 @@ def main() -> int:
                     f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
                     file=sys.stderr,
                 )
-            if withheld:
-                print(
-                    f"[backfill] leaving {len(withheld)} sitting(s) held back only by withheld Reden (ADR 0005): "
-                    "a parser rule or the reviewed list releases them (--offline --repersist), not a backfill.",
-                    file=sys.stderr,
-                )
+            for line in unacquirable_lines(withheld, stored_entries, replaced):
+                print(line, file=sys.stderr)
             if vote_only:
                 print(
                     f"[backfill] skipping {len(vote_only)} sitting(s) held back only by votes: votes are off "
@@ -15554,6 +15678,7 @@ def main() -> int:
                     today=resolve_today(getattr(args, "today", None)),
                     vorgang_cache=vorgang_cache,
                     excluded_document_numbers=listed,
+                    without_stammdaten=getattr(args, "without_stammdaten", False),
                 ).facts_report
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)

@@ -45,7 +45,7 @@ Each spec is a dict:
                    be None. A sitting with one is incomplete for speeches
                    unless ``complete`` says otherwise, as facts.completeness_
                    from_reports reads it
-  complete         optional {"votes": bool, "speeches": bool} overrides
+  complete         optional {"votes": bool, "speeches": bool, "times": bool} overrides
 
 ``people`` names MPs the specs refer to by alias, so a test can seed two mps
 rows for one person (the live store's "aw:"/"xml:" split) or pin an
@@ -360,7 +360,9 @@ def seed_weeks(
                         ),
                     )
 
-                complete = {"votes": True, "speeches": not spec.get("withheld")}
+                # Complete by default, as the rest of the map; a test of the times
+                # basis passes "complete" (facts.completeness_from_reports reads the head).
+                complete = {"votes": True, "speeches": not spec.get("withheld"), "times": True}
                 complete.update(spec.get("complete") or {})
                 result["protocol_ids"][document_number] = protocol_id
                 result["agenda_item_ids"][document_number] = agenda_item_ids
@@ -375,7 +377,7 @@ def seed_weeks(
             {"document_number": spec["document_number"], "date": spec["date"]} for spec in weeks
         ]
         result["catalog"] = catalog_for(result["catalog_sittings"])
-        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([])))
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ?, ?, ? FROM protocols", (pulse_store.speech_kinds.VERSION, pulse_store.reviewed_units.digest([]), pulse_store.protocol_cut.CUT_RULE_VERSION))
         conn.commit()
         return result
     finally:

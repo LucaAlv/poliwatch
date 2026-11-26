@@ -40,6 +40,18 @@ checks, in order:
    Kurzintervention, an Erwiderung or an oral Erklärung in DIP unless the
    reviewed list says it is a Rede (``dip_typed_reden``, which a tagged export
    refuses too).
+8. The cut Protokoll files (E16, docs/plans/cut-protocols.md): a sitting is
+   marked (``protocols.xml_cut``) only when its cached XML prints the notice of
+   a first edition, and one with the notice is marked unless the rule reads it
+   whole (19/107); no file without the notice looks cut by rule 3 (at least 5
+   DIP Reden after its last ``<rede>`` and 5 more than it holds), which a
+   person reads; no row of ``unprinted_contributions`` shares person, place and
+   sitting with a stored Rede. The marked sittings and the two counts are in
+   the receipt.
+9. The corrected end times (``scripts/reviewed_end_times.json``): every entry
+   whose sitting the store holds is in ``protocols.sitting_end_corrected``, the
+   column holds no other, and each entry's ``pdf_md5`` is the ``pdf_hash`` of
+   the cached DIP catalog, so a PDF replaced since is read again.
 
 The receipt (JSON) records each check, the store counts, the timings and the
 fingerprints. Exit codes: 0 every check passed, 1 a check failed, 2 bad input.
@@ -73,6 +85,8 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from dip_cache import PERSON_FILENAME  # noqa: E402
+import protocol_cut  # noqa: E402
+import reviewed_end_times  # noqa: E402
 import reviewed_units  # noqa: E402
 import reviewed_vote_links  # noqa: E402
 from sqlite_open import open_readonly  # noqa: E402
@@ -390,6 +404,116 @@ def dip_typed_reden(output_dir: Path) -> list[dict[str, Any]]:
     return site.unlisted_dip_typed_reden(entries)
 
 
+def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
+    """Check 8, over the cached reports and XML and the replayed store."""
+    import xml.etree.ElementTree as ET
+
+    import validate_dip_protocol as dip
+
+    conn = open_readonly(database_path)
+    try:
+        marked = dict(conn.execute("SELECT document_number, xml_cut FROM protocols"))
+        counts = dict(((number, kind), count) for number, kind, count in conn.execute(
+            "SELECT p.document_number, u.kind, COUNT(*) FROM unprinted_contributions u "
+            "JOIN protocols p ON p.id = u.protocol_id GROUP BY 1, 2"))
+        shared = [f"{number} {activity} {page}{quadrant or ''}" for number, activity, page, quadrant in conn.execute(
+            "SELECT p.document_number, u.dip_activity_id, u.page, u.page_quadrant FROM unprinted_contributions u "
+            "JOIN protocols p ON p.id = u.protocol_id JOIN mps mu ON mu.id = u.mp_id "
+            "WHERE EXISTS (SELECT 1 FROM speeches s JOIN mps ms ON ms.id = s.mp_id WHERE s.protocol_id = u.protocol_id "
+            "AND s.page = u.page AND s.page_quadrant IS u.page_quadrant AND ms.person_id = mu.person_id) "
+            "ORDER BY 1, 2 LIMIT 50")]
+        # erste-reden v4 joins an unprinted Rede by its MdB: one bound to none
+        # would drop out and let a later Rede read as the debut.
+        unbound = [f"{number} {activity}" for number, activity in conn.execute(
+            "SELECT p.document_number, u.dip_activity_id FROM unprinted_contributions u "
+            "JOIN protocols p ON p.id = u.protocol_id WHERE u.kind = 'rede' AND u.mp_id IS NULL ORDER BY 1, 2")]
+    finally:
+        conn.close()
+    problems: list[str] = []
+    whole: list[str] = []
+    looks_cut: list[dict[str, Any]] = []
+    for path in sorted((output_dir / "data").glob("plenarprotokoll-[0-9]*-[0-9]*.json")):
+        report = json.loads(path.read_text(encoding="utf-8"))
+        number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
+        if number not in marked:
+            continue
+        xml_path = output_dir / "data" / "xml" / f"plenarprotokoll-{number.replace('/', '-')}.xml"
+        if not xml_path.is_file():
+            problems.append(f"{number}: no cached XML to check the mark against")
+            continue
+        text = xml_path.read_text(encoding="utf-8")
+        root = ET.fromstring(text)
+        aktivitaeten = (report.get("api_records") or {}).get("aktivitaeten")
+        try:
+            notice = protocol_cut.first_edition_notice(root)
+        except protocol_cut.ProtocolCutError as exc:
+            problems.append(str(exc))
+            continue
+        if marked[number] and not notice:
+            problems.append(f"{number}: marked cut, but its cached XML prints no notice of a first edition")
+        elif notice and not marked[number]:
+            if protocol_cut.protocol_cut(dip.parse_protocol_xml(text), aktivitaeten) is not None:
+                problems.append(f"{number}: its XML prints the notice and DIP lists more than it holds, but it is not marked")
+            else:
+                whole.append(number)
+        elif not notice:
+            speech_count = (report.get("validation_summary") or {}).get("xml_speech_count")
+            if type(speech_count) is not int:
+                # Not parsed: rule 3 has no count to compare DIP's with.
+                problems.append(f"{number}: its report holds no count of Reden to judge rule 3 by")
+                continue
+            evidence = protocol_cut.unmarked_cut_evidence(root, aktivitaeten, speech_count)
+            if evidence:
+                looks_cut.append({"document_number": number, **evidence})
+    if looks_cut:
+        problems.append(f"{len(looks_cut)} sittings without the notice look cut by rule 3: read them "
+                        f"({', '.join(entry['document_number'] for entry in looks_cut[:10])})")
+    if unbound:
+        problems.append(f"{len(unbound)} unprinted Reden are bound to no MdB: {', '.join(unbound[:10])}")
+    if shared:
+        problems.append(f"{len(shared)} unprinted entries share person, place and sitting with a stored Rede: {', '.join(shared[:10])}")
+    cut = sorted((number for number, flag in marked.items() if flag),
+                 key=lambda n: tuple(int(part) for part in n.split("/")))
+    return {
+        "sittings": len(cut),
+        "rede": sum(count for (_n, kind), count in counts.items() if kind == "rede"),
+        "zu_protokoll": sum(count for (_n, kind), count in counts.items() if kind == "zu_protokoll"),
+        "marked": cut,
+        "notice_but_whole": whole,
+        "rule3": looks_cut,
+        "problems": problems,
+    }
+
+
+def end_time_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
+    """Check 9, over the replayed store and the cached catalog."""
+    entries = reviewed_end_times.load()
+    conn = open_readonly(database_path)
+    try:
+        stored = dict(conn.execute("SELECT document_number, sitting_end_corrected FROM protocols"))
+    finally:
+        conn.close()
+    try:
+        catalog = json.loads((output_dir / "data" / "plenarprotokoll-catalog.json").read_text(encoding="utf-8"))
+        hashes = {str(p.get("dokumentnummer")): str(p.get("pdf_hash") or "") for p in catalog.get("protocols") or []
+                  if isinstance(p, dict)}
+    except (OSError, ValueError, AttributeError):
+        hashes = {}
+    problems = []
+    listed = {entry.sitting for entry in entries}
+    for entry in entries:
+        if entry.sitting not in stored:
+            continue
+        if stored[entry.sitting] != entry.end:
+            problems.append(f"{entry.sitting}: sitting_end_corrected {stored[entry.sitting]!r}, the list says {entry.end}")
+        if hashes.get(entry.sitting) != entry.pdf_md5:
+            problems.append(f"{entry.sitting}: pdf_md5 {entry.pdf_md5} is not the catalog's pdf_hash "
+                            f"{hashes.get(entry.sitting) or '(none)'}: read the PDF again")
+    problems += [f"{number}: sitting_end_corrected {value!r} without an entry" for number, value in sorted(stored.items())
+                 if value is not None and number not in listed]
+    return {"entries": len(entries), "applied": sorted(listed & set(stored)), "problems": problems}
+
+
 def _store_identity(database_path: Path) -> dict[str, Any]:
     status = database_path.stat()
     return {"sha256": _sha256(database_path), "bytes": status.st_size, "mtime_ns": status.st_mtime_ns, "inode": status.st_ino}
@@ -496,17 +620,47 @@ def _require_disjoint_paths(source: Path, target: Path) -> None:
         raise ValueError(f"clone target {target} must not overlap input {source}")
 
 
+def _require_stammdaten_of_store(store: Path, cache: Path) -> None:
+    """ValueError when ``store`` was built with a MdB-Stammdaten file and ``cache``
+    does not hold it (missing, or another sha256): the clone's rebuild would drop
+    the store's re-filed Stimmen or file them from another file. A store that
+    cannot be read, or whose schema predates the table, has no such record; the
+    gate's own reads of the source report an unreadable store."""
+    if not store.is_file():
+        return
+    try:
+        conn = open_readonly(store)
+        try:
+            if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mdb_stammdaten_stand'").fetchone():
+                return
+            built_with = conn.execute("SELECT stand, sha256 FROM mdb_stammdaten_stand").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        return
+    if built_with is None:
+        return
+    cached = hashlib.sha256(cache.read_bytes()).hexdigest() if cache.is_file() else None
+    if cached != built_with[1]:
+        found = f"a file with sha256 {cached[:12]}…" if cached else "no file"
+        raise ValueError(f"the source store {store} was built with a MdB-Stammdaten file (Stand {built_with[0]}, sha256 "
+                         f"{built_with[1][:12]}…), but {cache} holds {found}; restore that file before running the gate")
+
+
 def _data_clone(source: Path, target: Path) -> Path:
     """A copy of ``source/data`` under ``target`` without its store: an APFS clone
     where the file system offers one. The source's cached MdB-Stammdaten
     (``mdb-stammdaten.*`` in its private directory) go to the clone's private
     directory, so the clone's rebuild re-files the Stimmen as the input store
     does; a stale copy there from an earlier run is removed first. Raises
-    ValueError when the source caches the file and the clone ends up without it."""
+    ValueError, before cloning, when the source store was built with a file
+    (``mdb_stammdaten_stand``) and the source caches no file with that sha256,
+    and when the source caches the file and the clone ends up without it."""
     import person_registry as registry
     import stammdaten
 
     _require_disjoint_paths(source, target)
+    _require_stammdaten_of_store(source / STORE, registry.private_dir(source / STORE) / stammdaten.CACHE_NAME)
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
@@ -658,6 +812,10 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         checks["reviewed_vote_links_hold"] = receipt["reviewed_vote_links"]["stale_count"] == 0
         receipt["dip_typed_reden"] = dip_typed_reden(output_dir)
         checks["no_unlisted_dip_typed_rede"] = not receipt["dip_typed_reden"]
+        receipt["cut_protocols"] = cut_protocol_check(output_dir, database_path)
+        checks["cut_protocols_hold"] = not receipt["cut_protocols"]["problems"]
+        receipt["end_times"] = end_time_check(output_dir, database_path)
+        checks["corrected_end_times_hold"] = not receipt["end_times"]["problems"]
         receipt["counts"] = store_counts(database_path)
         receipt["counts_vs_2026_10_05"] = {
             key: {"old": old, "new": receipt["counts"][key], "delta": receipt["counts"][key] - old}

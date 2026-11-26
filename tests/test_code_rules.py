@@ -369,7 +369,9 @@ GROUPS: dict[str, tuple[frozenset[str], str]] = {
         "renders HTML from the rows it is given; it never opens the store writer",
     ),
     "parse": (
-        frozenset({"validate_dip_protocol", "vote_links", "reviewed_vote_links", "dip_cache", "sitzungskalender"}),
+        frozenset({
+            "validate_dip_protocol", "vote_links", "reviewed_vote_links", "dip_cache", "sitzungskalender", "protocol_cut",
+        }),
         "reads the protocol XML and DIP records into reports; no store, pages or facts",
     ),
     "domain": (
@@ -380,6 +382,7 @@ GROUPS: dict[str, tuple[frozenset[str], str]] = {
         frozenset({
             "stable_ids", "publication_state", "python_version_guard", "reviewed_units", "dip_text",
             "release_version", "release_changes", "build_revision", "sqlite_open", "abgeordnetenwatch",
+            "reviewed_end_times",
         }),
         "helpers that import only each other",
     ),
