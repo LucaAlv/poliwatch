@@ -12,6 +12,7 @@ from pathlib import Path
 import _support  # noqa: F401
 import protocol_cut as cut
 import build_dip_pulse_site as site
+import facts
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 
@@ -281,6 +282,71 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Old build-store schema"):
             pulse_store.initialize(conn)
         conn.close()
+
+
+def judged(number="21/99", protocol_cut=None, header=None, **summary):
+    """A cached report as completeness_from_reports reads it: parsed, no withheld
+    Rede, votes acquired."""
+    report = {
+        "protocol": {"dokumentnummer": number,
+                     "xml_header": {"sitzung_start": "09:00", "sitzung_end": "01:07"} if header is None else header},
+        "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": protocol_cut,
+                               "cut_rule_version": cut.CUT_RULE_VERSION, "roll_call_scan_end": "list_end", **summary},
+        "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-10-09T10:00:00Z"}},
+    }
+    return report
+
+
+class CompletenessTests(unittest.TestCase):
+    # Value: protects=a cut sitting is incomplete for speeches with its own reason, and its votes are not touched;
+    #   fails_when=the 31 weeks and 20 months of the plan stay complete; why_new=new rule; seam=facts
+    def test_a_cut_sitting_is_incomplete_for_speeches_only(self):
+        state = facts.completeness_from_reports([judged(protocol_cut=CUT)])["21/99"]
+        self.assertEqual((state["speeches"], state["reasons"]["speeches"]), (False, facts.CUT_PROTOCOL))
+        self.assertTrue(state["votes"])
+        self.assertTrue(state["times"])
+
+    def test_a_cut_outranks_withheld_reden(self):
+        state = facts.completeness_from_reports([judged(protocol_cut=CUT, withheld_rede_count=2)])["21/99"]
+        self.assertEqual(state["reasons"]["speeches"], facts.CUT_PROTOCOL)
+
+    # Value: protects=a report cached before the rule never reads as whole; fails_when=an old report with no
+    #   protocol_cut key counts its week complete; why_new=new rule; seam=facts
+    def test_a_report_without_the_cut_check_is_unknown_and_incomplete(self):
+        report = judged()
+        del report["validation_summary"]["protocol_cut"]
+        state = facts.completeness_from_reports([report])["21/99"]
+        self.assertEqual((state["speeches"], state["reasons"]["speeches"]), (False, "no cut check (report predates it)"))
+
+    def test_a_whole_sitting_is_complete(self):
+        state = facts.completeness_from_reports([judged()])["21/99"]
+        self.assertEqual((state["speeches"], state["votes"], state["times"]), (True, True, True))
+
+    # Value: protects=basis times: a cut file still prints both times, and 18/23, which prints no end, is incomplete
+    #   for laengste-sitzung whatever its Reden; fails_when=laengste-sitzung loses the cut weeks or keeps 18/23;
+    #   why_new=D2; seam=facts
+    def test_times_need_both_times_of_a_parsed_xml(self):
+        no_end = facts.completeness_from_reports([judged("18/23", header={"sitzung_start": "09:00", "sitzung_end": ""})])
+        self.assertEqual((no_end["18/23"]["times"], no_end["18/23"]["reasons"]["times"]), (False, facts.NO_SITTING_TIMES))
+        self.assertTrue(no_end["18/23"]["speeches"])
+        unparsed = judged("18/24")
+        del unparsed["validation_summary"]["xml_speech_count"]
+        state = facts.completeness_from_reports([unparsed])["18/24"]
+        self.assertEqual((state["times"], state["reasons"]["times"]), (False, "XML not parsed"))
+
+    def test_laengste_sitzung_is_judged_by_times(self):
+        metric = facts.REGISTRY_BY_ID["laengste-sitzung"]
+        self.assertEqual((metric["coverage"], metric["version"]), ("times", 2))
+        facts.validate_registry(facts.ALL_REGISTRY)
+
+    # Value: protects=the note a withheld Fakt shows names the cut file, and the times domain has words;
+    #   fails_when=gap_note raises a KeyError on times or words a cut as "Reden nicht erfasst"; why_new=new reason; seam=facts
+    def test_the_gap_notes_name_the_cut_file_and_missing_times(self):
+        self.assertEqual(facts.gap_note([{"document_number": "21/99", "date": "2026-10-08", "reason": facts.CUT_PROTOCOL}],
+                                        "speeches"), "Sitzung 21/99: Protokolldatei abgebrochen")
+        self.assertEqual(facts.gap_note([{"document_number": "18/23", "date": "2014-03-20",
+                                          "reason": facts.NO_SITTING_TIMES}], "times"),
+                         "Sitzung 18/23: Beginn oder Ende nicht im Protokoll")
 
 
 if __name__ == "__main__":

@@ -93,6 +93,12 @@ def month_specs(count: int, *, start_number: int = 1, wp: int = 21, year: int = 
     return specs
 
 
+
+#: A report read under the current cut rule, whole (docs/plans/cut-protocols.md).
+WHOLE = {"protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION}
+#: Both sitting times in the XML head, what basis "times" asks for.
+TIMES = {"sitzung_start": "09:00", "sitzung_end": "14:08"}
+
 class StoreCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -1474,19 +1480,19 @@ class CompletenessTests(StoreCase):
         reports = [
             {
                 "protocol": {"dokumentnummer": "21/91"},
-                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_vote_candidate_count": 0},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_vote_candidate_count": 0, **WHOLE},
                 "acquisition": {"votes": {"acquisition_state": "not_requested"}},
             },
             {
                 "protocol": {"dokumentnummer": "21/90"},
-                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed"},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed", **WHOLE},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             },
             {
                 # Stamped complete by a build that did not yet record how the
                 # scan ended: it was also given to scans that ran out of pages.
                 "protocol": {"dokumentnummer": "20/97"},
-                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, **WHOLE},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             },
             {
@@ -1495,7 +1501,7 @@ class CompletenessTests(StoreCase):
                 # ever read for this sitting, so its votes are unknown, and
                 # unknown is incomplete.
                 "protocol": {"dokumentnummer": "20/100"},
-                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_vote_candidate_count": 3},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, "roll_call_vote_candidate_count": 3, **WHOLE},
             },
             {
                 "protocol": {"dokumentnummer": "20/99"},
@@ -1506,7 +1512,7 @@ class CompletenessTests(StoreCase):
                 # Votes reused from a cache that never stamped them: complete
                 # on paper, unknown in fact.
                 "protocol": {"dokumentnummer": "20/98"},
-                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, **WHOLE},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None}},
             },
         ]
@@ -1533,8 +1539,8 @@ class CompletenessTests(StoreCase):
     @staticmethod
     def parsed_report(number: str, **summary) -> dict:
         return {
-            "protocol": {"dokumentnummer": number},
-            "validation_summary": {"xml_speech_count": 10, "roll_call_scan_end": "date_passed", **summary},
+            "protocol": {"dokumentnummer": number, "xml_header": TIMES},
+            "validation_summary": {"xml_speech_count": 10, "roll_call_scan_end": "date_passed", **WHOLE, **summary},
             "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
         }
 
@@ -1548,8 +1554,8 @@ class CompletenessTests(StoreCase):
         ])
         self.assertEqual(
             completeness["18/3"],
-            {"votes": True, "speeches": False, "withheld_reden": 2,
-             "reasons": {"votes": None, "speeches": "withheld_reden"}},
+            {"votes": True, "speeches": False, "times": True, "withheld_reden": 2,
+             "reasons": {"votes": None, "speeches": "withheld_reden", "times": None}},
         )
         self.assertEqual((completeness["18/4"]["speeches"], completeness["18/4"]["reasons"]["speeches"]), (True, None))
         # Absent is unknown, and unknown is incomplete (class 5); a malformed
@@ -1634,7 +1640,7 @@ class CompletenessTests(StoreCase):
         reports = [
             {
                 "protocol": {"dokumentnummer": "21/90"},
-                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0},
+                "validation_summary": {"xml_speech_count": 10, "withheld_rede_count": 0, **WHOLE},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             }
         ]
@@ -1812,7 +1818,7 @@ class CatalogCompletenessTests(StoreCase):
         specs = week_specs(10)
         seeded = self.seed(specs)
         reports = [
-            {"protocol": {"dokumentnummer": spec["document_number"]}, "validation_summary": {"xml_speech_count": 5, "withheld_rede_count": 0}}
+            {"protocol": {"dokumentnummer": spec["document_number"]}, "validation_summary": {"xml_speech_count": 5, "withheld_rede_count": 0, **WHOLE}}
             for spec in specs
         ]
         completeness = facts.completeness_from_reports(reports)
@@ -1826,7 +1832,7 @@ class CatalogCompletenessTests(StoreCase):
         reports = [
             {
                 "protocol": {"dokumentnummer": spec["document_number"]},
-                "validation_summary": {"xml_speech_count": 5, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed"},
+                "validation_summary": {"xml_speech_count": 5, "withheld_rede_count": 0, "roll_call_scan_end": "date_passed", **WHOLE},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None if index == 4 else "2026-09-28T10:00:00Z"}},
             }
             for index, spec in enumerate(specs)

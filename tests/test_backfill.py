@@ -55,6 +55,7 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
     report["protocol"].update(
         {"id": f"pp-{n}", "dokumentnummer": f"21/{n}", "datum": day or f"2026-06-{10 + n:02d}"}
     )
+    report["protocol"]["xml_header"].update({"sitzung_start": "09:00", "sitzung_end": "14:08"})
     for item in report["agenda_items"]:
         for speech in item["xml_speakers"]:
             speech["rede_id"] = f"{n}-{speech['rede_id']}"
@@ -1126,7 +1127,9 @@ class WithheldCellNamesTheMissingSittingTests(StoreCase):
             encoding="utf-8",
         )
         entries = [
-            {"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0},
+            {"report": {"protocol": {"dokumentnummer": n, "xml_header": {"sitzung_start": "09:00", "sitzung_end": "14:08"}},
+                        "validation_summary": {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None,
+                                               "cut_rule_version": protocol_cut.CUT_RULE_VERSION},
                         "acquisition": {"votes": COMPLETE_VOTES}}}
             for n in seeded["completeness"]
         ]
@@ -1189,7 +1192,7 @@ class GapPrimitiveTests(unittest.TestCase):
 
     @staticmethod
     def state(votes: bool, speeches: bool = True, reason: str | None = None) -> dict:
-        return {"votes": votes, "speeches": speeches, "reasons": {"votes": reason, "speeches": None}}
+        return {"votes": votes, "speeches": speeches, "times": True, "reasons": {"votes": reason, "speeches": None, "times": None}}
 
     def completeness(self) -> dict:
         return {"21/1": self.state(False, reason="votes partial (scan_budget_exhausted)")}
@@ -1243,7 +1246,7 @@ class GapPrimitiveTests(unittest.TestCase):
         blind = facts.gap_notes(self.PERSISTED, self.completeness(), None)
         self.assertTrue(blind)
         self.assertTrue(all("DIP-Katalog" in note for note in blind.values()))
-        self.assertEqual({domain for _kind, _key, domain in blind}, {"votes", "speeches"})
+        self.assertEqual({domain for _kind, _key, domain in blind}, {"votes", "speeches", "times"})
 
     def test_a_period_only_the_catalog_knows_takes_its_date_and_newest_wahlperiode_from_the_catalog(self) -> None:
         catalog = facts.sitting_catalog(

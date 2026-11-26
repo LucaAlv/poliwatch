@@ -47,6 +47,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sqlite3
 import statistics
 import sys
@@ -59,6 +60,7 @@ from typing import Any, Callable, Iterable, Mapping, MutableMapping, NamedTuple,
 from xml.sax.saxutils import escape
 
 import derive
+import protocol_cut
 import sqlite_open
 from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, document_sort_key, stable_key
 from persist_dip_pulse_store import require_current_schema, require_current_speech_rules
@@ -346,7 +348,10 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "laengste-sitzung",
-        "version": 1,
+        # v2 (docs/plans/cut-protocols.md D2): judged by the sitting times
+        # (coverage "times"), not by the Reden: a cut Protokoll file or a
+        # withheld Rede leaves both times in the XML head.
+        "version": 2,
         "title": "Die längste Sitzung der Woche",
         "unit": "Minuten",
         "direction": "max",
@@ -365,7 +370,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "min_history_weeks": MIN_HISTORY_WEEKS,
         "tie_rank": 5,
         "depends_on": None,
-        "coverage": "speeches",
+        "coverage": "times",
         "receipt": "protocol",
         "min_value": None,
         "requires_topic": False,
@@ -615,7 +620,7 @@ def validate_registry(registry: Iterable[Mapping[str, Any]] = REGISTRY) -> None:
             raise FactsError(f"facts: metric {metric_id} has no direction")
         if metric.get("aggregation") not in ("extreme", "count", "grouped_extreme"):
             raise FactsError(f"facts: metric {metric_id} has no aggregation")
-        if metric.get("coverage") not in ("votes", "speeches"):
+        if metric.get("coverage") not in COVERAGE_DOMAINS:
             raise FactsError(f"facts: metric {metric_id} has no coverage domain")
         if metric.get("min_value") is not None and metric["direction"] != "max":
             raise FactsError(
@@ -946,6 +951,19 @@ COMPLETE_SCAN_ENDS = ("date_passed", "list_end")
 #: code, not text: the gap note words it and the backfill recognizes it.
 WITHHELD_REDEN = "withheld_reden"
 
+#: The speeches reason code of a sitting whose Protokoll XML is a first edition
+#: that stops partway through (docs/source-errors.md E16, protocol_cut): its
+#: Reden after the cut are in no table. Like withheld Reden, no re-fetch of the
+#: same file releases it.
+CUT_PROTOCOL = "cut_protocol"
+
+#: The times reason code of a parsed XML that prints no start or no end time
+#: (18/23): ``laengste-sitzung`` cannot be judged for that sitting.
+NO_SITTING_TIMES = "no_sitting_times"
+
+#: A sitting time as the XML head prints it, "09:00" or "9:00".
+_SITTING_TIME = re.compile(r"\d{1,2}:\d{2}")
+
 
 def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """document_number -> {"votes": bool, "speeches": bool, "reasons": {...}}.
@@ -980,6 +998,19 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
                 speeches, speeches_reason = False, "no withheld count (report predates it)"
             elif withheld > 0:
                 speeches, speeches_reason, withheld_count = False, WITHHELD_REDEN, withheld
+        if summary.get("xml_speech_count") is not None:
+            if "protocol_cut" not in summary or summary.get("cut_rule_version") != protocol_cut.CUT_RULE_VERSION:
+                speeches, speeches_reason = False, "no cut check (report predates it)"
+            elif summary["protocol_cut"]:
+                # Outranks withheld Reden: what the file lacks is larger and unknown.
+                speeches, speeches_reason = False, CUT_PROTOCOL
+        header = protocol.get("xml_header") or {}
+        parsed = summary.get("xml_speech_count") is not None
+        times = parsed and all(
+            isinstance(header.get(key), str) and _SITTING_TIME.fullmatch(header[key].strip())
+            for key in ("sitzung_start", "sitzung_end")
+        )
+        times_reason: str | None = None if times else ("XML not parsed" if not parsed else NO_SITTING_TIMES)
         acquisition = (report.get("acquisition") or {}).get("votes")
         votes_reason: str | None = None
         if not acquisition:
@@ -1015,7 +1046,8 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
         result[str(number)] = {
             "votes": votes,
             "speeches": speeches,
-            "reasons": {"votes": votes_reason, "speeches": speeches_reason},
+            "times": times,
+            "reasons": {"votes": votes_reason, "speeches": speeches_reason, "times": times_reason},
         }
         if withheld_count is not None:
             result[str(number)]["withheld_reden"] = withheld_count
@@ -1089,7 +1121,7 @@ def week_is_complete(week: Week | Month, completeness: Mapping[str, Mapping[str,
     return bool(week.protocols or week.expected) and not period_gaps(week, completeness, domain)
 
 
-COVERAGE_DOMAINS = ("votes", "speeches")
+COVERAGE_DOMAINS = ("votes", "speeches", "times")
 
 
 def sitting_gaps(
@@ -1171,7 +1203,11 @@ def incomplete_periods(
     return result
 
 
-_GAP_DOMAIN_TEXT = {"votes": "Abstimmungen nicht vollständig erfasst", "speeches": "Reden nicht erfasst"}
+_GAP_DOMAIN_TEXT = {
+    "votes": "Abstimmungen nicht vollständig erfasst",
+    "speeches": "Reden nicht erfasst",
+    "times": "Sitzungszeiten nicht erfasst",
+}
 
 
 def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) -> str:
@@ -1193,6 +1229,10 @@ def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) 
             else:
                 noun = "Rede" if count == "1" else "Reden"
                 parts.append(f"Sitzung {number}: {count} {noun} zurückgehalten")
+        elif reason == CUT_PROTOCOL:
+            parts.append(f"Sitzung {number}: Protokolldatei abgebrochen")
+        elif reason == NO_SITTING_TIMES:
+            parts.append(f"Sitzung {number}: Beginn oder Ende nicht im Protokoll")
         else:
             parts.append(f"Sitzung {number}: {_GAP_DOMAIN_TEXT[domain]}")
     if len(gaps) > shown:

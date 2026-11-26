@@ -570,15 +570,17 @@ def v1_coverage_floor(catalog: list[dict[str, Any]]) -> str | None:
 _BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
 
 
+#: Gaps that a re-fetch of the same files reproduces (ADR 0005, E16): withheld
+#: Reden (a parser rule or the reviewed list releases them), a cut Protokoll
+#: file (only a replaced file does, see ``replaced_cut_files``) and an XML head
+#: without a sitting time.
+_UNACQUIRABLE = {("speeches", facts.WITHHELD_REDEN), ("speeches", facts.CUT_PROTOCOL), ("times", facts.NO_SITTING_TIMES)}
+
+
 def _acquirable_reasons(gap: dict[str, Any]) -> dict[str, str]:
-    """The gap's reasons without withheld Reden (ADR 0005): re-fetching never
-    releases a withheld Rede, only a parser rule or a reviewed-list change does,
-    through --offline --repersist."""
-    return {
-        domain: reason
-        for domain, reason in gap["reasons"].items()
-        if not (domain == "speeches" and reason == facts.WITHHELD_REDEN)
-    }
+    """The gap's reasons without those a re-fetch never closes
+    (``_UNACQUIRABLE``)."""
+    return {domain: reason for domain, reason in gap["reasons"].items() if (domain, reason) not in _UNACQUIRABLE}
 
 
 def _structural_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
