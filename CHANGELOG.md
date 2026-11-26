@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.57.0] - 2026-11-26
+
+Six Personenseiten now carry the accents the Bundestag prints in their heading: "Zada Salihović", "Sevim Dağdelen", "Aydan Özoğuz", "Adis Ahmetović", "Ana-Maria Trăsnea" and "Anikó Glogowski-Merten". The Daten recipes r1 and r3 show the same label. On the Abgeordnete list, a search typed without accents still finds them. Export format 27 adds the column `mp_canonical.accented_name`. Counts and rankings stay the same.
+
+### Changed
+
+- **A Personenseite's heading takes the accents another printing of the person adds, and nothing else.** DIP's roster drops some accents that the Plenarprotokolle and roll-call lists print. A heading now uses the accented spelling when a printing of the same person differs from it by added accents only. A roll call's "surname, given name" counts too. Titles, a Wahlkreiszusatz such as "(Minden)" and other surnames never change a heading, and an umlaut does not count as an added accent.
+- **Recipes r1 and r3 show the same label as the heading**, and the export writes it to the new column `mp_canonical.accented_name` (export format 27). It is empty where no printing adds an accent. Recipe r3 still breaks a tie by the unaccented source name, so an accent this rule adds never changes who is in its five.
+
+### Fixed
+
+- **The Abgeordnete list's search ignores accents in the query and in the names.** With the new headings, "Dagdelen" or "Salihovic" would have found nobody. "Mijatovic" and "Muller" did not find "Mijatović" and "Müller" before either; they do now.
+
 ## [0.46.56.0] - 2026-11-26
 
 Ten Reden zu Protokoll from the 18. Wahlperiode were printed inside someone else's Rede or outside any Rede, so two of them were stored under the wrong person and eight were missing. Each now has a Rede of its own under its writer. Two more Reden had neither speaker nor text and now have both. On the 806-sitting store, Reden zu Protokoll go from 4,164 to 4,174 (WP 18: 2,086 → 2,096). Reden (61,104), votes and all 1,944 Fakten are unchanged. Speech rule 17, schema 16, export format 26; a store needs one `--offline --repersist`.

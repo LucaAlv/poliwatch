@@ -182,7 +182,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
 
     def r3_rows(self, conn: sqlite3.Connection) -> list[tuple]:
         conn.execute("DROP TABLE IF EXISTS temp.mp_canonical")
-        conn.execute("CREATE TEMP TABLE mp_canonical AS SELECT id AS mp_id, person_id AS canonical_id, 1 AS has_page FROM mps")
+        conn.execute("CREATE TEMP TABLE mp_canonical AS SELECT id AS mp_id, person_id AS canonical_id, 1 AS has_page, NULL AS accented_name FROM mps")
         sql = self.RECIPE["sql"].rstrip().removesuffix("LIMIT 5;")
         return [tuple(row) for row in conn.execute(sql)]
 

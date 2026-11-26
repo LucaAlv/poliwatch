@@ -3795,7 +3795,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 26
+EXPORT_FORMAT = 27
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -3839,21 +3839,42 @@ SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 # The row whose name and party r1 and r3 show for a person, chosen once per
 # person: a roster row first, then a speaker row, then by identity_key, a source
 # key (mps.id is a hash). collect_abgeordnete orders a person's rows the same
-# way, so the label is the row the Personenseite takes its heading from.
+# way, so the label is the row the Personenseite takes its heading from. Where
+# another printing of the person only adds accents to that row's name, both show
+# it: the export writes it to mp_canonical.accented_name (_write_accented_names).
 REPRESENTATIVE_SQL = (
     "WITH representative AS (\n"
-    "  SELECT person_id, display_name, party_id FROM (\n"
-    "    SELECT person_id, display_name, party_id,\n"
-    "           ROW_NUMBER() OVER (PARTITION BY person_id\n"
-    "                              ORDER BY is_mdb DESC, xml_redner_id IS NULL, identity_key) AS rank\n"
-    "    FROM mps\n"
+    "  SELECT person_id, COALESCE(accented_name, display_name) AS display_name, display_name AS sort_name, party_id FROM (\n"
+    "    SELECT m.person_id, m.display_name, c.accented_name, m.party_id,\n"
+    "           ROW_NUMBER() OVER (PARTITION BY m.person_id\n"
+    "                              ORDER BY m.is_mdb DESC, m.xml_redner_id IS NULL, m.identity_key) AS rank\n"
+    "    FROM mps m JOIN mp_canonical c ON c.mp_id = m.id\n"
     "  ) WHERE rank = 1\n"
     ")\n"
 )
 
+
+def _write_accented_names(conn: sqlite3.Connection) -> None:
+    """Fill mp_canonical.accented_name, on every row of a person whose
+    representative name another of their rows prints with more accents
+    (registry.accented_label). Call it while the column is still empty."""
+    names: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT m.person_id, m.display_name, pr.evidence_json FROM mps m LEFT JOIN person_records pr ON pr.id = m.id"
+    ):
+        names.setdefault(row["person_id"], []).extend(registry.printed_names(dict(row)))
+    shown = conn.execute(REPRESENTATIVE_SQL + "SELECT person_id, display_name FROM representative").fetchall()
+    accented = [(label, person_id) for person_id, name in shown
+                if (label := registry.accented_label(name, names[person_id])) is not None]
+    conn.executemany("UPDATE mp_canonical SET accented_name = ? WHERE canonical_id = ?", accented)
+
 # Output definitions shared verbatim by r1 and r3, which select the same columns.
 _MP_ID_MEANING = "Konsolidierte Personenkennung (persons.id), im HTML nur Linkschlüssel."
-_DISPLAY_NAME_MEANING = "Anzeigename der repräsentativen Quellaufzeichnung: MdB-Kader vor XML-Redner, dann identity_key."
+_DISPLAY_NAME_MEANING = (
+    "Anzeigename der repräsentativen Quellaufzeichnung: MdB-Kader vor XML-Redner, dann identity_key. Druckt eine "
+    "Aufzeichnung der Person denselben Namen mit zusätzlichen Akzenten, auch als „Nachname, Vorname“, steht er in "
+    "dieser Schreibweise (mp_canonical.accented_name)."
+)
 
 # Parties are keyed by name across Wahlperioden (per-WP Fraktion identity is its
 # own issue), so every recipe carries the Wahlperiode of its sitting and groups
@@ -4038,7 +4059,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "JOIN parties pa ON pa.id = vm.party_id\n"
             "WHERE vm.abweichung = 1\n"
             "GROUP BY mc.canonical_id, wahlperiode, pa.name\n"
-            "ORDER BY wahlperiode DESC, abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
+            "ORDER BY wahlperiode DESC, abweichungen DESC, m.sort_name, mc.canonical_id, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
@@ -4057,7 +4078,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "ergeben; fehlt einer Gruppe ein Mitglied oder hat sie keine Summe, zählt in ihr niemand (abweichung NULL). "
             "Enthaltungen, nicht abgegebene Stimmen, Abstimmungen ohne Ja/Nein-Mehrheitsvotum, fraktionslose Mitglieder "
             "und Mitglieder ohne erkennbaren Zusammenschluss zählen nicht. Reihenfolge: Wahlperiode absteigend, "
-            "dann Abweichungen absteigend, dann Anzeigename, Personenkennung und Fraktion. " + _WP_LIMIT_METHOD
+            "dann Abweichungen absteigend, dann Anzeigename ohne die ergänzten Akzente (mps.display_name der "
+            "repräsentativen Aufzeichnung), Personenkennung und Fraktion. " + _WP_LIMIT_METHOD
         ),
     },
     {
@@ -5274,7 +5296,7 @@ def _run_export(
         if "paragraphs_json" in {row["name"] for row in dist_conn.execute("PRAGMA table_info(speeches)")}:
             dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
         dist_conn.execute(
-            "CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY NOT NULL REFERENCES mps(id), canonical_id TEXT NOT NULL REFERENCES persons(id), has_page INTEGER NOT NULL)"
+            "CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY NOT NULL REFERENCES mps(id), canonical_id TEXT NOT NULL REFERENCES persons(id), has_page INTEGER NOT NULL, accented_name TEXT)"
         )
         # Read from the copy, not the source: another build may have replaced
         # the store since, and the mapping must match the rows it points at.
@@ -5283,6 +5305,7 @@ def _run_export(
             for mp_id, canonical_id in dist_conn.execute("SELECT id, person_id FROM mps ORDER BY id")
         ]
         dist_conn.executemany("INSERT INTO mp_canonical(mp_id, canonical_id, has_page) VALUES (?, ?, ?)", mp_rows)
+        _write_accented_names(dist_conn)
         violations = dist_conn.execute("PRAGMA foreign_key_check").fetchall()
         if violations:
             raise RuntimeError(f"export: distribution copy has foreign-key violations: {[tuple(row) for row in violations[:3]]}")
@@ -9699,7 +9722,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                m.profile_url, m.birth_year, m.gender, m.profession,
                m.wahlkreis, m.bundesland, m.aw_politician_id,
                m.aw_match, m.person_roles_json,
-               m.is_mdb, m.dip_person_id, m.xml_redner_id, m.identity_key, pr.partition,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id, m.identity_key, pr.partition, pr.evidence_json,
                p.name AS party
         FROM mps m
         LEFT JOIN parties p ON m.party_id = p.id
@@ -9707,6 +9730,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         """
     ).fetchall()
     rows = [dict(r) for r in base]
+    mps_row_ids = {row["id"] for row in rows}
 
     # All speeches with their protocol and agenda-item context, newest sitting
     # first. Feeds the "Reden im Bundestag" list on a profile page.
@@ -9864,12 +9888,18 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             None if unit.get("sprechrolle") else (unit.get("fraktion") or r.get("party"))
             for unit, r in spoken
         }
+        # The accents another printing adds to the heading, read like the
+        # recipes' label: from mps rows, and from stale evidence only when the
+        # person has no row.
+        shown = first("display_name")
+        printings = [name for r in ([r for r in members if r["id"] in mps_row_ids] or members)
+                     for name in registry.printed_names(r)]
         mp = {
             "id": cid,
             "has_page": cid in page_eligible,
             "sprechrollen": [derive.SPRECHROLLE_LABELS.get(side, side) for side, _ in sprechrollen.most_common()],
             "mandat_in_protocols": bool(merged_votes) or bool(counted_for - {None, "Unbekannt"}),
-            "name": registry.clean_mp_name(first("display_name")),
+            "name": registry.clean_mp_name(registry.accented_label(shown, printings) or shown),
             "party": first("party"),
             "title": first("title"),
             "function": _parse_listish(first("function")),
@@ -10055,10 +10085,13 @@ def render_abgeordnete_script() -> str:
       // Set while the former-MdB section is open only because a filter found
       // matches in it, so clearing the filter closes it again.
       let formerAutoOpened = false;
+      // Accents are not needed to find a name ("Dagdelen" finds "Dağdelen",
+      // "Muller" "Müller"), as in the bill search.
+      const fold = (text) => text.toLowerCase().normalize("NFD").replace(/\\p{M}/gu, "");
       const filterRows = (list, q, byParty) => {
         let shown = 0;
         list.forEach((row) => {
-          const matchesText = !q || row.dataset.search.includes(q);
+          const matchesText = !q || fold(row.dataset.search).includes(q);
           const matchesParty = !byParty || !activeParty || row.dataset.party === activeParty;
           const show = matchesText && matchesParty;
           row.hidden = !show;
@@ -10073,7 +10106,7 @@ def render_abgeordnete_script() -> str:
         if (counter) counter.textContent = String(visible + formerShown + rednerVisible);
       };
       const apply = () => {
-        const q = (search ? search.value : "").trim().toLowerCase();
+        const q = fold((search ? search.value : "").trim());
         // The Fraktion filter narrows the Abgeordnete lists (current and former)
         // only: Redner outside them are listed without one, so the search alone
         // filters them.

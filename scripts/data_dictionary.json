@@ -765,6 +765,12 @@
           "unit": "0/1-Kennzeichen.",
           "source": "Projekt-Exportzuordnung: mps-Aufzeichnungen werden auf die vom Personenregister ausgegebenen Personenkennungen abgebildet; Seitenstatus stammt aus der Seitenauswahl dieses Snapshots.",
           "license": "eigene-auswertung"
+        },
+        "accented_name": {
+          "meaning": "Anzeigename der Person in der Schreibweise mit Akzenten: gesetzt, wenn eine Aufzeichnung der Person den Namen der repräsentativen Quellaufzeichnung mit zusätzlichen Akzenten und sonst unverändert druckt (eine Abstimmungsliste auch als „Nachname, Vorname“, gelesen in der Wortfolge des Namens), mit dem Zusatz der repräsentativen Aufzeichnung ab „, MdB“. Sonst NULL; auf allen Zeilen einer Person gleich. Die Rezepte r1 und r3 zeigen ihn, die Überschrift der Personenseite ohne diesen Zusatz.",
+          "unit": "Personenname als Anzeigetext oder NULL.",
+          "source": "Projekt-Exportzuordnung: scripts/person_registry.py (accented_label) vergleicht die Namen, die person_records zu den mps-Zeilen der Person hält (DIP-Personenliste, XML-Rednerangabe, Abstimmungsmitgliederliste). Der Umlaut gilt nicht als Akzent.",
+          "license": "eigene-auswertung-uebernommene-quelldaten"
         }
       }
     },
