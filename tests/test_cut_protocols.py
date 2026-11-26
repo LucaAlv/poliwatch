@@ -885,5 +885,26 @@ class CorrectedEndReceiptTests(unittest.TestCase):
                                                                     bill_slugs=set()))
 
 
+
+class FaktenWeekGapTests(unittest.TestCase):
+    # Value: protects=a Fakten week that posts a Fakt still names the metrics a cut sitting keeps incomplete, with the
+    #   gap note; fails_when=2026-W41 shows the längste Sitzung of 21/99 and nothing says its Reden metrics lack data;
+    #   why_new=step 7 browser check; seam=renderer
+    def test_a_posted_week_lists_its_incomplete_metrics(self):
+        base = {"period_kind": "week", "period_key": "2026-W41", "iso_year": 2026, "iso_week": 41, "wahlperiode": 21,
+                "receipts": []}
+        posted = {**base, "id": 1, "metric_id": "laengste-sitzung", "complete": 1, "publishable": 1, "rank": 1,
+                  "value": 967, "withheld": None}
+        held = {**base, "id": 2, "metric_id": "laengste-rede", "complete": 0, "publishable": 0, "rank": None,
+                "value": None, "withheld": "incomplete", "gap_note": "Sitzung 21/99: Protokolldatei abgebrochen"}
+        html = site.render_facts_week("2026-W41", [posted, held], {}, {}, {}, mp_lookup={}, document_numbers=set(),
+                                      bill_slugs=set())
+        self.assertIn("Nicht vollständig erfasst", html)
+        self.assertIn("unvollständig erfasst: Sitzung 21/99: Protokolldatei abgebrochen", html)
+        complete = {**held, "complete": 1, "withheld": "below_floor"}
+        self.assertNotIn("Nicht vollständig erfasst", site.render_facts_week(
+            "2026-W41", [posted, complete], {}, {}, {}, mp_lookup={}, document_numbers=set(), bill_slugs=set()))
+
+
 if __name__ == "__main__":
     unittest.main()

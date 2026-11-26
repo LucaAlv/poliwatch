@@ -11367,6 +11367,19 @@ def render_facts_week(
                     bill_slugs=bill_slugs,
                 )
             )
+        # The metrics the period cannot be judged for, with the sitting that keeps
+        # each incomplete (a cut Protokoll file, withheld Reden, ...): a posted Fakt
+        # must not hide that the period's other metrics are missing data.
+        incomplete = [
+            (metric, by_metric_id[metric["id"]]) for metric in period_registry
+            if metric["id"] in by_metric_id and not by_metric_id[metric["id"]].get("complete")
+        ]
+        if incomplete:
+            items = "".join(
+                f"<li><strong>{pulse_html.esc(metric['title'])}</strong><span>{pulse_html.esc(_fact_status_text(row)[0])}</span></li>"
+                for metric, row in incomplete
+            )
+            sections.append(f'<section class="incomplete-metrics"><h2>Nicht vollständig erfasst</h2><ul class="method-list">{items}</ul></section>')
         content = "".join(sections)
     else:
         floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)

@@ -19,7 +19,9 @@ The 435 of the TODO: DIP 4,599, stored 4,164. 429 in the 33 cut files, 10 in WP 
 
 Six cut sittings lack no Rede zu Protokoll, so the TODO's count did not show them: 19/55, 20/175, 20/185, 21/53, 21/56 and 21/65. 19/107 prints the notice but is whole.
 
-Files: [per-sitting.tsv](zu-protokoll-gap/per-sitting.tsv) (47 sittings: a difference or the notice), [census.py](zu-protokoll-gap/census.py) (read-only, reproduces it; totals on stderr).
+Files: [per-sitting.tsv](zu-protokoll-gap/per-sitting.tsv) (a difference or the notice), [census.py](zu-protokoll-gap/census.py) (read-only, reproduces it; totals on stderr).
+
+**Rerun 2026-11-26** on the replay of steps 7 to 10 of [cut-protocols.md](cut-protocols.md) (`.context/cut-7-10-after`, 806 sittings, 61,104 Reden): 37 rows, was 47. The ten WP 18 rows are gone, since E17 (#223) gave those Reden zu Protokoll a Rede of their own; 19/107, 20/185 and 21/108 store one Rede fewer (167 → 166, 134 → 133, 137 → 136), since #217 counts a Rede the XML prints in two pieces once. The 33 cut sittings, 1,189 Reden after the cut and 429 Reden zu Protokoll are unchanged.
 
 ## Cause
 
