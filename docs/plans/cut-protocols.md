@@ -4,6 +4,17 @@ Owner, 2026-11-23: plan it, to be built before the first `--publish`. Cause and 
 
 **Base:** main at v0.46.53.0 (88d83d3), which holds this plan (#216), the split Reden (#217, speech rule 16) and the roster joins (#218). Export format 25, store schema 15. This build takes the next free numbers (expected: export format 26, store schema 16). Check both against origin/main before shipping.
 
+## Read against v0.46.53.0 (2026-11-26, before the build)
+
+What the plan gets wrong or leaves open at 88d83d3, checked on the replay `.context/roster-after-52`:
+
+- **19/107** lists 165 DIP Reden without the chair's (167 with them) against 166 Reden in the XML, and 43 and 43 Reden zu Protokoll; "167 and 167" was v0.46.49.0, before #217 counted a split Rede once. Rule 2 keeps it whole only because it leaves the chair's out: with them it would be marked.
+- **The detection holds on v0.46.53.0:** the notice and rule 2 mark the same 33; 1,127 DIP Reden after the cut in 32 of them by the Inhaltsverzeichnis, 62 in 20/210 by rule 4 (Schenderlein, 27367 B, her only DIP Rede), so 1,189; 429 Reden zu Protokoll by surname, no stored one over; rule 3 finds nothing without the notice.
+- **20/178's `pdf_page` is 203** ("(Schluss: 23.12 Uhr)"), read 2026-11-26 from a copy whose md5 is DIP's `pdf_hash` (489347d2…). The four `pdf_md5` agree with the cached catalog's `pdf_hash`.
+- **`stale_causes`** compares two versions and a digest, not three versions; the new cause makes it four.
+- **Gap, step 3/5:** `COVERAGE_DOMAINS` feeds `sitting_gaps`, which `--backfill-incomplete` works through. A sitting whose XML prints no start or end time (18/23) would be judged acquirable under `times` and fetched again on every backfill without changing. The `times` reason of a parsed XML without a time is left out of `_acquirable_reasons` as withheld Reden are; a report whose XML was not parsed stays acquirable.
+- **Gap, step 2:** the store certifies the speech rule per sitting (`speech_rule_inputs.version`), and nothing would certify the cut rule: a store persisted under an older `cut_rule_version` would read as current. `speech_rule_inputs` gets `cut_rule_version`, compared in `require_current_speech_rules`.
+
 ## What changes
 
 A sitting whose Protokoll XML is a first edition stays stored with its Reden, TOPs and votes. It is marked, it is not complete for speeches, and what DIP lists for the missing part is stored as a list that counts nowhere.
