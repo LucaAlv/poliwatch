@@ -15,6 +15,35 @@ What the plan gets wrong or leaves open at 88d83d3, checked on the replay `.cont
 - **Gap, step 3/5:** `COVERAGE_DOMAINS` feeds `sitting_gaps`, which `--backfill-incomplete` works through. A sitting whose XML prints no start or end time (18/23) would be judged acquirable under `times` and fetched again on every backfill without changing. The `times` reason of a parsed XML without a time is left out of `_acquirable_reasons` as withheld Reden are; a report whose XML was not parsed stays acquirable.
 - **Gap, step 2:** the store certifies the speech rule per sitting (`speech_rule_inputs.version`), and nothing would certify the cut rule: a store persisted under an older `cut_rule_version` would read as current. `speech_rule_inputs` gets `cut_rule_version`, compared in `require_current_speech_rules`.
 
+## Steps 1 to 6 built (2026-11-26)
+
+Branch `claude/cut-protocols-6541f3`, on `claude/cut-protocols-baseline`. Store schema 16, export format 26: check both against origin/main before shipping, other branches are open. Replay: `--offline --repersist --today 2026-11-25` of a clone of `.context/roster-after-52` (v0.46.53.0, built with that date) at `.context/cut-protocols-after`, compared with `roster-after-52`. Every changed `facts` row, with the old and new completeness, publishability, value, percentile and withheld reason: [facts-after-steps-1-6.tsv](cut-protocols/facts-after-steps-1-6.tsv) (606 rows; most move only their percentile).
+
+**Rows.** 33 sittings marked (`protocols.xml_cut`), the list of E16; 19/107 prints the notice and is not marked. `unprinted_contributions`: 1,189 `rede` and 429 `zu_protokoll`, every one with a DIP person id and bound to an `mps` row. Reden 61,104 and `zu_protokoll` 4,164, unchanged. `sitting_end_corrected` holds 19/55 01:28, 20/178 23:12, 21/89 23:37, 21/96 00:15; `xml_header_json` still says 01:30, 23:11, 23:36, 00:16.
+
+**Completeness for speeches** (weeks or months complete, before → after): `laengste-debatte`, `laengste-rede` and `erste-reden` WP 19 57 → 56 (19/55's 2018-W41), WP 20 72 → 62, WP 21 35 → 15; `aktivste-abgeordnete` and `meistdiskutierter-vorgang` WP 20 38 → 31, WP 21 16 → 3. 31 weeks and 20 months, as planned; none gains it, and votes do not move. `laengste-sitzung` under `times`: WP 18 51 → 82, WP 19 57 → 83, WP 20 72 → 73, WP 21 35 → 36.
+
+**Published Fakten: 587 → 571** (the plan's simulation: 569, on v0.46.49.0 with 590 before).
+
+| Metric | WP 18 | WP 19 | WP 20 | WP 21 | All |
+|---|---|---|---|---|---|
+| `laengste-debatte` | – | 27 → 29 | 39 → 32 | 18 → 3 | 97 → 77 |
+| `laengste-rede` | – | – | 43 → 37 | 17 → 7 | 115 → 99 |
+| `erste-reden` | – | – | 14 → 13 | 7 → 7 | 36 → 35 |
+| `aktivste-abgeordnete` | – | – | 21 → 17 | 7 → 0 | 44 → 33 |
+| `meistdiskutierter-vorgang` | – | – | 25 → 20 | 5 → 0 | 47 → 37 |
+| `laengste-sitzung` | 22 → 42 | 29 → 50 | 43 → 43 | 20 → 21 | 114 → 156 |
+
+"–": unchanged. `knappste-abstimmung` and `meiste-abweichler` do not move. Where it differs from the plan, and why:
+
+- **`laengste-sitzung` WP 19 50, not 46.** 19 WP 19 heads print their times with a dot ("13.00", "2.09", "13.00 Uhr"). The SQL read them as no value, so a week took its extreme over the other sittings, and the four weeks where every sitting is dotted had none (2019-W42, W43, W46, W50). Fixed in its own commit (`facts.sitting_clock` and `_clock`, one rule): 2019-W45 moves from 598 to 1,029 (19/124, 9.00 to 2.09) and is published, 2019-W42 (1,000), W43 (944) and W46 (944) are published, W50 (758) is below the floor. Without the fix, `times` would have withheld 2019-W07 and 2019-W39, which were published and right. No published value was wrong before: 2019-W45 was withheld.
+- **`laengste-debatte` WP 19 27 → 29.** No value moves. Without 2018-W41, 2018-W47 has 7 weeks of WP 19 history, below the minimum, so it is compared with all Wahlperioden (58 weeks; percentile 1.0 → 0.897, still published), and the smaller WP baseline lifts 2018-W50 and 2019-W08 over the floor. The same shift lifts `laengste-rede` WP 19 percentiles, without changing what is published.
+- **`erste-reden` WP 21 stays at 7, not 6.** Step 4 removes all seven debuts the plan names, but only Günther's was in 2025-W28 (28 → 27): Bilic and Jordan debuted in 2025-W37, which is incomplete now (21/21), and Seifert, Zobel, Pohlmann and Arndt in 2025-W39, W41, W49 and W51, none of them published. 2025-W39 goes from 7 to 6 (Seifert), 2025-W51 from 1 to 0 (Arndt); W41 and W49 are incomplete now. With 15 complete WP 21 weeks left, 2025-W38 (9) and 2025-W39 (6) have too little WP 21 history and are compared with all Wahlperioden (175 and 176 weeks), and 2026-W37 (1) with 14 WP 21 weeks; all three pass the floor, as 2025-W26, 2025-W37 and 2026-W24 leave.
+
+**Values that move:** `laengste-sitzung` 2018-W41 990 → 988, 2024-W26 851 → 852, 2026-W28 876 → 877, 2026-W39 916 → 915 (the four PDF end times), 2019-W45 598 → 1,029 (dot times); `erste-reden` 2025-W28 28 → 27, 2025-W39 7 → 6, 2025-W51 1 → 0 (step 4). The percentile of `laengste-sitzung` 2024-W41 is 0.587 (0.597 before), as planned.
+
+**Left to step 7:** the receipt line of a Fakt with a corrected end ("Ende laut PDF 1.28 Uhr, laut Protokolldatei 01:30 Uhr"): no page prints a clock time yet, so it is reader-facing work. The citation already reads the corrected end.
+
 ## What changes
 
 A sitting whose Protokoll XML is a first edition stays stored with its Reden, TOPs and votes. It is marked, it is not complete for speeches, and what DIP lists for the missing part is stored as a list that counts nowhere.
