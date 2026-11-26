@@ -3840,7 +3840,7 @@ SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 # it: the export writes it to mp_canonical.accented_name (_write_accented_names).
 REPRESENTATIVE_SQL = (
     "WITH representative AS (\n"
-    "  SELECT person_id, COALESCE(accented_name, display_name) AS display_name, party_id FROM (\n"
+    "  SELECT person_id, COALESCE(accented_name, display_name) AS display_name, display_name AS sort_name, party_id FROM (\n"
     "    SELECT m.person_id, m.display_name, c.accented_name, m.party_id,\n"
     "           ROW_NUMBER() OVER (PARTITION BY m.person_id\n"
     "                              ORDER BY m.is_mdb DESC, m.xml_redner_id IS NULL, m.identity_key) AS rank\n"
@@ -4055,7 +4055,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "JOIN parties pa ON pa.id = vm.party_id\n"
             "WHERE vm.abweichung = 1\n"
             "GROUP BY mc.canonical_id, wahlperiode, pa.name\n"
-            "ORDER BY wahlperiode DESC, abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
+            "ORDER BY wahlperiode DESC, abweichungen DESC, m.sort_name, mc.canonical_id, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
@@ -4074,7 +4074,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "ergeben; fehlt einer Gruppe ein Mitglied oder hat sie keine Summe, zählt in ihr niemand (abweichung NULL). "
             "Enthaltungen, nicht abgegebene Stimmen, Abstimmungen ohne Ja/Nein-Mehrheitsvotum, fraktionslose Mitglieder "
             "und Mitglieder ohne erkennbaren Zusammenschluss zählen nicht. Reihenfolge: Wahlperiode absteigend, "
-            "dann Abweichungen absteigend, dann Anzeigename, Personenkennung und Fraktion. " + _WP_LIMIT_METHOD
+            "dann Abweichungen absteigend, dann Anzeigename ohne die ergänzten Akzente (mps.display_name der "
+            "repräsentativen Aufzeichnung), Personenkennung und Fraktion. " + _WP_LIMIT_METHOD
         ),
     },
     {

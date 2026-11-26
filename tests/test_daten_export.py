@@ -2231,6 +2231,34 @@ class AccentedNameTests(unittest.TestCase):
         self.assertIn("Boris Mijatovic", names)
         self.assertNotIn("Boris Mijatovi\u0107", names)
 
+    # Value: protects=an accent-only change to a label never changes who is in r3's published five; fails_when=r3 breaks a tie by the accented label, which SQLite sorts after every unaccented letter ("Dağdelen" after "Dal"); why_new=the end-to-end fixture has no vote data, so r3's order was never run with an accented label; seam=the recipe SQL on the tables it reads
+    def test_an_accented_label_does_not_move_r3s_tie_break(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(
+            "CREATE TABLE mps(id TEXT, person_id TEXT, display_name TEXT, party_id TEXT, is_mdb INTEGER,"
+            " xml_redner_id TEXT, identity_key TEXT);"
+            "CREATE TABLE mp_canonical(mp_id TEXT, canonical_id TEXT, accented_name TEXT);"
+            "CREATE TABLE parties(id TEXT, name TEXT);"
+            "CREATE TABLE protocols(id TEXT, document_number TEXT);"
+            "CREATE TABLE votes(id TEXT, protocol_id TEXT);"
+            "CREATE TABLE agenda_items(id TEXT, protocol_id TEXT);"
+            "CREATE TABLE agenda_item_votes(vote_id TEXT, agenda_item_id TEXT);"
+            "CREATE TABLE vote_members(vote_id TEXT, mp_id TEXT, party_id TEXT, abweichung INTEGER);"
+            "INSERT INTO parties VALUES ('spd', 'SPD');"
+            "INSERT INTO protocols VALUES ('p1', '21/1');"
+            "INSERT INTO votes VALUES ('v1', 'p1');")
+        people = (("Anna Abel", None), ("Bert Bauer", None), ("Carl Cramer", None), ("Dora Dach", None),
+                  ("Sevim Dal", None), ("Sevim Dagdelen", "Sevim Dağdelen"))
+        for number, (name, accented) in enumerate(people, 1):
+            conn.execute("INSERT INTO mps VALUES (?, ?, ?, 'spd', 1, NULL, ?)", (f"m{number}", f"p-{number}", name, f"k{number}"))
+            conn.execute("INSERT INTO mp_canonical VALUES (?, ?, ?)", (f"m{number}", f"p-{number}", accented))
+            conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 1)", (f"m{number}",))
+        recipe = next(r for r in b.RECIPES if r["id"] == "r3-abweichler")
+        rows = conn.execute(recipe["sql"]).fetchall()
+        conn.close()
+        self.assertEqual([row[2] for row in rows],
+                         ["Anna Abel", "Bert Bauer", "Carl Cramer", "Dora Dach", "Sevim Dağdelen"])
+
     # Value: protects=a name typed without its accents still finds the person in the Abgeordnete list; fails_when=the list filter compares the typed text or the row's text with accents on; why_new=only the bill and sitting searches folded accents, and a heading that gains accents would drop out of the unaccented search; seam=none; no_claim=the script's behaviour, which a browser check covers
     def test_the_abgeordnete_list_search_ignores_accents_on_both_sides(self) -> None:
         script = b.render_abgeordnete_script()
