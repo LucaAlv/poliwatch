@@ -125,6 +125,22 @@ class ProtocolCutTests(unittest.TestCase):
              "page": 90, "quadrant": "C"},
         ])
 
+    # Value: protects=a DIP Aktivität repeated across cursor pages counts once, and one without an id is refused;
+    #   fails_when=persist stops on UNIQUE(protocol_id, dip_activity_id), or a repeat marks a whole sitting cut;
+    #   why_new=ship review of steps 1-6 (Codex); seam=none
+    def test_a_repeated_dip_aktivitaet_counts_once(self):
+        repeated = [*ACTIVITIES, *copy.deepcopy(ACTIVITIES[3:5])]
+        self.assertEqual(cut.protocol_cut(parsed(NOTICE_READ), repeated), cut.protocol_cut(parsed(NOTICE_READ), ACTIVITIES))
+        self.assertIsNone(cut.protocol_cut(parsed(NOTICE_READ, reden=5, zu_protokoll=("Dreher", "Esch")), repeated))
+        root = protocol_root(notice="")
+        late = [activity(f"x{n}", "Rede", f"Late Speaker{n}, MdB", f"{20 + n}A") for n in range(4)]
+        self.assertIsNone(cut.unmarked_cut_evidence(root, [*late, *copy.deepcopy(late)], 0))
+
+    def test_a_dip_aktivitaet_without_an_id_is_refused(self):
+        blank = [*ACTIVITIES, {**activity("", "Rede", "Fritz Fink, MdB, SPD", "13B", "16")}]
+        with self.assertRaisesRegex(cut.ProtocolCutError, "without an id"):
+            cut.protocol_cut(parsed(NOTICE_READ), blank)
+
     def test_a_file_without_the_notice_is_whole_whatever_dip_lists(self):
         # 18/3's shape: a Fragestunde after the last <rede>, no notice.
         self.assertIsNone(cut.protocol_cut(parsed(None), ACTIVITIES))
@@ -529,6 +545,22 @@ class BackfillTests(unittest.TestCase):
         self.assertEqual(([p["dokumentnummer"] for p in acquirable], [p["dokumentnummer"] for p in held]),
                          (["21/1"], ["21/2"]))
 
+    # Value: protects=a run stopped after writing a replaced XML and before its report is fetched again: the report
+    #   read another file than the cached one; fails_when=the sitting stays held with an old cut report beside a final
+    #   file whose md5 matches DIP's; why_new=ship review of steps 1-6 (Codex); seam=replaced_cut_files
+    def test_a_cut_report_read_from_another_file_than_the_cached_one_is_acquired_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            path = site.xml_cache_path(output_dir, "21/1")
+            path.parent.mkdir(parents=True)
+            path.write_text("<dbtplenarprotokoll/>", encoding="utf-8")
+            md5 = hashlib.md5(path.read_bytes()).hexdigest()
+            entry = self.cut_entry(1)
+            entry["report"]["protocol"]["xml_sha256"] = dip.xml_source_sha256("<dbtplenarprotokoll/>")
+            self.assertEqual(site.replaced_cut_files(output_dir, [entry], [self.catalog(1, md5)]), set())
+            entry["report"]["protocol"]["xml_sha256"] = "0" * 64
+            self.assertEqual(site.replaced_cut_files(output_dir, [entry], [self.catalog(1, md5)]), {"21/1"})
+
     # Value: protects=the run names the cut files apart from withheld Reden; fails_when=they read as withheld Reden or
     #   as sittings a backfill would fix; why_new=step 5; seam=format_incomplete_report
     def test_the_run_names_the_cut_files_on_a_line_of_their_own(self):
@@ -572,6 +604,9 @@ class GateTests(unittest.TestCase):
         conn = pulse_store.connect(data / "bundestag-pulse.sqlite")
         try:
             pulse_store.persist_report(conn, report, None)
+            # The build binds unprinted entries once the roster is in: x1's DIP person is an MdB here.
+            conn.execute("UPDATE mps SET dip_person_id = '8173' WHERE id = (SELECT MIN(id) FROM mps)")
+            pulse_store.resolve_unprinted_people(conn)
             conn.commit()
         finally:
             conn.close()
@@ -623,6 +658,16 @@ class GateTests(unittest.TestCase):
             conn.execute("UPDATE unprinted_contributions SET mp_id = ?, page = ?, page_quadrant = ? WHERE dip_activity_id = 'x1'",
                          (mp_id, page, quadrant))
         self.assertIn("share person, place and sitting", " ".join(gate.cut_protocol_check(output, database)["problems"]))
+
+    # Value: protects=every unprinted Rede is bound to an mps row, or the gate stops; fails_when=an unbound one drops
+    #   out of erste-reden v4 and a later Rede reads as the debut; why_new=ship review of steps 1-6 (Codex); seam=gate
+    def test_an_unbound_unprinted_rede_fails(self):
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        self.assertEqual(gate.cut_protocol_check(output, database)["problems"], [])
+        with sqlite3.connect(database) as conn:
+            conn.execute("UPDATE unprinted_contributions SET mp_id = NULL WHERE dip_activity_id = 'x1'")
+        self.assertIn("1 unprinted Reden are bound to no MdB: 20/999 x1",
+                      " ".join(gate.cut_protocol_check(output, database)["problems"]))
 
     # Value: protects=the corrected end times hold in the store and against DIP's pdf_hash; fails_when=a PDF replaced
     #   since the reading goes unnoticed, or the column holds a time no entry gives; why_new=step 6 (3b); seam=gate

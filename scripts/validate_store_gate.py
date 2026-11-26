@@ -422,6 +422,11 @@ def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
             "WHERE EXISTS (SELECT 1 FROM speeches s JOIN mps ms ON ms.id = s.mp_id WHERE s.protocol_id = u.protocol_id "
             "AND s.page = u.page AND s.page_quadrant IS u.page_quadrant AND ms.person_id = mu.person_id) "
             "ORDER BY 1, 2 LIMIT 50")]
+        # erste-reden v4 joins an unprinted Rede by its MdB: one bound to none
+        # would drop out and let a later Rede read as the debut.
+        unbound = [f"{number} {activity}" for number, activity in conn.execute(
+            "SELECT p.document_number, u.dip_activity_id FROM unprinted_contributions u "
+            "JOIN protocols p ON p.id = u.protocol_id WHERE u.kind = 'rede' AND u.mp_id IS NULL ORDER BY 1, 2")]
     finally:
         conn.close()
     problems: list[str] = []
@@ -463,6 +468,8 @@ def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
     if looks_cut:
         problems.append(f"{len(looks_cut)} sittings without the notice look cut by rule 3: read them "
                         f"({', '.join(entry['document_number'] for entry in looks_cut[:10])})")
+    if unbound:
+        problems.append(f"{len(unbound)} unprinted Reden are bound to no MdB: {', '.join(unbound[:10])}")
     if shared:
         problems.append(f"{len(shared)} unprinted entries share person, place and sitting with a stored Rede: {', '.join(shared[:10])}")
     cut = sorted((number for number, flag in marked.items() if flag),

@@ -135,6 +135,26 @@ def _entry(activity: dict[str, Any], kind: str) -> dict[str, Any]:
     }
 
 
+def _distinct(aktivitaeten: list[dict[str, Any]] | None, sitting: str | None = None) -> list[dict[str, Any]]:
+    """DIP's Aktivitäten, each once: the client joins cursor pages, which may
+    repeat one. With ``sitting``, an Aktivität without an id is refused, for an
+    entry is stored under it; without, it is kept as it is."""
+    seen: set[str] = set()
+    distinct = []
+    for activity in aktivitaeten or []:
+        if not isinstance(activity, dict):
+            continue
+        activity_id = str(activity.get("id") or "").strip()
+        if not activity_id:
+            if sitting is not None:
+                raise ProtocolCutError(f"{sitting}: DIP lists an Aktivität without an id ({activity.get('titel') or '(no title)'})")
+            distinct.append(activity)
+        elif activity_id not in seen:
+            seen.add(activity_id)
+            distinct.append(activity)
+    return distinct
+
+
 def _order(activity: dict[str, Any]) -> tuple[int, str, str]:
     place = _place(activity) or (0, "")
     return place[0], place[1], str(activity.get("id") or "")
@@ -158,7 +178,7 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
     if not notice:
         return None
     sitting = "{wahlperiode}/{sitzung_nr}".format(**{"wahlperiode": "?", "sitzung_nr": "?", **(parsed.get("xml_protocol") or {})})
-    activities = [a for a in aktivitaeten or [] if isinstance(a, dict)]
+    activities = _distinct(aktivitaeten, sitting)
     reden = sorted((a for a in activities if a.get("aktivitaetsart") == DIP_REDE and not CHAIR.search(str(a.get("titel") or ""))),
                    key=_order)
     written = sorted((a for a in activities if a.get("aktivitaetsart") == DIP_ZU_PROTOKOLL), key=_order)
@@ -224,7 +244,7 @@ def unmarked_cut_evidence(root: ET.Element, aktivitaeten: list[dict[str, Any]] |
     last = last_printed_rede(root)
     if last is None or last["page"] is None:
         return None
-    reden = [a for a in aktivitaeten or [] if isinstance(a, dict) and a.get("aktivitaetsart") == DIP_REDE
+    reden = [a for a in _distinct(aktivitaeten) if a.get("aktivitaetsart") == DIP_REDE
              and not CHAIR.search(str(a.get("titel") or ""))]
     cut_at = (last["page"], last["quadrant"] or "")
     after = sum(1 for a in reden if (_place(a) or (0, "")) > cut_at)

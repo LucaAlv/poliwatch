@@ -692,7 +692,12 @@ def replaced_cut_files(output_dir: Path, entries: list[dict[str, Any]], catalog:
         path = xml_cache_path(output_dir, number) if number else None
         if not listed or path is None or not path.is_file():
             continue
-        if hashlib.md5(path.read_bytes()).hexdigest() != listed:
+        data = path.read_bytes()
+        read = (report.get("protocol") or {}).get("xml_sha256")
+        # A run stopped between writing the new XML and its report leaves a
+        # report read from another file than the one cached.
+        if hashlib.md5(data).hexdigest() != listed or (
+                read and read != dip.xml_source_sha256(data.decode("utf-8", errors="replace"))):
             replaced.add(number)
     return replaced
 
