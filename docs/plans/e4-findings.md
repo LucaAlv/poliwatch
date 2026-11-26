@@ -1,6 +1,6 @@
 # E4 deferred findings 1 to 4: plan
 
-Status: **plan, 2026-11-26, reviewed (Codex, read-only, 2026-11-26; see "Review" at the end); the item 2 window waits for the owner.** Source: TODOS.md, "E4 /gstack-review: deferred findings (2026-11-05)", items 1 to 4 and item 9's second to fourth bullets. The release roadmap needs items 1 to 4 and 7 before the first `--publish`.
+Status: **built 2026-11-26** (reviewed by Codex, read-only, the same day; see "Review" at the end; owner on the item 2 window: "Yes, 90 days"). Source: TODOS.md, "E4 /gstack-review: deferred findings (2026-11-05)", items 1 to 4 and item 9. The release roadmap needs items 1 to 4 and 7 before the first `--publish`.
 
 Base: main 88d83d3 (v0.46.53.0). Reference store for the replay: `.context/roster-after-52` cloned to `.context/e4-after`, with `.e4-after.private/mdb-stammdaten.zip` (Stand 2026-04-29T08:03:03Z, 4,614 MdB records).
 
@@ -156,6 +156,10 @@ The online fresh vs incremental comparison needs a DIP API key and network: an o
 4. The cross-check report before and after: the figures in item 4.
 5. Item 1 on the clone: move the zip aside, `--offline --repersist` refuses and the store is unchanged; put it back.
 6. `/verify` green; `docs/agents/review-checklist.md` applied.
+
+## Replay result (2026-11-26)
+
+`--offline --repersist` on `.context/e4-after` with the built tip: "806 cached reports persisted; store content unchanged, file kept" (the store file is byte-identical), refile 157 Stimmen in 87 Abstimmungen, Fakten unchanged. `scripts/compare_store_values.py roster-after-52 e4-after`: no figure moved in any section, "vote groups" 0 of 676 shared votes changed. Cross-check report: agree 720 → 633, `refiled` 0 → 87 (exactly the 87 roll-calls with a move), `after_stand` 1 → `near_stand` 1 (vote 1004), `change_on_vote_day` 14, `roll_call_short` 1, `shift_between_groups` 0, `unexplained` 0, `moves_inconsistent` 0; `refiled` list 157 Stimmen in 87 roll-calls. Item 1 on the clone: with the zip moved aside, `--offline --repersist` exits 1 naming the Stand, sha256, path and `--without-stammdaten`, and the store's sha256 is unchanged; the zip was put back.
 
 ## Review
 
