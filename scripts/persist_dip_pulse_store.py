@@ -2066,7 +2066,9 @@ def persist_unprinted(conn: sqlite3.Connection, report: dict[str, Any], protocol
     conn.execute(
         "UPDATE protocols SET xml_cut = ?, xml_final_announced = ?, xml_last_rede_id = ?, xml_cut_unplaced_reden = ? "
         "WHERE id = ?",
-        (1, clean(cut.get("announced")), clean(cut.get("last_rede_id")), cut["unplaced_reden"], protocol_id) if cut
+        # A cut read under rule 2 has no unplaced_reden: NULL, and the rule-version
+        # check (require_current_speech_rules) asks for a replay.
+        (1, clean(cut.get("announced")), clean(cut.get("last_rede_id")), cut.get("unplaced_reden"), protocol_id) if cut
         else (0, None, None, None, protocol_id),
     )
     for entry in (cut or {}).get("entries") or []:

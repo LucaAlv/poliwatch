@@ -419,6 +419,19 @@ class StoreTests(unittest.TestCase):
         pulse_store.persist_report(conn, cut_report(None), None)
         self.assertEqual(conn.execute("SELECT xml_cut, xml_cut_unplaced_reden FROM protocols").fetchone()[:], (0, None))
 
+    # Value: protects=a cached report cut under rule 2 (no unplaced_reden key) persists with NULL, and the store's
+    #   rule-version check then asks for a replay instead of a KeyError traceback; fails_when=persist stops on
+    #   cut["unplaced_reden"]; why_new=TODOS cut-protocols item 16e; seam=persist
+    def test_a_cut_from_an_older_rule_without_unplaced_reden_persists_null_and_reads_stale(self):
+        conn = self.store()
+        old = {key: value for key, value in CUT.items() if key != "unplaced_reden"}
+        report = cut_report(old)
+        report["validation_summary"]["cut_rule_version"] = 2
+        pulse_store.persist_report(conn, report, None)
+        self.assertEqual(conn.execute("SELECT xml_cut, xml_cut_unplaced_reden FROM protocols").fetchone()[:], (1, None))
+        with self.assertRaisesRegex(RuntimeError, "cut Protokoll files"):
+            pulse_store.require_current_speech_rules(conn)
+
     def test_a_schema_16_store_is_refused(self):
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT, xml_header_json TEXT, "
