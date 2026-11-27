@@ -163,3 +163,7 @@ Tracked in `TODOS.md`:
 - **Citation format:** protocol citations must read „BT-PlPr." with the period.
 - **Roll-call coverage:** check whether non-voters („nicht abgegeben") are also listed in the protocol, or only in the XLSX.
 - **Governance:** `SECURITY.md`, `security.txt`, the conduct rules, the issue forms and the e-mail scope, per D5.
+
+## Amendment 2026-11-27: the Fakt der Woche tables leave the export (export format 29)
+
+Decision Q5 (`docs/plans/v1-scope-review.md`) takes `facts`, `fact_metrics` and `fact_sources` out of the release. The "Our own work" row above no longer covers them as export tables. The build store keeps them, and what the site shows from them stays under the same terms as our other figures.

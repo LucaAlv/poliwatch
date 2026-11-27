@@ -64,7 +64,7 @@ Seven decisions for the first release, all as recommended:
 6. **The data release does not wait for a site host** ("Write the release script").
 7. **The clinic packet goes out before text-free withholding is built** and says it is planned. The build comes before the first `--publish`.
 
-Work that also comes before the release: the `facts` tables leave the release (Q5; the export of v0.46.42.0 still ships `facts`, `fact_metrics` and `fact_sources`), "Rename the project to open-parlament", ~~"Roster MdB records that never join their speaker"~~ (done 2026-11-25, v0.46.53.0), and items ~~1 to 4~~ (done 2026-11-26, v0.46.55.0) and 7 of "E4 /gstack-review: deferred findings". One replay and one gate run at the end.
+Work that also comes before the release: ~~the `facts` tables leave the release~~ (Q5; done 2026-11-27, v0.46.60.0, export format 29; `docs/plans/facts-out-of-export.md`. The export alone changes: the build store and the Fakt pages keep the tables. On a clone of the 806-sitting store replayed with v0.46.58.0: tables 37 → 34, table CSVs 36 → 33, rows 1,372,489 → 1,367,645 (the 8 + 1,944 + 2,892 facts rows), relationships 52 → 50, schema hash `0c6b0488…` → `a5331682…`; no figure and none of the 1,944 Fakt values moves, and `database.html` is the only page that differs beyond the build time and the generation id. This also does the `facts` tables half of "Apply the v1 surface list". Left for that item: what DATA.md and the codebook still say about the website's Fakten, e.g. that a withheld or cut sitting keeps its week incomplete, which stays true while the pages exist. Wording only, from the red team of 2026-11-27 (its third point, the Daten page intro, was fixed after code review the same day), no correctness defect, and gone or to be reread once the pages leave: `LICENSE-DATA.md` „Topic-based facts retain an unknown topic“ speaks of Fakten the export does not hold; its `derived` row names nothing behind the site's Fakt figures, which the short string still covers), "Rename the project to open-parlament", ~~"Roster MdB records that never join their speaker"~~ (done 2026-11-25, v0.46.53.0), and items ~~1 to 4~~ (done 2026-11-26, v0.46.55.0) and 7 of "E4 /gstack-review: deferred findings". One replay and one gate run at the end.
 
 **Answered 2026-11-23:** the 287 Wortmeldungen zur Geschäftsordnung and the 62 Erklärungen zum Vermittlungsverfahren stay Reden (`docs/plans/beitraege-as-reden.md`, section 3). 23 bare motions among the 34 shortest Geschäftsordnung rows are procedural (owner, 2026-11-23); the /ship review found a 35th such row, 21/10 `ID211006000`, a bare motion by two blind readings, so 24 are.
 
@@ -559,12 +559,12 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 ### Apply the v1 surface list
 
-**What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, and its `facts` tables out of the release. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
+**What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, ~~and its `facts` tables out of the release~~ (done 2026-11-27, v0.46.60.0, export format 29; `docs/plans/facts-out-of-export.md`). Once the pages are gone, also drop the sentences on the Daten page (intro and transformation note) that say the download lacks the Fakt der Woche tables, or reread them. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
 
 **Why:** Decisions Q5, Q6, Q7, Q10.
 
 **Order (2026-11-10, `docs/plans/render-layer-and-order.md`):**
-- The page cuts (`api-sitzungen.html`, `settings.html`, the Fakt pages and their references, the `sources.html` sitting list) are step 0, before any port or restyle. That PR edits the same regions of `build_dip_pulse_site.py` as the `facts` tables leaving the release, which stays with the release work, so land one first and rebase the other.
+- The page cuts (`api-sitzungen.html`, `settings.html`, the Fakt pages and their references, the `sources.html` sitting list) are step 0, before any port or restyle. That PR edits the same regions of `build_dip_pulse_site.py` as export format 29 (the `facts` tables leaving the release), so rebase it onto that change.
 - The nav change comes with the new page shell (step 1).
 - The "Erfasste Quelldaten" block goes in slice 7.
 - The Daten page comes at step 10.
@@ -1328,6 +1328,22 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
+
+### Two comments still say the metric caveat is exported
+
+**What:** Since export format 29 the release holds no `fact_metrics`. The `metric_row` docstring in `scripts/facts.py` still calls the caveat "stored and exported", and the "Value (review 2026-11-01)" comment above `test_the_stored_caveat_has_its_coverage_slot_filled` in `tests/test_facts.py` still names the download `fact_metrics-local.csv.gz`. Drop the export from both.
+
+**Why:** Code review of the format 29 branch, 2026-11-27. Comments only, so deferred under `CLAUDE.md`, "Review findings: fix now or defer". No output or test result depends on them.
+
+**Effort:** S
+
+### Pin the two format 29 Daten sentences in a test
+
+**What:** No test reads the clause "die Tabellen zum Fakt der Woche entfernt" in `manifest["transformation"]` (`_run_export`, `scripts/build_dip_pulse_site.py`) or the Daten lede's "Die Tabellen mit den berechneten Kennzahlen zum Fakt der Woche sind nicht enthalten" (`render_database_page`). Add one assertion each, e.g. in `test_the_release_holds_no_facts_table_and_the_store_keeps_them` and an existing `render_database_page` test. Drop both with the sentences once Fakt der Woche leaves the site ("Apply the v1 surface list").
+
+**Why:** /gstack-ship coverage audit of v0.46.60.0, 2026-11-27: 10 of 12 changed paths tested; these two are wording only, so deferred under `CLAUDE.md`. Both sentences are right in the rendered clone output.
+
+**Effort:** S
 
 ### Fakt der Woche, rasterize and post one card
 
