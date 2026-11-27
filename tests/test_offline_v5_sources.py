@@ -118,9 +118,9 @@ class OfflineV5SourceTests(unittest.TestCase):
                 self.assertTrue(parsed["agenda_items"])
                 self.assertEqual(parsed["xml_protocol"]["sitzung_nr"], sitting.split("-")[1])
 
-    # Value: protects=the paragraphs of a real Rede are the printed ones; fails_when=ParagraphFlow's rule for <p> O, J
-    #   or Z changes, or a turn no longer ends a paragraph; why_new=the rule's cases in test_rede_text.py are made-up
-    #   markup, and the reader here restated the rule; seam=none
+    # Value: protects=the paragraphs of a real Rede are the printed ones; fails_when=a <p> J after a <kommentar> runs
+    #   on, or a flush O there no longer does; why_new=the rule's cases in test_rede_text.py are made-up markup, and the
+    #   reader here restated the rule; seam=none
     def test_a_real_redes_paragraphs_come_from_the_parser_as_printed(self):
         [speech] = [s for a in parse_sitting("20-44")["agenda_items"] for s in a["speeches"]
                     if s["rede_id"] == "ID204414000"]
