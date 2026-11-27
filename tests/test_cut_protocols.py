@@ -72,6 +72,23 @@ class FirstEditionNoticeTests(unittest.TestCase):
         with self.assertRaisesRegex(cut.ProtocolCutError, "two dates"):
             cut.first_edition_notice(root)
 
+    # Value: protects=two Reden on one page and quadrant: the last printed is the later one in the Sitzungsverlauf,
+    #   not the larger id as text ("ID9" > "ID10") nor the later Inhaltsverzeichnis line; fails_when=the cut's last
+    #   Rede and its surname (which unplaced_reden discounts) name the wrong Rede; why_new=TODOS cut-protocols item 6;
+    #   seam=parser
+    def test_a_tie_on_one_page_and_quadrant_goes_to_the_later_rede_of_the_sitzungsverlauf(self):
+        def tied(notice):
+            return dip.ET.fromstring(
+                f'<dbtplenarprotokoll wahlperiode="21" sitzung-nr="99"><vorspann><inhaltsverzeichnis>'
+                f'{xref("ID1", 10, "A")}{xref("ID10", 12, "B")}{xref("ID9", 12, "B")}<p>{notice}</p></inhaltsverzeichnis>'
+                f'</vorspann><sitzungsverlauf><rede id="ID1"><p>{redner("Alt")}</p></rede>'
+                f'<rede id="ID9"><p>{redner("Neun")}</p></rede><rede id="ID10"><p>{redner("Zehn")}</p></rede>'
+                f'</sitzungsverlauf></dbtplenarprotokoll>')
+        self.assertEqual(cut.first_edition_notice(tied(NOTICE))["last_rede"],
+                         {"rede_id": "ID10", "page": 12, "quadrant": "B", "surname": "Zehn"})
+        later = [activity(f"l{n}", "Rede", f"Later Page{n}, MdB", "13A") for n in range(6)]
+        self.assertEqual(cut.unmarked_cut_evidence(tied(""), later, 0)["last_rede_id"], "ID10")
+
     # Value: protects=20/210's shape, an Inhaltsverzeichnis without pages: the last Rede by order, no place;
     #   fails_when=the cut falls on page 0 and every DIP Rede counts as after it; why_new=new rule; seam=parser
     def test_an_inhaltsverzeichnis_without_pages_gives_the_last_rede_without_a_place(self):

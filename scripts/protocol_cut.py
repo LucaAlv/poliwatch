@@ -28,6 +28,8 @@ import speech_kinds
 #: that would be a Rede is a printed Rede, one that would be a Rede zu Protokoll
 #: matches DIP's entry as a stored one does, and one not yet reviewed counts as
 #: neither; ``cut_summary`` writes that count (``printed_reden``) for rule 3.
+#: Two Reden on one page and quadrant are ordered by the Sitzungsverlauf, not by
+#: their ids as text (``last_printed_rede``).
 CUT_RULE_VERSION = 4
 
 NOTICE = re.compile(
@@ -98,21 +100,24 @@ def first_edition_notice(root: ET.Element) -> dict[str, Any] | None:
 
 def last_printed_rede(root: ET.Element) -> dict[str, Any] | None:
     """The file's last ``<rede>`` of the Sitzungsverlauf, None without one: the
-    latest by page and quadrant in the Inhaltsverzeichnis, or, where it prints
-    no pages (20/210), the last in order, without a place."""
+    latest by page and quadrant in the Inhaltsverzeichnis, the later in the
+    Sitzungsverlauf where two share both, or, where it prints no pages
+    (20/210), the last in order, without a place."""
     verlauf = root.find("sitzungsverlauf")
     redes = list(verlauf.iter("rede")) if verlauf is not None else []
     if not redes:
         return None
     by_id = {rede.get("id"): rede for rede in redes}
+    # Its index in the Sitzungsverlauf, of the element by_id keeps (the last of an id printed twice).
+    position = {rede.get("id"): index for index, rede in enumerate(redes)}
     placed = []
     vorspann = root.find("vorspann")
     for xref in vorspann.iter("xref") if vorspann is not None else ():
         page = _page(xref.get("pnr"))
         if xref.get("ref-type") == "rede" and xref.get("rid") in by_id and page is not None:
-            placed.append((page, _quadrant(xref.get("div")) or "", xref.get("rid")))
+            placed.append((page, _quadrant(xref.get("div")) or "", position[xref.get("rid")], xref.get("rid")))
     if placed:
-        page, quadrant, rede_id = max(placed)
+        page, quadrant, _position, rede_id = max(placed)
         last = {"rede_id": rede_id, "page": page, "quadrant": quadrant or None}
     else:
         last = {"rede_id": redes[-1].get("id"), "page": None, "quadrant": None}
