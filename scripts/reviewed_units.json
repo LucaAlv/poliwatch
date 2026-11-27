@@ -2953,6 +2953,24 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 13000D); read twice, readers agree, 2026-11-23: Chair 'möchten Sie darauf erwidern?' after Roth's § 30 Erklärung addressing him"
     },
     {
+      "sitting": "18/136",
+      "rede_id": "ID1813611300",
+      "redner_id": "11002940",
+      "kind": "annex_paragraphs",
+      "reason": "Strebl's two dashed points stand loose in Anlage 6 after his <rede>; the PDF prints them right after \"…auf zwei Personengruppen richten wollen:\" and before \"Ebenso dürfen wir…\" (PDF p. 169, S. 13393; docs/source-errors.md E17)",
+      "first": "– Beschäftigte mit einem geringeren",
+      "after": "auf zwei Personengruppen richten wollen:"
+    },
+    {
+      "sitting": "18/136",
+      "rede_id": "ID1813611400",
+      "redner_id": "11004321",
+      "kind": "annex_paragraphs",
+      "reason": "Kapschack's four dashed points stand loose in Anlage 6 after his <rede>; the PDF prints them right after \"…die wesentlichen Punkte des Entwurfs unstrittig sind:\" and before \"Ein Wort noch zu dem Vorschlag…\" (PDF p. 170, S. 13394; E17)",
+      "first": "– Die Verringerung der Unverfallbarkeitsfristen",
+      "after": "Punkte des Entwurfs unstrittig sind:"
+    },
+    {
       "sitting": "18/137",
       "rede_id": "ID1813701200",
       "redner_id": "11004244",
@@ -3250,6 +3268,24 @@
       "reason": "DIP lists Erwiderung (p. 20619D); read 2026-11-23"
     },
     {
+      "sitting": "18/206",
+      "rede_id": "ID1820612300",
+      "redner_id": "11003050",
+      "kind": "annex_paragraphs",
+      "reason": "Binding's three points (no dashes) stand loose in Anlage 6 after his <rede>; the PDF prints them as a list right under his opening paragraph \"…verdient hätte:\" and before \"Die Umsetzung der Änderungen der EU-Amtshilferichtlinie…\" (PDF p. 182, S. 20658; E17)",
+      "first": "Bekämpfung von Gewinnkürzungen und Gewinnverlagerungen",
+      "after": "beschlossen – verdient hätte:"
+    },
+    {
+      "sitting": "18/209",
+      "rede_id": "ID1820916300",
+      "redner_id": "11003565",
+      "kind": "annex_paragraphs",
+      "reason": "Klimke's six dashed points, \"Und:\" and one more point stand loose in Anlage 20 after his <rede>; the PDF prints them right after \"…folgende Aspekte im Fokus des politischen Handelns stehen:\" and before \"Mit dem heute vorliegenden Antrag greift…\" (PDF p. 219, S. 21023; E17)",
+      "first": "– Die vielfältigen Einsatzmöglichkeiten von",
+      "after": "im Fokus des politischen Handelns stehen:"
+    },
+    {
       "sitting": "18/210",
       "rede_id": "ID1821006000",
       "redner_id": "11003576",
@@ -3453,6 +3489,15 @@
       "redner_id": "11004067",
       "kind": "kurzintervention",
       "reason": "DIP lists Kurzintervention (p. 24860C); read twice, readers agree, 2026-11-23: Keul calls 'Ich wollte eine Kurzintervention!', chair then admits her; 'Kollegin Obermeier möchte nicht antworten'"
+    },
+    {
+      "sitting": "18/243",
+      "rede_id": "ID1824313700",
+      "redner_id": "11004246",
+      "kind": "annex_paragraphs",
+      "reason": "Bahr's four dashed points stand loose in Anlage 9 after her <rede>; the PDF prints them right after \"…klare Verbesserungen für Kinder, Jugendliche und ihre Familien:\" and before \"In der nächsten Wahlperiode…\" (PDF pp. 231-232, S. 25089-25090; E17)",
+      "first": "– Erst einmal mehr Kinderschutz",
+      "after": "für Kinder, Jugendliche und ihre Familien:"
     },
     {
       "sitting": "18/245",
@@ -4220,6 +4265,15 @@
       "redner_id": "11004738",
       "kind": "procedural",
       "reason": "a bare Geschäftsordnung motion printed as its own <rede>, no argument (p. 12738D; read twice, 2026-11-23, readers agree; owner decision of that day): Bare doubt of Beschlussfähigkeit before the vote"
+    },
+    {
+      "sitting": "19/104",
+      "rede_id": "ID1910418500",
+      "redner_id": "11004057",
+      "kind": "annex_paragraphs",
+      "reason": "Höferlin's three numbered points stand loose in Anlage 9 after his <rede>; the PDF prints them right after \"…symptomatisch für die Digitalpolitik der Großen Koalition:\" and before \"Generell ist diese Große Koalition…\" (PDF p. 224, S. 12838; E17)",
+      "first": "1. Statt das Problem wirklich",
+      "after": "für die Digitalpolitik der Großen Koalition:"
     },
     {
       "sitting": "19/107",

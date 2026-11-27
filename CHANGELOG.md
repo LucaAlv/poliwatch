@@ -11,6 +11,15 @@ The release export no longer holds the Fakt der Woche tables (decision Q5). The 
 - **`facts`, `fact_metrics` and `fact_sources` are gone from the SQLite file, the CSV downloads, `DATA.md` and the Daten page.** The export's schema hash changes with them.
 - **The Daten page says the download lacks the Fakt der Woche tables,** in its intro and in the transformation note (`transformation` in `datenstand.json`). The intro no longer calls the download the same data the site's views rest on.
 - **The codebook and the licence file name no table the export lacks.** Three texts about withheld Reden pointed at `facts.withheld`; that sentence is removed.
+## [0.46.59.0] - 2026-11-27
+
+Six Reden zu Protokoll get their bullet points back. In five Anlagen of the 18. and 19. Wahlperiode the Protokoll XML prints 24 list items of a written Rede loose after it, so they were stored nowhere. They now stand where the PDF prints them, inside their Rede. On the 806-sitting store these six Reden gain 549 words and 4,234 characters, for example Bahr (18/243) 345 → 503 words and Höferlin (19/104) 452 → 638. Reden (61,104), Reden zu Protokoll (4,174), withheld Reden (99), votes and all 1,944 Fakten are unchanged. Speech rule 18; schema and export format are unchanged. A store needs one `--offline --repersist`.
+
+### Fixed
+
+- **The bullet points of six written Reden are part of their text again**: Matthäus Strebl and Ralf Kapschack (18/136), Lothar Binding (18/206), Jürgen Klimke (18/209), Ulrike Bahr (18/243) and Manuel Höferlin (19/104). The reviewed list names each run and the paragraph the PDF prints it after, with the PDF page.
+- **A sitting whose Anlage of written Reden prints a text paragraph loose after a Rede is refused until the reviewed list places it**, so such words can no longer go missing unnoticed. Page scraps and first-edition notices stay outside, and so does an empty paragraph.
+- **One place in an Anlage can now hold several written Reden printed without a Rede of their own**, applied in the order the Protokoll prints them, and a Rede marker without a Redner-ID beside another writer's marker refuses the sitting instead of crashing.
 
 ## [0.46.58.0] - 2026-11-26
 

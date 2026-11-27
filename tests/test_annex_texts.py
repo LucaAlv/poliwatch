@@ -49,6 +49,11 @@ def annex(rede_id, redner_id, name, label=None):
             'reason': 'reviewed in the E17 census', 'name': name, 'label': label or name}
 
 
+def bullets(rede_id, redner_id, first, after):
+    return {'sitting': SITTING, 'rede_id': rede_id, 'redner_id': redner_id, 'kind': 'annex_paragraphs',
+            'reason': 'printed in the PDF after the host paragraph', 'first': first, 'after': after}
+
+
 def parse(*blocks, entries=()):
     reviewed_units.use(list(entries))
     try:
@@ -109,6 +114,58 @@ class SplitTests(unittest.TestCase):
                          [('ID1806311300', '3', 'Eigener Text.'), ('ID1806311300:2', '5', 'Wir beraten heute.')])
 
 
+class DocumentOrderTests(unittest.TestCase):
+    """Several entries in one place are applied in document order (E17 items 2 and 6)."""
+
+    # Value: protects=two other writers' markers in one host each split off with their own writer and document ordinal, whichever
+    #   order the list gives; fails_when=the first split carries the second marker away, so the second entry finds nothing, or
+    #   the parts take ordinals by list order; why_new=code review of 2026-11-26 (E17 items 2 and 6); seam=reviewed
+    def test_two_markers_of_one_host_split_in_either_order(self):
+        host = (f'<rede id="ID1">{THEWS}Thews.</p>{HUBER}Huber.</p><p klasse="J">Huber weiter.</p>'
+                f'{FABRITIUS}Fabritius.</p></rede>')
+        entries = [annex('ID1', '2', 'Charles M. Huber (CDU/CSU)'), annex('ID1', '1', 'Bernd Fabritius (CDU/CSU)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(host), entries=order))], [
+                    ('ID1', '3', 'Thews.'), ('ID1:2', '2', 'Huber.\nHuber weiter.'), ('ID1:3', '1', 'Fabritius.')])
+
+    # Value: protects=where the earlier text of a host opens with a label paragraph (no marker yet), the later part still counts
+    #   it, so the two parts get distinct ordinals; fails_when=a split last to first counts markers before the earlier one is
+    #   made and both parts are ID1:2 (C2 of the plan review); why_new=plan review 2026-11-27; seam=reviewed
+    def test_a_label_paragraph_before_a_marker_in_one_host(self):
+        host = (f'<rede id="ID1">{THEWS}Thews.</p><p klasse="J">Ralph Lenkert (DIE LINKE): Elf.</p>'
+                f'{HUBER}Huber.</p></rede>')
+        entries = [annex('ID1', '2', 'Charles M. Huber (CDU/CSU)'), annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(host), entries=order))], [
+                    ('ID1', '3', 'Thews.'), ('ID1:2', '4', 'Elf.'), ('ID1:3', '2', 'Huber.')])
+
+    # Value: protects=two texts of one block listed out of document order get distinct places, each counting the units made
+    #   before it; fails_when=the later text is wrapped first and both become annex:1:1 (E17 item 6); why_new=/ship red team
+    #   2026-11-26; seam=reviewed
+    def test_two_block_texts_listed_out_of_order(self):
+        body = (f'{SCHUSTER}Ich hoffe auch.</p><p klasse="Anlage_3">des Abgeordneten Christian Petry (SPD) zur Beratung</p>'
+                '<p klasse="N_Anlage">Vor einem Jahr.</p>')
+        entries = [annex('A1', '11004605', 'Christian Petry (SPD)'), annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(body), entries=order))], [
+                    ('annex:1:1', '7', 'Ich hoffe auch.'), ('annex:1:2', '11004605', 'Vor einem Jahr.')])
+
+    # Value: protects=two label-paragraph texts standing back to back in a block, with no <rede> or heading between, become two
+    #   Beiträge whichever order the list gives; fails_when=the first wrap swallows the second text and credits it to the first
+    #   writer (R4 of the plan review); why_new=Codex outside voice 2026-11-27; seam=reviewed
+    def test_adjacent_label_paragraphs_in_one_block(self):
+        body = ('<p klasse="J">Metin Hakverdi (SPD): Im Rahmen.</p><p klasse="J">Weiter.</p>'
+                '<p klasse="J">Ralph Lenkert (DIE LINKE): Elf.</p><p klasse="J">Zwei.</p>')
+        entries = [annex('A1', '11004289', 'Metin Hakverdi (SPD)'), annex('A1', '4', 'Ralph Lenkert (DIE LINKE)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(body), entries=order))], [
+                    ('annex:1:1', '11004289', 'Im Rahmen.\nWeiter.'), ('annex:1:2', '4', 'Elf.\nZwei.')])
+
+
 class OwnerlessRedeTests(unittest.TestCase):
     # Value: protects=an annex <rede> that opens with its writer's label but no marker gets that writer and its text, under its
     #   own id; fails_when=the row keeps no speaker and no text (18/63 Freudenstein); why_new=new rule; seam=reviewed
@@ -166,6 +223,15 @@ class WrapTests(unittest.TestCase):
         self.assertEqual(written(parsed), [('annex:2:1', '11004605', 'Vor einem Jahr.\nFür mich.', None)])
         self.assertEqual(unit(parsed, 'annex:2:1')['source_page']['page'], 2931)
 
+    # Value: protects=a block wrap ends at the next annex heading, so the Rede after it keeps its TOP and the heading is no
+    #   writer's text; fails_when=the wrap runs on to the next <rede> and takes the heading (E17 item 7); why_new=/ship
+    #   coverage audit 2026-11-26; seam=reviewed
+    def test_a_wrap_ends_at_an_annex_heading(self):
+        body = f'{SCHUSTER}Ich hoffe auch.</p>{TOP_HEADING}<rede id="ID2">{OEZDEMIR}Wir beraten heute.</p></rede>'
+        parsed = parse(block(body), entries=[annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)')])
+        self.assertEqual(written(parsed), [('ID2', '6', 'Wir beraten heute.', 'Tagesordnungspunkt 1'),
+                                           ('annex:1:1', '7', 'Ich hoffe auch.', None)])
+
     # Value: protects=a label paragraph standing directly in the block after its headings becomes the writer's Beitrag
     #   (18/155 Hakverdi); fails_when=the text stays unread or keeps its label; why_new=new rule; seam=reviewed
     def test_a_label_paragraph_directly_in_the_block_wraps(self):
@@ -173,6 +239,55 @@ class WrapTests(unittest.TestCase):
                 '<p klasse="J">Metin Hakverdi (SPD): Im Rahmen.</p><p klasse="J">Weiter.</p>')
         parsed = parse(block(body), entries=[annex('A1', '11004289', 'Metin Hakverdi (SPD)')])
         self.assertEqual([u[:3] for u in written(parsed)], [('annex:1:1', '11004289', 'Im Rahmen.\nWeiter.')])
+
+
+class CallerTests(unittest.TestCase):
+    """The callers that parse an annex: online, offline and the D6 check."""
+
+    # Value: protects=a sitting refused for an unlisted annex text names the reviewed-list fix online and on an offline
+    #   re-parse; fails_when=it reads as corrupt XML ("--fetch-xml"), whose re-fetch returns the same XML (E17 item 7);
+    #   why_new=/ship coverage audit 2026-11-26; seam=fetch_text stubbed
+    def test_a_refused_sitting_names_the_reviewed_list(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import build_dip_pulse_site as build
+        xml = document(block(f'{SCHUSTER}Ich hoffe auch.</p>'))
+        protocol = {'id': 'p1', 'dokumentnummer': SITTING, 'fundstelle': {'xml_url': 'https://dserver.bundestag.de/btp/18/18010.xml'}}
+        reviewed_units.use([])
+        with patch.object(dip, 'fetch_text', return_value=xml), patch.object(dip, 'enrich_with_api'), \
+                self.assertRaises(dip.DipError) as online:
+            dip.build_report(SimpleNamespace(api_key='test', sleep=0), protocol)
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / 'data' / 'xml').mkdir(parents=True)
+            (output_dir / 'data' / 'xml' / 'plenarprotokoll-18-10.xml').write_text(xml, encoding='utf-8')
+            report = {'protocol': {'id': 'p1', 'dokumentnummer': SITTING}, 'agenda_items': []}
+            (output_dir / 'data' / 'plenarprotokoll-18-10.json').write_text(json.dumps(report), encoding='utf-8')
+            entries = build.load_existing_detail_entries(output_dir, [{'dokumentnummer': SITTING}])
+            with self.assertRaises(build.CachedReportError) as replay:
+                build.reparse_cached_xml(output_dir, entries)
+        self.assertTrue(online.exception.source_rejected)
+        self.assertIn('scripts/reviewed_units.json with kind annex_rede', str(online.exception))
+        printed_replay = f'{replay.exception}. {build.cached_report_fix(replay.exception)}'
+        self.assertIn('scripts/reviewed_units.json with kind annex_rede', printed_replay)
+        self.assertNotIn('--fetch-xml', printed_replay)
+
+    # Value: protects=the D6 check (check_withhold_one) applies a sitting's annex entries in both its parses, so a sitting
+    #   whose annex text only an entry places is checked rather than refused; fails_when=check_sitting drops the annex kinds
+    #   and every such sitting fails its base parse (E17 item 7); why_new=/ship coverage audit 2026-11-26; seam=reviewed
+    def test_check_withhold_one_reads_annex_entries(self):
+        import check_withhold_one
+        spoken = ''.join(f'<rede id="S{n}">{THEWS}Gesprochen {n}.</p></rede>' for n in (1, 2, 3))
+        xml = document(block(f'{SCHUSTER}Ich hoffe auch.</p>')).replace(
+            '<p klasse="T_NaS">Beratung des Antrags</p>', f'<p klasse="T_NaS">Beratung des Antrags</p>{spoken}')
+        reviewed_units.use([annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)')])
+        try:
+            result = check_withhold_one.check_sitting(xml)
+        finally:
+            reviewed_units.use([])
+        self.assertEqual(result['middle'], {'withheld': 1, 'problems': []})
 
 
 class GuardTests(unittest.TestCase):
@@ -208,6 +323,170 @@ class GuardTests(unittest.TestCase):
         body = f'<rede id="R1">{FABRITIUS}Erster.</p>{merged}Weiter.</p></rede>'
         self.assertEqual([u[:2] for u in written(parse(block(body)))], [('R1', '1')])
 
+    # Value: protects=a marker that names nobody (no, an empty or a blank id) beside a real writer's marker refuses the sitting
+    #   with the guard's own error, and markers with a missing and an empty id are two unknown writers, not one; fails_when=the
+    #   message's sorted() raises TypeError, or the two unidentified markers pass as one writer (E17 item 5, Codex on 185a33a);
+    #   why_new=code review of 2026-11-26; seam=reviewed
+    def test_unidentified_markers_refuse(self):
+        def unidentified(attribute):
+            return f'<p klasse="redner"><redner{attribute}><name><vorname>X</vorname><nachname>Y</nachname></name></redner>X Y: '
+        # Built outside the f-strings: Python 3.11 allows no backslash in an f-string expression.
+        missing, empty, blank = unidentified(''), unidentified(' id=""'), unidentified(' id=" "')
+        shapes = {
+            'no id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{missing}Zweiter.</p></rede>',
+            'an empty id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{empty}Zweiter.</p></rede>',
+            'a blank id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{blank}Zweiter.</p></rede>',
+            'no id and an empty id': f'<rede id="R1">{missing}Erster.</p>{empty}Zweiter.</p></rede>',
+        }
+        for shape, body in shapes.items():
+            with self.subTest(shape), self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'markers of 2 Redner-IDs'):
+                parse(block(body))
+
+
+class LooseParagraphTests(unittest.TestCase):
+    """Bullet points printed loose after their <rede> go back in at the printed place (annex_paragraphs)."""
+
+    HOST = (f'<rede id="ID1">{THEWS}Thews eröffnet.</p><p klasse="J">Zwei Punkte sind wichtig:</p>'
+            '<p klasse="J">Danach geht es weiter.</p></rede>')
+    NEXT = f'<rede id="ID2">{OEZDEMIR}Wir beraten heute.</p></rede>'
+    LOOSE = '<p klasse="J">– Punkt eins.</p><p klasse="J">– Punkt zwei.</p>'
+    ENTRY = bullets('ID1', '3', '– Punkt eins', 'Zwei Punkte sind wichtig:')
+
+    # Value: protects=a run of loose bullets goes in right after the host paragraph that opens it, before the paragraph printed
+    #   next, and up to the next <rede>, which keeps its own words (18/136 Strebl and Kapschack, 18/209, 18/243, 19/104);
+    #   fails_when=the bullets stay unread, land at the Rede's end or run into the next Rede; why_new=TODOS "Bullet points of
+    #   written Reden"; seam=reviewed
+    def test_bullets_go_in_after_the_paragraph_that_opens_them(self):
+        parsed = parse(block(TOP_HEADING + self.HOST + self.LOOSE + self.NEXT), entries=[self.ENTRY])
+        self.assertEqual([u[:3] for u in written(parsed)], [
+            ('ID1', '3', 'Thews eröffnet.\nZwei Punkte sind wichtig:\n– Punkt eins.\n– Punkt zwei.\nDanach geht es weiter.'),
+            ('ID2', '6', 'Wir beraten heute.')])
+        self.assertEqual(unit(parsed, 'ID1')['paragraph_count'], 5)
+
+    # Value: protects=a run opened by the marker paragraph itself goes in after it, and a run at the block's end ends there
+    #   (18/206 Binding); fails_when=the marker paragraph is not searched or the run needs a following <rede>; why_new=TODOS
+    #   "Bullet points of written Reden"; seam=reviewed
+    def test_bullets_after_the_marker_paragraph_at_the_block_end(self):
+        host = (f'<rede id="ID1">{THEWS}Drei Themen hätten es verdient:</p><p klasse="J">Die Umsetzung.</p></rede>'
+                '<p klasse="J">Bekämpfung von Gewinnkürzungen</p><p klasse="J">Entlastung</p>')
+        parsed = parse(block(host), entries=[bullets('ID1', '3', 'Bekämpfung', 'hätten es verdient:')])
+        self.assertEqual([u[:3] for u in written(parsed)], [
+            ('ID1', '3', 'Drei Themen hätten es verdient:\nBekämpfung von Gewinnkürzungen\nEntlastung\nDie Umsetzung.')])
+
+    # Value: protects=a run stops at the first paragraph that is no text, so a page scrap stays out of the writer's words, and
+    #   text left behind the scrap still refuses the sitting (R3 of the plan review); fails_when=a page number or notice is
+    #   stored as an MdB's written words, or text after it is dropped silently; why_new=Codex outside voice 2026-11-27;
+    #   seam=reviewed
+    def test_a_page_scrap_ends_the_run(self):
+        scrap = '<p klasse="Standard">-12409</p>'
+        parsed = parse(block(self.HOST + self.LOOSE + scrap + self.NEXT), entries=[self.ENTRY])
+        self.assertNotIn('12409', unit(parsed, 'ID1')['text'])
+        self.assertIn('– Punkt zwei.\nDanach', unit(parsed, 'ID1')['text'])
+        with self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'Punkt drei'):
+            parse(block(self.HOST + self.LOOSE + scrap + '<p klasse="J">– Punkt drei.</p>' + self.NEXT), entries=[self.ENTRY])
+
+    # Value: protects=one host can hold two runs, each ending where the next entry's run begins, each at its own place;
+    #   fails_when=the first run swallows the second or the second entry is refused; why_new=new kind; seam=reviewed
+    def test_two_runs_of_one_host(self):
+        host = (f'<rede id="ID1">{THEWS}Erstens:</p><p klasse="J">Zweitens:</p><p klasse="J">Schluss.</p></rede>'
+                '<p klasse="J">– a</p><p klasse="J">– b</p><p klasse="J">– c</p>')
+        entries = [bullets('ID1', '3', '– c', 'Zweitens:'), bullets('ID1', '3', '– a', 'Erstens:')]
+        self.assertEqual([u[2] for u in written(parse(block(host), entries=entries))],
+                         ['Erstens:\n– a\n– b\nZweitens:\n– c\nSchluss.'])
+
+    # Value: protects=bullets of a host that an annex_rede entry splits go to the unit holding the paragraph they follow, and
+    #   redner_id is checked against that unit's writer (R5 of the plan review); fails_when=bullets after the split point are
+    #   credited to the host's writer, or an entry naming the wrong writer passes; why_new=Codex outside voice 2026-11-27;
+    #   seam=reviewed
+    def test_bullets_of_a_split_host_go_to_the_unit_that_holds_their_place(self):
+        host = (f'<rede id="ID1">{THEWS}Thews nennt:</p>{HUBER}Huber nennt:</p><p klasse="J">Huber Schluss.</p></rede>'
+                '<p klasse="J">– Punkt.</p>')
+        split = annex('ID1', '2', 'Charles M. Huber (CDU/CSU)')
+        self.assertEqual([u[:3] for u in written(parse(block(host), entries=[split, bullets('ID1', '2', '– Punkt', 'Huber nennt:')]))],
+                         [('ID1', '3', 'Thews nennt:'), ('ID1:2', '2', 'Huber nennt:\n– Punkt.\nHuber Schluss.')])
+        self.assertEqual([u[:3] for u in written(parse(block(host), entries=[split, bullets('ID1', '3', '– Punkt', 'Thews nennt:')]))],
+                         [('ID1', '3', 'Thews nennt:\n– Punkt.'), ('ID1:2', '2', 'Huber nennt:\nHuber Schluss.')])
+        with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'owner carries Redner-ID 2, not 3'):
+            parse(block(host), entries=[split, bullets('ID1', '3', '– Punkt', 'Huber nennt:')])
+
+    # Value: protects=each way an annex_paragraphs entry can miss its place stops the run with the entry named; fails_when=a
+    #   stale entry is skipped, a scrap is moved, or the run goes to a paragraph that ends the same way twice; why_new=new kind;
+    #   seam=reviewed
+    def test_entries_that_do_not_match_stop_the_run(self):
+        body = self.HOST + self.LOOSE + self.NEXT
+        cases = [
+            (bullets('ID9', '3', '– Punkt eins', 'wichtig:'), 'names no <rede>'),
+            (bullets('ID1', '3', '– Punkt neun', 'wichtig:'), 'first paragraph is found nowhere'),
+            (bullets('ID1', '3', '– Punkt eins', 'unwichtig:'), 'is found nowhere in ID1'),
+            (bullets('ID1', '3', '– Punkt eins', '.'), 'is found 2 times in ID1'),
+            (bullets('ID1', '6', '– Punkt eins', 'wichtig:'), 'owner carries Redner-ID 3, not 6'),
+            (bullets('ID2', '6', '– Punkt eins', 'heute.'), 'first paragraph is found nowhere'),
+        ]
+        for entry, message in cases:
+            with self.subTest(message, entry=entry), self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, message):
+                parse(block(body), entries=[entry])
+        scrap = self.HOST + '<p klasse="Standard">– Punkt eins.</p>' + self.NEXT
+        with self.subTest('a scrap'), self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'first paragraph is found nowhere'):
+            parse(block(scrap), entries=[self.ENTRY])
+        with self.subTest('one place twice'), self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'names the place'):
+            parse(block(body), entries=[self.ENTRY, bullets('ID1', '3', '– Punkt zwei', 'Zwei Punkte sind wichtig:')])
+
+    # Value: protects=the D6 check applies annex_paragraphs entries in both its parses; fails_when=check_sitting drops the kind
+    #   and the guard refuses each of the five sittings; why_new=new kind (C3 of the plan review); seam=reviewed
+    def test_check_withhold_one_reads_the_kind(self):
+        import check_withhold_one
+        spoken = ''.join(f'<rede id="S{n}">{THEWS}Gesprochen {n}.</p></rede>' for n in (1, 2, 3))
+        xml = document(block(self.HOST + self.LOOSE)).replace(
+            '<p klasse="T_NaS">Beratung des Antrags</p>', f'<p klasse="T_NaS">Beratung des Antrags</p>{spoken}')
+        reviewed_units.use([self.ENTRY])
+        try:
+            self.assertEqual(check_withhold_one.check_sitting(xml)['middle'], {'withheld': 1, 'problems': []})
+        finally:
+            reviewed_units.use([])
+
+
+class LooseTextGuardTests(unittest.TestCase):
+    # Value: protects=a paragraph of Rede text standing loose in a zu-Protokoll block after a <rede> (the shape of the 24 WP 18/19
+    #   bullet points), in any of the text classes or with none, refuses its sitting unless an annex_paragraphs entry places it;
+    #   fails_when=those words are stored nowhere without a sign; why_new=TODOS "Bullet points of written Reden" (R1 of the
+    #   plan review adds the paragraph without klasse); seam=reviewed
+    def test_loose_text_after_a_rede_refuses(self):
+        for klasse in ('J', 'J_1', 'J-Strich', 'J_Abstand', 'N_Anlage', 'O', 'Z', None):
+            attribute = f' klasse="{klasse}"' if klasse else ''
+            body = f'<rede id="ID1">{THEWS}Thews.</p></rede><p{attribute}>– Ein Punkt.</p>'
+            with self.subTest(klasse), self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'stands loose after annex <rede> ID1'):
+                parse(block(body))
+
+    # Value: protects=the guard also follows an annex <rede> without an id (its key annex:<block>:<n>); fails_when=the guard
+    #   keys its state by the id attribute, so loose text after an id-less <rede> is dropped silently; why_new=Codex and the
+    #   native reader on the /ship of this branch; seam=none; no_claim=no held file has an id-less annex <rede>
+    # Value: protects=an empty paragraph after a <rede> is no loose text; fails_when=the guard tests the class alone and refuses
+    #   a sitting no entry can fix (first must be non-empty); why_new=Codex on the /ship of this branch; seam=none;
+    #   no_claim=no held file has one; a paragraph holding only a page anchor still reads as text (TODOS.md)
+    def test_an_empty_paragraph_after_a_rede_passes(self):
+        body = f'<rede id="ID1">{THEWS}Thews.</p></rede><p klasse="J"/><p>  </p>'
+        self.assertEqual([u[:3] for u in written(parse(block(body)))], [('ID1', '3', 'Thews.')])
+
+    def test_loose_text_after_a_rede_without_id_refuses(self):
+        body = f'<rede>{THEWS}Thews.</p></rede><p klasse="J">– Ein Punkt.</p>'
+        with self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'stands loose after annex <rede> annex:1:1'):
+            parse(block(body))
+
+    # Value: protects=what the guard leaves alone: loose text after an annex heading (a TOP line before the first <rede>, 18/158),
+    #   page scraps (Standard) and first-edition notices (Ende, p) after a <rede>; fails_when=a held sitting is refused over
+    #   markup no entry can fix; why_new=census of the 806 files 2026-11-27; seam=reviewed
+    def test_loose_text_after_a_heading_and_scraps_after_a_rede_pass(self):
+        body = (f'{TOP_HEADING}<p klasse="J">Tagesordnungspunkt 1: Antrag.</p><rede id="ID1">{THEWS}Thews.</p></rede>'
+                '<p klasse="Standard">-12409</p><p klasse="Ende">Vorabfassung</p><p klasse="p">Hinweis</p>'
+                f'<p klasse="Anlage_3">zur Beratung</p><p klasse="J">Zeile nach der Überschrift.</p>')
+        self.assertEqual([u[:3] for u in written(parse(block(body)))], [('ID1', '3', 'Thews.')])
+
+    # Value: protects=the guard reads only zu-Protokoll blocks; fails_when=loose text in another annex (an absentee list) refuses
+    #   a sitting; why_new=new guard; seam=none
+    def test_another_annex_is_not_guarded(self):
+        body = f'<rede id="ID1">{THEWS}Thews.</p></rede><p klasse="J">Abgeordnete(r)</p>'
+        self.assertEqual(written(parse(block(body, title='Erklärungen nach § 31 GO'))), [])
+
 
 class EntryErrorTests(unittest.TestCase):
     """An entry the source does not match stops the run: the list needs correcting."""
@@ -232,6 +511,22 @@ class EntryErrorTests(unittest.TestCase):
         self.refuses(self.HOST, annex('A2', '4', 'Ralph Lenkert (DIE LINKE)'), 'names no zu-Protokoll block')
         own = f'<rede id="ID1">{THEWS}Eigener Text.</p></rede>'
         self.refuses(own, annex('ID1', '3', 'Michael Thews (SPD)'), "writer of the <rede> itself")
+        petry = '<p klasse="Anlage_3">des Abgeordneten Christian Petry (SPD)</p>'
+        self.refuses(petry, annex('A1', '11004605', 'Christian Petry (SPD)'), 'no text paragraph follows the heading')
+        self.refuses(petry + f'{SCHUSTER}Ich hoffe auch.</p>', annex('A1', '11004605', 'Christian Petry (SPD)'),
+                     'no text paragraph follows the heading')
+
+    # Value: protects=both entry checks read a merged record's ids ("2 999990001") as their first, as the guard does: the
+    #   printed marker's Redner-ID and the host owner's; fails_when=a merged id fails the marker check, or a host owner with a
+    #   merged id lets an entry split off the owner's own words; why_new=E17 item 5 (Codex on 185a33a); seam=reviewed
+    def test_both_entry_checks_read_a_merged_id_as_its_first(self):
+        merged_huber = marker('2 999990001', 'Charles M.', 'Huber', 'CDU/CSU')
+        host = f'<rede id="ID1">{FABRITIUS}Erster.</p>{merged_huber}Zweiter.</p></rede>'
+        self.assertEqual([u[:2] for u in written(parse(block(host), entries=[annex('ID1', '2', 'Charles M. Huber (CDU/CSU)')]))],
+                         [('ID1', '1'), ('ID1:2', '2 999990001')])
+        merged_owner = marker('3 999990002', 'Michael', 'Thews', 'SPD', printed='Thews (SPD): ')
+        self.refuses(f'<rede id="ID1">{merged_owner}Eigener Text.</p><p klasse="J">Michael Thews (SPD): Weiter.</p></rede>',
+                     annex('ID1', '3', 'Michael Thews (SPD)'), "writer of the <rede> itself")
 
     # Value: protects=an entry may not name a <rede> outside a zu-Protokoll annex; fails_when=an entry splits a spoken Rede or a
     #   § 31 Erklärung; why_new=new rule; seam=reviewed
@@ -239,6 +534,26 @@ class EntryErrorTests(unittest.TestCase):
         self.refuses(self.HOST.replace('ID1', 'ID2'), annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)'), 'names no <rede>')
         with self.assertRaises(reviewed_units.ReviewedUnitsError):
             parse(block(self.HOST, title='Erklärungen nach § 31 GO'), entries=[annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)')])
+
+    # Value: protects=a unit inserted before an annex <rede> without an id would shift that <rede>'s key annex:<block>:<n>, so
+    #   the entry stops the run and names the key instead of the reconciliation refusing the sitting (E17 item 1, answered
+    #   "refuse"); fails_when=the new unit takes or shifts the key and the sitting fails reconciliation with no pointer to the
+    #   entry; why_new=code review of 2026-11-26; seam=reviewed
+    def test_an_entry_before_an_annex_rede_without_id_stops_the_run(self):
+        idless = f'<rede>{OEZDEMIR}Wir beraten heute.</p></rede>'
+        self.refuses(f'{SCHUSTER}Ich hoffe auch.</p>{idless}', annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)'),
+                     'annex:1:1 after it has no id')
+        self.refuses(f'{self.HOST}{idless}', annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)'), 'annex:1:2 after it has no id')
+
+    # Value: protects=two entries that locate one place (a heading naming two writers) stop the run instead of one wrap holding
+    #   both texts under one writer; fails_when=the second entry finds its place inside the first's unit or silently wins;
+    #   why_new=E17 item 6 (locate before apply); seam=reviewed
+    def test_two_entries_of_one_place_stop_the_run(self):
+        body = ('<p klasse="Anlage_3">der Abgeordneten Christian Petry (SPD) und Metin Hakverdi (SPD)</p>'
+                '<p klasse="N_Anlage">Vor einem Jahr.</p>')
+        with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'names the place of the entry'):
+            parse(block(body), entries=[annex('A1', '11004605', 'Christian Petry (SPD)'),
+                                        annex('A1', '11004289', 'Metin Hakverdi (SPD)')])
 
 
 class ListFormatTests(unittest.TestCase):
@@ -260,6 +575,54 @@ class ListFormatTests(unittest.TestCase):
             with self.subTest(entry=entry), self.assertRaises(reviewed_units.ReviewedUnitsError):
                 reviewed_units.use([entry])
         reviewed_units.use([])
+
+    # Value: protects=two written Reden in one place (a host <rede> or an A<n> block) are listed by their labels, and one label
+    #   listed twice is refused; fails_when=the second text of a place cannot be listed, so its sitting stays refused (E17
+    #   item 2); why_new=code review of 2026-11-26; seam=reviewed
+    def test_two_labels_of_one_place_are_two_entries(self):
+        for place in ('ID1', 'A2'):
+            with self.subTest(place):
+                reviewed_units.use([annex(place, '2', 'Charles M. Huber (CDU/CSU)'), annex(place, '1', 'Bernd Fabritius (CDU/CSU)')])
+                with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'listed twice'):
+                    reviewed_units.use([annex(place, '2', 'Charles M. Huber (CDU/CSU)'), annex(place, '9', 'X Y (SPD)',
+                                                                                              'Charles M. Huber (CDU/CSU)')])
+        reviewed_units.use([])
+
+    # Value: protects=the list accepts an annex_paragraphs entry with first and after and refuses a malformed one, and keys it by
+    #   its first words, so one host can hold two runs; fails_when=a block id, a missing key, words with outer spaces or a run
+    #   listed twice pass the check; why_new=new kind; seam=none
+    def test_the_paragraphs_kind_is_checked(self):
+        good = bullets('ID1813611300', '11002940', '– Beschäftigte mit', 'auf zwei Personengruppen richten wollen:')
+        reviewed_units.use([good, {**good, 'first': '– Arbeitnehmerinnen'}])
+        self.assertIn('annex_paragraphs', reviewed_units.ANNEX_KINDS)
+        self.assertIn('annex_rede', reviewed_units.ANNEX_KINDS)
+        bad = [
+            {**good, 'rede_id': 'A6'},
+            {**good, 'rede_id': 'ID1:2'},
+            {**good, 'first': ' – Beschäftigte'},
+            {**good, 'after': 'wollen: '},
+            {**good, 'after': ''},
+            {**good, 'redner_id': 'dip:5'},
+            {key: value for key, value in good.items() if key != 'after'},
+            {**good, 'label': 'X'},
+        ]
+        for entry in bad:
+            with self.subTest(entry=entry), self.assertRaises(reviewed_units.ReviewedUnitsError):
+                reviewed_units.use([entry])
+        with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'listed twice'):
+            reviewed_units.use([good, {**good, 'after': 'Andere Stelle:'}])
+        reviewed_units.use([])
+
+    # Value: protects=the reviewed digest ignores the file order of entries that tie on rede_id, kind and name, and the shipped
+    #   digests stay as they were (21/84's demo fixture); fails_when=reordering two entries of one host forces a needless replay,
+    #   or the tie-break changes every multi-entry digest; why_new=Codex outside voice on the annex-bullets plan (R6); seam=none
+    def test_tied_entries_give_one_digest_in_either_order(self):
+        import json
+        first = annex('ID1', '2', 'Charles M. Huber (CDU/CSU)', 'Charles M. Huber')
+        second = annex('ID1', '2', 'Charles M. Huber (CDU/CSU)', 'Huber')
+        self.assertEqual(reviewed_units.digest([first, second]), reviewed_units.digest([second, first]))
+        fixture = json.loads((_support.FIXTURES / 'demo-report-21-84.json').read_text(encoding='utf-8'))
+        self.assertEqual(fixture['protocol']['reviewed_digest'], _support.shipped_digest('21/84'))
 
     # Value: protects=every shipped annex_rede name reads as a person with a Fraktion or a side, so each Beitrag counts for someone;
     #   fails_when=a name's role or Fraktion maps to nothing; why_new=new kind; seam=reviewed
@@ -314,8 +677,37 @@ class RealSittingTests(unittest.TestCase):
                             self.assertNotIn(start, unit(parsed, host)['text'])
 
 
-if __name__ == '__main__':
-    unittest.main()
+#: (sitting, host, paragraphs the host holds in the source, index of the paragraph the run follows, paragraphs moved, words
+#: moved, start of the first moved paragraph, start of the paragraph printed after the run). Placed against the PDFs.
+BULLETS = [
+    ('18/136', 'ID1813611300', 9, 6, 2, 16, '– Beschäftigte mit einem geringeren', 'Ebenso dürfen wir auch nicht'),
+    ('18/136', 'ID1813611400', 12, 8, 4, 45, '– Die Verringerung der Unverfallbarkeitsfristen', 'Ein Wort noch zu dem Vorschlag'),
+    ('18/206', 'ID1820612300', 20, 0, 3, 18, 'Bekämpfung von Gewinnkürzungen', 'Die Umsetzung der Änderungen'),
+    ('18/209', 'ID1820916300', 17, 12, 8, 126, '– Die vielfältigen Einsatzmöglichkeiten', 'Mit dem heute vorliegenden Antrag'),
+    ('18/243', 'ID1824313700', 7, 5, 4, 158, '– Erst einmal mehr Kinderschutz', 'In der nächsten Wahlperiode'),
+    ('19/104', 'ID1910418500', 7, 5, 3, 186, '1. Statt das Problem wirklich', 'Generell ist diese Große Koalition'),
+]
+
+
+@unittest.skipUnless(STORE_XML.is_dir(), 'reference store XML not present')
+class RealBulletTests(unittest.TestCase):
+    # Value: protects=the shipped list puts the 24 loose bullet paragraphs of six written Reden back at the printed place, 549
+    #   words in all, and the sittings parse past the new guard; fails_when=a run lands elsewhere, takes a paragraph too many or
+    #   too few, or a sitting is refused; why_new=TODOS "Bullet points of written Reden"; seam=reviewed
+    def test_the_six_hosts_of_the_shipped_list(self):
+        with _support.shipped_reviewed_units():
+            for number in sorted({row[0] for row in BULLETS}, key=lambda s: tuple(map(int, s.split('/')))):
+                wp, nr = number.split('/')
+                parsed = dip.parse_protocol_xml((STORE_XML / f'plenarprotokoll-{wp}-{nr}.xml').read_text(encoding='utf-8'))
+                for _, host, held, after, moved, words, first, following in (row for row in BULLETS if row[0] == number):
+                    with self.subTest(number, host=host):
+                        paragraphs = unit(parsed, host)['text'].split('\n')
+                        self.assertEqual(len(paragraphs), held + moved)
+                        run = paragraphs[after + 1:after + 1 + moved]
+                        self.assertTrue(run[0].startswith(first), run[0][:60])
+                        self.assertTrue(paragraphs[after + 1 + moved].startswith(following), paragraphs[after + 1 + moved][:60])
+                        self.assertEqual(sum(len(p.split()) for p in run), words)
+        self.assertEqual(sum(row[5] for row in BULLETS), 549)
 
 
 class ReplayTests(unittest.TestCase):
@@ -330,3 +722,19 @@ class ReplayTests(unittest.TestCase):
         summary = {"speech_kinds_version": 16, "vote_inputs_version": vote_links.INPUTS_VERSION}
         old = _support.stamp_reviewed({"protocol": protocol, "validation_summary": summary})
         self.assertEqual(build.stale_causes(old), ("rule",))
+
+    # Value: protects=a store parsed before annex_paragraphs and the loose-text guard re-reads every sitting, so each cached
+    #   sitting is checked against the guard, not only the five whose reviewed digest changed; fails_when=the speech rule stays
+    #   at 17; why_new=TODOS "Bullet points of written Reden" (the guard changes parses outside the listed sittings);
+    #   seam=stale_causes
+    def test_a_report_parsed_before_the_loose_text_guard_is_stale(self):
+        import build_dip_pulse_site as build
+        import vote_links
+        protocol = {"dokumentnummer": "19/104", "xml_url": "https://example.test/19-104.xml"}
+        summary = {"speech_kinds_version": 17, "vote_inputs_version": vote_links.INPUTS_VERSION}
+        old = _support.stamp_reviewed({"protocol": protocol, "validation_summary": summary})
+        self.assertEqual(build.stale_causes(old), ("rule",))
+
+
+if __name__ == '__main__':
+    unittest.main()
