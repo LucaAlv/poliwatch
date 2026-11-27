@@ -330,11 +330,13 @@ class GuardTests(unittest.TestCase):
     def test_unidentified_markers_refuse(self):
         def unidentified(attribute):
             return f'<p klasse="redner"><redner{attribute}><name><vorname>X</vorname><nachname>Y</nachname></name></redner>X Y: '
+        # Built outside the f-strings: Python 3.11 allows no backslash in an f-string expression.
+        missing, empty, blank = unidentified(''), unidentified(' id=""'), unidentified(' id=" "')
         shapes = {
-            'no id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{unidentified("")}Zweiter.</p></rede>',
-            'an empty id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{unidentified(" id=\"\"")}Zweiter.</p></rede>',
-            'a blank id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{unidentified(" id=\" \"")}Zweiter.</p></rede>',
-            'no id and an empty id': f'<rede id="R1">{unidentified("")}Erster.</p>{unidentified(" id=\"\"")}Zweiter.</p></rede>',
+            'no id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{missing}Zweiter.</p></rede>',
+            'an empty id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{empty}Zweiter.</p></rede>',
+            'a blank id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{blank}Zweiter.</p></rede>',
+            'no id and an empty id': f'<rede id="R1">{missing}Erster.</p>{empty}Zweiter.</p></rede>',
         }
         for shape, body in shapes.items():
             with self.subTest(shape), self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'markers of 2 Redner-IDs'):
