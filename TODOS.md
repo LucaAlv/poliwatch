@@ -64,7 +64,7 @@ Seven decisions for the first release, all as recommended:
 6. **The data release does not wait for a site host** ("Write the release script").
 7. **The clinic packet goes out before text-free withholding is built** and says it is planned. The build comes before the first `--publish`.
 
-Work that also comes before the release: the `facts` tables leave the release (Q5; the export of v0.46.42.0 still ships `facts`, `fact_metrics` and `fact_sources`), "Rename the project to open-parlament", ~~"Roster MdB records that never join their speaker"~~ (done 2026-11-25, v0.46.53.0), and items ~~1 to 4~~ (done 2026-11-26, v0.46.55.0) and 7 of "E4 /gstack-review: deferred findings". One replay and one gate run at the end.
+Work that also comes before the release: ~~the `facts` tables leave the release~~ (Q5; done 2026-11-27, v0.46.60.0, export format 29; `docs/plans/facts-out-of-export.md`. The export alone changes: the build store and the Fakt pages keep the tables. On a clone of the 806-sitting store replayed with v0.46.58.0: tables 37 → 34, table CSVs 36 → 33, rows 1,372,489 → 1,367,645 (the 8 + 1,944 + 2,892 facts rows), relationships 52 → 50, schema hash `0c6b0488…` → `a5331682…`; no figure and none of the 1,944 Fakt values moves, and `database.html` is the only page that differs beyond the build time and the generation id. This also does the `facts` tables half of "Apply the v1 surface list". Left for that item: what DATA.md and the codebook still say about the website's Fakten, e.g. that a withheld or cut sitting keeps its week incomplete, which stays true while the pages exist. Wording only, from the red team of 2026-11-27 (its third point, the Daten page intro, was fixed after code review the same day), no correctness defect, and gone or to be reread once the pages leave: `LICENSE-DATA.md` „Topic-based facts retain an unknown topic“ speaks of Fakten the export does not hold; its `derived` row names nothing behind the site's Fakt figures, which the short string still covers), "Rename the project to open-parlament", ~~"Roster MdB records that never join their speaker"~~ (done 2026-11-25, v0.46.53.0), and items ~~1 to 4~~ (done 2026-11-26, v0.46.55.0) and 7 of "E4 /gstack-review: deferred findings". One replay and one gate run at the end.
 
 **Answered 2026-11-23:** the 287 Wortmeldungen zur Geschäftsordnung and the 62 Erklärungen zum Vermittlungsverfahren stay Reden (`docs/plans/beitraege-as-reden.md`, section 3). 23 bare motions among the 34 shortest Geschäftsordnung rows are procedural (owner, 2026-11-23); the /ship review found a 35th such row, 21/10 `ID211006000`, a bare motion by two blind readings, so 24 are.
 
@@ -160,31 +160,33 @@ Measured on the replay of 2026-11-27: 14 withhold entries, 14 withheld units wit
 **Priority:** P3
 **Depends on:** cut rule 4 (`would_be` on withheld records)
 
-### Bullet points of written Reden printed between two `<rede>`s
+### ~~Bullet points of written Reden printed between two `<rede>`s~~
 
-**What:** Found by the E17 census (`docs/plans/e17-wp18-texts.md`, 2026-11-26). In five zu-Protokoll annex blocks the bullet points of a written Rede stand as `<p klasse="J">` paragraphs directly in the block, after the `<rede>` they most likely belong to: 18/136 Anlage block 6 (two after Strebl's `ID1813611300`, four after Kapschack's `ID1813611400`), 18/206 block 6 (three after Binding's `ID1820612300`), 18/209 block 20 (eight after Klimke's `ID1820916300`), 18/243 block 9 (four after Bahr's `ID1824313700`) and 19/104 block 9 (three after Höferlin's `ID1910418500`). Nothing reads them, so those words are stored nowhere; the Rede before is stored without them. Neither the owner nor the place in the Rede is marked: each Rede's last paragraph has to be read against the PDF (it may end with the colon that opens the list). Fix by a reviewed list like `annex_rede` (append to, or insert into, the named `<rede>`), test first; the guard of `mark_annex_texts` does not see plain paragraphs.
-
-**Why:** 24 paragraphs of five Reden are missing from their text and word counts.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
+**Done 2026-11-27** (branch `claude/vigorous-mendeleev-a93c94`, speech rule 18): the 24 loose paragraphs of six Reden zu Protokoll (18/136 Strebl and Kapschack, 18/206 Binding, 18/209 Klimke, 18/243 Bahr, 19/104 Höferlin) are listed with kind `annex_paragraphs`, placed against the PDFs, and moved back in by `move_annex_paragraphs`; a text paragraph loose after a `<rede>` now refuses its sitting unless listed (`docs/source-errors.md` E17).
 
 ### E17 annex texts: what the code review of 2026-11-26 leaves open
 
-**What:** Found by `code-review` (high) and the `/ship` review of `claude/e17-wp18-texts-8bc435`; none is reached by the 806 held sittings.
-1. **Keys of annex Reden without an id can shift.** `raw_rede_inventory` keys an id-less annex `<rede>` `annex:<block>:<n>` before any tree edit; `written_contributions` counts `<n>` again after `mark_annex_texts` has inserted a split part (after its host) or a wrapped text (at `place`). Every id-less `<rede>` after the insertion moves on by one, and the new unit can take the old key `annex:<block>:<place>`, so `reconcile_reden` refuses the sitting. No held annex `<rede>` lacks an id. Fix: carry the inventory key per element through the edit, or have `mark_annex_texts` refuse an entry whose block holds an id-less `<rede>` after its place; test first.
-2. **Two texts in one place cannot be listed.** `reviewed_units._check` keys an `annex_rede` entry by (sitting, `rede_id`), so a second entry for the same `A<n>` block or host `<rede>` with another `label` is refused as "listed twice", and the guard keeps refusing that sitting. Fix: key annex entries by (sitting, `rede_id`, `label`), as name kinds add `name`; `mark_annex_texts` then needs to apply two entries of one host in order of their place.
-3. **`ANNEX_HEADINGS` duplicates a literal.** `validate_dip_protocol.py` defines `ANNEX_HEADINGS` for `mark_annex_texts`, and `written_contributions` repeats `{"Anlage_2", "Anlage_3", "Anlage_Strich"}` where a heading resets the TOP context. Use the constant in both places.
-4. **"two writers" understates the guard.** `docs/data-methods.md` ("Rednermarken zweier Redner-IDs") and `docs/source-errors.md` E17 "Our side" ("two writers' markers") describe the guard; the code refuses any `<rede>` whose markers carry other than one Redner-ID (`len(ids) != 1`). Write "zweier oder mehr" / "two or more".
-5. **Unidentified markers in the guard** (Codex on the /ship fix 185a33a). The guard keys each marker by `redner_key`, which reads a missing, empty or blank id as `None`. A `<rede>` mixing such a marker with a real id makes `sorted(ids)` raise `TypeError` in the message instead of `UnlistedAnnexTextError` (before 185a33a only a missing id did), and one with a missing and an empty id now reads as one writer instead of two. None of the 4,045 zu-Protokoll markers in the 806 held files has a missing, empty or merged id. Fix: key an unidentified marker by its raw attribute (`redner_key(r) or f"no id {r.get('id')!r}"`), or refuse any unidentified marker in a `<rede>` that holds another; add tests for both entry checks with a merged id.
-6. **Two `A<n>` entries of one block listed out of document order get the same id** (`annex:<block>:<place>` counts the `<rede>`s before the text when the entry is applied). Fix: apply a sitting's entries in document order, or stop when an id is already in `created`. Found by the /ship red team and native adversarial reader.
-7. **Untested paths** (/ship coverage audit): a heading with no text paragraph after it; a block wrap ending at an Anlage heading; the `UnlistedAnnexTextError` arms of `build_report` and `reparse_cached_xml`; `check_withhold_one.check_sitting` with an `annex_rede` entry. `ReplayTests` stands below the `unittest.main()` block of `tests/test_annex_texts.py`, so running the file directly skips it.
+**What:** Items 2 to 7 are done (2026-11-27, with the bullet points above): annex entries are keyed by label and applied in document order, a block wrap ends at the next listed text, an unidentified marker beside another writer's marker refuses with the guard's error (a lone one still passes; see below), `written_contributions` uses `ANNEX_HEADINGS`, the docs say "two or more", and the untested paths have tests. Left: item 1, **keys of annex Reden without an id**, answered "refuse": `mark_annex_texts` stops with `ReviewedUnitsError` when a split part or a wrapped text would go in before an id-less annex `<rede>` of its block, whose `annex_rede_key` would shift. None of the 806 held files has an id-less annex `<rede>`. If one ever appears next to a listed text, carry the inventory key per element through the edit instead (and keep it clear of the `annex:<block>:<place>` ids wraps make).
 
-**Why:** 1 and 2 would refuse a future sitting with no fix through the list; 5 and 6 would crash or misread a future sitting; 3, 4 and 7 are drift, wording and tests.
+**Why:** a future sitting with that shape stops the run with a precise message and has no fix through the list.
 
 **Effort:** S
-**Priority:** P3
+**Priority:** P4
+**Depends on:** None
+
+### Loose annex paragraphs: what the /ship review of 2026-11-27 leaves open
+
+**What:** Found by Codex, the native adversarial reader and the coverage audit on the /ship of `annex_paragraphs` (v0.46.59.0). None is reached by the 806 held files: after a `<rede>` in their zu-Protokoll blocks the only loose children are the 24 listed `J` paragraphs, 16 `Ende`, 11 `Standard` and 1 `p`, and no annex `<rede>` lacks an id or holds a lone unidentified marker.
+1. **A paragraph holding only a page anchor refuses its sitting.** The guard in `mark_annex_texts` now skips an empty paragraph, but `elem_text` reads a druckseitennummer anchor's `<seite>` number as text, so a classless `<p>` holding only an anchor after a `<rede>` still raises `UnlistedAnnexTextError`, and no `annex_paragraphs` entry fits it. Real files print anchors outside paragraphs. Fix: read paragraph text without page anchors in the guard (and check where else the parser reads `<seite>` as words); test first.
+2. **A run has no end marker.** `move_annex_paragraphs` takes every text paragraph after `first` up to a non-text element or another entry's `first`, so an unrelated trailing text paragraph would be credited to the host's writer. If a real case appears, add an optional `last` key, or refuse a run that does not end at a heading, a non-text element or the block end.
+3. **An id-less annex host cannot be listed.** The guard now refuses loose text after an annex `<rede>` without an id (named `annex:<block>:<n>`), but `ANNEX_HOST_ID_RE` accepts only a source id, so `annex_paragraphs` cannot repair it. Fix with item 1 of the entry above.
+4. **A lone unidentified marker passes the guard.** A `<rede>` whose only marker has a missing, empty or blank id has one key, so it is not refused; Codex saw such a unit stored with empty text. Behaviour predates this branch. Fix: refuse any unidentified marker in a zu-Protokoll `<rede>`, test first.
+5. **Untested arms** (coverage audit): `made()`'s id collision (`created` or `taken`); `first` found twice; two entries on one `first` paragraph; the owner-absent message; an `annex_rede` entry sharing a `rede_id` with another kind.
+
+**Why:** 1 and 3 would stop a future sitting with no fix through the list; 2 and 4 would misattribute or drop words silently; 5 is test hygiene.
+
+**Effort:** S
+**Priority:** P4
 **Depends on:** None
 
 ### Census script of the Protokoll gap: hygiene
@@ -583,12 +585,12 @@ Measured on the A3 store, 2026-11-07: 590 links, 556 votes, 0 across protocols. 
 
 ### Apply the v1 surface list
 
-**What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, and its `facts` tables out of the release. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
+**What:** Cut `api-sitzungen.html` (WP 1–17 metadata goes to the release through slice 2, the exclusion list to `overview.html`) and `settings.html`. Remove the 333 KB sitting list from `sources.html`. Take Fakt der Woche off `puls.html`, the nav and its archive pages, ~~and its `facts` tables out of the release~~ (done 2026-11-27, v0.46.60.0, export format 29; `docs/plans/facts-out-of-export.md`). Once the pages are gone, also drop the sentences on the Daten page (intro and transformation note) that say the download lacks the Fakt der Woche tables, or reread them. Set the nav to Aktuell, Sitzungen, Abstimmungen, Gesetzesvorhaben, Abgeordnete, Analysen (once it exists), Daten, and the footer to Quellen und Methode, So arbeitet der Bundestag, Impressum, Datenschutz. Drop the "Erfasste Quelldaten" block in slice 7, after checking no field readers need exists only there. Shorten the Daten page.
 
 **Why:** Decisions Q5, Q6, Q7, Q10.
 
 **Order (2026-11-10, `docs/plans/render-layer-and-order.md`):**
-- The page cuts (`api-sitzungen.html`, `settings.html`, the Fakt pages and their references, the `sources.html` sitting list) are step 0, before any port or restyle. That PR edits the same regions of `build_dip_pulse_site.py` as the `facts` tables leaving the release, which stays with the release work, so land one first and rebase the other.
+- The page cuts (`api-sitzungen.html`, `settings.html`, the Fakt pages and their references, the `sources.html` sitting list) are step 0, before any port or restyle. That PR edits the same regions of `build_dip_pulse_site.py` as export format 29 (the `facts` tables leaving the release), so rebase it onto that change.
 - The nav change comes with the new page shell (step 1).
 - The "Erfasste Quelldaten" block goes in slice 7.
 - The Daten page comes at step 10.
@@ -1352,6 +1354,22 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
+
+### Two comments still say the metric caveat is exported
+
+**What:** Since export format 29 the release holds no `fact_metrics`. The `metric_row` docstring in `scripts/facts.py` still calls the caveat "stored and exported", and the "Value (review 2026-11-01)" comment above `test_the_stored_caveat_has_its_coverage_slot_filled` in `tests/test_facts.py` still names the download `fact_metrics-local.csv.gz`. Drop the export from both.
+
+**Why:** Code review of the format 29 branch, 2026-11-27. Comments only, so deferred under `CLAUDE.md`, "Review findings: fix now or defer". No output or test result depends on them.
+
+**Effort:** S
+
+### Pin the two format 29 Daten sentences in a test
+
+**What:** No test reads the clause "die Tabellen zum Fakt der Woche entfernt" in `manifest["transformation"]` (`_run_export`, `scripts/build_dip_pulse_site.py`) or the Daten lede's "Die Tabellen mit den berechneten Kennzahlen zum Fakt der Woche sind nicht enthalten" (`render_database_page`). Add one assertion each, e.g. in `test_the_release_holds_no_facts_table_and_the_store_keeps_them` and an existing `render_database_page` test. Drop both with the sentences once Fakt der Woche leaves the site ("Apply the v1 surface list").
+
+**Why:** /gstack-ship coverage audit of v0.46.60.0, 2026-11-27: 10 of 12 changed paths tested; these two are wording only, so deferred under `CLAUDE.md`. Both sentences are right in the rendered clone output.
+
+**Effort:** S
 
 ### Fakt der Woche, rasterize and post one card
 
