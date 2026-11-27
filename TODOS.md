@@ -163,7 +163,7 @@ Found by `code-review high main` and the `/ship` review (Codex, red team, native
 
 ### Census script of the Protokoll gap: hygiene
 
-**What:** `docs/plans/zu-protokoll-gap/census.py`: the docstring names neither the TSV columns nor that `fehlend_zu_protokoll` can be negative; a missing page prints as `0`, so `dip_reden_danach` 0 reads as none after (20/7, 20/97, 18/223, 19/161 print no pages; only stderr says so); one Counter mixes contribution kinds and table names; `anfangsseite` of a Vorgangsposition is compared as it stands, so a page given as text would stop the run (Codex, 2026-11-24; all 43,423 cached are numbers); the soft hyphen in the regex is a literal U+00AD.
+**What:** **Done (2026-11-27):** the docstring names the TSV columns and that `fehlend_zu_protokoll` can be negative; a value without a page prints empty, not 0; contribution kinds and table rows are counted apart; a Vorgangsposition's `anfangsseite` given as text is read as a number; the soft hyphen is written as an escape. On the replay of the 806 the old and the new script print the same bytes, equal to `per-sitting.tsv`, which was not regenerated. ~~Was: the docstring named neither the columns nor the negative case; a missing page printed as `0` (20/7, 20/97, 18/223, 19/161 print no pages); one Counter mixed kinds and table names; a textual `anfangsseite` would have stopped the run; the soft hyphen was literal.~~
 
 **Why:** A later rerun could read an unknown as zero. No committed row is affected.
 

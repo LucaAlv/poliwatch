@@ -21,6 +21,33 @@ Bundestagsvizepräs."; the store holds none of the 624 in 806 sittings as a Rede
 not counted as Reden after it either. The Fragen and Antworten of a Fragestunde stand outside any
 `<rede>` and can fall after the last one in a complete file too; they are in
 `dip_letzter_beitrag_gesprochen` and in no count after the cut.
+
+The TSV columns, one row per sitting. A value the census cannot know is empty, never 0: where the
+Inhaltsverzeichnis gives no page for any `<rede>` of the Sitzungsverlauf, there is no cut to count from, and the
+totals on stderr add nothing after it for that sitting.
+
+    sitzung                  Wahlperiode/number
+    datum                    the sitting's date, as DIP gives it
+    teilausgabe              ja where the XML prints the notice of a first edition, else nein
+    endgueltig_am            the date the notice announces the final edition for; empty without one
+    dip_zu_protokoll         DIP's Aktivitäten "Rede (zu Protokoll gegeben)"
+    gespeichert_zu_protokoll stored Beiträge of kind zu_protokoll
+    fehlend_zu_protokoll     dip_zu_protokoll minus gespeichert_zu_protokoll; negative where the store holds
+                             more than DIP lists
+    dip_reden                DIP's Aktivitäten "Rede", the chair's included
+    gespeichert_reden        stored Reden
+    xml_letzte_rede          the cut: page and quadrant of the last <rede>; empty without a page
+    dip_letzter_beitrag_gesprochen
+                             page and quadrant of DIP's last spoken Aktivität; empty where none gives a page
+    dip_reden_danach         DIP Reden after the cut, the chair's left out; empty without a cut
+    dip_zwischenfragen_kurzinterventionen_erwiderungen_danach
+                             DIP's Zwischenfragen, Kurzinterventionen and Erwiderungen after it; empty without a cut
+    dip_schriftl_par31       DIP's written Erklärungen under § 31
+    dip_vorgangspositionen_danach
+                             DIP Vorgangspositionen that start after the cut; empty without a cut
+    abstimmungen             stored roll-call votes
+    abstimmungen_ohne_top    of those, the ones under no Tagesordnungspunkt
+    xml_sitzungsende         the XML head's sitting end; empty without one
 """
 
 from __future__ import annotations
@@ -55,6 +82,12 @@ def place(text: str | None) -> tuple[int, str]:
     return (int(match[1]), match[2]) if match else (0, "")
 
 
+def page_number(value: object) -> int:
+    """A Vorgangsposition's ``anfangsseite``, a number or its digits as text; 0 for anything else."""
+    text = str(value or "").strip()
+    return int(text) if re.fullmatch(r"\d{1,9}", text) else 0
+
+
 def xml_cut(xml: str) -> tuple[int, str]:
     body = xml[xml.find("<sitzungsverlauf") : xml.find("</sitzungsverlauf>")]
     ids = set(re.findall(r'<rede id="([^"]+)"', body))
@@ -69,16 +102,17 @@ def xml_cut(xml: str) -> tuple[int, str]:
 
 def main(data: Path) -> None:
     con = sqlite3.connect(f"file:{data}/bundestag-pulse.sqlite?mode=ro", uri=True)
-    stored: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    stored_kinds: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for number, kind, count in con.execute(
         "SELECT p.document_number, c.kind, COUNT(*) FROM contributions c JOIN protocols p ON p.id = c.protocol_id GROUP BY 1, 2"
     ):
-        stored[number][kind] = count
+        stored_kinds[number][kind] = count
+    stored_rows: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for table in ("speeches", "agenda_items", "withheld_units"):
         for number, count in con.execute(
             f"SELECT p.document_number, COUNT(*) FROM {table} t JOIN protocols p ON p.id = t.protocol_id GROUP BY 1"
         ):
-            stored[number][table] = count
+            stored_rows[number][table] = count
     votes = dict(con.execute("SELECT p.document_number, COUNT(*) FROM votes v JOIN protocols p ON p.id = v.protocol_id GROUP BY 1"))
     unlinked = dict(con.execute(
         "SELECT p.document_number, COUNT(*) FROM votes v JOIN protocols p ON p.id = v.protocol_id"
@@ -97,7 +131,7 @@ def main(data: Path) -> None:
     for report in reports:
         number = report["protocol"]["dokumentnummer"]
         xml = (data / "xml" / f"plenarprotokoll-{number.replace('/', '-')}.xml").read_text()
-        flat = re.sub(r"[­]", "", xml)
+        flat = xml.replace("\u00ad", "")
         notice = bool(NOTICE.search(flat))
         acts = report["api_records"]["aktivitaeten"]
         kinds = collections.Counter(a["aktivitaetsart"] for a in acts)
@@ -109,20 +143,20 @@ def main(data: Path) -> None:
         after = [kind for where, kind in spoken if cut[0] and where > cut]
         reden_after = after.count("Rede")
         last = max((where for where, _ in spoken), default=(0, ""))
-        zp_missing = kinds[ZP] - stored[number]["zu_protokoll"]
+        zp_missing = kinds[ZP] - stored_kinds[number]["zu_protokoll"]
         positions = {
             (p["id"])
             for p in report["api_records"]["vorgangspositionen"]
-            if cut[0] and (p["fundstelle"].get("anfangsseite") or 0, p["fundstelle"].get("anfangsquadrant") or "") > cut
+            if cut[0] and (page_number(p["fundstelle"].get("anfangsseite")), p["fundstelle"].get("anfangsquadrant") or "") > cut
         }
         wp = number.split("/")[0]
         group = "first edition" if notice and (reden_after or zp_missing > 0) else "notice only" if notice else "other"
         total = totals[(group, wp)]
         total["sittings"] += 1
         total["dip_zp"] += kinds[ZP]
-        total["stored_zp"] += stored[number]["zu_protokoll"]
+        total["stored_zp"] += stored_kinds[number]["zu_protokoll"]
         total["dip_reden"] += kinds["Rede"]
-        total["stored_reden"] += stored[number]["speeches"]
+        total["stored_reden"] += stored_rows[number]["speeches"]
         total["reden_after"] += reden_after
         total["chair_after"] += after.count("chair")
         total["turns_after"] += sum(kind in TURNS for kind in after)
@@ -136,12 +170,15 @@ def main(data: Path) -> None:
             continue
         end = re.findall(r'sitzung-ende-uhrzeit="([^"]*)"', xml)
         date = NOTICE_DATE.search(flat)
+        # Without a cut there is nothing to count after it: empty, never 0.
+        after_cut = lambda value: value if cut[0] else ""  # noqa: E731
         print("\t".join(str(x) for x in (
             number, report["protocol"]["datum"], "ja" if notice else "nein",
-            re.sub(r"\.(?=\S)", ". ", date[1]) if date else "", kinds[ZP], stored[number]["zu_protokoll"], zp_missing,
-            kinds["Rede"], stored[number]["speeches"], f"{cut[0]}{cut[1]}", f"{last[0]}{last[1]}", reden_after,
-            sum(kind in TURNS for kind in after), kinds["Schriftliche Erklärung gem. § 31 Geschäftsordnung BT"], len(positions),
-            votes.get(number, 0), unlinked.get(number, 0), end[0] if end else "",
+            re.sub(r"\.(?=\S)", ". ", date[1]) if date else "", kinds[ZP], stored_kinds[number]["zu_protokoll"], zp_missing,
+            kinds["Rede"], stored_rows[number]["speeches"], after_cut(f"{cut[0]}{cut[1]}"),
+            f"{last[0]}{last[1]}" if last[0] else "", after_cut(reden_after),
+            after_cut(sum(kind in TURNS for kind in after)), kinds["Schriftliche Erklärung gem. § 31 Geschäftsordnung BT"],
+            after_cut(len(positions)), votes.get(number, 0), unlinked.get(number, 0), end[0] if end else "",
         )))
     for key in sorted(totals):
         print(key, dict(totals[key]), file=sys.stderr)
