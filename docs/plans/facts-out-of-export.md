@@ -61,6 +61,23 @@ Seam: `export_distribution_data`, the public function a release goes through.
 - Build store: byte-identical (same `source_sha256`); the three tables hold 8, 1,944 and 2,892 rows.
 - Pages: 10,296 files before and after. `data/features.json`, `index.html`, `overview.html` and `sources.html` differ only in build time and generation id. `database.html` differs: format, the three schema cards, downloads and relationships, counts, size and checksum, and the `withheld_units` caption. Its note on the `-dirty-` suffix comes from building the uncommitted tree (build:5869).
 - `compare_store_values.py`: exit 0, 238 publishable weeks and 46 months, no changed winner, 0 of 1,944 Fakt values moved.
+- At `2d992eb`: full suite on Python 3.13.18, 2,931 tests, OK (2 skipped). Codex review: no actionable defect. Red team (Sonnet): no correctness defect, three wording points, in this item's TODOS.md entry.
+
+### Review checklist (`docs/agents/review-checklist.md`), lines of `scripts/build_dip_pulse_site.py` at `2d992eb`
+
+1. Sibling path: `_run_export` is the one writer of a release copy (`create_database` :5354, the drop :5376). The other `backup()` stages the build store for the facts engine. The gate and `compare_store_values.py` read the tables from the build store; `compare_cpp_bt.py` names no facts table.
+2. Stale beats fresh: a format 28 manifest is not reused (:5241, `export_format` and the exporter's hash are inputs) and not rendered (:14440); older generations are removed after the swap (:5307).
+3. Order and history: the drop is unconditional; the output does not depend on whether the engine ran (schema-hash test).
+4. One key: not touched; the table names come from `facts.FACTS_TABLES`.
+5. Absent vs zero: a store without the tables works (`IF EXISTS`); no new query.
+6. Derived columns: table list, CSV inventory, `relationships` (:5588), `total_rows` (:5589) and `schema_hash` (:5403) are read from the snapshot taken after the drop; re-measured above.
+7. Neighbour binding, 8. hostile text, 9. input shape: not touched (no matcher, scanner, flag or input).
+10. Interrupted run: the drop runs on a scratch copy; leftovers are swept (:5220) and the published export is not written before the swap.
+11. Claims: checked against the code and the clone export (above), and again by the red team. No DATA.md definition of a shipped table changed apart from the removed `facts.withheld` sentence.
+12. Loop cost: three drops per export.
+13. Last commit: the later commit is documentation only.
+
+Checks no diff review replaces: figures replayed (above). Fresh vs incremental: the baseline's export came from a rebuild and this one from a render of the same store, and the 33 shared CSVs are identical but for `datenstand`; no from-scratch online build. Inline JS and layout: not run, because no markup, CSS or script changed. Python patch: 3.13.18. Not run: `validate_store_gate.py` (TODOS.md puts one gate run at the end of the pre-release work).
 
 ---
 
