@@ -2114,22 +2114,31 @@ def annex_rede_key(block_index: int, sequence: int) -> str:
 ANNEX_HEADINGS = frozenset({"Anlage_2", "Anlage_3", "Anlage_Strich"})
 #: What to do when a sitting is refused for an unlisted annex shape: a re-fetch
 #: returns the same XML.
-UNLISTED_ANNEX_TEXT_FIX = ("list the written Rede in scripts/reviewed_units.json with kind annex_rede "
+UNLISTED_ANNEX_TEXT_FIX = ("list the written Rede in scripts/reviewed_units.json with kind annex_rede, "
+                           "or its loose paragraphs with kind annex_paragraphs "
                            "(docs/source-errors.md E17, docs/plans/e17-wp18-texts.md), then re-run")
+#: The paragraph classes Rede text is printed in, and a paragraph with none
+#: (30 inside zu-Protokoll <rede>s): loose after a <rede>, such a paragraph is
+#: text the guard refuses and an ``annex_paragraphs`` run moves. Page scraps
+#: (Standard) and first-edition notices (Ende, p) are not text.
+ANNEX_TEXT_CLASSES = frozenset({"J", "J_1", "J-Strich", "J_Abstand", "N_Anlage", "O", "Z", None})
 
 
 class UnlistedAnnexTextError(ValueError):
-    """A zu-Protokoll annex where a ``<rede>`` holds markers of two Redner-IDs or
-    none, or a speaker marker stands outside any ``<rede>``, with no reviewed
-    entry: the words would be dropped or credited to nobody, so the sitting is
-    refused (``UNLISTED_ANNEX_TEXT_FIX``)."""
+    """A zu-Protokoll annex where a ``<rede>`` holds markers of two or more
+    Redner-IDs or none, a speaker marker stands outside any ``<rede>``, or a
+    paragraph of text stands loose after a ``<rede>``, with no reviewed entry:
+    the words would be dropped or credited to nobody, so the sitting is refused
+    (``UNLISTED_ANNEX_TEXT_FIX``)."""
 
 
 def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: set[str],
                      taken: Collection[str] = ()) -> None:
     """docs/source-errors.md E17: give each written Rede a zu-Protokoll annex
     prints without a ``<rede>`` of its own one, by its ``annex_rede`` entry in
-    ``scripts/reviewed_units.json`` (``docs/plans/e17-wp18-texts.md``).
+    ``scripts/reviewed_units.json`` (``docs/plans/e17-wp18-texts.md``), then
+    move loose paragraphs into their Rede by the ``annex_paragraphs`` entries
+    (``move_annex_paragraphs``).
 
     The entry's ``label`` is found once where the entry's ``rede_id`` points: a
     speaker marker printing it (kept; it must carry the entry's Redner-ID and
@@ -2150,12 +2159,13 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
     all its entries first, then is split from its last place to its first, so
     each part keeps the ordinal of its marker in the source order.
 
-    Afterwards a zu-Protokoll block where a ``<rede>`` holds markers of two
-    Redner-IDs or none, or a marker stands outside any ``<rede>``, refuses the
-    sitting (``UnlistedAnnexTextError``). An entry that does not match its place,
-    two entries of one place, or an entry before an annex ``<rede>`` without an
-    id (whose ``annex_rede_key`` the new unit would shift) stops the run
-    (``ReviewedUnitsError``).
+    Afterwards a zu-Protokoll block where a ``<rede>`` holds markers of two or
+    more Redner-IDs or none, a marker stands outside any ``<rede>``, or a text
+    paragraph (``ANNEX_TEXT_CLASSES``) stands after a ``<rede>`` with no annex
+    heading between, refuses the sitting (``UnlistedAnnexTextError``). An entry
+    that does not match its place, two entries of one place, or an entry before
+    an annex ``<rede>`` without an id (whose ``annex_rede_key`` the new unit
+    would shift) stops the run (``ReviewedUnitsError``).
     """
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     blocks = root.findall("./anlagen/anlage/anlagen-text")
@@ -2169,7 +2179,7 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
 
     # Locate: where each entry's text begins, before any edit.
     located: list[dict[str, Any]] = []
-    for entry in entries:
+    for entry in (entry for entry in entries if entry["kind"] == reviewed_units.ANNEX_REDE):
         where = f"scripts/reviewed_units.json: {sitting} annex_rede {entry['rede_id']} ({entry['label']})"
         if re.fullmatch(r"A[1-9]\d*", entry["rede_id"]):
             index = int(entry["rede_id"][1:])
@@ -2302,13 +2312,23 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
                      and other["container"] is items[0]["container"] and other is not items[0]}
             wrap(items[0], stops)
 
+    move_annex_paragraphs(sitting, written, [entry for entry in entries if entry["kind"] == reviewed_units.ANNEX_PARAGRAPHS])
+
     for block in written:
+        after_rede = None
         for child in block:
+            if child.tag == "p" and child.get("klasse") in ANNEX_HEADINGS:
+                after_rede = None
+            elif (child.tag == "p" and after_rede is not None and not is_marker(child)
+                  and child.get("klasse") in ANNEX_TEXT_CLASSES):
+                raise UnlistedAnnexTextError(f"{sitting}: a paragraph stands loose after annex <rede> {after_rede} "
+                                             f"in \"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
             if is_marker(child):
                 raise UnlistedAnnexTextError(f"{sitting}: a speaker marker stands outside any <rede> in annex "
                                              f"\"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
             if child.tag != "rede":
                 continue
+            after_rede = child.get("id")
             # One writer per person: a merged record's ids name their first
             # (redner_key). A marker naming nobody is keyed by its raw id, so a
             # missing and an empty id are two writers, and the message can sort.
@@ -2318,6 +2338,85 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
                 raise UnlistedAnnexTextError(
                     f"{sitting}: annex <rede> {child.get('id')} holds " + ("no speaker marker" if not ids else
                                                                            f"markers of {len(ids)} Redner-IDs ({', '.join(sorted(ids))})"))
+
+
+def move_annex_paragraphs(sitting: str, written: list[ET.Element], entries: list[dict[str, str]]) -> None:
+    """docs/source-errors.md E17: put the paragraphs of a written Rede that a
+    zu-Protokoll block prints loose after its ``<rede>`` back in, by the
+    ``annex_paragraphs`` entries of ``scripts/reviewed_units.json``; run by
+    ``mark_annex_texts`` after its splits.
+
+    The entry's host is the annex ``<rede>`` ``rede_id`` names, with the parts
+    split from it (``<id>:<n>``, right after it). Its run is the text paragraph
+    (``ANNEX_TEXT_CLASSES``) that opens with ``first``, found once between the
+    host's last part and the next ``<rede>`` or annex heading, and each text
+    paragraph after it up to any other element or another entry's first
+    paragraph. The run goes in, in order, right after the one paragraph of the
+    host or a part that ends with ``after``; ``redner_id`` must be that unit's
+    owner. Every entry is located before any paragraph moves. An entry that does
+    not match, or two entries of one place, stop the run (``ReviewedUnitsError``).
+    """
+    def is_text(element: ET.Element) -> bool:
+        return (element.tag == "p" and element.get("klasse") in ANNEX_TEXT_CLASSES
+                and element.find("redner") is None)
+
+    located = []
+    for entry in entries:
+        where = f"scripts/reviewed_units.json: {sitting} annex_paragraphs {entry['rede_id']} ({entry['first']})"
+        host = next((rede for block in written for rede in block.findall("rede") if rede.get("id") == entry["rede_id"]), None)
+        if host is None:
+            raise reviewed_units.ReviewedUnitsError(f"{where}: names no <rede> of a zu-Protokoll annex in this sitting's XML")
+        block = next(block for block in written if any(child is host for child in block))
+        children = list(block)
+        index = next(index for index, child in enumerate(children) if child is host) + 1
+        units = [host]
+        while (index < len(children) and children[index].tag == "rede"
+               and (children[index].get("id") or "").startswith(f"{entry['rede_id']}:")):
+            units.append(children[index])
+            index += 1
+        end = next((later for later in range(index, len(children)) if children[later].tag == "rede"
+                    or (children[later].tag == "p" and children[later].get("klasse") in ANNEX_HEADINGS)), len(children))
+        firsts = [child for child in children[index:end] if is_text(child) and elem_text(child).startswith(clean_text(entry["first"]))]
+        if len(firsts) != 1:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: the first paragraph is found {'nowhere' if not firsts else f'{len(firsts)} times'} "
+                "as loose text after the <rede> and its parts")
+        afters = [(unit, child) for unit in units for child in unit
+                  if child.tag == "p" and elem_text(child).endswith(clean_text(entry["after"]))]
+        if len(afters) != 1:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: after {entry['after']!r} is found {'nowhere' if not afters else f'{len(afters)} times'} "
+                f"in {entry['rede_id']} and the parts split from it")
+        unit, after = afters[0]
+        owner = unit.find("./p[@klasse='redner']/redner")
+        if redner_key(owner) != entry["redner_id"]:
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: {unit.get('id')}'s owner carries Redner-ID {owner.get('id') if owner is not None else 'none'}, "
+                f"not {entry['redner_id']}")
+        located.append({"entry": entry, "where": where, "block": block, "first": firsts[0], "unit": unit, "after": after})
+
+    for key in ("first", "after"):
+        seen: dict[int, dict[str, Any]] = {}
+        for item in located:
+            other = seen.setdefault(id(item[key]), item)
+            if other is not item:
+                raise reviewed_units.ReviewedUnitsError(f"{item['where']}: names the place of the entry for {other['entry']['first']!r}")
+    firsts = {id(item["first"]) for item in located}
+    for item in located:
+        children = list(item["block"])
+        start = next(index for index, child in enumerate(children) if child is item["first"])
+        run = [item["first"]]
+        for child in children[start + 1:]:
+            if not is_text(child) or id(child) in firsts:
+                break
+            run.append(child)
+        item["run"] = run
+    for item in located:
+        unit = item["unit"]
+        place = next(index for index, child in enumerate(unit) if child is item["after"]) + 1
+        for offset, paragraph in enumerate(item["run"]):
+            item["block"].remove(paragraph)
+            unit.insert(place + offset, paragraph)
 
 
 def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
@@ -2951,7 +3050,7 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     if any(name_diagnostics.values()):
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting}: a name_procedural entry outside any TOP; it has nowhere to be recorded")
-    mark_annex_texts(root, [entry for entry in sitting_entries if entry["kind"] == reviewed_units.ANNEX_REDE], split_parts,
+    mark_annex_texts(root, [entry for entry in sitting_entries if entry["kind"] in reviewed_units.ANNEX_KINDS], split_parts,
                      set(inventory))
     sitting_contributions = written_contributions(root, agenda_items, rid_pages, statuses)
     for ansprache in name_ansprachen:

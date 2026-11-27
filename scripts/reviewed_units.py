@@ -58,6 +58,17 @@ entry with a ``kind``:
   is its label. ``redner_id`` is the writer's. One place can hold several
   written Reden: entries of one ``rede_id`` differ by ``label``, and
   ``mark_annex_texts`` applies a sitting's entries in document order.
+- ``annex_paragraphs`` (``docs/source-errors.md`` E17): paragraphs of a written
+  Rede that a zu-Protokoll annex prints loose in its block, after the ``<rede>``
+  they belong to (bullet points). ``rede_id`` names that annex ``<rede>``, the
+  host, as the source gives it. The entry adds ``first``, the opening words of
+  the first loose paragraph, and ``after``, the closing words of the host's
+  paragraph the run is printed after (both as printed). The run is that
+  paragraph and each following one in a text class
+  (``validate_dip_protocol.ANNEX_TEXT_CLASSES``); ``mark_annex_texts`` moves it,
+  after the ``annex_rede`` entries, right after the one paragraph of the host or
+  a part split from it that ends with ``after``. ``redner_id`` is the owner's
+  of that unit. One host can hold several runs: entries differ by ``first``.
 
 ``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
 unit the sitting does not hold, or whose owner differs, stops the run
@@ -124,12 +135,19 @@ OWN_WORDS = "own_words"
 #: A written Rede a zu-Protokoll annex prints without a ``<rede>`` of its own
 #: (docs/source-errors.md E17): it becomes one, by ``mark_annex_texts``.
 ANNEX_REDE = "annex_rede"
-KINDS = frozenset({WITHHOLD, OWN_WORDS, ANNEX_REDE}) | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
+#: Paragraphs of a written Rede a zu-Protokoll annex prints loose in its block,
+#: after the ``<rede>`` they belong to: ``mark_annex_texts`` moves them into it.
+ANNEX_PARAGRAPHS = "annex_paragraphs"
+#: The kinds ``mark_annex_texts`` applies; every caller that parses an annex reads
+#: them (``parse_protocol_xml``, ``check_withhold_one``).
+ANNEX_KINDS = frozenset({ANNEX_REDE, ANNEX_PARAGRAPHS})
+KINDS = frozenset({WITHHOLD, OWN_WORDS}) | ANNEX_KINDS | PRESIDIUM_KINDS | NAME_KINDS | LOOSE_KINDS | UNIT_KINDS
 ENTRY_KEYS = frozenset({"sitting", "rede_id", "redner_id", "kind", "reason"})
 NAME_ENTRY_KEYS = ENTRY_KEYS | {"name"}
 LOOSE_ENTRY_KEYS = ENTRY_KEYS | {"attach"}
 OWN_WORDS_ENTRY_KEYS = ENTRY_KEYS | {"page"}
 ANNEX_ENTRY_KEYS = ENTRY_KEYS | {"name", "label"}
+ANNEX_PARAGRAPHS_ENTRY_KEYS = ENTRY_KEYS | {"first", "after"}
 SITTING_RE = re.compile(r"^\d{2}/\d{1,3}$")
 REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+(?::\d+)*$")
 WHOLE_REDE_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
@@ -138,6 +156,7 @@ NAME_REDNER_ID_RE = re.compile(r"^(?:\d+|dip:[1-9]\d*)$")
 NAME_REDE_ID_RE = re.compile(r"^(?:[A-Za-z0-9]+|N[1-9]\d*)$")
 LOOSE_REDE_ID_RE = re.compile(r"^M[1-9]\d*$")
 ANNEX_REDE_ID_RE = re.compile(r"^(?:A[1-9]\d*|(?!A\d+$)[A-Za-z0-9]+)$")
+ANNEX_HOST_ID_RE = re.compile(r"^(?!A\d+$)[A-Za-z0-9]+$")
 PAGE_RE = re.compile(r"^([1-9]\d{0,5})([A-D])$")
 
 _cache: dict[Path, dict[str, list[dict[str, str]]]] = {}
@@ -162,8 +181,10 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         loose_kind = isinstance(entry, dict) and entry.get("kind") in LOOSE_KINDS
         own_words = isinstance(entry, dict) and entry.get("kind") == OWN_WORDS
         annex_kind = isinstance(entry, dict) and entry.get("kind") == ANNEX_REDE
+        paragraphs_kind = isinstance(entry, dict) and entry.get("kind") == ANNEX_PARAGRAPHS
         keys = (NAME_ENTRY_KEYS if name_kind else LOOSE_ENTRY_KEYS if loose_kind
-                else OWN_WORDS_ENTRY_KEYS if own_words else ANNEX_ENTRY_KEYS if annex_kind else ENTRY_KEYS)
+                else OWN_WORDS_ENTRY_KEYS if own_words else ANNEX_ENTRY_KEYS if annex_kind
+                else ANNEX_PARAGRAPHS_ENTRY_KEYS if paragraphs_kind else ENTRY_KEYS)
         if not isinstance(entry, dict) or set(entry) != keys:
             raise ReviewedUnitsError(f"{label} must have exactly the keys {', '.join(sorted(keys))}")
         for key in keys:
@@ -185,6 +206,12 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
             for key in ("name", "label"):
                 if entry[key] != entry[key].strip(" :"):
                     raise ReviewedUnitsError(f"{label}: {key} {entry[key]!r} is printed words without a colon or outer spaces")
+        elif paragraphs_kind:
+            if not ANNEX_HOST_ID_RE.fullmatch(entry["rede_id"]):
+                raise ReviewedUnitsError(f"{label}: an annex_paragraphs entry names a source annex <rede>, not {entry['rede_id']!r}")
+            for key in ("first", "after"):
+                if entry[key] != entry[key].strip():
+                    raise ReviewedUnitsError(f"{label}: {key} {entry[key]!r} is printed words without outer spaces")
         elif not REDE_ID_RE.fullmatch(entry["rede_id"]) and not (name_kind and NAME_REDE_ID_RE.fullmatch(entry["rede_id"])):
             raise ReviewedUnitsError(f"{label}: rede_id {entry['rede_id']!r} is not a <rede> id or a split part <id>:<n>")
         if entry["kind"] not in KINDS:
@@ -211,6 +238,7 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         key = ((entry["sitting"], entry["rede_id"], entry["name"]) if name_kind
                else (entry["sitting"], entry["rede_id"], "loose marker") if loose_kind
                else (entry["sitting"], entry["rede_id"], "annex", entry["label"]) if annex_kind
+               else (entry["sitting"], entry["rede_id"], entry["kind"], entry["first"]) if paragraphs_kind
                else (entry["sitting"], entry["rede_id"]))
         if key in seen:
             raise ReviewedUnitsError(f"{label}: {' '.join(key)} is listed twice")
