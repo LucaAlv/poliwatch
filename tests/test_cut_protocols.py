@@ -175,10 +175,50 @@ class ProtocolCutTests(unittest.TestCase):
     #   why_new=TODOS cut-protocols item 2; seam=parser
     def test_withheld_reden_count_as_printed_in_the_whole_test(self):
         whole = parsed(NOTICE_READ, reden=3, zu_protokoll=("Dreher", "Esch"))
-        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4"}, {"rede_id": "ID5"}]
+        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4", "would_be": "speech"}, {"rede_id": "ID5", "would_be": "speech"}]
         self.assertIsNone(cut.protocol_cut(whole, ACTIVITIES))
-        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4"}]
+        whole["agenda_items"][0]["withheld"] = [{"rede_id": "ID4", "would_be": "speech"}]
         self.assertEqual([e["dip_activity_id"] for e in cut.protocol_cut(whole, ACTIVITIES)["entries"]], ["a4", "a5"])
+
+    # Value: protects=only a withheld unit that would be a Rede is printed as one: a would-be Beitrag (a Befragung
+    #   question) or a unit nobody has reviewed yet is not, so it cannot make a cut file look whole and drop the Reden
+    #   DIP lists after the cut; fails_when=a withheld Beitrag fills the count and the sitting is left unmarked;
+    #   why_new=TODOS cut-protocols item 15 (Codex, blocking); seam=parser
+    def test_only_a_withheld_unit_that_would_be_a_rede_counts_as_printed(self):
+        cut_file = parsed(NOTICE_READ, reden=3, zu_protokoll=("Dreher", "Esch"))
+        for would_be in ("beitrag", "procedural", "unreviewed", "zu_protokoll"):
+            with self.subTest(would_be=would_be):
+                cut_file["agenda_items"][0]["withheld"] = [{"rede_id": "ID4", "would_be": "speech"},
+                                                           {"rede_id": "ID5", "would_be": would_be}]
+                self.assertEqual(cut.printed_reden(cut_file), 4)
+                self.assertEqual([e["dip_activity_id"] for e in cut.protocol_cut(cut_file, ACTIVITIES)["entries"]],
+                                 ["a4", "a5"])
+
+    # Value: protects=a withheld unit that would be a Rede zu Protokoll is printed, so DIP's entry for it matches it by
+    #   surname and is not listed as unprinted; fails_when=a withheld Rede zu Protokoll is counted nowhere and its DIP
+    #   entry lands in unprinted_contributions; why_new=TODOS cut-protocols item 15; seam=parser
+    def test_a_withheld_rede_zu_protokoll_matches_dips_entry(self):
+        cut_file = parsed(NOTICE_READ)
+        self.assertIn("a8", [e["dip_activity_id"] for e in cut.protocol_cut(cut_file, ACTIVITIES)["entries"]])
+        cut_file["agenda_items"][0]["withheld"] = [
+            {"rede_id": "A1", "would_be": "zu_protokoll", "speaker": {"display_name": "Emil Esch"}}]
+        self.assertEqual([e["dip_activity_id"] for e in cut.protocol_cut(cut_file, ACTIVITIES)["entries"]], ["a4", "a5"])
+        # With every DIP Rede printed, the withheld one makes the file whole.
+        cut_file["agenda_items"][0]["speeches"] = [{"rede_id": f"ID{n}"} for n in range(1, 6)]
+        self.assertIsNone(cut.protocol_cut(cut_file, ACTIVITIES))
+        # It counts as no Rede.
+        self.assertEqual(cut.printed_reden(cut_file), 5)
+
+    # Value: protects=the rule writes its own count of printed Reden into the report, so gate rule 3 judges an unmarked
+    #   file by the number the rule uses (one definition); fails_when=the gate sums the counts on its own again and
+    #   drifts from the rule; why_new=TODOS cut-protocols item 15, eng review R1; seam=parser
+    def test_the_cut_summary_carries_the_count_of_printed_reden(self):
+        cut_file = parsed(NOTICE_READ, reden=3)
+        cut_file["agenda_items"][0]["withheld"] = [{"rede_id": "ID4", "would_be": "speech"},
+                                                   {"rede_id": "ID5", "would_be": "beitrag"}]
+        summary = cut.cut_summary(cut_file, ACTIVITIES)
+        self.assertEqual((summary["printed_reden"], summary["cut_rule_version"]), (4, cut.CUT_RULE_VERSION))
+        self.assertEqual(cut.cut_summary(parsed(None, reden=2), [])["printed_reden"], 2)
 
     # Value: protects=a cut place without a quadrant: only a later page is after it, so the last printed Rede and its
     #   page neighbours are never listed as unprinted; a DIP Rede without a quadrant on the cut's page is not after it;
@@ -262,7 +302,7 @@ class ParsedReportTests(unittest.TestCase):
         report = report_of(parsed, [*printed, activity("x1", "Rede", "Dora Dreher, MdB, Die Linke", "104A", "14")])
         dip.reparse_report_xml(report, parsed)
         summary = report["validation_summary"]
-        self.assertEqual(summary["cut_rule_version"], cut.CUT_RULE_VERSION)
+        self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))
         self.assertEqual((summary["protocol_cut"]["page"], summary["protocol_cut"]["quadrant"]), (103, "B"))
         self.assertEqual([e["dip_activity_id"] for e in summary["protocol_cut"]["entries"]], ["x1"])
 
@@ -288,7 +328,11 @@ class ParsedReportTests(unittest.TestCase):
         # Rule 2 gave no count of the DIP Reden a cut cannot place (code review of steps 7 to 10, finding 2).
         report["validation_summary"]["cut_rule_version"] = 2
         self.assertIn("cut", site.stale_causes(report))
-        self.assertGreater(cut.CUT_RULE_VERSION, 2)
+        # Rule 3 counted every withheld unit as a printed Rede and wrote no count of its own (TODOS cut-protocols
+        # item 15).
+        report["validation_summary"]["cut_rule_version"] = 3
+        self.assertIn("cut", site.stale_causes(report))
+        self.assertGreater(cut.CUT_RULE_VERSION, 3)
 
 
 CUT = {"announced": "2026-10-13", "last_rede_id": "R3", "page": 103, "quadrant": "B", "place_from": "inhaltsverzeichnis",
@@ -703,6 +747,7 @@ class GateTests(unittest.TestCase):
         report["api_records"] = {"aktivitaeten": list(aktivitaeten)}
         report["validation_summary"]["xml_speech_count"] = 3
         report["validation_summary"]["withheld_rede_count"] = 0
+        report["validation_summary"]["printed_reden"] = 3
         return report
 
     # Value: protects=the mark and the notice agree, and the receipt carries the counts; fails_when=a sitting is
@@ -735,23 +780,34 @@ class GateTests(unittest.TestCase):
         result = gate.cut_protocol_check(output, database)
         self.assertEqual([entry["dip_reden_after"] for entry in result["rule3"]], [8])
         self.assertIn("look cut by rule 3", " ".join(result["problems"]))
-        # A withheld Rede is printed: DIP's 8 against 3 stored and 1 withheld is 4 more, below rule 3's 5 (item 2).
+        # A withheld Rede is printed: DIP's 8 against the rule's 4 printed Reden (3 stored, 1 withheld) is 4 more,
+        # below rule 3's 5 (item 2).
         report = self.gate_report(None, after)
-        report["validation_summary"]["withheld_rede_count"] = 1
+        report["validation_summary"].update({"withheld_rede_count": 1, "printed_reden": 4})
         output, database = self.output(xml, report)
         self.assertEqual(gate.cut_protocol_check(output, database)["rule3"], [])
-
-    # Value: protects=the gate names a report without its count of Reden or withheld Reden instead of judging rule 3 by
-    #   a guess; fails_when=the type check is dropped and None + int raises; why_new=step 9 added the withheld count;
-    #   seam=none; no_claim=the real parser's output (report built by hand)
-    def test_a_report_without_the_withheld_count_is_named_not_judged(self):
-        xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8")
-        report = self.gate_report(None)
-        del report["validation_summary"]["withheld_rede_count"]
+        # A withheld unit that would be a Beitrag is no printed Rede: the rule's count stays 3, and the file looks cut
+        # (item 15).
+        report["validation_summary"]["printed_reden"] = 3
         output, database = self.output(xml, report)
-        result = gate.cut_protocol_check(output, database)
-        self.assertIn("holds no count of Reden or withheld Reden", " ".join(result["problems"]))
-        self.assertEqual(result["rule3"], [])
+        self.assertEqual([entry["dip_reden_more"] for entry in gate.cut_protocol_check(output, database)["rule3"]], [5])
+
+    # Value: protects=the gate names a report without the rule's count of printed Reden instead of judging rule 3 by a
+    #   guess; fails_when=the type check is dropped and None - int raises, or the gate sums the counts on its own;
+    #   why_new=item 15 (R1: the rule writes printed_reden); seam=none; no_claim=the real parser's output (report built by hand)
+    def test_a_report_without_the_count_of_printed_reden_is_named_not_judged(self):
+        xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8")
+        for broken in (None, "3", True):
+            with self.subTest(printed_reden=broken):
+                report = self.gate_report(None)
+                if broken is None:
+                    del report["validation_summary"]["printed_reden"]
+                else:
+                    report["validation_summary"]["printed_reden"] = broken
+                output, database = self.output(xml, report)
+                result = gate.cut_protocol_check(output, database)
+                self.assertIn("holds no count of printed Reden", " ".join(result["problems"]))
+                self.assertEqual(result["rule3"], [])
 
     # Value: protects=no unprinted entry is a stored Rede over again; fails_when=a DIP Rede the file prints is listed as
     #   missing; why_new=step 6; seam=gate

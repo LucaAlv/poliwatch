@@ -2378,11 +2378,15 @@ def word_count(paragraphs: list[str]) -> int:
 
 
 def withheld_record(rid: str, sequence: int, reason: str, detail: str, speaker: dict[str, Any] | None,
-                    page: dict[str, Any] | None, own: "SpeechText", nested: list[dict[str, Any]]) -> dict[str, Any]:
+                    page: dict[str, Any] | None, own: "SpeechText", nested: list[dict[str, Any]],
+                    would_be: str) -> dict[str, Any]:
     """A withheld Rede as it stands after pass 1: its speaker's own words
     (``text``, as a stored speech would hold them, with any text pass 1 merged
     into it) and, apart, the other speakers' turns pass 1 left in it, in marker
-    order. Segments pass 1 moved out or ruled procedural are in neither (D7)."""
+    order. Segments pass 1 moved out or ruled procedural are in neither (D7).
+    ``would_be`` is the status the ``<rede>`` takes if accepted (``would_be``),
+    which the cut rule reads (``protocol_cut.printed_reden``); the report keeps
+    it, the store does not."""
     turns = []
     for segment in nested:
         text = speech_kinds.join_paragraphs(segment["paragraphs"])
@@ -2394,7 +2398,27 @@ def withheld_record(rid: str, sequence: int, reason: str, detail: str, speaker: 
         "paragraph_count": len(own.paragraphs), "char_count": len(own.text),
         "word_count": word_count(own.paragraphs), "text": own.text, "paragraphs": own.paragraphs,
         "nested_turns": turns, "nested_word_count": sum(turn["word_count"] for turn in turns),
+        "would_be": would_be,
     }
+
+
+#: The ``would_be`` of a withheld ``<rede>`` whose kind ADR 0004 says must be
+#: reviewed first (``UnreviewedUnitError``): undecided, so the cut rule counts it
+#: as nothing printed.
+WOULD_BE_UNREVIEWED = "unreviewed"
+
+
+def would_be(label: "speech_kinds.RedeLabel", procedural: bool, refusal: Exception | None = None) -> str:
+    """The status a withheld ``<rede>`` would take if accepted: "unreviewed"
+    when ADR 0004 says its kind must be reviewed first, "procedural" for one
+    pass 1 rules procedural, else its label's ``speech_kinds.REDE_STATUS``
+    ("speech", "beitrag", "zu_protokoll"), or the label's own kind where it has
+    no row there."""
+    if isinstance(refusal, UnreviewedUnitError):
+        return WOULD_BE_UNREVIEWED
+    if procedural:
+        return "procedural"
+    return speech_kinds.REDE_STATUS.get(label.kind, label.kind)
 
 
 def raw_rede_id(unit_id: str) -> str:
@@ -2726,7 +2750,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                     raise reviewed_units.ReviewedUnitsError(
                         f"scripts/reviewed_units.json: {sitting} {rid} names Redner-ID {entry['redner_id']}, "
                         f"but the source's owner of {rid} is {owner}; the entry is stale or misapplied")
-                withheld.append(withheld_record(rid, sequence, "reviewed", entry["reason"], redner, page_ref, own_text, nested))
+                withheld.append(withheld_record(rid, sequence, "reviewed", entry["reason"], redner, page_ref, own_text, nested,
+                                                would_be(label, rid in procedural_reden)))
                 record_status(statuses, rid, speech_kinds.WITHHELD_STATUS)
                 continue
             # Commit on finish (ADR 0005): the Rede's own units and diagnostics
@@ -2785,7 +2810,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                         nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
                         segment["speaker"], segment["paragraphs"], page_ref))
             except LocatedRefusal as refusal:
-                withheld.append(withheld_record(rid, sequence, refusal.reason, str(refusal), redner, page_ref, own_text, nested))
+                withheld.append(withheld_record(rid, sequence, refusal.reason, str(refusal), redner, page_ref, own_text, nested,
+                                                would_be(label, rid in procedural_reden, refusal)))
                 record_status(statuses, rid, speech_kinds.WITHHELD_STATUS)
                 continue
             nested_units.extend(rede_nested)

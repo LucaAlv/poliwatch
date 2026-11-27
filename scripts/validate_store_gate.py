@@ -457,14 +457,14 @@ def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
             else:
                 whole.append(number)
         elif not notice:
-            summary = report.get("validation_summary") or {}
-            speech_count, withheld = summary.get("xml_speech_count"), summary.get("withheld_rede_count")
-            if type(speech_count) is not int or type(withheld) is not int:
-                # Not parsed: rule 3 has no count to compare DIP's with. A withheld
-                # Rede is printed and DIP lists it, so it counts with the stored ones.
-                problems.append(f"{number}: its report holds no count of Reden or withheld Reden to judge rule 3 by")
+            # The cut rule's own count (protocol_cut.printed_reden, written by
+            # cut_summary): the stored Reden and the withheld units that would be one.
+            printed = (report.get("validation_summary") or {}).get("printed_reden")
+            if type(printed) is not int:
+                # Not parsed under the rule: rule 3 has no count to compare DIP's with.
+                problems.append(f"{number}: its report holds no count of printed Reden to judge rule 3 by")
                 continue
-            evidence = protocol_cut.unmarked_cut_evidence(root, aktivitaeten, speech_count + withheld)
+            evidence = protocol_cut.unmarked_cut_evidence(root, aktivitaeten, printed)
             if evidence:
                 looks_cut.append({"document_number": number, **evidence})
     if looks_cut:

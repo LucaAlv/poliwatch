@@ -54,6 +54,25 @@ def report(parsed, number="18/7"):
                                    **dip.protocol_cut.cut_summary(parsed, [])}}
 
 
+MINISTER = ('<p klasse="redner"><redner id="M"><name><vorname>Eva</vorname><nachname>Minister</nachname><rolle>'
+            '<rolle_lang>Bundesministerin für Arbeit</rolle_lang><rolle_kurz>Bundesministerin</rolle_kurz></rolle></name></redner></p>')
+
+
+def BEFRAGUNG(*reden):  # noqa: N802 - a sitting() whose TOP is a Befragung der Bundesregierung
+    return sitting(*reden).replace('<p klasse="T_NaS">Beratung</p>', '<p klasse="T_NaS">Befragung der Bundesregierung</p>')
+
+
+def resumed_with_an_unresolved_turn():
+    """21/43 with a third speaker's remark left in ID214301700, the Rede resumed
+    after a summons request (procedural, validate_dip_protocol pass 1)."""
+    xml = (_support.FIXTURES / "offline-v5/plenarprotokoll-21-43.xml").read_text(encoding="utf-8")
+    start = xml.index('<rede id="ID214301700"')
+    end = xml.index("</rede>", start)
+    remark = ('<p klasse="redner"><redner id="99"><name><nachname>Dritter</nachname><fraktion>SPD</fraktion></name>'
+              '</redner>Dritter (SPD):</p><p klasse="J_1">Eine Bemerkung.</p>')
+    return xml[:end] + remark + xml[end:]
+
+
 def entry(rid, redner="", sitting_number="18/7"):
     return {"sitting": sitting_number, "rede_id": rid, "redner_id": redner or f"{rid}-r", "kind": "withhold", "reason": "Test."}
 
@@ -148,6 +167,56 @@ class ParserTests(unittest.TestCase):
         [held] = dip.parse_protocol_xml(xml, reviewed=[])["agenda_items"][0]["withheld"]
         self.assertEqual((held["rede_id"], held["reason"]), ("R1", "refused_nested_question_speaker"))
         self.assertIn("unresolved nested question-format speaker at R1 marker 2", held["reason_detail"])
+        # The minister's opening report is a Rede, so the withheld unit would be one.
+        self.assertEqual(held["would_be"], "speech")
+
+    # Value: protects=each withheld unit records what it would be if accepted, the one input the cut rule reads to
+    #   count it as a printed Rede, match it as a Rede zu Protokoll, or neither (TODOS cut-protocols item 15, R2, R3);
+    #   fails_when=a would-be Beitrag, procedural step, or a unit nobody has reviewed is counted as a printed Rede and a
+    #   cut file reads as whole, or a withheld Rede zu Protokoll is listed as unprinted; why_new=item 15; seam=parser
+    def test_a_withheld_unit_records_what_it_would_be(self):
+        member_with_unresolved = (f'<rede id="R2">{owner("R2", "Frager")}<p>Eine Frage an die Ministerin?</p>'
+                                  '<p klasse="redner"><redner id="X"><name><nachname>Ohne</nachname></name></redner></p>'
+                                  '<p>Noch eine Frage?</p></rede>')
+        presidium = ('<rede id="R2"><p klasse="redner"><redner id="P"><name><nachname>Bulmahn</nachname><rolle>'
+                     '<rolle_lang>Vizepräsidentin</rolle_lang></rolle></name></redner></p><p>Abschied.</p></rede>')
+        oath = f'<rede id="R2">{owner("R2", "Neu")}<p>Ich schwöre es, so wahr mir Gott helfe.</p></rede>'
+        listed = {"sitting": "18/7", "rede_id": "R2", "redner_id": "R2-r", "kind": "zu_protokoll", "reason": "Test."}
+        cases = {
+            # (xml, reviewed entries, the withheld unit's reason, would_be)
+            "speech": (sitting(rede("R1"), rede("R2", "Zwei", REFUSED)), [], "refused_nested_contribution", "speech"),
+            "reviewed speech": (sitting(rede("R1"), rede("R2", "Zwei")), [entry("R2")], "reviewed", "speech"),
+            # A non-opening member's <rede> in a Befragung is a Frage, a Beitrag.
+            "beitrag": (BEFRAGUNG(rede("R1", "Minister", "").replace(owner("R1", "Minister"), MINISTER),
+                                  member_with_unresolved), [], "refused_nested_question_speaker", "beitrag"),
+            "zu_protokoll": (sitting(rede("R1"), rede("R2", "Zwei", REFUSED)), [listed], "refused_nested_contribution",
+                             "zu_protokoll"),
+            # The resumed Rede after a summons request (21/43 ID214301700) is procedural; another speaker's turn
+            # left in it is withheld with it.
+            "procedural": (resumed_with_an_unresolved_turn(), [], "refused_nested_contribution", "procedural"),
+            # ADR 0004: an unlisted presidium <rede> and an unlisted oath answer are undecided (R3).
+            "unreviewed presidium": (sitting(rede("R1"), presidium), [], "unreviewed_presidium", "unreviewed"),
+            "unreviewed oath": (sitting(rede("R1"), oath), [], "unreviewed_presidium", "unreviewed"),
+        }
+        for label, (xml, reviewed, reason, would_be) in cases.items():
+            with self.subTest(label):
+                parsed = dip.parse_protocol_xml(xml, reviewed=reviewed)
+                [held] = [w for top in parsed["agenda_items"] for w in top["withheld"]]
+                self.assertEqual((held["reason"], held["would_be"]), (reason, would_be))
+
+    # Value: protects=Codex's scenario for item 15: in a Befragung, a member's question withheld for an unresolved
+    #   speaker is a Beitrag, so the file prints one Rede, not two; withheld_rede_count still counts it (completeness);
+    #   fails_when=the withheld question counts as a printed Rede and a cut file reads whole; why_new=item 15; seam=parser
+    def test_a_withheld_befragung_question_is_no_printed_rede(self):
+        member_with_unresolved = (f'<rede id="R2">{owner("R2", "Frager")}<p>Eine Frage an die Ministerin?</p>'
+                                  '<p klasse="redner"><redner id="X"><name><nachname>Ohne</nachname></name></redner></p>'
+                                  '<p>Noch eine Frage?</p></rede>')
+        parsed = dip.parse_protocol_xml(BEFRAGUNG(f'<rede id="R1">{MINISTER}<p>Einleitung.</p></rede>',
+                                                  member_with_unresolved), reviewed=[])
+        top = parsed["agenda_items"][0]
+        self.assertEqual(([s["rede_id"] for s in top["speeches"]], [w["rede_id"] for w in top["withheld"]]), (["R1"], ["R2"]))
+        self.assertEqual(protocol_cut.cut_summary(parsed, [])["printed_reden"], 1)
+        self.assertEqual(dip.contribution_summary(parsed["agenda_items"])["withheld_rede_count"], 1)
 
     # Value: protects=a withheld Rede reconciles as withheld, and a Rede left with no status still refuses the sitting;
     #   fails_when=withholding skips record_status or the reconciliation stops checking; why_new=PR 1 had no withheld status; seam=none
