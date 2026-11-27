@@ -218,6 +218,15 @@ class WrapTests(unittest.TestCase):
         self.assertEqual(written(parsed), [('annex:2:1', '11004605', 'Vor einem Jahr.\nFür mich.', None)])
         self.assertEqual(unit(parsed, 'annex:2:1')['source_page']['page'], 2931)
 
+    # Value: protects=a block wrap ends at the next annex heading, so the Rede after it keeps its TOP and the heading is no
+    #   writer's text; fails_when=the wrap runs on to the next <rede> and takes the heading (E17 item 7); why_new=/ship
+    #   coverage audit 2026-11-26; seam=reviewed
+    def test_a_wrap_ends_at_an_annex_heading(self):
+        body = f'{SCHUSTER}Ich hoffe auch.</p>{TOP_HEADING}<rede id="ID2">{OEZDEMIR}Wir beraten heute.</p></rede>'
+        parsed = parse(block(body), entries=[annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)')])
+        self.assertEqual(written(parsed), [('ID2', '6', 'Wir beraten heute.', 'Tagesordnungspunkt 1'),
+                                           ('annex:1:1', '7', 'Ich hoffe auch.', None)])
+
     # Value: protects=a label paragraph standing directly in the block after its headings becomes the writer's Beitrag
     #   (18/155 Hakverdi); fails_when=the text stays unread or keeps its label; why_new=new rule; seam=reviewed
     def test_a_label_paragraph_directly_in_the_block_wraps(self):
@@ -225,6 +234,55 @@ class WrapTests(unittest.TestCase):
                 '<p klasse="J">Metin Hakverdi (SPD): Im Rahmen.</p><p klasse="J">Weiter.</p>')
         parsed = parse(block(body), entries=[annex('A1', '11004289', 'Metin Hakverdi (SPD)')])
         self.assertEqual([u[:3] for u in written(parsed)], [('annex:1:1', '11004289', 'Im Rahmen.\nWeiter.')])
+
+
+class CallerTests(unittest.TestCase):
+    """The callers that parse an annex: online, offline and the D6 check."""
+
+    # Value: protects=a sitting refused for an unlisted annex text names the reviewed-list fix online and on an offline
+    #   re-parse; fails_when=it reads as corrupt XML ("--fetch-xml"), whose re-fetch returns the same XML (E17 item 7);
+    #   why_new=/ship coverage audit 2026-11-26; seam=fetch_text stubbed
+    def test_a_refused_sitting_names_the_reviewed_list(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import build_dip_pulse_site as build
+        xml = document(block(f'{SCHUSTER}Ich hoffe auch.</p>'))
+        protocol = {'id': 'p1', 'dokumentnummer': SITTING, 'fundstelle': {'xml_url': 'https://dserver.bundestag.de/btp/18/18010.xml'}}
+        reviewed_units.use([])
+        with patch.object(dip, 'fetch_text', return_value=xml), patch.object(dip, 'enrich_with_api'), \
+                self.assertRaises(dip.DipError) as online:
+            dip.build_report(SimpleNamespace(api_key='test', sleep=0), protocol)
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / 'data' / 'xml').mkdir(parents=True)
+            (output_dir / 'data' / 'xml' / 'plenarprotokoll-18-10.xml').write_text(xml, encoding='utf-8')
+            report = {'protocol': {'id': 'p1', 'dokumentnummer': SITTING}, 'agenda_items': []}
+            (output_dir / 'data' / 'plenarprotokoll-18-10.json').write_text(json.dumps(report), encoding='utf-8')
+            entries = build.load_existing_detail_entries(output_dir, [{'dokumentnummer': SITTING}])
+            with self.assertRaises(build.CachedReportError) as replay:
+                build.reparse_cached_xml(output_dir, entries)
+        self.assertTrue(online.exception.source_rejected)
+        self.assertIn('scripts/reviewed_units.json with kind annex_rede', str(online.exception))
+        printed_replay = f'{replay.exception}. {build.cached_report_fix(replay.exception)}'
+        self.assertIn('scripts/reviewed_units.json with kind annex_rede', printed_replay)
+        self.assertNotIn('--fetch-xml', printed_replay)
+
+    # Value: protects=the D6 check (check_withhold_one) applies a sitting's annex entries in both its parses, so a sitting
+    #   whose annex text only an entry places is checked rather than refused; fails_when=check_sitting drops the annex kinds
+    #   and every such sitting fails its base parse (E17 item 7); why_new=/ship coverage audit 2026-11-26; seam=reviewed
+    def test_check_withhold_one_reads_annex_entries(self):
+        import check_withhold_one
+        spoken = ''.join(f'<rede id="S{n}">{THEWS}Gesprochen {n}.</p></rede>' for n in (1, 2, 3))
+        xml = document(block(f'{SCHUSTER}Ich hoffe auch.</p>')).replace(
+            '<p klasse="T_NaS">Beratung des Antrags</p>', f'<p klasse="T_NaS">Beratung des Antrags</p>{spoken}')
+        reviewed_units.use([annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)')])
+        try:
+            result = check_withhold_one.check_sitting(xml)
+        finally:
+            reviewed_units.use([])
+        self.assertEqual(result['middle'], {'withheld': 1, 'problems': []})
 
 
 class GuardTests(unittest.TestCase):
@@ -260,6 +318,23 @@ class GuardTests(unittest.TestCase):
         body = f'<rede id="R1">{FABRITIUS}Erster.</p>{merged}Weiter.</p></rede>'
         self.assertEqual([u[:2] for u in written(parse(block(body)))], [('R1', '1')])
 
+    # Value: protects=a marker that names nobody (no, an empty or a blank id) beside a real writer's marker refuses the sitting
+    #   with the guard's own error, and markers with a missing and an empty id are two unknown writers, not one; fails_when=the
+    #   message's sorted() raises TypeError, or the two unidentified markers pass as one writer (E17 item 5, Codex on 185a33a);
+    #   why_new=code review of 2026-11-26; seam=reviewed
+    def test_unidentified_markers_refuse(self):
+        def unidentified(attribute):
+            return f'<p klasse="redner"><redner{attribute}><name><vorname>X</vorname><nachname>Y</nachname></name></redner>X Y: '
+        shapes = {
+            'no id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{unidentified("")}Zweiter.</p></rede>',
+            'an empty id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{unidentified(" id=\"\"")}Zweiter.</p></rede>',
+            'a blank id beside a real one': f'<rede id="R1">{FABRITIUS}Erster.</p>{unidentified(" id=\" \"")}Zweiter.</p></rede>',
+            'no id and an empty id': f'<rede id="R1">{unidentified("")}Erster.</p>{unidentified(" id=\"\"")}Zweiter.</p></rede>',
+        }
+        for shape, body in shapes.items():
+            with self.subTest(shape), self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'markers of 2 Redner-IDs'):
+                parse(block(body))
+
 
 class EntryErrorTests(unittest.TestCase):
     """An entry the source does not match stops the run: the list needs correcting."""
@@ -284,6 +359,22 @@ class EntryErrorTests(unittest.TestCase):
         self.refuses(self.HOST, annex('A2', '4', 'Ralph Lenkert (DIE LINKE)'), 'names no zu-Protokoll block')
         own = f'<rede id="ID1">{THEWS}Eigener Text.</p></rede>'
         self.refuses(own, annex('ID1', '3', 'Michael Thews (SPD)'), "writer of the <rede> itself")
+        petry = '<p klasse="Anlage_3">des Abgeordneten Christian Petry (SPD)</p>'
+        self.refuses(petry, annex('A1', '11004605', 'Christian Petry (SPD)'), 'no text paragraph follows the heading')
+        self.refuses(petry + f'{SCHUSTER}Ich hoffe auch.</p>', annex('A1', '11004605', 'Christian Petry (SPD)'),
+                     'no text paragraph follows the heading')
+
+    # Value: protects=both entry checks read a merged record's ids ("2 999990001") as their first, as the guard does: the
+    #   printed marker's Redner-ID and the host owner's; fails_when=a merged id fails the marker check, or a host owner with a
+    #   merged id lets an entry split off the owner's own words; why_new=E17 item 5 (Codex on 185a33a); seam=reviewed
+    def test_both_entry_checks_read_a_merged_id_as_its_first(self):
+        merged_huber = marker('2 999990001', 'Charles M.', 'Huber', 'CDU/CSU')
+        host = f'<rede id="ID1">{FABRITIUS}Erster.</p>{merged_huber}Zweiter.</p></rede>'
+        self.assertEqual([u[:2] for u in written(parse(block(host), entries=[annex('ID1', '2', 'Charles M. Huber (CDU/CSU)')]))],
+                         [('ID1', '1'), ('ID1:2', '2 999990001')])
+        merged_owner = marker('3 999990002', 'Michael', 'Thews', 'SPD', printed='Thews (SPD): ')
+        self.refuses(f'<rede id="ID1">{merged_owner}Eigener Text.</p><p klasse="J">Michael Thews (SPD): Weiter.</p></rede>',
+                     annex('ID1', '3', 'Michael Thews (SPD)'), "writer of the <rede> itself")
 
     # Value: protects=an entry may not name a <rede> outside a zu-Protokoll annex; fails_when=an entry splits a spoken Rede or a
     #   § 31 Erklärung; why_new=new rule; seam=reviewed
@@ -409,10 +500,6 @@ class RealSittingTests(unittest.TestCase):
                             self.assertNotIn(start, unit(parsed, host)['text'])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class ReplayTests(unittest.TestCase):
     # Value: protects=a store parsed before the annex page rule and the annex guard re-reads every sitting, so an incremental
     #   run fills 19/36 ID193616800's page (3543) as a fresh build does and checks every cached sitting against the guard;
@@ -425,3 +512,7 @@ class ReplayTests(unittest.TestCase):
         summary = {"speech_kinds_version": 16, "vote_inputs_version": vote_links.INPUTS_VERSION}
         old = _support.stamp_reviewed({"protocol": protocol, "validation_summary": summary})
         self.assertEqual(build.stale_causes(old), ("rule",))
+
+
+if __name__ == '__main__':
+    unittest.main()

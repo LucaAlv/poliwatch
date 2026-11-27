@@ -2309,9 +2309,11 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
                                              f"\"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
             if child.tag != "rede":
                 continue
-            # One writer per person: a merged record's ids name their first (redner_key).
-            ids = {redner_key(marker.find("redner")) for marker in child.findall("p[@klasse='redner']")
-                   if marker.find("redner") is not None}
+            # One writer per person: a merged record's ids name their first
+            # (redner_key). A marker naming nobody is keyed by its raw id, so a
+            # missing and an empty id are two writers, and the message can sort.
+            ids = {redner_key(marker.find("redner")) or f"no id {marker.find('redner').get('id')!r}"
+                   for marker in child.findall("p[@klasse='redner']") if marker.find("redner") is not None}
             if len(ids) != 1:
                 raise UnlistedAnnexTextError(
                     f"{sitting}: annex <rede> {child.get('id')} holds " + ("no speaker marker" if not ids else
@@ -2368,7 +2370,7 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                     top_id = "Tagesordnungspunkt " + clean_text(TOP_REF_PAGE.sub("", refs[0]))
                     candidates = tops_by_id.get(top_id, []) if len(refs) == 1 else []
                     target = candidates[0] if len(candidates) == 1 else None
-                elif child.get("klasse") in {"Anlage_2", "Anlage_3", "Anlage_Strich"}:
+                elif child.get("klasse") in ANNEX_HEADINGS:
                     # A new annex heading starts a new local context; a later TOP
                     # reference must not reach back across it.
                     target = None
