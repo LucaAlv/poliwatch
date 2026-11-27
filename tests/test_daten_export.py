@@ -23,6 +23,7 @@ import _support  # noqa: F401
 import antrag_text
 import person_registry
 import publication_state as publication
+import sqlite_open
 import _daten_fixture
 import build_dip_pulse_site as b
 import facts
@@ -50,17 +51,13 @@ class ExportHelpersTests(unittest.TestCase):
         for field in b.CODEBOOK_INPUT_FILES:
             self.assertTrue(authored(field).is_file(), field)
 
-    # Value: protects=DATA.md names the codes and period units the store actually holds; fails_when=result_scope is documented with German labels instead of its codes, or min_history_weeks as weeks while monthly metrics store months; why_new=both definitions were wrong until the 2026-10-30 review; seam=none; no_claim=other columns' wording
-    def test_codebook_matches_stored_codes_and_period_units(self) -> None:
+    # Value: protects=DATA.md names the codes the store actually holds; fails_when=result_scope is documented with German labels instead of its codes; why_new=the definition was wrong until the 2026-10-30 review; seam=none; no_claim=other columns' wording
+    def test_codebook_matches_stored_codes(self) -> None:
         dictionary = json.loads(authored("dictionary").read_text())["tables"]
         scope = dictionary["votes"]["columns"]["result_scope"]
         for code in ("application", "proposition"):
             self.assertIn(code, scope["unit"])
             self.assertIn(code, scope["meaning"])
-        self.assertTrue(any(metric["min_history_weeks"] == facts.MIN_HISTORY_MONTHS for metric in facts.MONTHLY_REGISTRY))
-        history = dictionary["fact_metrics"]["columns"]["min_history_weeks"]
-        self.assertIn("Monate", history["unit"])
-        self.assertIn("Monatskennzahlen", history["meaning"])
         self.assertIn("vor Einführung des Felds", scope["unit"])
         self.assertIn("chancellor_election", dictionary["votes"]["columns"]["procedure_type"]["unit"])
 
@@ -98,8 +95,6 @@ class ExportHelpersTests(unittest.TestCase):
         self.assertIn("XML", dictionary["speeches"]["columns"]["text"]["source"])
         self.assertIn("UTC", dictionary["speeches"]["columns"]["created_at"]["unit"])
         self.assertIn("nicht aus einer externen Quelle", dictionary["speeches"]["columns"]["created_at"]["source"])
-        self.assertIn("0 bis einschließlich 1", dictionary["facts"]["columns"]["percentile"]["unit"])
-        self.assertIn("Kandidaten", dictionary["facts"]["columns"]["week_n"]["meaning"])
         self.assertIn("Bundestag", dictionary["mps"]["columns"]["profile_url"]["source"])
         for table in dictionary.values():
             for column in table["columns"].values():
@@ -319,7 +314,6 @@ class ExportDistributionDataTests(unittest.TestCase):
             self.assertEqual(len(handle.read().strip().splitlines()), 2)
         codebook = (gen_dir / "DATA.md").read_text(encoding="utf-8")
         self.assertIn("## Abdeckung nach Jahr und zurückgehaltene Reden", codebook)
-        self.assertIn("**zurückgehaltenen Fakt** (`facts.withheld`)", codebook)
         # erste-reden v3 (ADR 0005 "Facts"): a withheld Rede does reach one person
         # figure, and it keeps its week incomplete; the codebook must not say "none".
         self.assertIn("Ausnahme *Erste Reden*", codebook)
@@ -563,6 +557,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             "placeholder text at licenses.dip": lambda d: d["licenses"].update(dip="?"),
             "same meaning": lambda d: d["tables"]["speeches"]["columns"]["text"].update(meaning=d["tables"]["speeches"]["columns"]["id"]["meaning"]),
             "describes tables no export has: removed_table": lambda d: d["tables"].update(removed_table={"meaning": "Entfernte Tabelle.", "columns": {}}),
+            # The store's facts tables ship no more, so the codebook may not describe them either.
+            "describes tables no export has: facts": lambda d: d["tables"].update(facts={"meaning": "Berechnete Kennzahlenwerte.", "columns": {}}),
             "describes speeches columns the export lacks: paragraphs_json": lambda d: d["tables"]["speeches"]["columns"].update(paragraphs_json=d["tables"]["speeches"]["columns"]["text"]),
             # DATA.md and datenstand.json must not give one column different terms.
             "licence layer eigene-auswertung for speeches.text contradicts its manifest source tag dip": lambda d: d["tables"]["speeches"]["columns"]["text"].update(license="eigene-auswertung"),
@@ -1363,15 +1359,48 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_thirty_six_csvs_named_and_headered(self) -> None:
-        # The facts tables (T5/T6) are part of the store by the time export
-        # runs in a real build; run the engine first so they are here too.
+    # Value: protects=the release holds no Fakt der Woche table or file while the build store keeps all three with their rows (Q5, export format 29); fails_when=the copy ships one again, or the drop reaches the store the Fakt pages render from; why_new=the tests pinned the opposite; seam=none; no_claim=real-store size
+    def test_the_release_holds_no_facts_table_and_the_store_keeps_them(self) -> None:
+        names = ("fact_metrics", "facts", "fact_sources")
+
+        def store_rows() -> dict[str, int]:
+            conn = sqlite_open.open_readonly(self.db_path)
+            try:
+                return {name: conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in names}
+            finally:
+                conn.close()
+
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
+        before = store_rows()
+        # The seeded store yields no receipts, so fact_sources is empty here.
+        self.assertGreater(before["fact_metrics"], 0)
+        self.assertGreater(before["facts"], 0)
+        manifest = self.export()
+
+        gen_dir = self.exports_dir / manifest["generation"]
+        copy_path = self.tmp / "release.sqlite"
+        copy_path.write_bytes(gzip.decompress((gen_dir / manifest["files"][0]["name"]).read_bytes()))
+        conn = sqlite_open.open_readonly(copy_path)
+        try:
+            # Tables and their indexes alike.
+            shipped = {row[0] for row in conn.execute("SELECT tbl_name FROM sqlite_schema")}
+        finally:
+            conn.close()
+        self.assertIn("speeches", shipped)
+        self.assertEqual(shipped & set(names), set())
+        self.assertEqual({table["name"] for table in manifest["tables"]} & set(names), set())
+        listed = {f["name"] for f in manifest["files"]}
+        on_disk = {path.name for path in gen_dir.iterdir()}
+        for name in names:
+            with self.subTest(file=name):
+                self.assertNotIn(f"{name}-local.csv.gz", listed | on_disk)
+        self.assertEqual(store_rows(), before)
+
+    def test_all_thirty_three_csvs_named_and_headered(self) -> None:
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 36)
+        self.assertEqual(len(csv_files), 33)
         for name in (
-            "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
             "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
             "mdb_zugehoerigkeiten-local.csv.gz", "party_seats-local.csv.gz", "mdb_stammdaten_stand-local.csv.gz",
@@ -1386,14 +1415,18 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("mp_id", header)
         self.assertNotIn("paragraphs_json", header)
 
-    def test_facts_tables_get_real_captions_not_the_fallback(self) -> None:
+    # Value: protects=no shipped file or Daten caption names a table the release does not hold; fails_when=a DATA.md sentence, a licence line, a codebook meaning or a caption points at facts.withheld or a facts table again; why_new=the withheld_units texts and the licence named them and nothing scanned the output; seam=none; no_claim=prose about the site's Fakten, which names no table
+    def test_no_shipped_text_names_a_facts_table(self) -> None:
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
-        _chips, table_rows_html, _relationships = b.render_daten_schema(manifest)
-        self.assertNotIn("Persistierte Tabelle aus dem Bundestag-Puls-Graph.", table_rows_html)
-        for name in facts.FACTS_TABLES:
-            with self.subTest(table=name):
-                self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
+        gen_dir = self.exports_dir / manifest["generation"]
+        shipped = {name: (gen_dir / name).read_text(encoding="utf-8") for name in ("DATA.md", b.LICENSE_FILE_NAME)}
+        shipped["Daten schema cards"] = "".join(b.render_daten_schema(manifest))
+        shipped["datenstand.json"] = (self.exports_dir / "datenstand.json").read_text(encoding="utf-8")
+        for name, text in shipped.items():
+            with self.subTest(text=name):
+                found = re.search(r".{0,60}(?:fact_metrics|fact_sources|`facts`|\bfacts\.(?!py)).{0,60}", text)
+                self.assertIsNone(found, found and found.group(0))
 
     # Value: protects=the export carries vote context, the Bundestag report source URL and the quoted Antrag passage through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
     def test_vote_context_debate_url_and_passage_round_trip_with_captions(self) -> None:
@@ -1414,7 +1447,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 28)
+        self.assertEqual(manifest["export_format"], 29)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -1634,18 +1667,11 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
         self.assertEqual(engine.call_args.kwargs["built"], {"votes"})
 
-    def test_engine_output_is_exported_as_derived_data(self) -> None:
+    # Value: protects=schema_hash describes the exported schema only, so a facts schema change is no data schema change in a release's changelog; fails_when=the tables are dropped after the hash is taken; why_new=no test related the hash to the exported tables; seam=none; no_claim=the hash of any other schema change
+    def test_the_schema_hash_ignores_the_facts_engine(self) -> None:
+        without = self.export()["schema_hash"]
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
-        manifest = self.export()
-        tables = {table["name"]: table for table in manifest["tables"]}
-        self.assertLessEqual(set(facts.FACTS_TABLES), set(tables))
-        # scripts/facts.py computes these from the rest of the store; the
-        # fallback would claim DIP as their source.
-        for name in facts.FACTS_TABLES:
-            with self.subTest(table=name):
-                self.assertEqual(
-                    {column["source"] for column in tables[name]["columns"]}, {"derived"}
-                )
+        self.assertEqual(self.export()["schema_hash"], without)
 
     def test_skip_rule_reexports_when_store_changes(self) -> None:
         first = self.export()
