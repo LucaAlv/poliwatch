@@ -140,9 +140,24 @@ Found by `code-review high main` and the `/ship` review (Codex, red team, native
 
 ### E17 annex texts: what the code review of 2026-11-26 leaves open
 
-**What:** Items 2 to 7 are done (2026-11-27, with the bullet points above): annex entries are keyed by label and applied in document order, a block wrap ends at the next listed text, unidentified markers refuse with the guard's error, `written_contributions` uses `ANNEX_HEADINGS`, the docs say "two or more", and the untested paths have tests. Left: item 1, **keys of annex Reden without an id**, answered "refuse": `mark_annex_texts` stops with `ReviewedUnitsError` when a split part or a wrapped text would go in before an id-less annex `<rede>` of its block, whose `annex_rede_key` would shift. None of the 806 held files has an id-less annex `<rede>`. If one ever appears next to a listed text, carry the inventory key per element through the edit instead (and keep it clear of the `annex:<block>:<place>` ids wraps make).
+**What:** Items 2 to 7 are done (2026-11-27, with the bullet points above): annex entries are keyed by label and applied in document order, a block wrap ends at the next listed text, an unidentified marker beside another writer's marker refuses with the guard's error (a lone one still passes; see below), `written_contributions` uses `ANNEX_HEADINGS`, the docs say "two or more", and the untested paths have tests. Left: item 1, **keys of annex Reden without an id**, answered "refuse": `mark_annex_texts` stops with `ReviewedUnitsError` when a split part or a wrapped text would go in before an id-less annex `<rede>` of its block, whose `annex_rede_key` would shift. None of the 806 held files has an id-less annex `<rede>`. If one ever appears next to a listed text, carry the inventory key per element through the edit instead (and keep it clear of the `annex:<block>:<place>` ids wraps make).
 
 **Why:** a future sitting with that shape stops the run with a precise message and has no fix through the list.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
+### Loose annex paragraphs: what the /ship review of 2026-11-27 leaves open
+
+**What:** Found by Codex, the native adversarial reader and the coverage audit on the /ship of `annex_paragraphs` (v0.46.59.0). None is reached by the 806 held files: after a `<rede>` in their zu-Protokoll blocks the only loose children are the 24 listed `J` paragraphs, 16 `Ende`, 11 `Standard` and 1 `p`, and no annex `<rede>` lacks an id or holds a lone unidentified marker.
+1. **A paragraph holding only a page anchor refuses its sitting.** The guard in `mark_annex_texts` now skips an empty paragraph, but `elem_text` reads a druckseitennummer anchor's `<seite>` number as text, so a classless `<p>` holding only an anchor after a `<rede>` still raises `UnlistedAnnexTextError`, and no `annex_paragraphs` entry fits it. Real files print anchors outside paragraphs. Fix: read paragraph text without page anchors in the guard (and check where else the parser reads `<seite>` as words); test first.
+2. **A run has no end marker.** `move_annex_paragraphs` takes every text paragraph after `first` up to a non-text element or another entry's `first`, so an unrelated trailing text paragraph would be credited to the host's writer. If a real case appears, add an optional `last` key, or refuse a run that does not end at a heading, a non-text element or the block end.
+3. **An id-less annex host cannot be listed.** The guard now refuses loose text after an annex `<rede>` without an id (named `annex:<block>:<n>`), but `ANNEX_HOST_ID_RE` accepts only a source id, so `annex_paragraphs` cannot repair it. Fix with item 1 of the entry above.
+4. **A lone unidentified marker passes the guard.** A `<rede>` whose only marker has a missing, empty or blank id has one key, so it is not refused; Codex saw such a unit stored with empty text. Behaviour predates this branch. Fix: refuse any unidentified marker in a zu-Protokoll `<rede>`, test first.
+5. **Untested arms** (coverage audit): `made()`'s id collision (`created` or `taken`); `first` found twice; two entries on one `first` paragraph; the owner-absent message; an `annex_rede` entry sharing a `rede_id` with another kind.
+
+**Why:** 1 and 3 would stop a future sitting with no fix through the list; 2 and 4 would misattribute or drop words silently; 5 is test hygiene.
 
 **Effort:** S
 **Priority:** P4

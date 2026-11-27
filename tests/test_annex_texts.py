@@ -455,6 +455,21 @@ class LooseTextGuardTests(unittest.TestCase):
             with self.subTest(klasse), self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'stands loose after annex <rede> ID1'):
                 parse(block(body))
 
+    # Value: protects=the guard also follows an annex <rede> without an id (its key annex:<block>:<n>); fails_when=the guard
+    #   keys its state by the id attribute, so loose text after an id-less <rede> is dropped silently; why_new=Codex and the
+    #   native reader on the /ship of this branch; seam=none; no_claim=no held file has an id-less annex <rede>
+    # Value: protects=an empty paragraph after a <rede> is no loose text; fails_when=the guard tests the class alone and refuses
+    #   a sitting no entry can fix (first must be non-empty); why_new=Codex on the /ship of this branch; seam=none;
+    #   no_claim=no held file has one; a paragraph holding only a page anchor still reads as text (TODOS.md)
+    def test_an_empty_paragraph_after_a_rede_passes(self):
+        body = f'<rede id="ID1">{THEWS}Thews.</p></rede><p klasse="J"/><p>  </p>'
+        self.assertEqual([u[:3] for u in written(parse(block(body)))], [('ID1', '3', 'Thews.')])
+
+    def test_loose_text_after_a_rede_without_id_refuses(self):
+        body = f'<rede>{THEWS}Thews.</p></rede><p klasse="J">– Ein Punkt.</p>'
+        with self.assertRaisesRegex(dip.UnlistedAnnexTextError, 'stands loose after annex <rede> annex:1:1'):
+            parse(block(body))
+
     # Value: protects=what the guard leaves alone: loose text after an annex heading (a TOP line before the first <rede>, 18/158),
     #   page scraps (Standard) and first-edition notices (Ende, p) after a <rede>; fails_when=a held sitting is refused over
     #   markup no entry can fix; why_new=census of the 806 files 2026-11-27; seam=reviewed

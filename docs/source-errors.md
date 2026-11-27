@@ -231,7 +231,7 @@ A list of places where an official source file says something wrong or files con
 
 - **Status:** verified 2026-11-23 on the XML of the reference store; read by a reviewed list since 2026-11-26; the bullet points since 2026-11-27.
 - **Source:** `https://dserver.bundestag.de/btp/18/`, annexes titled "Zu Protokoll gegebene Rede(n)".
-- **What is wrong:** three shapes.
+- **What is wrong:** four shapes.
   - A second speaker's text inside the previous speaker's `<rede>`, with a speaker marker: Charles M. Huber in 18/17 `ID1801712700` (Bernd Fabritius), Gabriele Schmidt (Ühlingen) in 18/66 `ID1806614200` (Martin Pätzold) and 18/112 `ID1811211800` (Matthäus Strebl), Özcan Mutlu in 18/115 `ID1811515000` (Rosemarie Hein).
   - The same without a marker, as plain text: Ralph Lenkert in 18/23 `ID1802308800` (Michael Thews; `<p klasse="J_Abstand">`), Michaela Engelmeier in 18/63 `ID1806311300` (Johannes Steiniger; `<p klasse="N_Anlage">`).
   - No `<rede>` around the text: Christian Petry in 18/34 Anlage 2, Armin Schuster in 18/46 Anlage 16, Hartmut Koschyk in 18/47 Anlage 4, Metin Hakverdi in 18/155 Anlage 2.

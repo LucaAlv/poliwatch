@@ -2316,11 +2316,12 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
 
     for block in written:
         after_rede = None
+        sequence = 0
         for child in block:
             if child.tag == "p" and child.get("klasse") in ANNEX_HEADINGS:
                 after_rede = None
             elif (child.tag == "p" and after_rede is not None and not is_marker(child)
-                  and child.get("klasse") in ANNEX_TEXT_CLASSES):
+                  and child.get("klasse") in ANNEX_TEXT_CLASSES and elem_text(child)):
                 raise UnlistedAnnexTextError(f"{sitting}: a paragraph stands loose after annex <rede> {after_rede} "
                                              f"in \"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
             if is_marker(child):
@@ -2328,7 +2329,9 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
                                              f"\"{block.get('anlagen-typ')}\" ({elem_text(child)[:60]!r})")
             if child.tag != "rede":
                 continue
-            after_rede = child.get("id")
+            # A <rede> without an id is named by its key, so the guard follows it too.
+            sequence += 1
+            after_rede = child.get("id") or annex_rede_key(blocks.index(block) + 1, sequence)
             # One writer per person: a merged record's ids name their first
             # (redner_key). A marker naming nobody is keyed by its raw id, so a
             # missing and an empty id are two writers, and the message can sort.
