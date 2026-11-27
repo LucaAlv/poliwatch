@@ -32,7 +32,7 @@ from datetime import date, datetime, timezone
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable, Literal, NamedTuple
+from typing import Any, Callable, Collection, Literal, NamedTuple
 
 import derive
 import publication_state as publication
@@ -2125,7 +2125,8 @@ class UnlistedAnnexTextError(ValueError):
     refused (``UNLISTED_ANNEX_TEXT_FIX``)."""
 
 
-def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: set[str]) -> None:
+def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: set[str],
+                     taken: Collection[str] = ()) -> None:
     """docs/source-errors.md E17: give each written Rede a zu-Protokoll annex
     prints without a ``<rede>`` of its own one, by its ``annex_rede`` entry in
     ``scripts/reviewed_units.json`` (``docs/plans/e17-wp18-texts.md``).
@@ -2138,14 +2139,23 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
     the first paragraph after it that is no heading). In another writer's ``<rede>`` everything from the
     marker on becomes ``<rede id="<id>:<marker ordinal>">`` right after it, the
     form of ``split_nested_reden``; a ``<rede>`` the label opens keeps its id. In
-    a block the marker and its paragraphs up to the next ``<rede>``, annex heading
-    or block end become ``<rede id="annex:<block>:<place>">`` (``annex_rede_key``).
-    Each id made goes into ``created``. Only annex blocks are edited.
+    a block the marker and its paragraphs up to the next ``<rede>``, annex heading,
+    another entry's place or block end become ``<rede id="annex:<block>:<place>">``
+    (``annex_rede_key``). Each id made goes into ``created``; one already there or
+    in ``taken`` (the source's keys) stops the run. Only annex blocks are edited.
+
+    Every entry is located before any edit, so one place may hold several
+    written Reden. They are applied in document order: a wrap's ``<place>``
+    counts every unit made before it in its block. A host gets the markers of
+    all its entries first, then is split from its last place to its first, so
+    each part keeps the ordinal of its marker in the source order.
 
     Afterwards a zu-Protokoll block where a ``<rede>`` holds markers of two
     Redner-IDs or none, or a marker stands outside any ``<rede>``, refuses the
-    sitting (``UnlistedAnnexTextError``). An entry that does not match its place
-    stops the run (``ReviewedUnitsError``).
+    sitting (``UnlistedAnnexTextError``). An entry that does not match its place,
+    two entries of one place, or an entry before an annex ``<rede>`` without an
+    id (whose ``annex_rede_key`` the new unit would shift) stops the run
+    (``ReviewedUnitsError``).
     """
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     blocks = root.findall("./anlagen/anlage/anlagen-text")
@@ -2157,6 +2167,8 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
     def marker_label(element: ET.Element) -> str:
         return clean_text((element.find("redner").tail or "") if element.find("redner") is not None else "").partition(":")[0].strip()
 
+    # Locate: where each entry's text begins, before any edit.
+    located: list[dict[str, Any]] = []
     for entry in entries:
         where = f"scripts/reviewed_units.json: {sitting} annex_rede {entry['rede_id']} ({entry['label']})"
         if re.fullmatch(r"A[1-9]\d*", entry["rede_id"]):
@@ -2164,12 +2176,13 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
             container = blocks[index - 1] if index <= len(blocks) else None
             if container is None or container not in written:
                 raise reviewed_units.ReviewedUnitsError(f"{where}: names no zu-Protokoll block of this sitting's XML")
-            host = None
+            host, block = None, container
         else:
             host = next((rede for block in written for rede in block.findall("rede") if rede.get("id") == entry["rede_id"]), None)
             if host is None:
                 raise reviewed_units.ReviewedUnitsError(f"{where}: names no <rede> of a zu-Protokoll annex in this sitting's XML")
             container = host
+            block = next(block for block in written if host in list(block))
         children = list(container)
         label = re.compile(rf"\s*{re.escape(entry['label'])}\s*:\s*")
         places = []
@@ -2194,41 +2207,100 @@ def mark_annex_texts(root: ET.Element, entries: list[dict[str, str]], created: s
                     f"{where}: the marker carries Redner-ID {marker.find('redner').get('id')}, not {entry['redner_id']}")
             if entry["name"] != entry["label"]:
                 raise reviewed_units.ReviewedUnitsError(f"{where}: name {entry['name']!r} must equal the printed marker's label")
-        else:
-            if how == "heading":
-                start = next((index for index in range(start + 1, len(children)) if children[index].tag == "p"
-                              and children[index].get("klasse") not in ANNEX_HEADINGS), None)
-                if start is None or is_marker(children[start]):
-                    raise reviewed_units.ReviewedUnitsError(f"{where}: no text paragraph follows the heading")
-            else:
-                paragraph = children[start]
-                paragraph.text = paragraph.text[label.match(paragraph.text).end():]
-            marker = name_tag_marker(entry["name"], entry["redner_id"], None)
-            container.insert(start, marker)
-            children = list(container)
-        if host is not None:
-            owner = host.find("./p[@klasse='redner']/redner")
-            if start == 0 and owner is marker.find("redner") and how != "marker":
+        elif how == "heading":
+            start = next((index for index in range(start + 1, len(children)) if children[index].tag == "p"
+                          and children[index].get("klasse") not in ANNEX_HEADINGS), None)
+            if start is None or is_marker(children[start]):
+                raise reviewed_units.ReviewedUnitsError(f"{where}: no text paragraph follows the heading")
+        # The new unit goes in after the host, or at its place in the block:
+        # an annex <rede> without an id after it would get another key.
+        block_children = list(block)
+        later = block_children[block_children.index(host if host is not None else children[start]) + 1:]
+        for sequence, rede in enumerate(block.findall("rede"), 1):
+            if not rede.get("id") and any(rede is child for child in later):
+                raise reviewed_units.ReviewedUnitsError(
+                    f"{where}: the annex <rede> {annex_rede_key(blocks.index(block) + 1, sequence)} after it has no id, "
+                    "and its key would shift")
+        located.append({"entry": entry, "where": where, "host": host, "block": block, "container": container,
+                        "start": children[start], "how": how, "label": label})
+
+    places_taken: dict[int, dict[str, Any]] = {}
+    for item in located:
+        other = places_taken.setdefault(id(item["start"]), item)
+        if other is not item:
+            raise reviewed_units.ReviewedUnitsError(f"{item['where']}: names the place of the entry for {other['entry']['label']!r}")
+
+    def made(item: dict[str, Any], unit_id: str) -> ET.Element:
+        if unit_id in created or unit_id in taken:
+            raise reviewed_units.ReviewedUnitsError(f"{item['where']}: the id {unit_id} it would make exists already")
+        created.add(unit_id)
+        return ET.Element("rede", {"id": unit_id})
+
+    def opening_marker(item: dict[str, Any]) -> ET.Element:
+        """The marker the text begins with: the printed one, or one built from ``name``."""
+        if item["how"] == "marker":
+            return item["start"]
+        paragraph = item["start"]
+        if item["how"] == "paragraph":
+            paragraph.text = paragraph.text[item["label"].match(paragraph.text).end():]
+        marker = name_tag_marker(item["entry"]["name"], item["entry"]["redner_id"], None)
+        item["container"].insert(list(item["container"]).index(paragraph), marker)
+        return marker
+
+    def split(host: ET.Element, items: list[dict[str, Any]]) -> None:
+        for item in sorted(items, key=lambda item: list(host).index(item["start"]), reverse=True):
+            item["marker"] = opening_marker(item)
+        owner = host.find("./p[@klasse='redner']/redner")
+        parent = items[0]["block"]
+        for item in sorted(items, key=lambda item: list(host).index(item["marker"]), reverse=True):
+            children = list(host)
+            start = children.index(item["marker"])
+            if start == 0 and owner is item["marker"].find("redner") and item["how"] != "marker":
                 continue  # a <rede> without a marker that the label opens: it keeps its id
-            if owner is None or redner_key(owner) == entry["redner_id"] or start == 0:
-                raise reviewed_units.ReviewedUnitsError(f"{where}: the label opens the writer of the <rede> itself; nothing to split")
+            if owner is None or redner_key(owner) == item["entry"]["redner_id"] or start == 0:
+                raise reviewed_units.ReviewedUnitsError(
+                    f"{item['where']}: the label opens the writer of the <rede> itself; nothing to split")
             ordinal = sum(1 for child in children[:start + 1] if is_marker(child))
-            part = ET.Element("rede", {"id": f"{entry['rede_id']}:{ordinal}"})
+            part = made(item, f"{item['entry']['rede_id']}:{ordinal}")
             for moved in children[start:]:
                 host.remove(moved)
                 part.append(moved)
-            parent = next(block for block in written if host in list(block))
             parent.insert(list(parent).index(host) + 1, part)
+
+    def wrap(item: dict[str, Any], stops: set[int]) -> None:
+        container = item["container"]
+        first = opening_marker(item)
+        children = list(container)
+        start = children.index(first)
+        end = next((index for index in range(start + 1, len(children)) if children[index].tag == "rede"
+                    or (children[index].tag == "p" and children[index].get("klasse") in ANNEX_HEADINGS)
+                    or id(children[index]) in stops), len(children))
+        place = sum(1 for child in children[:start] if child.tag == "rede") + 1
+        part = made(item, annex_rede_key(blocks.index(container) + 1, place))
+        for moved in children[start:end]:
+            container.remove(moved)
+            part.append(moved)
+        container.insert(start, part)
+
+    # Apply, in document order: a host's entries together, at the host.
+    position = {id(element): index for index, element in enumerate(root.iter())}
+    by_host: dict[int, list[dict[str, Any]]] = {}
+    steps: list[tuple[int, list[dict[str, Any]]]] = []
+    for item in located:
+        if item["host"] is None:
+            steps.append((position[id(item["start"])], [item]))
+        elif id(item["host"]) not in by_host:
+            by_host[id(item["host"])] = [item]
+            steps.append((position[id(item["host"])], by_host[id(item["host"])]))
         else:
-            end = next((index for index in range(start + 1, len(children)) if children[index].tag == "rede"
-                        or (children[index].tag == "p" and children[index].get("klasse") in ANNEX_HEADINGS)), len(children))
-            place = sum(1 for child in children[:start] if child.tag == "rede") + 1
-            part = ET.Element("rede", {"id": annex_rede_key(blocks.index(container) + 1, place)})
-            for moved in children[start:end]:
-                container.remove(moved)
-                part.append(moved)
-            container.insert(start, part)
-        created.add(part.get("id"))
+            by_host[id(item["host"])].append(item)
+    for _, items in sorted(steps, key=lambda step: step[0]):
+        if items[0]["host"] is not None:
+            split(items[0]["host"], items)
+        else:
+            stops = {id(other["start"]) for other in located if other["host"] is None
+                     and other["container"] is items[0]["container"] and other is not items[0]}
+            wrap(items[0], stops)
 
     for block in written:
         for child in block:
@@ -2877,7 +2949,8 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
     if any(name_diagnostics.values()):
         raise reviewed_units.ReviewedUnitsError(
             f"scripts/reviewed_units.json: {sitting}: a name_procedural entry outside any TOP; it has nowhere to be recorded")
-    mark_annex_texts(root, [entry for entry in sitting_entries if entry["kind"] == reviewed_units.ANNEX_REDE], split_parts)
+    mark_annex_texts(root, [entry for entry in sitting_entries if entry["kind"] == reviewed_units.ANNEX_REDE], split_parts,
+                     set(inventory))
     sitting_contributions = written_contributions(root, agenda_items, rid_pages, statuses)
     for ansprache in name_ansprachen:
         ansprache["sequence"] = len(sitting_contributions) + 1

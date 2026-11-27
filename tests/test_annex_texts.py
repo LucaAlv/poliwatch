@@ -109,6 +109,58 @@ class SplitTests(unittest.TestCase):
                          [('ID1806311300', '3', 'Eigener Text.'), ('ID1806311300:2', '5', 'Wir beraten heute.')])
 
 
+class DocumentOrderTests(unittest.TestCase):
+    """Several entries in one place are applied in document order (E17 items 2 and 6)."""
+
+    # Value: protects=two other writers' markers in one host each split off with their own writer and document ordinal, whichever
+    #   order the list gives; fails_when=the first split carries the second marker away, so the second entry finds nothing, or
+    #   the parts take ordinals by list order; why_new=code review of 2026-11-26 (E17 items 2 and 6); seam=reviewed
+    def test_two_markers_of_one_host_split_in_either_order(self):
+        host = (f'<rede id="ID1">{THEWS}Thews.</p>{HUBER}Huber.</p><p klasse="J">Huber weiter.</p>'
+                f'{FABRITIUS}Fabritius.</p></rede>')
+        entries = [annex('ID1', '2', 'Charles M. Huber (CDU/CSU)'), annex('ID1', '1', 'Bernd Fabritius (CDU/CSU)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(host), entries=order))], [
+                    ('ID1', '3', 'Thews.'), ('ID1:2', '2', 'Huber.\nHuber weiter.'), ('ID1:3', '1', 'Fabritius.')])
+
+    # Value: protects=where the earlier text of a host opens with a label paragraph (no marker yet), the later part still counts
+    #   it, so the two parts get distinct ordinals; fails_when=a split last to first counts markers before the earlier one is
+    #   made and both parts are ID1:2 (C2 of the plan review); why_new=plan review 2026-11-27; seam=reviewed
+    def test_a_label_paragraph_before_a_marker_in_one_host(self):
+        host = (f'<rede id="ID1">{THEWS}Thews.</p><p klasse="J">Ralph Lenkert (DIE LINKE): Elf.</p>'
+                f'{HUBER}Huber.</p></rede>')
+        entries = [annex('ID1', '2', 'Charles M. Huber (CDU/CSU)'), annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(host), entries=order))], [
+                    ('ID1', '3', 'Thews.'), ('ID1:2', '4', 'Elf.'), ('ID1:3', '2', 'Huber.')])
+
+    # Value: protects=two texts of one block listed out of document order get distinct places, each counting the units made
+    #   before it; fails_when=the later text is wrapped first and both become annex:1:1 (E17 item 6); why_new=/ship red team
+    #   2026-11-26; seam=reviewed
+    def test_two_block_texts_listed_out_of_order(self):
+        body = (f'{SCHUSTER}Ich hoffe auch.</p><p klasse="Anlage_3">des Abgeordneten Christian Petry (SPD) zur Beratung</p>'
+                '<p klasse="N_Anlage">Vor einem Jahr.</p>')
+        entries = [annex('A1', '11004605', 'Christian Petry (SPD)'), annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(body), entries=order))], [
+                    ('annex:1:1', '7', 'Ich hoffe auch.'), ('annex:1:2', '11004605', 'Vor einem Jahr.')])
+
+    # Value: protects=two label-paragraph texts standing back to back in a block, with no <rede> or heading between, become two
+    #   Beiträge whichever order the list gives; fails_when=the first wrap swallows the second text and credits it to the first
+    #   writer (R4 of the plan review); why_new=Codex outside voice 2026-11-27; seam=reviewed
+    def test_adjacent_label_paragraphs_in_one_block(self):
+        body = ('<p klasse="J">Metin Hakverdi (SPD): Im Rahmen.</p><p klasse="J">Weiter.</p>'
+                '<p klasse="J">Ralph Lenkert (DIE LINKE): Elf.</p><p klasse="J">Zwei.</p>')
+        entries = [annex('A1', '11004289', 'Metin Hakverdi (SPD)'), annex('A1', '4', 'Ralph Lenkert (DIE LINKE)')]
+        for order in (entries, entries[::-1]):
+            with self.subTest([e['label'] for e in order]):
+                self.assertEqual([u[:3] for u in written(parse(block(body), entries=order))], [
+                    ('annex:1:1', '11004289', 'Im Rahmen.\nWeiter.'), ('annex:1:2', '4', 'Elf.\nZwei.')])
+
+
 class OwnerlessRedeTests(unittest.TestCase):
     # Value: protects=an annex <rede> that opens with its writer's label but no marker gets that writer and its text, under its
     #   own id; fails_when=the row keeps no speaker and no text (18/63 Freudenstein); why_new=new rule; seam=reviewed
@@ -240,6 +292,26 @@ class EntryErrorTests(unittest.TestCase):
         with self.assertRaises(reviewed_units.ReviewedUnitsError):
             parse(block(self.HOST, title='Erklärungen nach § 31 GO'), entries=[annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)')])
 
+    # Value: protects=a unit inserted before an annex <rede> without an id would shift that <rede>'s key annex:<block>:<n>, so
+    #   the entry stops the run and names the key instead of the reconciliation refusing the sitting (E17 item 1, answered
+    #   "refuse"); fails_when=the new unit takes or shifts the key and the sitting fails reconciliation with no pointer to the
+    #   entry; why_new=code review of 2026-11-26; seam=reviewed
+    def test_an_entry_before_an_annex_rede_without_id_stops_the_run(self):
+        idless = f'<rede>{OEZDEMIR}Wir beraten heute.</p></rede>'
+        self.refuses(f'{SCHUSTER}Ich hoffe auch.</p>{idless}', annex('A1', '7', 'Armin Schuster (Weil am Rhein) (CDU/CSU)'),
+                     'annex:1:1 after it has no id')
+        self.refuses(f'{self.HOST}{idless}', annex('ID1', '4', 'Ralph Lenkert (DIE LINKE)'), 'annex:1:2 after it has no id')
+
+    # Value: protects=two entries that locate one place (a heading naming two writers) stop the run instead of one wrap holding
+    #   both texts under one writer; fails_when=the second entry finds its place inside the first's unit or silently wins;
+    #   why_new=E17 item 6 (locate before apply); seam=reviewed
+    def test_two_entries_of_one_place_stop_the_run(self):
+        body = ('<p klasse="Anlage_3">der Abgeordneten Christian Petry (SPD) und Metin Hakverdi (SPD)</p>'
+                '<p klasse="N_Anlage">Vor einem Jahr.</p>')
+        with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'names the place of the entry'):
+            parse(block(body), entries=[annex('A1', '11004605', 'Christian Petry (SPD)'),
+                                        annex('A1', '11004289', 'Metin Hakverdi (SPD)')])
+
 
 class ListFormatTests(unittest.TestCase):
     # Value: protects=the list accepts an annex_rede entry with its two extra keys and refuses a malformed one; fails_when=a bad
@@ -260,6 +332,29 @@ class ListFormatTests(unittest.TestCase):
             with self.subTest(entry=entry), self.assertRaises(reviewed_units.ReviewedUnitsError):
                 reviewed_units.use([entry])
         reviewed_units.use([])
+
+    # Value: protects=two written Reden in one place (a host <rede> or an A<n> block) are listed by their labels, and one label
+    #   listed twice is refused; fails_when=the second text of a place cannot be listed, so its sitting stays refused (E17
+    #   item 2); why_new=code review of 2026-11-26; seam=reviewed
+    def test_two_labels_of_one_place_are_two_entries(self):
+        for place in ('ID1', 'A2'):
+            with self.subTest(place):
+                reviewed_units.use([annex(place, '2', 'Charles M. Huber (CDU/CSU)'), annex(place, '1', 'Bernd Fabritius (CDU/CSU)')])
+                with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'listed twice'):
+                    reviewed_units.use([annex(place, '2', 'Charles M. Huber (CDU/CSU)'), annex(place, '9', 'X Y (SPD)',
+                                                                                              'Charles M. Huber (CDU/CSU)')])
+        reviewed_units.use([])
+
+    # Value: protects=the reviewed digest ignores the file order of entries that tie on rede_id, kind and name, and the shipped
+    #   digests stay as they were (21/84's demo fixture); fails_when=reordering two entries of one host forces a needless replay,
+    #   or the tie-break changes every multi-entry digest; why_new=Codex outside voice on the annex-bullets plan (R6); seam=none
+    def test_tied_entries_give_one_digest_in_either_order(self):
+        import json
+        first = annex('ID1', '2', 'Charles M. Huber (CDU/CSU)', 'Charles M. Huber')
+        second = annex('ID1', '2', 'Charles M. Huber (CDU/CSU)', 'Huber')
+        self.assertEqual(reviewed_units.digest([first, second]), reviewed_units.digest([second, first]))
+        fixture = json.loads((_support.FIXTURES / 'demo-report-21-84.json').read_text(encoding='utf-8'))
+        self.assertEqual(fixture['protocol']['reviewed_digest'], _support.shipped_digest('21/84'))
 
     # Value: protects=every shipped annex_rede name reads as a person with a Fraktion or a side, so each Beitrag counts for someone;
     #   fails_when=a name's role or Fraktion maps to nothing; why_new=new kind; seam=reviewed

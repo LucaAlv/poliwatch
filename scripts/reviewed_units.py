@@ -55,7 +55,9 @@ entry with a ``kind``:
   text begins, as printed (a marker's label, the start of a paragraph up to its
   colon, or words of the block heading), and ``name``, the tag the unit's marker
   carries (``validate_dip_protocol.name_tag_marker``), which for a printed marker
-  is its label. ``redner_id`` is the writer's.
+  is its label. ``redner_id`` is the writer's. One place can hold several
+  written Reden: entries of one ``rede_id`` differ by ``label``, and
+  ``mark_annex_texts`` applies a sitting's entries in document order.
 
 ``redner_id`` is the first Redner-ID of that unit's owner marker; an entry whose
 unit the sitting does not hold, or whose owner differs, stops the run
@@ -205,8 +207,10 @@ def _check(data: Any, path: Path) -> dict[str, list[dict[str, str]]]:
         # carry a reviewed kind or a withhold entry of its own besides. A loose
         # marker's entry says where it goes; what the Rede it opens is, or that
         # it is withheld, is a second entry under the same M<ordinal>.
+        # A zu-Protokoll place can hold several written Reden, one per label.
         key = ((entry["sitting"], entry["rede_id"], entry["name"]) if name_kind
                else (entry["sitting"], entry["rede_id"], "loose marker") if loose_kind
+               else (entry["sitting"], entry["rede_id"], "annex", entry["label"]) if annex_kind
                else (entry["sitting"], entry["rede_id"]))
         if key in seen:
             raise ReviewedUnitsError(f"{label}: {' '.join(key)} is listed twice")
@@ -252,8 +256,14 @@ def digest(entries: list[dict[str, str]]) -> str:
     """The SHA-256 of a sitting's entries as canonical JSON, order-independent;
     an empty list has a digest too. The store keeps it per protocol so an edit
     of the list forces a replay of exactly the sittings it touches."""
-    canonical = sorted((dict(sorted(entry.items())) for entry in entries), key=lambda e: (e["rede_id"], e["kind"], e.get("name", "")))
-    return hashlib.sha256(json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    def dump(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+    # The whole entry breaks ties (two entries of one host), so file order never
+    # matters; the leading keys keep the digests of entries that never tie.
+    canonical = sorted((dict(sorted(entry.items())) for entry in entries),
+                       key=lambda e: (e["rede_id"], e["kind"], e.get("name", ""), dump(e)))
+    return hashlib.sha256(dump(canonical).encode("utf-8")).hexdigest()
 
 
 def sitting_digest(sitting: str, path: Path = PATH) -> str:
