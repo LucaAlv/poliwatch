@@ -1327,6 +1327,14 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
 
+### Two comments still say the metric caveat is exported
+
+**What:** Since export format 29 the release holds no `fact_metrics`. The `metric_row` docstring in `scripts/facts.py` still calls the caveat "stored and exported", and the "Value (review 2026-11-01)" comment above `test_the_stored_caveat_has_its_coverage_slot_filled` in `tests/test_facts.py` still names the download `fact_metrics-local.csv.gz`. Drop the export from both.
+
+**Why:** Code review of the format 29 branch, 2026-11-27. Comments only, so deferred under `CLAUDE.md`, "Review findings: fix now or defer". No output or test result depends on them.
+
+**Effort:** S
+
 ### Fakt der Woche, rasterize and post one card
 
 **What:** Open a published Fakt der Woche card, rasterise it with `qlmanage` (or equivalent), and post it. The one A1 "done when" criterion that isn't code - split out on its own so it doesn't keep a fully-shipped engineering item sitting open.
