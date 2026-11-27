@@ -134,31 +134,18 @@ Found by `code-review high main` and the `/ship` review (Codex, red team, native
 **Priority:** P3
 **Depends on:** None
 
-### Bullet points of written Reden printed between two `<rede>`s
+### ~~Bullet points of written Reden printed between two `<rede>`s~~
 
-**What:** Found by the E17 census (`docs/plans/e17-wp18-texts.md`, 2026-11-26). In five zu-Protokoll annex blocks the bullet points of a written Rede stand as `<p klasse="J">` paragraphs directly in the block, after the `<rede>` they most likely belong to: 18/136 Anlage block 6 (two after Strebl's `ID1813611300`, four after Kapschack's `ID1813611400`), 18/206 block 6 (three after Binding's `ID1820612300`), 18/209 block 20 (eight after Klimke's `ID1820916300`), 18/243 block 9 (four after Bahr's `ID1824313700`) and 19/104 block 9 (three after Höferlin's `ID1910418500`). Nothing reads them, so those words are stored nowhere; the Rede before is stored without them. Neither the owner nor the place in the Rede is marked: each Rede's last paragraph has to be read against the PDF (it may end with the colon that opens the list). Fix by a reviewed list like `annex_rede` (append to, or insert into, the named `<rede>`), test first; the guard of `mark_annex_texts` does not see plain paragraphs.
-
-**Why:** 24 paragraphs of five Reden are missing from their text and word counts.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
+**Done 2026-11-27** (branch `claude/vigorous-mendeleev-a93c94`, speech rule 18): the 24 loose paragraphs of six Reden zu Protokoll (18/136 Strebl and Kapschack, 18/206 Binding, 18/209 Klimke, 18/243 Bahr, 19/104 Höferlin) are listed with kind `annex_paragraphs`, placed against the PDFs, and moved back in by `move_annex_paragraphs`; a text paragraph loose after a `<rede>` now refuses its sitting unless listed (`docs/source-errors.md` E17).
 
 ### E17 annex texts: what the code review of 2026-11-26 leaves open
 
-**What:** Found by `code-review` (high) and the `/ship` review of `claude/e17-wp18-texts-8bc435`; none is reached by the 806 held sittings.
-1. **Keys of annex Reden without an id can shift.** `raw_rede_inventory` keys an id-less annex `<rede>` `annex:<block>:<n>` before any tree edit; `written_contributions` counts `<n>` again after `mark_annex_texts` has inserted a split part (after its host) or a wrapped text (at `place`). Every id-less `<rede>` after the insertion moves on by one, and the new unit can take the old key `annex:<block>:<place>`, so `reconcile_reden` refuses the sitting. No held annex `<rede>` lacks an id. Fix: carry the inventory key per element through the edit, or have `mark_annex_texts` refuse an entry whose block holds an id-less `<rede>` after its place; test first.
-2. **Two texts in one place cannot be listed.** `reviewed_units._check` keys an `annex_rede` entry by (sitting, `rede_id`), so a second entry for the same `A<n>` block or host `<rede>` with another `label` is refused as "listed twice", and the guard keeps refusing that sitting. Fix: key annex entries by (sitting, `rede_id`, `label`), as name kinds add `name`; `mark_annex_texts` then needs to apply two entries of one host in order of their place.
-3. **`ANNEX_HEADINGS` duplicates a literal.** `validate_dip_protocol.py` defines `ANNEX_HEADINGS` for `mark_annex_texts`, and `written_contributions` repeats `{"Anlage_2", "Anlage_3", "Anlage_Strich"}` where a heading resets the TOP context. Use the constant in both places.
-4. **"two writers" understates the guard.** `docs/data-methods.md` ("Rednermarken zweier Redner-IDs") and `docs/source-errors.md` E17 "Our side" ("two writers' markers") describe the guard; the code refuses any `<rede>` whose markers carry other than one Redner-ID (`len(ids) != 1`). Write "zweier oder mehr" / "two or more".
-5. **Unidentified markers in the guard** (Codex on the /ship fix 185a33a). The guard keys each marker by `redner_key`, which reads a missing, empty or blank id as `None`. A `<rede>` mixing such a marker with a real id makes `sorted(ids)` raise `TypeError` in the message instead of `UnlistedAnnexTextError` (before 185a33a only a missing id did), and one with a missing and an empty id now reads as one writer instead of two. None of the 4,045 zu-Protokoll markers in the 806 held files has a missing, empty or merged id. Fix: key an unidentified marker by its raw attribute (`redner_key(r) or f"no id {r.get('id')!r}"`), or refuse any unidentified marker in a `<rede>` that holds another; add tests for both entry checks with a merged id.
-6. **Two `A<n>` entries of one block listed out of document order get the same id** (`annex:<block>:<place>` counts the `<rede>`s before the text when the entry is applied). Fix: apply a sitting's entries in document order, or stop when an id is already in `created`. Found by the /ship red team and native adversarial reader.
-7. **Untested paths** (/ship coverage audit): a heading with no text paragraph after it; a block wrap ending at an Anlage heading; the `UnlistedAnnexTextError` arms of `build_report` and `reparse_cached_xml`; `check_withhold_one.check_sitting` with an `annex_rede` entry. `ReplayTests` stands below the `unittest.main()` block of `tests/test_annex_texts.py`, so running the file directly skips it.
+**What:** Items 2 to 7 are done (2026-11-27, with the bullet points above): annex entries are keyed by label and applied in document order, a block wrap ends at the next listed text, unidentified markers refuse with the guard's error, `written_contributions` uses `ANNEX_HEADINGS`, the docs say "two or more", and the untested paths have tests. Left: item 1, **keys of annex Reden without an id**, answered "refuse": `mark_annex_texts` stops with `ReviewedUnitsError` when a split part or a wrapped text would go in before an id-less annex `<rede>` of its block, whose `annex_rede_key` would shift. None of the 806 held files has an id-less annex `<rede>`. If one ever appears next to a listed text, carry the inventory key per element through the edit instead (and keep it clear of the `annex:<block>:<place>` ids wraps make).
 
-**Why:** 1 and 2 would refuse a future sitting with no fix through the list; 5 and 6 would crash or misread a future sitting; 3, 4 and 7 are drift, wording and tests.
+**Why:** a future sitting with that shape stops the run with a precise message and has no fix through the list.
 
 **Effort:** S
-**Priority:** P3
+**Priority:** P4
 **Depends on:** None
 
 ### Census script of the Protokoll gap: hygiene

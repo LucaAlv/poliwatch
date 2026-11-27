@@ -706,6 +706,18 @@ class ReplayTests(unittest.TestCase):
         old = _support.stamp_reviewed({"protocol": protocol, "validation_summary": summary})
         self.assertEqual(build.stale_causes(old), ("rule",))
 
+    # Value: protects=a store parsed before annex_paragraphs and the loose-text guard re-reads every sitting, so each cached
+    #   sitting is checked against the guard, not only the five whose reviewed digest changed; fails_when=the speech rule stays
+    #   at 17; why_new=TODOS "Bullet points of written Reden" (the guard changes parses outside the listed sittings);
+    #   seam=stale_causes
+    def test_a_report_parsed_before_the_loose_text_guard_is_stale(self):
+        import build_dip_pulse_site as build
+        import vote_links
+        protocol = {"dokumentnummer": "19/104", "xml_url": "https://example.test/19-104.xml"}
+        summary = {"speech_kinds_version": 17, "vote_inputs_version": vote_links.INPUTS_VERSION}
+        old = _support.stamp_reviewed({"protocol": protocol, "validation_summary": summary})
+        self.assertEqual(build.stale_causes(old), ("rule",))
+
 
 if __name__ == '__main__':
     unittest.main()
