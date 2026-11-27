@@ -1228,6 +1228,8 @@ class PersonPageTests(unittest.TestCase):
         voted = next(mp for mp in site.collect_abgeordnete(conn)[0] if mp.get("unprinted"))
         self.assertEqual((voted["unprinted"]["sittings"], voted["unprinted"]["unindexed"]),
                          (["19/5", "20/998", "20/999", "20/1000"], ["19/5", "20/1000"]))
+        # data/abgeordnete.json writes these entries whole: the Wahlperiode of a vote is read beside them.
+        self.assertEqual(set(voted["votes"][0]), {"vote_id", "vote", "date", "title", "topic", "detail_url"})
         # A person with no unprinted row of their own gets no note (TODOS.md; ADR 0006).
         self.assertTrue(any(mp["speech_count"] and not mp.get("unprinted") for mp in mps))
 

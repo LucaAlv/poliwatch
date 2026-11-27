@@ -10000,6 +10000,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
     # Abstimmungen" list and the participation tally.
     votes_by_mp: dict[str, list[dict[str, Any]]] = {}
+    # The sittings an MP voted in, beside the entries data/abgeordnete.json writes.
+    voted_in_by_mp: dict[str, set[str]] = {}
     for row in conn.execute(
         """
         SELECT vm.mp_id, vm.vote, v.id AS vote_id, v.date, v.title, v.topic, v.detail_url,
@@ -10019,9 +10021,10 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 "title": row["title"],
                 "topic": row["topic"],
                 "detail_url": row["detail_url"],
-                "document_number": row["document_number"],
             }
         )
+        if row["document_number"]:
+            voted_in_by_mp.setdefault(row["mp_id"], set()).add(row["document_number"])
 
     assignments = {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM mps")}
     current_person_ids = set(assignments.values())
@@ -10118,8 +10121,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             dated = {number: day for _kind, number, day in unprinted_rows}
             periods = {_protocol_wahlperiode(number) for number in dated}
             periods.update(_protocol_wahlperiode(unit["document_number"]) for unit, _ in spoken)
-            periods.update(_protocol_wahlperiode(vote["document_number"]) for vote in merged_votes
-                           if vote["document_number"])
+            periods.update(_protocol_wahlperiode(number) for r in members for number in voted_in_by_mp.get(r["id"], ()))
             periods.update(map(str, roster_wahlperioden))
             open_here = [cut for cut in open_cuts if _protocol_wahlperiode(cut[0]) in periods]
             dated.update((number, day) for number, day, _unindexed in open_here)
