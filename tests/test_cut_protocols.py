@@ -751,6 +751,17 @@ class BackfillTests(unittest.TestCase):
             "[backfill] acquiring 1 cut sitting(s) again"])
 
 
+#: DIP's Aktivitäten for cut_fixture_xml() that give CUT under the current rule: the file's three Reden (101 A to
+#: 103 B), Dreher's Rede after the cut (x1) and Esch's Rede zu Protokoll, unplaced and with no DIP person (x2).
+CUT_AKTIVITAETEN = [
+    *(activity(f"r{n}", "Rede", f"{name}, MdB", seite) for n, (name, seite) in
+      enumerate((("Ada Lovelace", "101A"), ("Bruno Beispiel", "102C"), ("Clara Kontrolle", "103B")))),
+    activity("x1", "Rede", "Dora Dreher, MdB, Die Linke", "104A", "8173"),
+    {"id": "x2", "aktivitaetsart": "Rede (zu Protokoll gegeben)", "titel": "Emil Esch, MdB, CDU/CSU", "person_id": None,
+     "fundstelle": {}},
+]
+
+
 class GateTests(unittest.TestCase):
     def output(self, xml, report, *, catalog=None):
         tmp = tempfile.TemporaryDirectory()
@@ -773,7 +784,7 @@ class GateTests(unittest.TestCase):
             conn.close()
         return output, data / "bundestag-pulse.sqlite"
 
-    def gate_report(self, protocol_cut, aktivitaeten=()):
+    def gate_report(self, protocol_cut, aktivitaeten=CUT_AKTIVITAETEN):
         report = cut_report(protocol_cut)
         report["api_records"] = {"aktivitaeten": list(aktivitaeten)}
         report["validation_summary"]["xml_speech_count"] = 3
@@ -784,10 +795,81 @@ class GateTests(unittest.TestCase):
     # Value: protects=the mark and the notice agree, and the receipt carries the counts; fails_when=a sitting is
     #   marked whose file is whole, or the 33 and the two counts are missing from the receipt; why_new=step 6; seam=gate
     def test_a_marked_sitting_with_the_notice_passes_and_is_counted(self):
+        self.assertEqual(cut.protocol_cut(dip.parse_protocol_xml(cut_fixture_xml()), CUT_AKTIVITAETEN)["entries"],
+                         CUT["entries"])
         output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
         result = gate.cut_protocol_check(output, database)
         self.assertEqual((result["problems"], result["sittings"], result["rede"], result["zu_protokoll"], result["marked"]),
                          ([], 1, 1, 1, ["20/999"]))
+
+    # Value: protects=check 8 judges every marked sitting, not only those whose report it happens to read, and a run
+    #   that reads no report fails instead of passing with nothing checked; fails_when=a marked sitting without its
+    #   cached report, or an empty data/, passes check 8; why_new=TODOS cut-protocols item 4; seam=gate
+    def test_a_marked_sitting_without_a_cached_report_fails(self):
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        (output / "data" / "plenarprotokoll-20-999.json").unlink()
+        problems = " ".join(gate.cut_protocol_check(output, database)["problems"])
+        self.assertIn("20/999: marked cut, but no cached report was read for it", problems)
+
+    def test_an_empty_data_directory_fails(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output = Path(tmp.name)
+        (output / "data").mkdir()
+        conn = pulse_store.connect(output / "data" / "bundestag-pulse.sqlite")
+        pulse_store.initialize(conn)
+        conn.close()
+        result = gate.cut_protocol_check(output, output / "data" / "bundestag-pulse.sqlite")
+        self.assertIn("no cached report was read", " ".join(result["problems"]))
+
+    # Value: protects=check 8 re-runs the rule on each marked sitting's cached XML and Aktivitäten: a mark the current
+    #   rule no longer gives (the old 19/107 case) fails; fails_when=a whole sitting stays marked after a rule change
+    #   because the gate only checks that the notice is printed; why_new=TODOS cut-protocols item 4; seam=gate
+    def test_a_marked_sitting_the_rule_now_reads_whole_fails(self):
+        printed = [activity(f"r{n}", "Rede", "X Y, MdB", "101A") for n in range(3)]
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT, printed))
+        self.assertIn("20/999: marked cut, but the cut rule reads its cached XML and DIP's Aktivitäten whole",
+                      " ".join(gate.cut_protocol_check(output, database)["problems"]))
+
+    # Value: protects=the stored count of DIP Reden a cut cannot place is the rule's, NULL included (NULL means DIP has
+    #   not indexed the sitting, never 0); fails_when=a page says "mindestens" or an exact count the rule does not give;
+    #   why_new=TODOS cut-protocols item 16d; seam=gate
+    def test_a_stored_count_of_unplaced_reden_the_rule_does_not_give_fails(self):
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        for stored, shown in ((2, "2"), (None, "None")):
+            with self.subTest(stored=stored), sqlite3.connect(database) as conn:
+                conn.execute("UPDATE protocols SET xml_cut_unplaced_reden = ?", (stored,))
+                conn.commit()
+                self.assertIn(f"20/999: xml_cut_unplaced_reden {shown}, the cut rule gives 0",
+                              " ".join(gate.cut_protocol_check(output, database)["problems"]))
+
+    # Value: protects=the stored unprinted rows are the rule's, row for row with DIP id, kind, DIP person, page and
+    #   quadrant (R4: the DIP person on each row, not the later mp_id binding); fails_when=a stale row, a dropped row,
+    #   or a row naming another DIP person passes the gate; why_new=TODOS cut-protocols item 4, eng review R4; seam=gate
+    def test_unprinted_rows_the_rule_does_not_give_fail(self):
+        without_x2 = [a for a in CUT_AKTIVITAETEN if a["id"] != "x2"]
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT, without_x2))
+        self.assertIn("20/999: unprinted_contributions holds rows the cut rule does not give: x2 zu_protokoll",
+                      " ".join(gate.cut_protocol_check(output, database)["problems"]))
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        with sqlite3.connect(database) as conn:
+            conn.execute("UPDATE unprinted_contributions SET dip_person_id = '9999' WHERE dip_activity_id = 'x1'")
+        problems = " ".join(gate.cut_protocol_check(output, database)["problems"])
+        self.assertIn("20/999: unprinted_contributions holds rows the cut rule does not give: x1 rede person 9999 104A", problems)
+        self.assertIn("20/999: the cut rule gives rows unprinted_contributions does not hold: x1 rede person 8173 104A", problems)
+
+    # Value: protects=a marked sitting whose recompute the rule or the parser refuses is a named problem, not a
+    #   traceback that stops the gate; fails_when=an id-less DIP Rede or a stale reviewed entry crashes check 8;
+    #   why_new=TODOS cut-protocols item 4 (O5: ReviewedUnitsError is no ValueError); seam=gate
+    def test_a_marked_sitting_whose_recompute_refuses_is_named(self):
+        id_less = [*CUT_AKTIVITAETEN, activity("", "Rede", "Fritz Fink, MdB, SPD", "104B")]
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT, id_less))
+        self.assertIn("20/999: the cut rule refuses its cached XML and DIP's Aktivitäten: 20/999: DIP lists an Aktivität "
+                      "without an id", " ".join(gate.cut_protocol_check(output, database)["problems"]))
+        output, database = self.output(cut_fixture_xml(), self.gate_report(CUT))
+        with mock.patch.object(dip, "parse_protocol_xml", side_effect=dip.reviewed_units.ReviewedUnitsError("stale entry")):
+            self.assertIn("20/999: the cut rule refuses its cached XML and DIP's Aktivitäten: stale entry",
+                          " ".join(gate.cut_protocol_check(output, database)["problems"]))
 
     def test_a_marked_sitting_without_the_notice_fails(self):
         xml = (_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8")

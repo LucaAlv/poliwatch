@@ -42,12 +42,18 @@ checks, in order:
    refuses too).
 8. The cut Protokoll files (E16, docs/plans/cut-protocols.md): a sitting is
    marked (``protocols.xml_cut``) only when its cached XML prints the notice of
-   a first edition, and one with the notice is marked unless the rule reads it
-   whole (19/107); no file without the notice looks cut by rule 3 (at least 5
-   DIP Reden after its last ``<rede>`` and 5 more than it holds), which a
-   person reads; no row of ``unprinted_contributions`` shares person, place and
-   sitting with a stored Rede. The marked sittings and the two counts are in
-   the receipt.
+   a first edition and the rule, re-run over that XML and its report's DIP
+   Aktivitäten, gives a cut; one with the notice is marked unless the rule
+   reads it whole (19/107). For each marked sitting the store holds what the
+   rule gives: ``xml_cut_unplaced_reden`` (NULL where DIP has not indexed it)
+   and each ``unprinted_contributions`` row with its DIP id, kind, DIP person,
+   page and quadrant (the DIP person, not the ``mp_id`` bound to it later).
+   Every marked sitting has a cached report, and a run that reads none fails.
+   No file without the notice looks cut by rule 3 (at least 5 DIP Reden after
+   its last ``<rede>`` and 5 more than the rule's count of printed Reden),
+   which a person reads; no row of ``unprinted_contributions`` shares person,
+   place and sitting with a stored Rede. The marked sittings and the two
+   counts are in the receipt.
 9. The corrected end times (``scripts/reviewed_end_times.json``): every entry
    whose sitting the store holds is in ``protocols.sitting_end_corrected``, the
    column holds no other, and each entry's ``pdf_md5`` is the ``pdf_hash`` of
@@ -90,7 +96,7 @@ import reviewed_end_times  # noqa: E402
 import reviewed_units  # noqa: E402
 import reviewed_vote_links  # noqa: E402
 from sqlite_open import open_readonly  # noqa: E402
-from stable_ids import key_prefix  # noqa: E402
+from stable_ids import canonical_dip_person_id, key_prefix  # noqa: E402
 BUILD = SCRIPTS / "build_dip_pulse_site.py"
 STORE = Path("data") / "bundestag-pulse.sqlite"
 # The figures of the last combined A1/A2 run (docs/plans/a1-scratch-validation.json,
@@ -404,15 +410,38 @@ def dip_typed_reden(output_dir: Path) -> list[dict[str, Any]]:
     return site.unlisted_dip_typed_reden(entries)
 
 
+def _recomputed_cut(number: str, text: str, aktivitaeten: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """The cut rule over a sitting's cached XML and its report's Aktivitäten,
+    parsed as the replay parses it: (the cut or None, None), or (None, the
+    problem) where the parser or the rule refuses."""
+    import validate_dip_protocol as dip
+
+    try:
+        return protocol_cut.protocol_cut(dip.parse_protocol_xml(text), aktivitaeten), None
+    except (protocol_cut.ProtocolCutError, ValueError, reviewed_units.ReviewedUnitsError) as exc:
+        return None, f"{number}: the cut rule refuses its cached XML and DIP's Aktivitäten: {exc}"
+
+
+def _unprinted_row(dip_activity_id: str, kind: str, dip_person_id: str | None, page: int | None,
+                   quadrant: str | None) -> str:
+    return f"{dip_activity_id} {kind} person {dip_person_id or '(none)'} {page if page is not None else '(no page)'}{quadrant or ''}"
+
+
 def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
     """Check 8, over the cached reports and XML and the replayed store."""
     import xml.etree.ElementTree as ET
 
-    import validate_dip_protocol as dip
+    from persist_dip_pulse_store import clean
 
     conn = open_readonly(database_path)
     try:
         marked = dict(conn.execute("SELECT document_number, xml_cut FROM protocols"))
+        unplaced_stored = dict(conn.execute("SELECT document_number, xml_cut_unplaced_reden FROM protocols WHERE xml_cut = 1"))
+        rows_stored: dict[str, set[str]] = {}
+        for number, *row in conn.execute(
+                "SELECT p.document_number, u.dip_activity_id, u.kind, u.dip_person_id, u.page, u.page_quadrant "
+                "FROM unprinted_contributions u JOIN protocols p ON p.id = u.protocol_id"):
+            rows_stored.setdefault(number, set()).add(_unprinted_row(*row))
         counts = dict(((number, kind), count) for number, kind, count in conn.execute(
             "SELECT p.document_number, u.kind, COUNT(*) FROM unprinted_contributions u "
             "JOIN protocols p ON p.id = u.protocol_id GROUP BY 1, 2"))
@@ -432,11 +461,13 @@ def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
     problems: list[str] = []
     whole: list[str] = []
     looks_cut: list[dict[str, Any]] = []
+    read: set[str] = set()
     for path in sorted((output_dir / "data").glob("plenarprotokoll-[0-9]*-[0-9]*.json")):
         report = json.loads(path.read_text(encoding="utf-8"))
         number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
         if number not in marked:
             continue
+        read.add(number)
         xml_path = output_dir / "data" / "xml" / f"plenarprotokoll-{number.replace('/', '-')}.xml"
         if not xml_path.is_file():
             problems.append(f"{number}: no cached XML to check the mark against")
@@ -451,12 +482,34 @@ def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
             continue
         if marked[number] and not notice:
             problems.append(f"{number}: marked cut, but its cached XML prints no notice of a first edition")
-        elif notice and not marked[number]:
-            if protocol_cut.protocol_cut(dip.parse_protocol_xml(text), aktivitaeten) is not None:
+        elif notice:
+            cut, refusal = _recomputed_cut(number, text, aktivitaeten)
+            if refusal:
+                problems.append(refusal)
+            elif marked[number] and cut is None:
+                problems.append(f"{number}: marked cut, but the cut rule reads its cached XML and DIP's Aktivitäten whole")
+            elif marked[number]:
+                # The store holds what the rule gives: the count it cannot place
+                # (NULL where DIP has not indexed the sitting) and each row with
+                # its DIP person, normalized as persist_unprinted stores it.
+                if unplaced_stored.get(number) != cut["unplaced_reden"]:
+                    problems.append(f"{number}: xml_cut_unplaced_reden {unplaced_stored.get(number)}, "
+                                    f"the cut rule gives {cut['unplaced_reden']}")
+                given = {_unprinted_row(str(entry["dip_activity_id"]), entry["kind"],
+                                        canonical_dip_person_id(entry.get("dip_person_id")), entry.get("page"),
+                                        clean(entry.get("quadrant"))) for entry in cut["entries"]}
+                stored = rows_stored.get(number, set())
+                if stored - given:
+                    problems.append(f"{number}: unprinted_contributions holds rows the cut rule does not give: "
+                                    f"{', '.join(sorted(stored - given)[:10])}")
+                if given - stored:
+                    problems.append(f"{number}: the cut rule gives rows unprinted_contributions does not hold: "
+                                    f"{', '.join(sorted(given - stored)[:10])}")
+            elif cut is not None:
                 problems.append(f"{number}: its XML prints the notice and DIP lists more than it holds, but it is not marked")
             else:
                 whole.append(number)
-        elif not notice:
+        else:
             # The cut rule's own count (protocol_cut.printed_reden, written by
             # cut_summary): the stored Reden and the withheld units that would be one.
             printed = (report.get("validation_summary") or {}).get("printed_reden")
@@ -467,6 +520,11 @@ def cut_protocol_check(output_dir: Path, database_path: Path) -> dict[str, Any]:
             evidence = protocol_cut.unmarked_cut_evidence(root, aktivitaeten, printed)
             if evidence:
                 looks_cut.append({"document_number": number, **evidence})
+    if not read:
+        problems.append("no cached report was read for a sitting of the store: check 8 judged nothing")
+    unread = sorted((number for number, flag in marked.items() if flag and number not in read),
+                    key=lambda n: tuple(int(part) for part in n.split("/")))
+    problems += [f"{number}: marked cut, but no cached report was read for it" for number in unread]
     if looks_cut:
         problems.append(f"{len(looks_cut)} sittings without the notice look cut by rule 3: read them "
                         f"({', '.join(entry['document_number'] for entry in looks_cut[:10])})")
