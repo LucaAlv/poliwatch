@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.60.0] - 2026-11-27
+
+The release export no longer holds the Fakt der Woche tables (decision Q5). The build store keeps them, and the Fakt pages on the site stay as they are. Export format 29; store schema 17 is unchanged and no replay is needed. On the 806-sitting store the export goes from 37 to 34 tables, 36 to 33 table CSVs, 1,372,489 to 1,367,645 rows (the 8 + 1,944 + 2,892 facts rows) and 52 to 50 relationships; the other 34 tables hold the same rows, no figure on the site moves, and only the Daten page changes.
+
+### Changed
+
+- **`facts`, `fact_metrics` and `fact_sources` are gone from the SQLite file, the CSV downloads, `DATA.md` and the Daten page.** The export's schema hash changes with them.
+- **The Daten page says the download lacks the Fakt der Woche tables,** in its intro and in the transformation note (`transformation` in `datenstand.json`). The intro no longer calls the download the same data the site's views rest on.
+- **The codebook and the licence file name no table the export lacks.** Three texts about withheld Reden pointed at `facts.withheld`; that sentence is removed.
+
 ## [0.46.58.0] - 2026-11-26
 
 Readers now see where a Bundestag Protokoll file stops before its sitting ends. In 33 sittings the XML is a first edition that was never replaced. A dossier, a Puls week, a Personenseite and the Daten page now say so, and they name what DIP lists in the unprinted part: 1,189 Reden and 429 Reden zu Protokoll on the 806-sitting store. None of these is counted in a figure. On the replay no stored figure, Rede, vote or Fakt moves (0 of 1,944 Fakten). Export format 28, schema 17, cut rule 3; a store needs one `--offline --repersist`.
