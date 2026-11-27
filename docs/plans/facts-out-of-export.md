@@ -61,6 +61,7 @@ Seam: `export_distribution_data`, the public function a release goes through.
 - Build store: byte-identical (same `source_sha256`); the three tables hold 8, 1,944 and 2,892 rows.
 - Pages: 10,296 files before and after. `data/features.json`, `index.html`, `overview.html` and `sources.html` differ only in build time and generation id. `database.html` differs: format, the three schema cards, downloads and relationships, counts, size and checksum, and the `withheld_units` caption. Its note on the `-dirty-` suffix comes from building the uncommitted tree (build:5869).
 - `compare_store_values.py`: exit 0, 238 publishable weeks and 46 months, no changed winner, 0 of 1,944 Fakt values moved.
+- After `/code-review` (2026-11-27): the Daten page intro and `manifest.transformation` now say the Fakt der Woche tables are missing, which replaces "`manifest.transformation` stays as it is" under "Text that would become false". So `database.html` also differs in its intro and transformation note; the clone comparison above predates both. The no-table-name test now needs a column name after `facts.`.
 - At `2d992eb`: full suite on Python 3.13.18, 2,931 tests, OK (2 skipped). Codex review: no actionable defect. Red team (Sonnet): no correctness defect, three wording points, in this item's TODOS.md entry.
 
 ### Review checklist (`docs/agents/review-checklist.md`), lines of `scripts/build_dip_pulse_site.py` at `2d992eb`

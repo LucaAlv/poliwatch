@@ -5605,7 +5605,8 @@ def _run_export(
         "tag": tag,
         "license": license_text,
         "issues_url": issues_url,
-        "transformation": "speeches.paragraphs_json entfernt (Duplikat von speeches.text, SQLite >= 3.35)",
+        "transformation": "speeches.paragraphs_json entfernt (Duplikat von speeches.text, SQLite >= 3.35); "
+                          "die Tabellen zum Fakt der Woche entfernt",
         "source_mtime_ns": source_stat.st_mtime_ns,
         "source_bytes": source_stat.st_size,
         "source_sha256": source_sha256,
@@ -6370,7 +6371,7 @@ def render_database_page(
         <div>
           <span class="eyebrow">Rohdaten</span>
           <h1>Daten</h1>
-          <p class="lede">Alle Personen, Reden, Vorgänge und namentlichen Abstimmungen, aus denen diese Website aufgebaut ist, als SQLite-Datei und als CSV &mdash; dieselben Daten, die hinter den Ansichten dieser Website stehen.</p>
+          <p class="lede">Alle Personen, Reden, Vorgänge und namentlichen Abstimmungen, aus denen diese Website aufgebaut ist, als SQLite-Datei und als CSV. Die Tabellen mit den berechneten Kennzahlen zum Fakt der Woche sind nicht enthalten.</p>
         </div>
         {downloads_html}
       </header>

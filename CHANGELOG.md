@@ -9,6 +9,7 @@ The release export no longer holds the Fakt der Woche tables (decision Q5). The 
 ### Changed
 
 - **`facts`, `fact_metrics` and `fact_sources` are gone from the SQLite file, the CSV downloads, `DATA.md` and the Daten page.** The export's schema hash changes with them.
+- **The Daten page says the download lacks the Fakt der Woche tables,** in its intro and in the transformation note (`transformation` in `datenstand.json`). The intro no longer calls the download the same data the site's views rest on.
 - **The codebook and the licence file name no table the export lacks.** Three texts about withheld Reden pointed at `facts.withheld`; that sentence is removed.
 
 ## [0.46.58.0] - 2026-11-26

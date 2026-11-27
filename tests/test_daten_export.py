@@ -1425,7 +1425,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         shipped["datenstand.json"] = (self.exports_dir / "datenstand.json").read_text(encoding="utf-8")
         for name, text in shipped.items():
             with self.subTest(text=name):
-                found = re.search(r".{0,60}(?:fact_metrics|fact_sources|`facts`|\bfacts\.(?!py)).{0,60}", text)
+                # A column after the dot: prose ending in "facts." names no table.
+                found = re.search(r".{0,60}(?:fact_metrics|fact_sources|`facts`|\bfacts\.(?!py\b)[a-z_]+).{0,60}", text)
                 self.assertIsNone(found, found and found.group(0))
 
     # Value: protects=the export carries vote context, the Bundestag report source URL and the quoted Antrag passage through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
