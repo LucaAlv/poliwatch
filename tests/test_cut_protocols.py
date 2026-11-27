@@ -358,7 +358,7 @@ class ParsedReportTests(unittest.TestCase):
         report = report_of(parsed, [*printed, activity("x1", "Rede", "Dora Dreher, MdB, Die Linke", "104A", "14")])
         dip.reparse_report_xml(report, parsed)
         summary = report["validation_summary"]
-        self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))
+        self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         self.assertEqual((summary["protocol_cut"]["page"], summary["protocol_cut"]["quadrant"]), (103, "B"))
         self.assertEqual([e["dip_activity_id"] for e in summary["protocol_cut"]["entries"]], ["x1"])
 
@@ -382,7 +382,7 @@ class ParsedReportTests(unittest.TestCase):
         with mock.patch.object(dip, "fetch_text", return_value=cut_fixture_xml()), \
                 mock.patch.object(dip, "enrich_with_api", side_effect=enrich), mock.patch("sys.stderr", new_callable=io.StringIO):
             summary = dip.build_report(args, protocol)["validation_summary"]
-        self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))
+        self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         self.assertEqual(([e["dip_activity_id"] for e in summary["protocol_cut"]["entries"]],
                           summary["protocol_cut"]["unplaced_reden"]), (["x1", "x2"], 0))
 
@@ -410,9 +410,9 @@ class ParsedReportTests(unittest.TestCase):
         self.assertIn("cut", site.stale_causes(report))
         # Rule 3 counted every withheld unit as a printed Rede and wrote no count of its own (TODOS cut-protocols
         # item 15).
-        report["validation_summary"]["cut_rule_version"] = 3
+        report["validation_summary"]["cut_rule_version"] = 3  # pregate-literal: CUT_RULE_VERSION=3 rule 3 is the old version this test feeds in on purpose
         self.assertIn("cut", site.stale_causes(report))
-        self.assertGreater(cut.CUT_RULE_VERSION, 3)
+        self.assertGreater(cut.CUT_RULE_VERSION, 3)  # pregate-literal: CUT_RULE_VERSION=3 asserts the rule moved past version 3
 
 
 CUT = {"announced": "2026-10-13", "last_rede_id": "R3", "page": 103, "quadrant": "B", "place_from": "inhaltsverzeichnis",

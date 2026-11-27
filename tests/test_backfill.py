@@ -62,7 +62,7 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
         for vote in item.get("votes") or []:
             vote["id"] = f"{n}{vote['id']}"
             vote["detail_url"] = f"{vote['detail_url']}{n}"
-    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}
+    report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "speech_kinds_version": speech_kinds.VERSION, "cut_rule_version": protocol_cut.CUT_RULE_VERSION, "protocol_cut": None}  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
     _support.stamp_reviewed(report)
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}
