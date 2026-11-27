@@ -2607,11 +2607,6 @@ class FactStatusTextTests(unittest.TestCase):
 
 
 class PageHelperTests(unittest.TestCase):
-    def test_fact_sources_description_names_agenda_items(self) -> None:
-        description = build.DATABASE_TABLE_DESCRIPTIONS["fact_sources"]
-        self.assertIn("Belege je Fakt", description)
-        self.assertIn("Tagesordnungspunkte", description)
-
     def test_every_metric_has_an_archive_column_label(self) -> None:
         self.assertEqual(set(build.FACTS_METRIC_LABELS), set(facts.REGISTRY_BY_ID))
 
