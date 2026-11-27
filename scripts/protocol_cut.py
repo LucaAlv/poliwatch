@@ -29,7 +29,8 @@ import speech_kinds
 #: matches DIP's entry as a stored one does, and one not yet reviewed counts as
 #: neither; ``cut_summary`` writes that count (``printed_reden``) for rule 3.
 #: Two Reden on one page and quadrant are ordered by the Sitzungsverlauf, not by
-#: their ids as text (``last_printed_rede``).
+#: their ids as text (``last_printed_rede``). A DIP Aktivität without an id stops
+#: the sitting only where it can become an entry (``_distinct``).
 CUT_RULE_VERSION = 4
 
 NOTICE = re.compile(
@@ -148,10 +149,18 @@ def _entry(activity: dict[str, Any], kind: str) -> dict[str, Any]:
     }
 
 
+def _dip_rede(activity: dict[str, Any]) -> bool:
+    """Whether DIP lists the Aktivität as a "Rede" the rule counts: the chair's
+    farewells and greetings (``CHAIR``) are none."""
+    return activity.get("aktivitaetsart") == DIP_REDE and not CHAIR.search(str(activity.get("titel") or ""))
+
+
 def _distinct(aktivitaeten: list[dict[str, Any]] | None, sitting: str | None = None) -> list[dict[str, Any]]:
     """DIP's Aktivitäten, each once: the client joins cursor pages, which may
-    repeat one. With ``sitting``, an Aktivität without an id is refused, for an
-    entry is stored under it; without, it is kept as it is."""
+    repeat one. With ``sitting``, an Aktivität without an id that can become an
+    entry (a "Rede" the rule counts, or a "Rede (zu Protokoll gegeben)") is
+    refused, for an entry is stored under its id; any other, and every one
+    without ``sitting``, is kept as it is."""
     seen: set[str] = set()
     distinct = []
     for activity in aktivitaeten or []:
@@ -159,7 +168,7 @@ def _distinct(aktivitaeten: list[dict[str, Any]] | None, sitting: str | None = N
             continue
         activity_id = str(activity.get("id") or "").strip()
         if not activity_id:
-            if sitting is not None:
+            if sitting is not None and (_dip_rede(activity) or activity.get("aktivitaetsart") == DIP_ZU_PROTOKOLL):
                 raise ProtocolCutError(f"{sitting}: DIP lists an Aktivität without an id ({activity.get('titel') or '(no title)'})")
             distinct.append(activity)
         elif activity_id not in seen:
@@ -252,8 +261,7 @@ def protocol_cut(parsed: dict[str, Any], aktivitaeten: list[dict[str, Any]] | No
         return None
     sitting = "{wahlperiode}/{sitzung_nr}".format(**{"wahlperiode": "?", "sitzung_nr": "?", **(parsed.get("xml_protocol") or {})})
     activities = _distinct(aktivitaeten, sitting)
-    reden = sorted((a for a in activities if a.get("aktivitaetsart") == DIP_REDE and not CHAIR.search(str(a.get("titel") or ""))),
-                   key=_order)
+    reden = sorted((a for a in activities if _dip_rede(a)), key=_order)
     written = sorted((a for a in activities if a.get("aktivitaetsart") == DIP_ZU_PROTOKOLL), key=_order)
     speech_count = printed_reden(parsed)
     stored_written = [
@@ -331,8 +339,7 @@ def unmarked_cut_evidence(root: ET.Element, aktivitaeten: list[dict[str, Any]] |
     last = last_printed_rede(root)
     if last is None or last["page"] is None:
         return None
-    reden = [a for a in _distinct(aktivitaeten) if a.get("aktivitaetsart") == DIP_REDE
-             and not CHAIR.search(str(a.get("titel") or ""))]
+    reden = [a for a in _distinct(aktivitaeten) if _dip_rede(a)]
     cut_at = (last["page"], last["quadrant"] or "")
     after = sum(1 for a in reden if after_cut(_place(a), cut_at))
     more = len(reden) - speech_count

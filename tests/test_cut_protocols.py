@@ -158,6 +158,20 @@ class ProtocolCutTests(unittest.TestCase):
         blank = [*ACTIVITIES, {**activity("", "Rede", "Fritz Fink, MdB, SPD", "13B", "16")}]
         with self.assertRaisesRegex(cut.ProtocolCutError, "without an id"):
             cut.protocol_cut(parsed(NOTICE_READ), blank)
+        written = [*ACTIVITIES, activity("", "Rede (zu Protokoll gegeben)", "Fritz Fink, MdB, SPD", "92A", "16")]
+        with self.assertRaisesRegex(cut.ProtocolCutError, "without an id"):
+            cut.protocol_cut(parsed(NOTICE_READ), written)
+
+    # Value: protects=only an id-less Aktivität that can become an entry (stored under its DIP id) stops the sitting: a
+    #   Kurzintervention or a chair's farewell typed "Rede" never becomes one, so it is kept as it is; fails_when=an
+    #   id-less Kurzintervention or chair farewell stops a sitting the rule would have read; why_new=TODOS
+    #   cut-protocols item 10 (first half), eng review R5; seam=parser
+    def test_an_id_less_dip_aktivitaet_that_can_become_no_entry_is_kept(self):
+        expected = cut.protocol_cut(parsed(NOTICE_READ), ACTIVITIES)
+        for kind, title in (("Kurzintervention", "Fritz Fink, MdB, SPD"), ("Rede", "Petra Pau, Bundestagsvizepräs.")):
+            with self.subTest(kind=kind, title=title):
+                extra = [*ACTIVITIES, activity("", kind, title, "13D", "16")]
+                self.assertEqual(cut.protocol_cut(parsed(NOTICE_READ), extra), expected)
 
     def test_a_file_without_the_notice_is_whole_whatever_dip_lists(self):
         # 18/3's shape: a Fragestunde after the last <rede>, no notice.
