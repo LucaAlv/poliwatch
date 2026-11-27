@@ -2012,8 +2012,7 @@ def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], 
                         parent_key = contribution_occurrence_id(protocol.get("id"), source_index(item.get("index")), other["sequence"], parent)
                         containing = f'<a href="#contribution-{esc(parent_key)}">Enthaltender Beitrag</a>'
                         break
-        paragraphs = c.get("paragraphs") or ([c["text"]] if c.get("text") else [])
-        body = "".join(f'<p>{esc(text)}</p>' for text in paragraphs)
+        body = "".join(f'<p>{esc(text)}</p>' for text in c.get("paragraphs") or [])
         cards.append(f'<details class="speech-card" id="contribution-{esc(key)}"><summary><span class="party-dot"></span><strong>{name}</strong><em>{label}</em></summary><div class="speech-text">{source} {containing}{body}</div></details>')
     return '<div class="speech-cards contribution-cards">' + "".join(cards) + '</div>' if cards else ""
 
@@ -3185,12 +3184,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
         source = source_page_text(speech.get("source_page"))
-        paragraphs = speech.get("paragraphs") or []
-        if not paragraphs and speech.get("text"):
-            paragraphs = [speech.get("text")]
-        if not paragraphs and speech.get("snippet"):
-            paragraphs = [speech.get("snippet")]
-        paragraph_html = "".join(f"<p>{esc(paragraph)}</p>" for paragraph in paragraphs)
+        paragraph_html = "".join(f"<p>{esc(paragraph)}</p>" for paragraph in speech.get("paragraphs") or [])
         if not paragraph_html:
             paragraph_html = '<p class="muted">Dieser Bericht enthält keinen Redetext. Erzeuge das JSON mit dem aktuellen Validator neu, um die Rede direkt anzuzeigen.</p>'
         meta = " · ".join(part for part in [esc(role), f"Seite {esc(source)}" if source else ""] if part)

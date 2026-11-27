@@ -54,16 +54,16 @@ def parse_sitting(name):
 
 
 def source_markers(sitting, rede_id):
-    """Read marker ownership directly, without using the production segment parser."""
+    """Read marker ownership directly, without using the production segment parser:
+    each turn's source <p> texts, one by one. Which of them make one printed
+    paragraph is the parser's rule (assert_whole_source_paragraphs)."""
     root = ET.parse(FIXTURES / f"plenarprotokoll-{sitting}.xml").getroot()
     rede = root.find(f".//rede[@id='{rede_id}']")
     if rede is None:
         raise AssertionError(f"source Rede {rede_id} missing from {sitting}")
     markers = []
     active = None
-    before = None  # the element before this one, page anchors (<a>) aside
     for child in rede:
-        previous, before = before, before if child.tag == "a" else child.tag
         if child.tag == "name":
             active = None  # chair text is not owned by the previous speaker
         elif child.tag == "p" and child.get("klasse") == "redner":
@@ -73,21 +73,33 @@ def source_markers(sitting, rede_id):
         elif child.tag == "p" and active:
             paragraph = dip.clean_text(dip.elem_text(child))
             if paragraph:
-                # A flush <p klasse="O"> after a Zwischenruf goes on in the same paragraph.
-                if child.get("klasse") == "O" and previous == "kommentar" and markers[-1]["paragraphs"]:
-                    markers[-1]["paragraphs"][-1] += " " + paragraph
-                else:
-                    markers[-1]["paragraphs"].append(paragraph)
+                markers[-1]["paragraphs"].append(paragraph)
     return markers
 
 
-def unit_paragraphs(sitting, agenda, source_id, marker):
-    """A Zwischenfrage unit's source paragraphs: its own marker's, then those of
+def unit_turns(sitting, agenda, source_id, marker):
+    """A Zwischenfrage unit's source turns: its own marker's, then those of
     the same asker's later markers merged into it (one unit per exchange)."""
     merged = [d["marker_ordinal"] for d in agenda["xml_turn_diagnostics"]
               if d["treatment"] == "merged_zwischenfrage" and d.get("target_rede_id") == f"nested:{source_id}:{marker}"]
     markers = source_markers(sitting, source_id)
-    return [p for m in [marker, *merged] for p in markers[m - 1]["paragraphs"]]
+    return [markers[m - 1]["paragraphs"] for m in [marker, *merged]]
+
+
+def assert_whole_source_paragraphs(test, paragraphs, turns):
+    """The parsed paragraphs hold the turns' source <p> texts, all of them in order:
+    each is one <p>, or several in a row of one turn. Which of them run on is the
+    parser's rule and not restated here."""
+    parsed = list(paragraphs)
+    for turn in turns:
+        left = list(turn)
+        while left:
+            test.assertTrue(parsed, f"no parsed paragraph holds {left[0][:60]!r}")
+            paragraph, run = parsed.pop(0), left.pop(0)
+            while left and run != paragraph:
+                run = f"{run} {left.pop(0)}"
+            test.assertEqual(paragraph, run)
+    test.assertEqual(parsed, [])
 
 
 def assert_counts(test, unit):
@@ -105,6 +117,38 @@ class OfflineV5SourceTests(unittest.TestCase):
                 parsed = parse_sitting(sitting)
                 self.assertTrue(parsed["agenda_items"])
                 self.assertEqual(parsed["xml_protocol"]["sitzung_nr"], sitting.split("-")[1])
+
+    # Value: protects=the paragraphs of a real Rede are the printed ones; fails_when=ParagraphFlow's rule for <p> O, J
+    #   or Z changes, or a turn no longer ends a paragraph; why_new=the rule's cases in test_rede_text.py are made-up
+    #   markup, and the reader here restated the rule; seam=none
+    def test_a_real_redes_paragraphs_come_from_the_parser_as_printed(self):
+        [speech] = [s for a in parse_sitting("20-44")["agenda_items"] for s in a["speeches"]
+                    if s["rede_id"] == "ID204414000"]
+        paragraphs = speech["paragraphs"]
+        # How each opens and closes, typed from the source: a J or J_1 opens one, as do the block quotes
+        # (Z) and the O after one; the chair's turn and the Zwischenfrage close one.
+        expected = [
+            ("Vielen Dank. – Sehr geehrte Frau Präsidentin!", "Widerstand zu leisten."),
+            ("Es ist ja grundsätzlich zu begrüßen,", "aus der letzten Debatte. Er sagte:"),
+            ("Machen wir möglich, dass sich die Betriebe", "wie die neuen Beschäftigten …"),
+            ("Und weiter:", "Und weiter:"),
+            ("Dazu gehören heute eben auch", "elektronische Arbeitsverträge."),
+            ("Er hat es heute wieder bestätigt.", "Frau Müller-Gemmeke."),
+            ("Der Kollege Cronenberg", "haben Sie sich das schon mal gespart."),
+            ("Ja, sehr gerne.", "Ja, sehr gerne."),
+            ("Vielen Dank für die Möglichkeit,", "Arbeitsvertrag, Frau Kollegin."),
+            ("Auch aus Ihrer Fraktion, Frau Kollegin,", "das ist ja schön und gut."),
+            ("Wenn Sie wirklich eine Fortschrittskoalition", "und gut ist es!"),
+            ("Vielen Dank.", "Vielen Dank."),
+        ]
+        self.assertEqual(len(paragraphs), len(expected))
+        for paragraph, (opening, closing) in zip(paragraphs, expected):
+            self.assertEqual((paragraph[:len(opening)], paragraph[-len(closing):]), (opening, closing))
+        # Where a flush O after a Zwischenruf runs on in the same paragraph.
+        for index, junction in ((0, "Ganz Europa? Nein! Eine unbeugsame"), (1, "hat, es fragt sich nur"),
+                                (5, "wieder bestätigt. – Ja, es geht um den Nachweis"),
+                                (8, "im genau gleichen Maße schriftlich an die Person")):
+            self.assertIn(junction, paragraphs[index])
 
     def test_extra_named_markers_keep_their_native_nested_speaker(self):
         cases = {
@@ -163,7 +207,7 @@ class OfflineV5SourceTests(unittest.TestCase):
                         self.assertEqual(unit["kind"], "zwischenfrage")
                         self.assertEqual(unit["speaker"], source["speaker"])
                         self.assertEqual(unit["speaker"]["xml_redner_id"], source["speaker_id"])
-                        self.assertEqual(unit["paragraphs"], unit_paragraphs(sitting, agenda, source_id, marker))
+                        assert_whole_source_paragraphs(self, unit["paragraphs"], unit_turns(sitting, agenda, source_id, marker))
                         assert_counts(self, unit)
                         occurrence_id = contribution_occurrence_id(
                             f"offline-v5:{sitting}", agenda["index"], unit["sequence"], unit["rede_id"])
@@ -185,9 +229,9 @@ class OfflineV5SourceTests(unittest.TestCase):
             parsed = parse_sitting(sitting)
             item = parsed["agenda_items"][0]
             reply = next(c for c in item["contributions"] if c.get("rede_id") == reply_id)
-            raw_prefix = [p for marker in markers for p in source_markers(sitting, source_id)[marker - 1]["paragraphs"]]
+            prefix_turns = [source_markers(sitting, source_id)[marker - 1]["paragraphs"] for marker in markers]
             native = source_markers(sitting, reply_id)[0]["paragraphs"]
-            self.assertEqual(reply["paragraphs"], raw_prefix + native)
+            assert_whole_source_paragraphs(self, reply["paragraphs"], [*prefix_turns, native])
             assert_counts(self, reply)
             occurrence_id = contribution_occurrence_id(f"offline-v5:{sitting}", item["index"], reply["sequence"], reply_id)
             self.assertEqual(occurrence_id,
@@ -209,8 +253,9 @@ class OfflineV5SourceTests(unittest.TestCase):
         self.assertEqual(diagnostics[5]["target_rede_id"], "ID214301600")
         self.assertEqual(diagnostics[6]["target_rede_id"], "ID214301600")
         original = next(s for s in item["speeches"] if s.get("rede_id") == "ID214301600")
-        self.assertEqual(original["paragraphs"], source_markers("21-43", "ID214301600")[0]["paragraphs"]
-                         + [p for marker in (4, 5, 6) for p in raw_turns[marker - 1]["paragraphs"]])
+        assert_whole_source_paragraphs(self, original["paragraphs"], [
+            source_markers("21-43", "ID214301600")[0]["paragraphs"],
+            *(raw_turns[marker - 1]["paragraphs"] for marker in (4, 5, 6))])
         assert_counts(self, original)
 
     def test_fresh_build_and_cached_xml_reparse_preserve_diagnostics_and_occurrence_ids(self):
@@ -327,7 +372,7 @@ class OfflineV5SourceTests(unittest.TestCase):
                 self.assertEqual(unit["speaker"], source["speaker"])
                 self.assertEqual(unit["parent_rede_id"], source_id)
                 self.assertEqual(unit["speaker"]["xml_redner_id"], source["speaker_id"])
-                self.assertEqual(unit["paragraphs"], unit_paragraphs(sitting, item, source_id, marker))
+                assert_whole_source_paragraphs(self, unit["paragraphs"], unit_turns(sitting, item, source_id, marker))
                 assert_counts(self, unit)
                 occurrence_id = contribution_occurrence_id(
                     f"offline-v5:{sitting}", item["index"], unit["sequence"], unit["rede_id"])
@@ -347,8 +392,8 @@ class OfflineV5SourceTests(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0]["kind"], kind)
             self.assertEqual(matches[0]["speaker"]["xml_redner_id"], speaker_id)
-            self.assertEqual(matches[0]["paragraphs"], [p for m in source_markers(sitting, rede_id)
-                                                      if m["speaker_id"] == speaker_id for p in m["paragraphs"]])
+            assert_whole_source_paragraphs(self, matches[0]["paragraphs"], [
+                m["paragraphs"] for m in source_markers(sitting, rede_id) if m["speaker_id"] == speaker_id])
             assert_counts(self, matches[0])
 
     def test_new_procedural_cases_survive_fresh_build_and_cached_xml_reparse(self):

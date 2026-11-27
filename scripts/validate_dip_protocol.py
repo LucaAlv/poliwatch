@@ -1092,20 +1092,37 @@ def unwrap_quotes(root: ET.Element) -> None:
     """A block quote is ``<p klasse="Z">``; WP 18 wraps about half of its own in a
     ``<zitat>`` (1,939 of 3,893), WP 19 on none. The quote is read out by whoever is speaking,
     so each ``<zitat>`` is replaced by its children, and every walk of the parse
-    reads both the same way. Text in a ``<zitat>`` outside its ``<p>`` (none in the
-    806 sittings held) refuses the sitting: it would be lost here."""
+    reads both the same way. The text after a ``<zitat>`` stays where it stood. Two
+    shapes, neither in the 806 sittings held, refuse the sitting: text in a ``<zitat>``
+    outside its ``<p>``, which would be lost here, and a ``<zitat>`` under a ``<p>``,
+    whose quoted ``<p>`` would then stand inside another, its words read as part of the
+    outer paragraph's. The XML holds no such case to say what the print means by it."""
+    sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
+    for paragraph in root.iter("p"):
+        if paragraph.find(".//zitat") is not None:
+            raise ValueError(f"{sitting}: a <zitat> inside a <p>: {elem_text(paragraph)[:80]!r}")
+    # Deepest first. Each parent's children are listed anew and assigned once: finding,
+    # removing or inserting each quote by position is quadratic in the quotes of one parent.
     for parent in reversed([element for element in root.iter() if element.find("zitat") is not None]):
-        for quote in parent.findall("zitat"):
-            if any((text or "").strip() for text in (quote.text, *(child.tail for child in quote))):
-                raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}: text in a <zitat> outside a paragraph: "
-                                 f"{elem_text(quote)[:80]!r}")
-            index = list(parent).index(quote)
-            children = list(quote)
-            if children:
-                children[-1].tail = quote.tail
-            parent.remove(quote)
-            for offset, child in enumerate(children):
-                parent.insert(index + offset, child)
+        children: list[ET.Element] = []
+        loose: dict[int, list[str]] = {}  # by the children before it: the text after an empty <zitat/>
+        for child in parent:
+            if child.tag != "zitat":
+                children.append(child)
+                continue
+            if any((text or "").strip() for text in (child.text, *(part.tail for part in child))):
+                raise ValueError(f"{sitting}: text in a <zitat> outside a paragraph: {elem_text(child)[:80]!r}")
+            if len(child):
+                child[-1].tail = child.tail
+                children.extend(child)
+            elif child.tail:
+                loose.setdefault(len(children), []).append(child.tail)
+        for before, texts in loose.items():
+            if before:
+                children[before - 1].tail = "".join([children[before - 1].tail or "", *texts])
+            else:
+                parent.text = "".join([parent.text or "", *texts])
+        parent[:] = children
 
 
 def mark_stage_direction_names(root: ET.Element) -> None:
