@@ -673,41 +673,86 @@ def incomplete_sitting_protocols(
     return acquirable, waiting, vote_only, structural, withheld
 
 
-def replaced_cut_files(output_dir: Path, entries: list[dict[str, Any]], catalog: list[dict[str, Any]]) -> set[str]:
-    """The cut sittings (E16) whose cached XML is not the file DIP's catalog lists
-    now: its ``xml_hash`` (an md5) differs from the md5 of the cached file, so the
-    Bundestag may have replaced the first edition. Nothing is known without a
-    hash or a cached file. The catalog of a closed Wahlperiode can be up to
-    ``CATALOG_FULL_FETCH_DAYS`` old."""
+#: A cut sitting whose last fetch gave a file unlike DIP's ``xml_hash`` is left
+#: alone this long while DIP lists that same hash, then fetched again: DIP may
+#: list a replaced file before dserver serves it.
+CUT_REFETCH_DAYS = 7
+
+
+def _fetched_lately_under(protocol: dict[str, Any], listed: str, now: datetime) -> bool:
+    """Whether a report's last fetch (``xml_listed_hash``, ``xml_fetched_at``)
+    was made less than ``CUT_REFETCH_DAYS`` before ``now``, while DIP listed
+    ``listed``. False without that record, and for a time ahead of ``now``."""
+    if str(protocol.get("xml_listed_hash") or "").strip().lower() != listed:
+        return False
+    try:
+        fetched = datetime.strptime(str(protocol.get("xml_fetched_at")), "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return timedelta(0) <= now - fetched.replace(tzinfo=timezone.utc) < timedelta(days=CUT_REFETCH_DAYS)
+
+
+def replaced_cut_files(
+    output_dir: Path, entries: list[dict[str, Any]], catalog: list[dict[str, Any]], *, now: datetime | None = None
+) -> tuple[set[str], set[str]]:
+    """(replaced, deferred) among the cut sittings (E16). Replaced: the cached
+    XML is not the file DIP's catalog lists now, as its ``xml_hash`` (an md5)
+    differs from the md5 of the cached file, so the Bundestag may have replaced
+    the first edition; or the report was read from another file than the cached
+    one. Deferred: the hash differs, but the last fetch was made under that same
+    hash less than ``CUT_REFETCH_DAYS`` ago, and the cached file is what it
+    gave. Nothing is known without a hash or a cached file; a cached file that
+    is not UTF-8 raises ``CachedReportError``. The catalog of a closed
+    Wahlperiode can be up to ``CATALOG_FULL_FETCH_DAYS`` old."""
+    now = now or datetime.now(timezone.utc)
     hashes = {
         normalized_document_number(protocol.get("dokumentnummer")): str(protocol.get("xml_hash") or "").strip().lower()
         for protocol in catalog
     }
-    replaced = set()
+    replaced: set[str] = set()
+    deferred: set[str] = set()
     for entry in entries:
         report = entry.get("report") or {}
         if not (report.get("validation_summary") or {}).get("protocol_cut"):
             continue
-        number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+        protocol = report.get("protocol") or {}
+        number = normalized_document_number(protocol.get("dokumentnummer"))
         listed = hashes.get(number)
         path = xml_cache_path(output_dir, number) if number else None
         if not listed or path is None or not path.is_file():
             continue
         data = path.read_bytes()
-        read = (report.get("protocol") or {}).get("xml_sha256")
+        # Strictly, as the fetch decodes it: only a damaged file fails here, and
+        # hashing it with replacement characters would fetch it on every run.
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise CachedReportError(
+                f"{path}, the cached XML of {number}, is not valid UTF-8 ({exc})", [number],
+                fix=f"Fix: delete {path}, run --fetch-xml, then run the backfill again") from exc
+        read = protocol.get("xml_sha256")
         # A run stopped between writing the new XML and its report leaves a
         # report read from another file than the one cached.
-        if hashlib.md5(data).hexdigest() != listed or (
-                read and read != dip.xml_source_sha256(data.decode("utf-8", errors="replace"))):
+        if read and read != dip.xml_source_sha256(text):
             replaced.add(number)
-    return replaced
+        elif hashlib.md5(data).hexdigest() != listed:
+            (deferred if _fetched_lately_under(protocol, listed, now) else replaced).add(number)
+    return replaced, deferred
 
 
-def unacquirable_lines(held: list[dict[str, Any]], entries: list[dict[str, Any]], replaced: Collection[str]) -> list[str]:
+def unacquirable_lines(
+    held: list[dict[str, Any]],
+    entries: list[dict[str, Any]],
+    replaced: Collection[str],
+    acquiring: list[dict[str, Any]],
+    deferred: Collection[str] = (),
+) -> list[str]:
     """What a backfill says of the sittings it leaves because no acquisition
     closes their gap, one line per cause, read from each cached report: a cut
     Protokoll file (E16), withheld Reden (ADR 0005), or an XML head without a
-    sitting time. ``replaced`` adds the cut sittings it fetches again."""
+    sitting time. Of the cut files it adds the ``replaced`` ones among the
+    sittings the run is ``acquiring``, and the ``deferred`` ones among those it
+    leaves (``replaced_cut_files``)."""
     summaries = {
         normalized_document_number(((entry.get("report") or {}).get("protocol") or {}).get("dokumentnummer")):
             (entry.get("report") or {}).get("validation_summary") or {}
@@ -729,9 +774,17 @@ def unacquirable_lines(held: list[dict[str, Any]], entries: list[dict[str, Any]]
     if groups["times"]:
         lines.append(f"[backfill] leaving {len(groups['times'])} sitting(s) whose XML prints no start or end time: "
                      f"laengste-sitzung cannot judge them ({_first_numbers(groups['times'], 12)}).")
-    if replaced:
-        lines.append(f"[backfill] acquiring {len(replaced)} cut sitting(s) again: DIP lists their XML with another hash "
-                     f"now, so the file may have been replaced ({_first_numbers(sorted(replaced), 12)}).")
+    waits = [number for number in groups["cut"] if number in deferred]
+    if waits:
+        lines.append(f"[backfill] not fetching {len(waits)} cut sitting(s) again yet: their last fetch, made while DIP "
+                     "listed the same hash, gave a file with another one; the first backfill "
+                     f"{CUT_REFETCH_DAYS} days after that fetch tries again ({_first_numbers(waits, 12)}).")
+    again = sorted(set(replaced) & {normalized_document_number(p.get("dokumentnummer")) for p in acquiring},
+                   key=_document_number_order)
+    if again:
+        lines.append(f"[backfill] acquiring {len(again)} cut sitting(s) again: DIP lists their XML with another hash "
+                     "now, so the file may have been replaced, or the report was read from another file than the cached "
+                     f"one ({_first_numbers(again, 12)}).")
     return lines
 
 
@@ -2333,6 +2386,10 @@ def reparse_cached_xml(
         try:
             parsed = dip.parse_protocol_xml(path.read_text(encoding="utf-8"))
             dip.reparse_report_xml(report, parsed)
+        except protocol_cut.ProtocolCutError as exc:
+            # The file or the cached DIP Aktivitäten say something the cut rule cannot place: a re-fetch cannot help.
+            raise CachedReportError(f"{path} of {document_number}: {exc}", [document_number],
+                                    fix=f"Fix: {protocol_cut.REFUSAL_FIX}") from exc
         except derive.UnknownFraktionError as exc:
             # Not a corrupt file either: a valid XML prints a <fraktion> the spelling list lacks.
             # A re-fetch returns the same XML, so the default re-fetch fix must not print.
@@ -7211,6 +7268,17 @@ def render_week_comparison_section(
         spark_note = "Reden je Woche mit Sitzung"
     share_note += _speakers_note(compared_current)
 
+    # The earlier week's cut files shift every delta, so the sittings its compared
+    # figures hold are named: on a weekday basis, those on the shared weekdays.
+    before_entries = weeks[previous["week"]]
+    if basis == "weekdays":
+        before_entries = [
+            entry for entry in before_entries
+            if date.fromisoformat(str(entry_protocol(entry).get("datum"))[:10]).weekday() in comparison["weekdays"]
+        ]
+    before_cut_note = week_cut_note(
+        before_entries, f"in den Vergleichswerten aus {previous['label']}", "der Vergleichswoche")
+
     return f"""
     <section class="week-compare" id="wochenvergleich" aria-labelledby="wochenvergleich-h2">
       <div class="week-head">
@@ -7221,6 +7289,7 @@ def render_week_comparison_section(
         </div>
         <span class="feature-state">Aus Plenarprotokollen</span>
       </div>
+      {before_cut_note}
       <div class="week-grid">
         <article class="week-card">
           <h3>Wochenpuls</h3>
@@ -7807,6 +7876,22 @@ def render_radar_section(
 """
 
 
+def week_cut_note(entries: list[dict[str, Any]], where: str, scope: str) -> str:
+    """The note of a week's sittings whose Protokoll file stops partway (E16):
+    their Reden after the cut are missing ``where``. As in DATA.md and on the
+    Daten page, the count is a floor where DIP lists Reden a cut cannot place
+    or has not indexed one of the sittings. Empty without a cut sitting."""
+    cuts = [(sitting_label(entry), pulse_html.report_cut(entry.get("report") or {})) for entry in entries]
+    cuts = [(number, cut) for number, cut in cuts if cut]
+    if not cuts:
+        return ""
+    unindexed = [number for number, cut in cuts if not cut["indexed"]]
+    sentence = pulse_html.cut_gap_sentence(
+        [number for number, _cut in cuts], sum(cut["reden"] for _number, cut in cuts), None, where, scope=scope,
+        unindexed=unindexed, floor=bool(unindexed) or any(cut["unplaced_reden"] for _number, cut in cuts))
+    return f'<p class="week-note week-cut">{pulse_html.esc(sentence)}</p>'
+
+
 def render_front_page(
     entries: list[dict[str, Any]],
     database_href: str | None = "data/bundestag-pulse.sqlite",
@@ -7890,18 +7975,7 @@ def render_front_page(
             f'<p class="week-note">{pulse_html.format_count(len(undated), "neuere Sitzung", "neuere Sitzungen")} '
             "ohne Datum nicht ber&uuml;cksichtigt</p>"
         )
-    # A sitting of the week whose Protokoll file stops partway (E16): its Reden
-    # after the cut are in neither Redeanteil nor Rangfolge, so the week says so.
-    cuts = [(sitting_label(entry), pulse_html.report_cut(entry.get("report") or {})) for entry in week_entries]
-    cuts = [(number, cut) for number, cut in cuts if cut]
-    if cuts:
-        undated_note += (
-            '<p class="week-note week-cut">' + pulse_html.esc(pulse_html.cut_gap_sentence(
-                [number for number, _cut in cuts], sum(cut["reden"] for _number, cut in cuts), None,
-                "in Redeanteil und Rangfolge dieser Woche", scope="dieser Woche",
-                unindexed=[number for number, cut in cuts if not cut["indexed"]],
-                floor=any(cut["unplaced_reden"] for _number, cut in cuts))) + "</p>"
-        )
+    undated_note += week_cut_note(week_entries, "in Redeanteil und Rangfolge dieser Woche", "dieser Woche")
     # The planned Sitzungswochen (data/sitzungskalender.json). Without a cache, or with
     # no planned week from the shown week on, the line, its style and its script are
     # all empty strings and the page is byte-identical to one built without them.
@@ -9898,17 +9972,22 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
     # What DIP lists in the part a cut Protokoll file does not print (E16), per
-    # MP and kind: named on a profile page, never added to its counts. A sitting
-    # whose cut leaves DIP Reden unplaced may hold more of the person's.
+    # MP and kind: named on a profile page, never added to its counts.
     unprinted_by_mp: dict[str, list[tuple[str, str, str]]] = {}
-    unplaced_sittings: set[str] = set()
     for row in conn.execute(
-        "SELECT u.mp_id, u.kind, p.document_number, p.date, p.xml_cut_unplaced_reden FROM unprinted_contributions u "
+        "SELECT u.mp_id, u.kind, p.document_number, p.date FROM unprinted_contributions u "
         "JOIN protocols p ON p.id = u.protocol_id WHERE u.mp_id IS NOT NULL ORDER BY p.date, p.document_number, u.id"
     ):
         unprinted_by_mp.setdefault(row["mp_id"], []).append((row["kind"], row["document_number"], row["date"] or ""))
-        if row["xml_cut_unplaced_reden"]:
-            unplaced_sittings.add(row["document_number"])
+    # Cut sittings that may hold more of anyone's: DIP has not indexed them
+    # (NULL, "unindexed") or lists Reden at the cut that it cannot place.
+    open_cuts = [
+        (row["document_number"], row["date"] or "", row["xml_cut_unplaced_reden"] is None)
+        for row in conn.execute(
+            "SELECT document_number, date, xml_cut_unplaced_reden FROM protocols "
+            "WHERE xml_cut = 1 AND (xml_cut_unplaced_reden IS NULL OR xml_cut_unplaced_reden > 0)"
+        )
+    ]
 
     contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
@@ -9923,9 +10002,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     votes_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
         """
-        SELECT vm.mp_id, vm.vote, v.id AS vote_id, v.date, v.title, v.topic, v.detail_url
+        SELECT vm.mp_id, vm.vote, v.id AS vote_id, v.date, v.title, v.topic, v.detail_url,
+               p.document_number
         FROM vote_members vm
         JOIN votes v ON vm.vote_id = v.id
+        LEFT JOIN protocols p ON p.id = v.protocol_id
         WHERE vm.mp_id IS NOT NULL
         ORDER BY v.date DESC
         """
@@ -9938,6 +10019,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 "title": row["title"],
                 "topic": row["topic"],
                 "detail_url": row["detail_url"],
+                "document_number": row["document_number"],
             }
         )
 
@@ -9996,16 +10078,6 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             for kind, n in contributions_by_mp.get(r["id"], {}).items():
                 contribution_counts[kind] = contribution_counts.get(kind, 0) + n
 
-        unprinted_rows = [unit for r in members for unit in unprinted_by_mp.get(r["id"], [])]
-        unprinted = None
-        if unprinted_rows:
-            unprinted = {
-                "rede": sum(1 for kind, _n, _d in unprinted_rows if kind == "rede"),
-                "zu_protokoll": sum(1 for kind, _n, _d in unprinted_rows if kind == "zu_protokoll"),
-                "sittings": [number for number, _date in sorted({(n, d) for _k, n, d in unprinted_rows}, key=lambda nd: (nd[1], nd[0]))],
-                "floor": any(n in unplaced_sittings for _k, n, _d in unprinted_rows),
-            }
-
         # Pool votes, de-duplicated by vote id (the same vote can be reachable
         # through more than one row), then tally the directions for the header.
         merged_votes: list[dict[str, Any]] = []
@@ -10032,6 +10104,32 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             for r in members
             for unit in (*speeches_by_mp.get(r["id"], []), *contribution_links_by_mp.get(r["id"], []))
         ]
+        # The DIP roster's periods of this person as an MdB; who is a member now
+        # is derived from them below.
+        roster_wahlperioden = sorted({
+            int(number) for r in members if r["is_mdb"]
+            for number in _parse_listish(r["wahlperiode"]) if str(number).isdigit()
+        })
+        # A profile page with unprinted rows also names the open cut sittings of
+        # the Wahlperioden the person belongs to, and calls its count a floor.
+        unprinted_rows = [unit for r in members for unit in unprinted_by_mp.get(r["id"], [])]
+        unprinted = None
+        if unprinted_rows:
+            dated = {number: day for _kind, number, day in unprinted_rows}
+            periods = {_protocol_wahlperiode(number) for number in dated}
+            periods.update(_protocol_wahlperiode(unit["document_number"]) for unit, _ in spoken)
+            periods.update(_protocol_wahlperiode(vote["document_number"]) for vote in merged_votes
+                           if vote["document_number"])
+            periods.update(map(str, roster_wahlperioden))
+            open_here = [cut for cut in open_cuts if _protocol_wahlperiode(cut[0]) in periods]
+            dated.update((number, day) for number, day, _unindexed in open_here)
+            unprinted = {
+                "rede": sum(1 for kind, _n, _d in unprinted_rows if kind == "rede"),
+                "zu_protokoll": sum(1 for kind, _n, _d in unprinted_rows if kind == "zu_protokoll"),
+                "sittings": sorted(dated, key=lambda number: (dated[number], number)),
+                "floor": bool(open_here),
+                "unindexed": sorted(number for number, _day, unindexed in open_here if unindexed),
+            }
         sprechrollen = Counter(unit["sprechrolle"] for unit, _ in spoken if unit.get("sprechrolle"))
         counted_for = {
             None if unit.get("sprechrolle") else (unit.get("fraktion") or r.get("party"))
@@ -10062,12 +10160,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "bundesland": first("bundesland"),
             "aw_politician_id": first("aw_politician_id"),
             "is_mdb": any(r["is_mdb"] for r in members),
-            # The periods the DIP roster lists this person as an MdB in; who is
-            # a member now is derived from them below.
-            "roster_wahlperioden": sorted({
-                int(number) for r in members if r["is_mdb"]
-                for number in _parse_listish(r["wahlperiode"]) if str(number).isdigit()
-            }),
+            "roster_wahlperioden": roster_wahlperioden,
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
@@ -10628,7 +10721,7 @@ def render_abgeordnete_detail(
     unprinted_note = (
         '<p class="cut-note">' + pulse_html.esc(pulse_html.cut_gap_sentence(
             unprinted["sittings"], unprinted["rede"], unprinted["zu_protokoll"], "auf dieser Seite",
-            floor=unprinted["floor"])) + "</p>"
+            floor=unprinted["floor"], unindexed=unprinted["unindexed"])) + "</p>"
         if unprinted else ""
     )
     domains = publication_domains or {}
@@ -11241,7 +11334,10 @@ def _render_fact_sources(
             name = mp.get("display_name") or "Unbekannt"
             name_html = f'<a href="{pulse_html.esc(mp_href)}">{pulse_html.esc(name)}</a>' if mp_href else pulse_html.esc(name)
             bits.insert(0, name_html)
-        if receipt["entity_kind"] == "protocol" and citation.get("sitting_end_corrected"):
+        # The corrected end is the cited sitting's alone, and belongs only on a Fakt whose metric reads the end.
+        if (receipt["entity_kind"] == "protocol" and citation.get("sitting_end_corrected")
+                and document_number == citation.get("document_number")
+                and facts.SITZUNG_END_SQL in facts.REGISTRY_BY_ID[row["metric_id"]]["sql"]):
             bits.append(_corrected_end_text(document_number, citation))
         if receipt["entity_kind"] == "vote":
             vote_url = pulse_html.safe_href(receipt.get("official_url"))
@@ -15691,15 +15787,17 @@ def main() -> int:
         } | {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])}
         listed -= included
         if getattr(args, "backfill_incomplete", False):
+            kept = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed]
             try:
                 stored_entries = load_existing_detail_entries(output_dir, protocols)
+                # Without the excluded sittings: a damaged file of one does not stop the run.
+                replaced, deferred = replaced_cut_files(output_dir, stored_entries, kept)
             except CachedReportError as exc:
                 print(f"ERROR [cached input]: {exc}. {backfill_report_fix(exc)}", file=sys.stderr)
                 return 1
-            replaced = replaced_cut_files(output_dir, stored_entries, protocols)
             acquisition_scope, waiting, vote_only, structural, withheld = incomplete_sitting_protocols(
                 stored_entries,
-                [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
+                kept,
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
                 wahlperiode=protocol_wahlperiode,
@@ -15714,7 +15812,9 @@ def main() -> int:
                     f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
                     file=sys.stderr,
                 )
-            for line in unacquirable_lines(withheld, stored_entries, replaced):
+            # --dossier-document-number fetches its sittings whatever the selection says.
+            deferred -= {normalized_document_number(n) for n in args.dossier_document_number}
+            for line in unacquirable_lines(withheld, stored_entries, replaced, acquisition_scope, deferred):
                 print(line, file=sys.stderr)
             if vote_only:
                 print(

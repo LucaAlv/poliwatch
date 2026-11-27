@@ -1870,7 +1870,9 @@ def cut_gap_sentence(
     many Reden (and, where ``zu_protokoll`` is not None, Reden zu Protokoll) DIP
     lists in the part the file does not print, and ``where`` they are missing.
     ``unindexed`` names sittings DIP has not indexed yet, whose count is open;
-    ``floor``, that DIP lists Reden a cut cannot place, so ``reden`` is a floor."""
+    ``floor``, that DIP lists Reden a cut cannot place or has not indexed one
+    of ``sittings``, so ``reden`` is a floor, and a floor of 0 an open count.
+    With ``unindexed``, ``zu_protokoll`` is a floor too."""
     numbers = sorted(dict.fromkeys(str(n) for n in sittings), key=_sitting_order)
     if len(numbers) == 1:
         head = f"In Sitzung {numbers[0]}"
@@ -1882,15 +1884,23 @@ def cut_gap_sentence(
     open_ = sorted(dict.fromkeys(str(n) for n in unindexed), key=_sitting_order)
     if open_ and len(open_) == len(numbers):
         return f"{head} endet die Protokolldatei vorzeitig; was fehlt, hat DIP noch nicht erfasst."
-    parts = []
-    if reden or not zu_protokoll or floor:
-        parts.append(("mindestens " if floor else "") + format_count(reden, "Rede", "Reden"))
-    if zu_protokoll:
-        parts.append(format_count(zu_protokoll, "zu Protokoll gegebene Rede", "zu Protokoll gegebene Reden"))
-    # None: the caller names Reden only (Redeanteil counts no Beitrag), so none are added.
-    verb = "fehlt" if reden + (0 if zu_protokoll is None else zu_protokoll) == 1 else "fehlen"
     tail = f", und {', '.join(open_)} hat DIP noch nicht erfasst" if open_ else ""
-    return f"{head} endet die Protokolldatei vorzeitig; {' und '.join(parts)} laut DIP {verb} {where}{tail}."
+    if floor and not reden and not zu_protokoll:
+        return f"{head} endet die Protokolldatei vorzeitig; wie viele Reden {where} fehlen, ist offen{tail}."
+    parts = []
+    if reden:
+        parts.append(("mindestens " if floor else "") + format_count(reden, "Rede", "Reden"))
+    elif not zu_protokoll:
+        parts.append("keine Rede")
+    if zu_protokoll:
+        # An unindexed sitting may hold more of these too; a Rede DIP cannot place is a spoken one.
+        parts.append(("mindestens " if open_ else "") + format_count(
+            zu_protokoll, "zu Protokoll gegebene Rede", "zu Protokoll gegebene Reden"))
+    # None: the caller names Reden only (Redeanteil counts no Beitrag), so none are added.
+    count = reden + (0 if zu_protokoll is None else zu_protokoll)
+    verb = "fehlt" if count in (0, 1) else "fehlen"
+    open_reden = "; ob auch Reden fehlen, ist offen" if floor and not reden else ""
+    return f"{head} endet die Protokolldatei vorzeitig; {' und '.join(parts)} laut DIP {verb} {where}{open_reden}{tail}."
 
 
 def report_cut(report: dict[str, Any]) -> dict[str, Any] | None:
@@ -1951,7 +1961,8 @@ def render_cut_gap(report: dict[str, Any]) -> str:
             missing += (f" {format_count(cut['unplaced_reden'], 'weitere Rede', 'weitere Reden')} nennt DIP an der Stelle "
                         "des Abbruchs, ohne dass sich sagen lässt, ob sie davor oder danach liegen.")
     href = pdf_page_href(protocol, page)
-    link = (f'<p><a href="{esc(href)}">Im PDF ab Seite {esc(page)} ↗</a></p>' if href and page else
+    # "ab Seite" only where the link opens there: without a readable start page the href is the bare PDF.
+    link = (f'<p><a href="{esc(href)}">Im PDF ab Seite {esc(page)} ↗</a></p>' if href and "#page=" in href else
             f'<p><a href="{esc(href)}">Vollständiges Protokoll als PDF ↗</a></p>' if href else "")
     rows = []
     for entry in cut.get("entries") or []:

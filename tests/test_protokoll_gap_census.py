@@ -121,9 +121,12 @@ class ProtokollGapCensusTests(unittest.TestCase):
         self.assertEqual((len(rows), sum(int(row['dip_reden_danach']) for row in rows),
                           sum(int(row['fehlend_zu_protokoll']) for row in rows)), (33, 1189, 429))
         methods = (_support.ROOT / 'docs' / 'data-methods.md').read_text(encoding='utf-8')
-        section = methods[methods.index('**Abgebrochene Protokolldateien.**'):methods.index('In der 18. Wahlperiode druckt')]
+        # Through the E17 paragraph, which reconciles the Reden zu Protokoll with DIP: its totals move with the next
+        # cut sitting too (4.599 DIP, 4.174 stored, 429 on 2026-11-26).
+        section = methods[methods.index('**Abgebrochene Protokolldateien.**'):methods.index('## Personen und Abstimmungen')]
+        self.assertIn('In der 18. Wahlperiode druckt', section)
         self.assertNotRegex(section, r'(?m)^\|')
-        self.assertNotRegex(section, r'\b(33|1\.189|429)\b')
+        self.assertNotRegex(section, r'\b(33|1\.189|429|4\.599|4\.174)\b')
 
 if __name__ == '__main__':
     unittest.main()
