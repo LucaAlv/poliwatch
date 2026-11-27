@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.46.60.0] - 2026-11-27
 
-The release export no longer holds the Fakt der Woche tables (decision Q5). The build store keeps them, and the Fakt pages on the site stay as they are. Export format 29; store schema 17 is unchanged and no replay is needed.
+The release export no longer holds the Fakt der Woche tables (decision Q5). The build store keeps them, and the Fakt pages on the site stay as they are. Export format 29; store schema 17 is unchanged and no replay is needed. On the 806-sitting store the export goes from 37 to 34 tables, 36 to 33 table CSVs, 1,372,489 to 1,367,645 rows (the 8 + 1,944 + 2,892 facts rows) and 52 to 50 relationships; the other 34 tables hold the same rows, no figure on the site moves, and only the Daten page changes.
 
 ### Changed
 
