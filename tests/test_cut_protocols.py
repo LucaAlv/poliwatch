@@ -267,6 +267,31 @@ class ProtocolCutTests(unittest.TestCase):
         self.assertEqual([cut.after_cut(place, (12, "")) for place in ((12, "D"), (12, ""), (13, ""), (11, "D"))],
                          [False, False, True, False])
 
+    # Value: protects=a DIP Aktivität that gives its place in anfangsseite and anfangsquadrant (no seite) is placed by
+    #   them, and one with a page alone has no quadrant; fails_when=such an entry has no page and is never shown to lie
+    #   after the cut, or is listed with a guessed quadrant; why_new=TODOS cut-protocols item 8 (coverage); seam=parser
+    def test_a_dip_place_from_the_separate_page_and_quadrant_fields(self):
+        separate = [*ACTIVITIES,
+                    {"id": "f1", "aktivitaetsart": "Rede", "titel": "Fritz Fink, MdB, SPD", "person_id": "17",
+                     "fundstelle": {"anfangsseite": "14", "anfangsquadrant": "c"}},
+                    {"id": "f2", "aktivitaetsart": "Rede", "titel": "Gerd Gans, MdB, SPD", "person_id": "18",
+                     "fundstelle": {"anfangsseite": "15"}}]
+        entries = cut.protocol_cut(parsed(NOTICE_READ), separate)["entries"]
+        self.assertEqual([(e["dip_activity_id"], e["page"], e["quadrant"]) for e in entries if e["kind"] == "rede"],
+                         [("a4", 12, "C"), ("a5", 13, "A"), ("f1", 14, "C"), ("f2", 15, None)])
+
+    # Value: protects=rule 3 needs both of its counts at RULE3_MIN: 4 DIP Reden after the last <rede>, or 4 more than the
+    #   file prints, is no evidence; fails_when=a whole file with a few late DIP Reden stops the gate; why_new=TODOS
+    #   cut-protocols item 8 (coverage); seam=parser
+    def test_rule_3_needs_both_counts_at_its_threshold(self):
+        root = protocol_root(notice="")
+        before = [activity(f"b{n}", "Rede", f"Before Page{n}, MdB", "11A") for n in range(6)]
+        after = [activity(f"l{n}", "Rede", f"Later Page{n}, MdB", "13A") for n in range(6)]
+        self.assertIsNone(cut.unmarked_cut_evidence(root, [*before, *after[:4]], 0))
+        self.assertIsNone(cut.unmarked_cut_evidence(root, after, 2))
+        self.assertEqual(cut.unmarked_cut_evidence(root, after[:5], 0),
+                         {"last_rede_id": "ID2", "dip_reden_after": 5, "dip_reden_more": 5})
+
     def test_rule_3_counts_only_later_pages_without_a_quadrant(self):
         root = protocol_root(notice="", toc=xref("ID1", 10, "A") + xref("ID2", 12, ""))
         same_page = [activity(f"s{n}", "Rede", f"Same Page{n}, MdB", "12C") for n in range(6)]
@@ -336,6 +361,30 @@ class ParsedReportTests(unittest.TestCase):
         self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))
         self.assertEqual((summary["protocol_cut"]["page"], summary["protocol_cut"]["quadrant"]), (103, "B"))
         self.assertEqual([e["dip_activity_id"] for e in summary["protocol_cut"]["entries"]], ["x1"])
+
+    # Value: protects=an online build records the cut, the rule's version and its count of printed Reden from DIP's
+    #   Aktivitäten, as the offline re-parse does; fails_when=an online build leaves the cut keys out and the sitting
+    #   is re-read on every replay, or gate rule 3 finds no count; why_new=TODOS cut-protocols item 8 (coverage), R1;
+    #   seam=fetch_text and enrich_with_api stubbed; no_claim=build_report's refusal of a cut the rule cannot read
+    #   (session 2's change)
+    def test_an_online_build_records_the_cut_the_rule_version_and_the_printed_reden(self):
+        import io
+        from types import SimpleNamespace
+
+        def enrich(client, protocol, parsed_xml, *args, **kwargs):
+            return {"agenda_items": [{**top, "api": dip.no_api_fields()} for top in parsed_xml["agenda_items"]],
+                    "api_totals": {}, "api_records": {"aktivitaeten": copy.deepcopy(CUT_AKTIVITAETEN)}, "warnings": [],
+                    "sampled_people": [], "sitting_votes": [], "acquisition": {}}
+
+        protocol = {"id": "p1", "dokumentnummer": "20/999",
+                    "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/20/20999.xml"}}
+        args = SimpleNamespace(api_key="test", sleep=0, person_limit=0, vote_scan_pages=0, limit_tops=None)
+        with mock.patch.object(dip, "fetch_text", return_value=cut_fixture_xml()), \
+                mock.patch.object(dip, "enrich_with_api", side_effect=enrich), mock.patch("sys.stderr", new_callable=io.StringIO):
+            summary = dip.build_report(args, protocol)["validation_summary"]
+        self.assertEqual((summary["cut_rule_version"], summary["printed_reden"]), (cut.CUT_RULE_VERSION, 3))
+        self.assertEqual(([e["dip_activity_id"] for e in summary["protocol_cut"]["entries"]],
+                          summary["protocol_cut"]["unplaced_reden"]), (["x1", "x2"], 0))
 
     def test_a_whole_file_records_no_cut(self):
         parsed = dip.parse_protocol_xml((_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8"))
@@ -601,6 +650,19 @@ class ReviewedEndTimesListTests(unittest.TestCase):
             with self.subTest(broken=broken), self.assertRaises(reviewed_end_times.ReviewedEndTimesError):
                 reviewed_end_times.check(broken)
         self.assertFalse(issubclass(reviewed_end_times.ReviewedEndTimesError, ValueError))
+
+    # Value: protects=a missing, unreadable or malformed list stops the run with a ReviewedEndTimesError naming the
+    #   file, never a raw OSError or a list read as empty; fails_when=a deleted list silently drops the four corrected
+    #   ends, or a traceback replaces the fix; why_new=TODOS cut-protocols item 8 (coverage); seam=list
+    def test_a_missing_unreadable_or_malformed_list_refuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "binary.json").write_bytes(b'{"entries": ["\xff"]}')
+            (folder / "broken.json").write_text('{"entries": [', encoding="utf-8")
+            for name, message in (("absent.json", "is missing; it is checked in"), (".", "cannot be read"),
+                                  ("binary.json", "cannot be read"), ("broken.json", "is not valid JSON")):
+                with self.subTest(name), self.assertRaisesRegex(reviewed_end_times.ReviewedEndTimesError, message):
+                    reviewed_end_times.load(folder / name)
 
     def test_a_repeated_sitting_and_an_end_equal_to_the_xml_refuse(self):
         with self.assertRaisesRegex(reviewed_end_times.ReviewedEndTimesError, "twice"):
@@ -957,6 +1019,18 @@ class GateTests(unittest.TestCase):
 
     # Value: protects=the corrected end times hold in the store and against DIP's pdf_hash; fails_when=a PDF replaced
     #   since the reading goes unnoticed, or the column holds a time no entry gives; why_new=step 6 (3b); seam=gate
+    # Value: protects=without a cached catalog check 9 still names each entry's pdf_md5 as unconfirmed, with "(none)"
+    #   for the catalog's hash; fails_when=a missing catalog passes check 9 or prints an empty hash; why_new=TODOS
+    #   cut-protocols item 8 (coverage); seam=gate
+    def test_without_a_catalog_the_end_time_check_names_no_hash(self):
+        entries = reviewed_end_times.check({"entries": [end_entry()]})
+        with reviewed_end_times.using(entries):
+            output, database = self.output(cut_fixture_xml(), timed_report())
+        (output / "data" / "plenarprotokoll-catalog.json").unlink()
+        with mock.patch.object(gate.reviewed_end_times, "load", return_value=entries):
+            self.assertIn("20/999: pdf_md5 8eea57bbf4299710b4dabd82d557abfb is not the catalog's pdf_hash (none): "
+                          "read the PDF again", " ".join(gate.end_time_check(output, database)["problems"]))
+
     def test_the_end_time_entries_hold_against_the_store_and_the_catalog(self):
         entries = reviewed_end_times.check({"entries": [end_entry()]})
         catalog = [{"dokumentnummer": "20/999", "pdf_hash": "8eea57bbf4299710b4dabd82d557abfb"}]
