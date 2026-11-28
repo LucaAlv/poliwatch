@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.63.0] - 2026-11-28
+
+A Protokoll file that stops before its sitting ends is now named where a reader meets it. The Wochenvergleich says which of the earlier week's sittings are cut, and a Personenseite with unprinted Reden also names the open cut sittings of that person's Wahlperioden. The backfill no longer fetches the same cut file again on every run when DIP's server hands out an older copy than its catalog lists. On the 806-sitting replay no figure moves (0 of 1,944 Fakten, every table row equal), the cut snapshot is unchanged, and the store gate passes. Of the pages, only Puls gains a sentence: KW 45/2026 is compared against sitting 21/105, whose file ends early and leaves out 20 Reden DIP lists. `data/abgeordnete.json` gains an empty `unprinted.unindexed` list on each of the 640 persons with a note. Schema, export format and cut rule are unchanged; no replay is needed.
+
+### Added
+
+- **The Wochenvergleich names the earlier week's cut sittings** and how many Reden DIP lists that their files leave out. A count of zero reads "keine Rede", and a sitting DIP has not indexed yet makes the week's count a floor.
+- **A Personenseite that lists unprinted Reden also names the open cut sittings of the person's Wahlperioden:** those DIP has not indexed and those with Reden DIP cannot place. The sittings a person voted in stay out of `data/abgeordnete.json`.
+
+### Changed
+
+- **A cut file whose fetch gave another copy than DIP lists is fetched again after seven days,** not on every backfill, while DIP still lists the same hash. The backfill names those sittings on a line of their own, and its "acquiring again" line counts only the sittings that run fetches. The cached report keeps the listed hash and the time of the fetch.
+- **"Im PDF ab Seite N" appears only where the link opens the PDF at that page,** and a Fakt's corrected sitting end appears only on the receipt of the sitting it cites, for a Fakt that reads the end.
+
+### Fixed
+
+- **A Protokoll file the cut rule cannot judge is refused with its own fix text,** online and on the replay, instead of stopping the run with a traceback.
+- **A damaged cached XML of a cut sitting stops the backfill and is named,** instead of being read with replaced characters. An excluded sitting's file is no longer read.
+- **The census of the Protokoll gap prints an unknown value as empty,** not 0, and reads page numbers DIP gives as text. Its output on the 806 sittings is unchanged.
+
 ## [0.46.62.0] - 2026-11-28
 
 The rule that decides whether a Protokoll file stops before its sitting ends now reads a withheld Rede for what it would be, and the store gate re-checks every cut sitting against that rule. On the 806-sitting replay the same 33 sittings stay marked, with the same 1,189 Reden and 429 Reden zu Protokoll listed after the cut, and no Rede, vote or Fakt moves (0 of 1,944 Fakten). Cut rule 4; schema and export format are unchanged. A store needs one `--offline --repersist`.
