@@ -116,7 +116,7 @@ class BudgetStuckSittingsAreNotRedownloadedTests(unittest.TestCase):
 
     def test_completeness_names_the_budget_that_was_not_enough(self) -> None:
         report = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_pages": 30}
+        report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_pages": 30}  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         state = facts.completeness_from_reports([report])["21/90"]
         self.assertEqual(state["reasons"]["votes"], "votes partial (scan_budget_exhausted after 30 pages)")
 
@@ -133,7 +133,7 @@ class BudgetStuckSittingsAreNotRedownloadedTests(unittest.TestCase):
 
     def test_backfill_at_the_same_budget_leaves_it_alone_and_a_larger_one_takes_it(self) -> None:
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
+        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
         catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
         same = build.incomplete_sitting_protocols([{"report": stuck}], catalog, scan_pages=30)
@@ -188,7 +188,7 @@ class NonConvergingGapsAreKnownTests(unittest.TestCase):
         # So it is a vote-only gap, and the votes-off hint applies.
         catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
+        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
         _acq, _wait, vote_only, structural, _withheld = build.incomplete_sitting_protocols([{"report": stuck}], catalog, votes=False, scan_pages=0)
         self.assertEqual(([p["dokumentnummer"] for p in vote_only], structural), (["21/1"], []))
@@ -371,11 +371,11 @@ class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
 
     def test_a_sitting_held_back_only_by_unmatched_votes_is_not_reacquired(self) -> None:
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("unmatched_candidate",), acquired_at=STAMP, attempted_at=STAMP))
-        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_end": "date_passed"}
+        stuck["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_end": "date_passed"}  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
         legacy = report_with(1, None)
         legacy["protocol"] = {"dokumentnummer": "21/2", "datum": "2026-06-12"}
-        legacy["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION}
+        legacy["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION}  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
         catalog = [
             {"id": "pp-2", "dokumentnummer": "21/2", "datum": "2026-06-12", "fundstelle": {"xml_url": "https://example.test/2.xml"}},
             {"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}},
@@ -410,7 +410,7 @@ class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
 class UnmatchedVotesHoldACachedReportBackTests(unittest.TestCase):
     def test_a_report_stamped_complete_that_records_unmatched_votes_is_not_complete(self) -> None:
         report = report_with(1, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_end": "date_passed",
+        report["validation_summary"] = {"xml_speech_count": 3, "withheld_rede_count": 0, "protocol_cut": None, "cut_rule_version": facts.protocol_cut.CUT_RULE_VERSION, "roll_call_scan_end": "date_passed",  # pregate-literal: CUT_RULE_VERSION=3 the 3 is a speech count; the version comes from the constant
                                         "unmatched_roll_call_vote_count": 2}
         state = facts.completeness_from_reports([report])["21/90"]
         self.assertFalse(state["votes"])

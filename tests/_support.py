@@ -48,7 +48,7 @@ def shipped_reviewed_units():
 def stamp_reviewed(report: dict) -> dict:
     """Give a hand-built report the reviewed digest a parse under the active list
     would record for its sitting, the vote-link inputs version and the cut rule
-    every parse records, unless it has them. Without them the report reads as
+    (with its count of printed Reden) every parse records, unless it has them. Without them the report reads as
     stale (build_dip_pulse_site.stale_causes, P3b, "votes" and "cut")."""
     import protocol_cut
     import vote_links
@@ -61,6 +61,9 @@ def stamp_reviewed(report: dict) -> dict:
     # Read under the current rule for cut Protokoll files, and whole (E16).
     summary.setdefault("cut_rule_version", protocol_cut.CUT_RULE_VERSION)
     summary.setdefault("protocol_cut", None)
+    # The rule's count of printed Reden, which gate rule 3 reads: a hand-built
+    # report withholds nothing, so it is the stored Reden.
+    summary.setdefault("printed_reden", summary.get("xml_speech_count", 0))
     return report
 
 

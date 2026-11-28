@@ -1022,6 +1022,29 @@ class WeekRadarHelperTests(unittest.TestCase):
         self.assertIn("Keine Reden im XML", markup)
         self.assertNotIn("siehe Beiträge", markup)
 
+    # Value: protects=a Rede's card never passes off other text as its printed paragraphs: the whole wording run
+    #   together, or the snippet's first 240 characters as the whole Rede; fails_when=either fallback returns;
+    #   why_new=no test rendered a record without paragraphs; seam=none
+    def test_a_rede_without_paragraphs_shows_no_text_of_its_own_making(self) -> None:
+        for record in ({"text": "Erster Absatz.\nZweiter Absatz.", "snippet": "Erster Absatz."},
+                       {"snippet": "Erster Absatz."}):
+            with self.subTest(record=sorted(record)):
+                item = {"index": 1, "heading": "Aktuelle Stunde",
+                        "xml_speakers": [{"rede_id": "R1", "sequence": 1, "speaker": {"display_name": "A B"}, **record}]}
+                markup = pulse_html.render_speech_details(item, pulse_html.item_stats(item))
+                self.assertIn("Dieser Bericht enthält keinen Redetext.", markup)
+                self.assertNotIn("Absatz.", markup)
+
+    # Value: protects=a Beitrag's card never shows its whole wording as one paragraph; fails_when=the text fallback
+    #   returns; why_new=the Rede's card is another function; seam=none
+    def test_a_beitrag_without_paragraphs_shows_no_text_of_its_own_making(self) -> None:
+        item = {"index": 1, "xml_contributions": [
+            {"kind": "befragung_frage", "rede_id": "R1", "sequence": 1, "speaker": {"display_name": "A B"},
+             "text": "Erster Absatz.\nZweiter Absatz.", "snippet": "Erster Absatz."}]}
+        markup = pulse_html.render_contribution_details(item, {"id": "1"})
+        self.assertIn('<details class="speech-card"', markup)
+        self.assertNotIn("Absatz.", markup)
+
     def test_a_top_says_what_was_said_there_that_is_no_rede(self) -> None:
         item = {"xml_contributions": [{"kind": "befragung_frage"}] * 2 + [{"kind": "befragung_antwort"}]}
         markup = pulse_html.render_top_contributions(item)

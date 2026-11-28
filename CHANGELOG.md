@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.62.0] - 2026-11-28
+
+The rule that decides whether a Protokoll file stops before its sitting ends now reads a withheld Rede for what it would be, and the store gate re-checks every cut sitting against that rule. On the 806-sitting replay the same 33 sittings stay marked, with the same 1,189 Reden and 429 Reden zu Protokoll listed after the cut, and no Rede, vote or Fakt moves (0 of 1,944 Fakten). Cut rule 4; schema and export format are unchanged. A store needs one `--offline --repersist`.
+
+### Fixed
+
+- **A withheld unit counts as a printed Rede only where it would be one.** A withheld question in a Befragung or another Beitrag no longer fills the count that makes a cut file look whole, a withheld Rede zu Protokoll matches DIP's entry like a stored one, and a unit nobody has reviewed yet counts as neither. On the replay 87 of the 99 withheld units would be a Rede and 12 a Beitrag, none of them in a cut sitting.
+- **Two Reden on the same page and quadrant are ordered as the sitting ran,** not by their ids as text, when the rule finds the last Rede a cut file prints.
+- **A DIP Aktivität without an id stops a cut sitting only where it could become an entry** (a Rede or a Rede zu Protokoll), not for any other kind DIP lists.
+- **A cut report read under an older rule no longer crashes the store write.** It is stored without its count of unplaced Reden and reads as stale until the replay.
+
+### Changed
+
+- **The store gate judges every marked sitting.** It re-runs the cut rule over each one's cached XML and DIP Aktivitäten and checks that the store holds what the rule gives: the count of unplaced Reden and each unprinted Rede with its DIP id, kind, person, page and quadrant. A marked sitting without a cached report, or a run that reads none, fails the gate.
+
+## [0.46.61.0] - 2026-11-28
+
+Block quotes in the Protokoll XML are now unwrapped in time linear in their number, and two shapes of quote that would lose or misplace words now refuse the sitting instead. A Rede's card no longer passes off other text as its printed paragraphs. On the 806-sitting store nothing moves: a replay of main against this release gives the same rows in every table, the same figures (0 of 1,944 Fakten, 0 of 736 votes, 0 protocols with a changed Rede) and the same pages apart from the build time. Speech rule, schema and export format are unchanged; no replay is needed.
+
+### Changed
+
+- **Unwrapping the `<zitat>` around a block quote takes linear time.** 50,000 quotes side by side under one element took about 25 seconds before and take 0.04 seconds now.
+- **The text after an empty `<zitat/>` stays where it stood** instead of being dropped with it.
+- **A `<zitat>` inside a `<p>` refuses the sitting,** as text in a `<zitat>` outside its paragraph already did: the XML has no such case to say whether the quote is a paragraph of its own. None of the 806 held sittings has either shape.
+
+### Removed
+
+- **A Rede's or Beitrag's card shows only the paragraphs the parser stored.** The fallbacks that showed the whole wording as one paragraph, or a Rede's 240-character snippet as the whole Rede, are gone; a Rede without paragraphs says that the report holds no Redetext. The parser writes paragraphs for every record, so no page changes.
+
+## [0.46.60.0] - 2026-11-27
+
+The release export no longer holds the Fakt der Woche tables (decision Q5). The build store keeps them, and the Fakt pages on the site stay as they are. Export format 29; store schema 17 is unchanged and no replay is needed. On the 806-sitting store the export goes from 37 to 34 tables, 36 to 33 table CSVs, 1,372,489 to 1,367,645 rows (the 8 + 1,944 + 2,892 facts rows) and 52 to 50 relationships; the other 34 tables hold the same rows, no figure on the site moves, and only the Daten page changes.
+
+### Changed
+
+- **`facts`, `fact_metrics` and `fact_sources` are gone from the SQLite file, the CSV downloads, `DATA.md` and the Daten page.** The export's schema hash changes with them.
+- **The Daten page says the download lacks the Fakt der Woche tables,** in its intro and in the transformation note (`transformation` in `datenstand.json`). The intro no longer calls the download the same data the site's views rest on.
+- **The codebook and the licence file name no table the export lacks.** Three texts about withheld Reden pointed at `facts.withheld`; that sentence is removed.
+## [0.46.59.0] - 2026-11-27
+
+Six Reden zu Protokoll get their bullet points back. In five Anlagen of the 18. and 19. Wahlperiode the Protokoll XML prints 24 list items of a written Rede loose after it, so they were stored nowhere. They now stand where the PDF prints them, inside their Rede. On the 806-sitting store these six Reden gain 549 words and 4,234 characters, for example Bahr (18/243) 345 → 503 words and Höferlin (19/104) 452 → 638. Reden (61,104), Reden zu Protokoll (4,174), withheld Reden (99), votes and all 1,944 Fakten are unchanged. Speech rule 18; schema and export format are unchanged. A store needs one `--offline --repersist`.
+
+### Fixed
+
+- **The bullet points of six written Reden are part of their text again**: Matthäus Strebl and Ralf Kapschack (18/136), Lothar Binding (18/206), Jürgen Klimke (18/209), Ulrike Bahr (18/243) and Manuel Höferlin (19/104). The reviewed list names each run and the paragraph the PDF prints it after, with the PDF page.
+- **A sitting whose Anlage of written Reden prints a text paragraph loose after a Rede is refused until the reviewed list places it**, so such words can no longer go missing unnoticed. Page scraps and first-edition notices stay outside, and so does an empty paragraph.
+- **One place in an Anlage can now hold several written Reden printed without a Rede of their own**, applied in the order the Protokoll prints them, and a Rede marker without a Redner-ID beside another writer's marker refuses the sitting instead of crashing.
+
 ## [0.46.58.0] - 2026-11-26
 
 Readers now see where a Bundestag Protokoll file stops before its sitting ends. In 33 sittings the XML is a first edition that was never replaced. A dossier, a Puls week, a Personenseite and the Daten page now say so, and they name what DIP lists in the unprinted part: 1,189 Reden and 429 Reden zu Protokoll on the 806-sitting store. None of these is counted in a figure. On the replay no stored figure, Rede, vote or Fakt moves (0 of 1,944 Fakten). Export format 28, schema 17, cut rule 3; a store needs one `--offline --repersist`.

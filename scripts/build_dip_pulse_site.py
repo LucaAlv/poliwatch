@@ -161,7 +161,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen, mündliche Erklärungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll und Prüfsumme der angewendeten Einträge der geprüften Liste; fehlende oder alte Version oder eine geänderte Liste verlangt einen expliziten XML-Replay.",
-    "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005). Nicht zu verwechseln mit zurückgehaltenen Fakten (facts.withheld).",
+    "withheld_units": "Zurückgehaltene Reden (ADR 0005): Reden, die der Parser wegen eines Beitrags eines anderen Redners nicht eindeutig lesen kann, oder Reden auf der geprüften Liste, je mit Grund, Redner wie gedruckt, Seite, eigenen Worten und Wortzahl. Sie stehen in keiner Zählung; nur Erste Reden bindet sie über die Redner-ID an Personen: Ist die erste Rede einer Person zurückgehalten, zählt sie in keiner Woche als Debüt (ADR 0005).",
     "unprinted_contributions": "Was DIP im Teil einer Sitzung nennt, den ihre abgebrochene Protokolldatei nicht druckt (protocols.xml_cut = 1): Reden nach der letzten gedruckten Rede und zu Protokoll gegebene Reden, die keiner gespeicherten entsprechen, je mit Redner wie DIP ihn nennt, Seite und DIP-Kennungen. Ohne Wortlaut und in keiner Zählung: Sie sind keine Reden des Datensatzes.",
     "withheld_turns": "Beiträge anderer Redner innerhalb einer zurückgehaltenen Rede, in Markerreihenfolge, mit Redner wie gedruckt, Wortzahl und Wortlaut; getrennt von den eigenen Worten des Redners in withheld_units.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, mündliche Erklärung (erklaerung), Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, Ansprache (ansprache) des Präsidiums oder eines Gastes, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
@@ -181,9 +181,6 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "person_bindings": "Dauerhafte Zuordnung einzelner Reden, Beiträge, MdB-Einträge und Abstimmungsmitglieder.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
-    "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
-    "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
-    "fact_sources": "Belege je Fakt: Reden, Tagesordnungspunkte, Abstimmungen, Sitzungen oder Drucksachen, aus denen der Wert stammt.",
 }
 
 # ---------------------------------------------------------------------------
@@ -3652,9 +3649,10 @@ def write_report_and_page(
 #
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
-# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), its
-# CSV.gz files, and the SQL "recipes" executed at build time so a visitor can
-# copy the SQL, run it against the file they just downloaded, and get the same
+# (without the Fakt der Woche tables, and with speeches.paragraphs_json dropped,
+# a duplicate of speeches.text), its CSV.gz files, and the SQL "recipes"
+# executed at build time so a visitor can copy the SQL, run it against the
+# file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
 # recipe rows, the schema cards - is read from one manifest (datenstand.json)
 # built by export_distribution_data(). The page itself never opens the build
@@ -3747,10 +3745,6 @@ _COLUMN_SOURCE_ABGEORDNETENWATCH = {
 }
 _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes", "mdb_zugehoerigkeiten",
                            "mdb_stammdaten_stand"}
-# The facts tables are computed by scripts/facts.py from the rest of the store,
-# so every one of their columns is "derived" - the fallback below would claim
-# DIP wrote them. Their captions for the Daten page are T7's.
-#
 # The Politikfeld tables are derived by scripts/politikfelder.py from DIP's
 # Sachgebiet labels (proceedings.sachgebiet, which is raw DIP data and so stays
 # "dip"); no model writes them. vote_proceedings is the same module's choice of
@@ -3768,7 +3762,6 @@ _TABLE_SOURCE_DERIVED = (
         # The local store's own schema version counter, not source data.
         "schema_migrations",
     }
-    | set(facts.FACTS_TABLES)
 )
 
 
@@ -3854,7 +3847,7 @@ LICENSE_LAYER_SOURCES = {
 }
 
 
-EXPORT_FORMAT = 28
+EXPORT_FORMAT = 29
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -4647,8 +4640,7 @@ def _load_data_dictionary(text: str, tables: list[dict[str, Any]]) -> dict[str, 
     unmapped = sorted(licenses.keys() - LICENSE_LAYER_SOURCES.keys())
     if unmapped:
         raise RuntimeError(f"export: data dictionary licence layers without allowed source tags: {', '.join(unmapped)}")
-    # The facts tables exist only once the facts engine has run on the store.
-    stale = sorted(dictionary.keys() - {table["name"] for table in tables} - set(facts.FACTS_TABLES))
+    stale = sorted(dictionary.keys() - {table["name"] for table in tables})
     if stale:
         raise RuntimeError(f"export: data dictionary describes tables no export has: {', '.join(stale)}")
     resolved = {}
@@ -5030,9 +5022,7 @@ def _codebook_withheld(coverage: dict[str, Any]) -> list[str]:
              "Person in unserer Abdeckung kann eine zurückgehaltene sein, gebunden über ihre Redner-ID an jede Person mit "
              "dieser ID; dann zählt diese Person in keiner Woche als Debütantin oder Debütant (ADR 0005, „Facts“). Eine "
              "Sitzung mit zurückgehaltenen Reden ist für Reden nicht vollständig erfasst: Jeder Fakt auf Basis der Reden "
-             "in ihrer Woche und ihrem Monat bleibt *unvollständig erfasst*. Nicht zu verwechseln mit einem "
-             "**zurückgehaltenen Fakt** (`facts.withheld`): einem Fakt, der nicht veröffentlicht wird, etwa weil eine "
-             "Sitzung seines Zeitraums fehlt, nicht vollständig erfasst ist oder Reden zurückhält.", "",
+             "in ihrer Woche und ihrem Monat bleibt *unvollständig erfasst*.", "",
              "Anteil = zurückgehaltene eigene Wörter / (eigene Wörter gespeicherter Reden + zurückgehaltene eigene "
              "Wörter); Wörter sind durch Leerraum getrennte Tokens. Beiträge anderer Redner in einer zurückgehaltenen "
              "Rede zählen nicht mit. `speeches.sequence` ist die Stelle der Rede im Tagesordnungspunkt; eine "
@@ -5437,6 +5427,11 @@ def _run_export(
         raise RuntimeError("export: the build store changed while it was copied; re-run the export")
 
     try:
+        # The Fakt der Woche tables stay in the build store (Q5,
+        # docs/plans/v1-scope-review.md). Child tables first; a store the facts
+        # engine never wrote has none. VACUUM INTO below leaves no dropped page.
+        for table in reversed(facts.FACTS_TABLES):
+            dist_conn.execute(f"DROP TABLE IF EXISTS {table}")
         # Direct exports and older SQLite stores may not have been migrated.
         if "paragraphs_json" in {row["name"] for row in dist_conn.execute("PRAGMA table_info(speeches)")}:
             dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
@@ -5667,7 +5662,8 @@ def _run_export(
         "tag": tag,
         "license": license_text,
         "issues_url": issues_url,
-        "transformation": "speeches.paragraphs_json entfernt (Duplikat von speeches.text, SQLite >= 3.35)",
+        "transformation": "speeches.paragraphs_json entfernt (Duplikat von speeches.text, SQLite >= 3.35); "
+                          "die Tabellen zum Fakt der Woche entfernt",
         "source_mtime_ns": source_stat.st_mtime_ns,
         "source_bytes": source_stat.st_size,
         "source_sha256": source_sha256,
@@ -6432,7 +6428,7 @@ def render_database_page(
         <div>
           <span class="eyebrow">Rohdaten</span>
           <h1>Daten</h1>
-          <p class="lede">Alle Personen, Reden, Vorgänge und namentlichen Abstimmungen, aus denen diese Website aufgebaut ist, als SQLite-Datei und als CSV &mdash; dieselben Daten, die hinter den Ansichten dieser Website stehen.</p>
+          <p class="lede">Alle Personen, Reden, Vorgänge und namentlichen Abstimmungen, aus denen diese Website aufgebaut ist, als SQLite-Datei und als CSV. Die Tabellen mit den berechneten Kennzahlen zum Fakt der Woche sind nicht enthalten.</p>
         </div>
         {downloads_html}
       </header>
@@ -15310,10 +15306,10 @@ def run_data_pipeline(
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
 
-    # Before the export, so the three facts tables are part of the store the
-    # export copies and hashes. A rebuild in this build already computed them
-    # for the same entries, catalog and date and hands over its report; only
-    # ``None`` (no rebuild ran) computes them here.
+    # Before the export: the engine writes the store the export hashes and
+    # copies (the export itself leaves the facts tables out). A rebuild in this
+    # build already computed them for the same entries, catalog and date and
+    # hands over its report; only ``None`` (no rebuild ran) computes them here.
     if database_path.exists():
         if facts_report is None:
             facts_report = run_facts_engine(

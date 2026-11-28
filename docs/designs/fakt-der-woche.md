@@ -5,7 +5,7 @@ Branch: main
 Repo: LucaAlv/poliwatch
 Status: APPROVED
 Mode: Builder
-Superseded in part: A4 slice 0 (v0.29.0.0) removed `--no-persist`; the passages that mention it describe the design as approved.
+Superseded in part: A4 slice 0 (v0.29.0.0) removed `--no-persist`; the passages that mention it describe the design as approved. Export format 29 (decision Q5, `docs/plans/v1-scope-review.md`) takes `facts`, `fact_metrics` and `fact_sources` out of the release export; the passages that call them downloadable describe the design as approved.
 
 ## Problem Statement
 

@@ -154,7 +154,7 @@ def check_sitting(xml_text: str, names: list[dict[str, str]] | None = None) -> d
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
     if names is None:
         names = [e for e in reviewed_units.for_sitting(sitting)
-                 if e["kind"] in reviewed_units.NAME_KINDS | reviewed_units.LOOSE_KINDS | {reviewed_units.ANNEX_REDE}]
+                 if e["kind"] in reviewed_units.NAME_KINDS | reviewed_units.LOOSE_KINDS | reviewed_units.ANNEX_KINDS]
     base = dip.parse_protocol_xml(xml_text, reviewed=list(names))
     result = {}
     for pick_set in PICK_SETS:
