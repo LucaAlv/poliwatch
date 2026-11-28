@@ -1372,6 +1372,16 @@ class PulsWeekFloorTests(unittest.TestCase):
                       "laut DIP fehlt in Redeanteil und Rangfolge dieser Woche, und 21/84 hat DIP noch nicht erfasst.", html)
 
 
+    # Value: protects=a week holding a cut sitting with Reden DIP lists but cannot place gives its count as a floor;
+    #   fails_when=week_cut_note drops the unplaced_reden term and the sentence states an exact count;
+    #   why_new=PulsWeekFloorTests covers only the unindexed cause of the floor; seam=none;
+    #   no_claim=the Daten page and DATA.md wording (separate renderers)
+    def test_unplaced_reden_make_the_weeks_count_a_floor(self):
+        html = front_page([week_entry("2026-06-11", "21/83", protocol_cut={**CUT, "unplaced_reden": 2})], (2026, 24))
+        self.assertIn("In Sitzung 21/83 endet die Protokolldatei vorzeitig; mindestens 1 Rede laut DIP fehlt in "
+                      "Redeanteil und Rangfolge dieser Woche.", html)
+
+
 class WeekComparisonCutTests(unittest.TestCase):
     """KW 24/2026 against KW 23/2026: the deltas shift by what the earlier week's cut files lack."""
 
