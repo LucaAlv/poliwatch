@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.61.0] - 2026-11-28
+
+Block quotes in the Protokoll XML are now unwrapped in time linear in their number, and two shapes of quote that would lose or misplace words now refuse the sitting instead. A Rede's card no longer passes off other text as its printed paragraphs. On the 806-sitting store nothing moves: a replay of main against this release gives the same rows in every table, the same figures (0 of 1,944 Fakten, 0 of 736 votes, 0 protocols with a changed Rede) and the same pages apart from the build time. Speech rule, schema and export format are unchanged; no replay is needed.
+
+### Changed
+
+- **Unwrapping the `<zitat>` around a block quote takes linear time.** 50,000 quotes side by side under one element took about 25 seconds before and take 0.04 seconds now.
+- **The text after an empty `<zitat/>` stays where it stood** instead of being dropped with it.
+- **A `<zitat>` inside a `<p>` refuses the sitting,** as text in a `<zitat>` outside its paragraph already did: the XML has no such case to say whether the quote is a paragraph of its own. None of the 806 held sittings has either shape.
+
+### Removed
+
+- **A Rede's or Beitrag's card shows only the paragraphs the parser stored.** The fallbacks that showed the whole wording as one paragraph, or a Rede's 240-character snippet as the whole Rede, are gone; a Rede without paragraphs says that the report holds no Redetext. The parser writes paragraphs for every record, so no page changes.
+
 ## [0.46.60.0] - 2026-11-27
 
 The release export no longer holds the Fakt der Woche tables (decision Q5). The build store keeps them, and the Fakt pages on the site stay as they are. Export format 29; store schema 17 is unchanged and no replay is needed. On the 806-sitting store the export goes from 37 to 34 tables, 36 to 33 table CSVs, 1,372,489 to 1,367,645 rows (the 8 + 1,944 + 2,892 facts rows) and 52 to 50 relationships; the other 34 tables hold the same rows, no figure on the site moves, and only the Daten page changes.

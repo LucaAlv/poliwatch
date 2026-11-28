@@ -5,6 +5,7 @@ Reden cut from Plenarprotokoll 21/84."""
 
 from __future__ import annotations
 
+import time
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -278,6 +279,31 @@ class BlockQuoteTests(unittest.TestCase):
                              "<zitat><zitat><p>4</p></zitat></zitat><zitat/><p>Nach.</p></rede>")
         dip.unwrap_quotes(root)
         self.assertEqual([child.text for child in root], ["Vor.", "1", "2", "3", "4", "Nach."])
+
+    # Value: protects=unwrapping stays linear in the quotes under one element; fails_when=each <zitat> is found,
+    #   removed or inserted by position again (20 s here before); why_new=no test had more than a few; seam=none
+    def test_many_quotes_under_one_element_unwrap_in_linear_time(self) -> None:
+        root = ET.fromstring("<rede>" + "".join(f'<zitat><p klasse="Z">{n}</p></zitat>' for n in range(50_000)) + "</rede>")
+        start = time.process_time()
+        dip.unwrap_quotes(root)
+        self.assertLess(time.process_time() - start, 3)
+        self.assertEqual([child.text for child in root], [str(n) for n in range(50_000)])
+
+    # Value: protects=unwrapping drops no words; fails_when=the text after an empty <zitat/> goes with it (first under its
+    #   parent, after a paragraph, several in a row, around a full quote); why_new=only blank tails were tested; seam=none
+    def test_the_text_after_an_empty_quote_stays_where_it_stood(self) -> None:
+        root = ET.fromstring('<rede><zitat/>a<p>B</p><zitat/>c<zitat/>d<zitat><p>E</p></zitat>f<zitat/>g<p>H</p></rede>')
+        dip.unwrap_quotes(root)
+        self.assertEqual([child.tag for child in root], ["p", "p", "p"])
+        self.assertEqual("".join(root.itertext()), "aBcdEfgH")
+
+    # Value: protects=a quote never becomes a paragraph inside a paragraph, its words read as the outer one's;
+    #   fails_when=a <zitat> under a <p> is unwrapped; why_new=new refusal, the XML has no such case to read it by; seam=none
+    def test_a_quote_inside_a_paragraph_refuses_the_sitting(self) -> None:
+        quote = '<zitat><p klasse="Z">1</p></zitat>'
+        for body in (f"<p>Er sagte: {quote}</p>", f"<p>A<fussnote>{quote}</fussnote></p>", "<p>Er sagte: <zitat>1</zitat></p>"):
+            with self.subTest(body=body), self.assertRaisesRegex(ValueError, "21/1: a <zitat> inside a <p>"):
+                dip.unwrap_quotes(ET.fromstring(f'<x wahlperiode="21" sitzung-nr="1"><rede>{body}</rede></x>'))
 
     # Value: protects=no quoted words are dropped unseen; fails_when=text directly in a <zitat> is lost; why_new=new
     #   rewrite of the tree; seam=none
