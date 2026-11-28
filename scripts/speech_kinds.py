@@ -263,10 +263,10 @@ def dip_typed_reden(report: dict[str, Any], listed: Any = frozenset()) -> list[d
       ``rede_id``.
 
     A unit and an Aktivität belong together by person (``_same_person``), page and
-    quadrant. Of the units of one person at one place, DIP's Aktivitäten of the types
-    the store keeps that way explain that many; only when more are stored than those
-    explain is each unlisted one named. A listed unit counts at its place but is never
-    named. DIP is a lead, not the verdict: the entry in ``reviewed_units.json`` is.
+    quadrant. At one place, each of DIP's Aktivitäten of the types the store keeps that
+    way explains one unit of its person (``_explained``); only when they explain fewer
+    units than are stored there is each unlisted unit named that a contradicting
+    Aktivität could belong to. A listed unit counts at its place but is never named. DIP is a lead, not the verdict: the entry in ``reviewed_units.json`` is.
     """
     activities = (report.get("api_records") or {}).get("aktivitaeten") or []
     acts: dict[tuple[int, str], list[tuple[tuple[str, frozenset[str]], str]]] = {}
