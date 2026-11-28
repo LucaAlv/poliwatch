@@ -776,8 +776,8 @@ def unacquirable_lines(
         lines.append(f"[backfill] not fetching {len(waits)} cut sitting(s) again yet: their last fetch, made while DIP "
                      "listed the same hash, gave a file with another one; the first backfill "
                      f"{CUT_REFETCH_DAYS} days after that fetch tries again ({_first_numbers(waits, 12)}).")
-    again = sorted(set(replaced) & {normalized_document_number(p.get("dokumentnummer")) for p in acquiring},
-                   key=_document_number_order)
+    acquired = {normalized_document_number(p.get("dokumentnummer")) for p in acquiring}
+    again = sorted(set(replaced) & acquired, key=_document_number_order)
     if again:
         lines.append(f"[backfill] acquiring {len(again)} cut sitting(s) again: DIP lists their XML with another hash "
                      "now, so the file may have been replaced, or the report was read from another file than the cached "
