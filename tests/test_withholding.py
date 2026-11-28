@@ -197,6 +197,9 @@ class ParserTests(unittest.TestCase):
             # ADR 0004: an unlisted presidium <rede> and an unlisted oath answer are undecided (R3).
             "unreviewed presidium": (sitting(rede("R1"), presidium), [], "unreviewed_presidium", "unreviewed"),
             "unreviewed oath": (sitting(rede("R1"), oath), [], "unreviewed_presidium", "unreviewed"),
+            # A withhold entry decides that the unit is withheld, not what it would be (Codex, /ship 2026-11-28).
+            "withheld presidium": (sitting(rede("R1"), presidium), [entry("R2", "P")], "reviewed", "unreviewed"),
+            "withheld oath": (sitting(rede("R1"), oath), [entry("R2")], "reviewed", "unreviewed"),
         }
         for label, (xml, reviewed, reason, would_be) in cases.items():
             with self.subTest(label):

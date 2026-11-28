@@ -2926,8 +2926,10 @@ def parse_protocol_xml(xml_text: str, reviewed: list[dict[str, str]] | None = No
                     raise reviewed_units.ReviewedUnitsError(
                         f"scripts/reviewed_units.json: {sitting} {rid} names Redner-ID {entry['redner_id']}, "
                         f"but the source's owner of {rid} is {owner}; the entry is stale or misapplied")
+                # The entry decides that the unit is withheld, not what it would be: a kind
+                # ADR 0004 says must be reviewed first stays undecided (``refused``).
                 withheld.append(withheld_record(rid, sequence, "reviewed", entry["reason"], redner, page_ref, own_text, nested,
-                                                would_be(label, rid in procedural_reden)))
+                                                would_be(label, rid in procedural_reden, refused.get(rid))))
                 record_status(statuses, rid, speech_kinds.WITHHELD_STATUS)
                 continue
             # Commit on finish (ADR 0005): the Rede's own units and diagnostics
