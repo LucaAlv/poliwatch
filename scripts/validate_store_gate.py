@@ -36,10 +36,14 @@ checks, in order:
    keys matching by heading and first page). The release condition over the
    store (every contested vote reviewed, docs/plans/vote-pr-c.md section 5) is
    reported, not failed: it stops ``--publish``, never a build.
-7. The Kinds (ADR 0002, amendment 2026-11-23): no stored Rede is a
-   Kurzintervention, an Erwiderung or an oral Erklärung in DIP unless the
-   reviewed list says it is a Rede (``dip_typed_reden``, which a tagged export
-   refuses too).
+7. The Kinds (ADR 0002, amendment 2026-11-23): no stored unit has another Kind
+   in DIP unless the reviewed list names it, and every sitting is one DIP has
+   indexed (``speech_kinds.dip_typed_reden``, which a tagged export refuses
+   too): no Rede is a Kurzintervention, an Erwiderung, an oral Erklärung or a
+   Rede zu Protokoll in DIP, no whole-``<rede>`` Befragung turn an Erklärung,
+   and no Kurzintervention, Erwiderung or Erklärung a Rede. It reads the
+   reports of the sittings the store holds, one at a time, and fails when it
+   reads none.
 8. The cut Protokoll files (E16, docs/plans/cut-protocols.md): a sitting is
    marked (``protocols.xml_cut``) only when its cached XML prints the notice of
    a first edition and the rule, re-run over that XML and its report's DIP
@@ -401,13 +405,31 @@ def reviewed_vote_link_check(database_path: Path, entries: list[reviewed_vote_li
                         "refusal_count": len(release["refusals"])}}
 
 
-def dip_typed_reden(output_dir: Path) -> list[dict[str, Any]]:
-    """Check 7, over the cached reports as the replay left them."""
+def dip_typed_check(output_dir: Path) -> dict[str, Any]:
+    """Check 7, over the cached reports of the sittings the store holds (less those
+    ``coverage-exclusions.json`` records), read one at a time: the reports read and
+    the named rows."""
     import build_dip_pulse_site as site
 
-    entries = [{"report": json.loads(path.read_text(encoding="utf-8"))}
-               for path in sorted((output_dir / "data").glob("plenarprotokoll-[0-9]*-[0-9]*.json"))]
-    return site.unlisted_dip_typed_reden(entries)
+    recorded = site.recorded_exclusions(output_dir)
+    read = 0
+
+    def reports() -> Any:
+        nonlocal read
+        for path in sorted((output_dir / "data").glob("plenarprotokoll-[0-9]*-[0-9]*.json")):
+            report = json.loads(path.read_text(encoding="utf-8"))
+            if site.normalized_document_number((report.get("protocol") or {}).get("dokumentnummer")) in recorded:
+                continue
+            read += 1
+            yield {"report": report}
+
+    rows = site.unlisted_dip_typed_reden(reports())
+    return {"reports": read, "rows": rows}
+
+
+def dip_typed_check_passes(result: dict[str, Any]) -> bool:
+    """Check 7 passes when it read a report and named no row."""
+    return result["reports"] > 0 and not result["rows"]
 
 
 def _recomputed_cut(number: str, text: str, aktivitaeten: Any) -> tuple[dict[str, Any] | None, str | None]:
@@ -870,8 +892,8 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
         checks["abweichler_count_matches_members"] = not receipt["abweichler_count_mismatches"]
         receipt["reviewed_vote_links"] = reviewed_vote_link_check(database_path, reviewed_vote_links.load())
         checks["reviewed_vote_links_hold"] = receipt["reviewed_vote_links"]["stale_count"] == 0
-        receipt["dip_typed_reden"] = dip_typed_reden(output_dir)
-        checks["no_unlisted_dip_typed_rede"] = not receipt["dip_typed_reden"]
+        receipt["dip_typed_reden"] = dip_typed_check(output_dir)
+        checks["no_unlisted_dip_typed_rede"] = dip_typed_check_passes(receipt["dip_typed_reden"])
         receipt["cut_protocols"] = cut_protocol_check(output_dir, database_path)
         checks["cut_protocols_hold"] = not receipt["cut_protocols"]["problems"]
         receipt["end_times"] = end_time_check(output_dir, database_path)

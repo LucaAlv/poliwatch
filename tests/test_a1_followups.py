@@ -635,6 +635,15 @@ class ReplayAndGuardTests(unittest.TestCase):
                 self.assertFalse(target.exists())
             conn.close()
 
+    # Value: protects=a Kind reads in lower case inside the TOP's summary line and capitalised where it opens a field; fails_when=the
+    #   line prints "1 Mündliche Erklärung" (TODOS item 10); why_new=label fix; seam=none
+    def test_a_kind_reads_in_lower_case_inside_a_sentence(self):
+        line = html.render_top_contributions({'xml_contributions': [{'kind': 'erklaerung'}, {'kind': 'zu_protokoll'}, {'kind': 'zu_protokoll'}]})
+        self.assertIn(': 1 mündliche Erklärung, 2 zu Protokoll gegebene Beiträge.', line)
+        panel = build.render_contributions_panel({'contribution_counts': {'erklaerung': 2, 'zu_protokoll': 1}})
+        self.assertIn('<span>Mündliche Erklärungen</span>', panel)
+        self.assertIn('<span>Zu Protokoll gegebene Beiträge</span>', panel)
+
     def test_bad_kind_and_fetch_inputs_fail_with_context(self):
         with self.assertRaisesRegex(ValueError, 'Unknown contribution kind'):
             html.render_top_contributions({'xml_contributions': [{'kind': 'bad'}]})

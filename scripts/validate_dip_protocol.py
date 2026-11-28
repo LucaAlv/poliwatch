@@ -1022,6 +1022,11 @@ def mark_listed_units(redes: list[ET.Element], entries: dict[str, dict[str, str]
         rede.set("listed_unit", entry["kind"])
 
 
+#: The id of a Rede the parser makes from a speaker marker: ``N<n>`` from a speaker
+#: printed as ``<name>``, ``M<n>`` from a marker outside any ``<rede>``.
+MADE_UP_REDE_ID_RE = re.compile(r"[NM][1-9]\d*")
+
+
 def join_own_words(top: ET.Element, entries: dict[str, dict[str, str]], matched: set[str],
                    statuses: dict[str, str], sitting: str, rid_pages: dict[str, dict[str, Any]],
                    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1055,6 +1060,11 @@ def join_own_words(top: ET.Element, entries: dict[str, dict[str, str]], matched:
                 f"{entry['redner_id']}; the entry is stale or misapplied")
         if any(part.get("reviewed_kind") or speech_kinds.presidium_owner(part) for part in (before, rede)):
             raise reviewed_units.ReviewedUnitsError(f"{where}: a presidium <rede> takes one of ADR 0004's kinds")
+        if MADE_UP_REDE_ID_RE.fullmatch(before.get("id") or ""):
+            # Neither the kept id (no other dataset has it) nor the rest's would be right without a rule; none is held.
+            raise reviewed_units.ReviewedUnitsError(
+                f"{where}: the first part, {before.get('id')}, is a Rede the parser made from a speaker marker; "
+                "a join keeps no made-up id")
         marker = rede.find("./p[@klasse='redner']/redner")
         split_part = ":" in (before.get("id") or "")
         page = reviewed_units.PAGE_RE.fullmatch(entry["page"])
@@ -1068,8 +1078,11 @@ def join_own_words(top: ET.Element, entries: dict[str, dict[str, str]], matched:
         if split_part:
             start = {"page": int(page.group(1)), "quadrant": page.group(2)}
             outer_page = rid_pages.get(raw_rede_id(before.get("id")))
-            if ((outer_page and page_sort_key(start) < page_sort_key(outer_page))
-                    or (rest_page and page_sort_key(start) > page_sort_key(rest_page))):
+            if not (outer_page and rest_page):
+                raise reviewed_units.ReviewedUnitsError(
+                    f"{where}: the Inhaltsverzeichnis gives no page for the <rede> the first part was split off or for the rest, "
+                    f"so page {entry['page']} cannot be checked")
+            if page_sort_key(start) < page_sort_key(outer_page) or page_sort_key(start) > page_sort_key(rest_page):
                 raise reviewed_units.ReviewedUnitsError(
                     f"{where}: page {entry['page']} is not between the <rede> the first part was split off and the rest")
             rid_pages[entry["rede_id"]] = start

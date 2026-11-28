@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.64.0] - 2026-11-28
+
+The check that compares each stored Rede and Beitrag with the kind DIP gives it now covers the cases it used to miss, and the store gate fails when it has nothing to check. It now also names a Kurzintervention, Erwiderung or Erklärung that DIP calls a Rede. On the 806 replayed sittings that found four: 18/54 Tauber, 19/165 Bystron, 19/179 Dehm and 19/200 Spaniel. In each, the chair's words give the kind the rules store, so each is now listed with that kind and no figure moves (0 of 1,944 Fakten, every table row equal). The store gate passes. On the pages, only the summary line under an agenda item changes, on 251 Protokoll pages: "mündliche Erklärung" and "zu Protokoll gegebener Beitrag" now read in lower case mid-sentence. Schema and export format are unchanged. The four sittings' cached reports read as stale until one `--offline --repersist`.
+
+### Changed
+
+- **A Rede is checked only against the DIP entries that describe a Rede.** A Zwischenfrage, a Frage or a written Erklärung of the same person on the same page no longer hides a Kurzintervention stored as a Rede. Each DIP entry now accounts for one stored unit, however the speaker's first name is printed. A namesake's entry accounts for nothing.
+- **More of the record is checked.** This covers a Rede DIP gives zu Protokoll, a Rede whose speaker is printed without a surname, a whole-speech Frage or Antwort in a Befragung that DIP calls an Erklärung, and a stored Kurzintervention, Erwiderung or Erklärung that DIP calls a Rede.
+- **A sitting DIP has not indexed yet is refused as unchecked** by the store gate and by a tagged export, instead of passing in silence. Each refusal names the entry that can list a unit, or says to refresh the sitting once DIP has indexed it. The store gate reads only the sittings the store holds, one at a time, and fails when it reads none.
+- **"mündliche Erklärung" and "zu Protokoll gegebener Beitrag" read in lower case inside a sentence** and keep their capital where they open a field or a card.
+
+### Fixed
+
+- **A Rede printed as two parts is refused when the first part's id was made up by the parser,** or when the table of contents gives no page for one of the two parts, instead of being joined with a wrong id or an unchecked page.
+
 ## [0.46.63.0] - 2026-11-28
 
 A Protokoll file that stops before its sitting ends is now named where a reader meets it. The Wochenvergleich says which of the earlier week's sittings are cut, and a Personenseite with unprinted Reden also names the open cut sittings of that person's Wahlperioden. The backfill no longer fetches the same cut file again on every run when DIP's server hands out an older copy than its catalog lists. On the 806-sitting replay no figure moves (0 of 1,944 Fakten, every table row equal), the cut snapshot is unchanged, and the store gate passes. Of the pages, only Puls gains a sentence: KW 45/2026 is compared against sitting 21/105, whose file ends early and leaves out 20 Reden DIP lists. `data/abgeordnete.json` gains an empty `unprinted.unindexed` list on each of the 640 persons with a note. Schema, export format and cut rule are unchanged; no replay is needed.

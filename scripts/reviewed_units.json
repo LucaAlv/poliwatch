@@ -2114,6 +2114,13 @@
       "reason": "DIP lists Rede zu Protokoll (p. 5049C); read 2026-11-23"
     },
     {
+      "sitting": "18/54",
+      "rede_id": "ID1805401800",
+      "redner_id": "11004174",
+      "kind": "erwiderung",
+      "reason": "DIP lists Rede (p. 4915B); read 2026-11-28: Tauber answers Höhn's Kurzintervention on his Rede, and the chair then calls Gabriel to the next Kurzintervention; an Erwiderung, as the rules store it"
+    },
+    {
       "sitting": "18/57",
       "rede_id": "ID1805703800",
       "redner_id": "11004611",
@@ -4666,6 +4673,13 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 20317C); read 2026-11-23"
     },
     {
+      "sitting": "19/165",
+      "rede_id": "ID1916507900",
+      "redner_id": "11004692",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Rede (p. 20554D); read 2026-11-28: Oppermann: \"Der Kollege Bystron erhält Gelegenheit zu einer Kurzintervention\"; as the rules store it"
+    },
+    {
       "sitting": "19/168",
       "rede_id": "ID1916801800",
       "redner_id": "11004817",
@@ -4708,6 +4722,13 @@
       "reason": "DIP lists Erklärung zur Aussprache (§ 30) (p. 21474C); read 2026-11-23"
     },
     {
+      "sitting": "19/179",
+      "rede_id": "ID1917902100",
+      "redner_id": "11000365",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Rede (p. 22558D); read 2026-11-28: the chair: \"Der Kollege Dehm erhält die Gelegenheit zu einer Kurzintervention\"; as the rules store it"
+    },
+    {
       "sitting": "19/191",
       "rede_id": "ID1919101700",
       "redner_id": "11004692",
@@ -4741,6 +4762,13 @@
       "redner_id": "11004191",
       "kind": "procedural",
       "reason": "acceptance of an election just announced (<rede> form)"
+    },
+    {
+      "sitting": "19/200",
+      "rede_id": "ID1920002900",
+      "redner_id": "11004899",
+      "kind": "kurzintervention",
+      "reason": "DIP lists Rede (p. 25175D); read 2026-11-28: the chair gives Spaniel the word \"für eine Kurzintervention\"; as the rules store it"
     },
     {
       "sitting": "19/201",

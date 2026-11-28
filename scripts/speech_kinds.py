@@ -114,19 +114,26 @@ WITHHELD_STATUS = "withheld"
 #: Fragestunde turn, which stands outside any ``<rede>``.
 NOT_REDE_KINDS = frozenset({ZWISCHENFRAGE, FRAGESTUNDE_FRAGE, FRAGESTUNDE_ANTWORT})
 
-#: How the pages word a Kind: (singular, plural).
+#: How the pages word a Kind inside a sentence: (singular, plural). Where a label opens
+#: a field or a card, ``label_start`` capitalises it.
 KIND_LABELS = {
     KURZINTERVENTION: ("Kurzintervention", "Kurzinterventionen"),
     ERWIDERUNG: ("Erwiderung", "Erwiderungen"),
-    ERKLAERUNG: ("Mündliche Erklärung", "Mündliche Erklärungen"),
+    ERKLAERUNG: ("mündliche Erklärung", "mündliche Erklärungen"),
     ZWISCHENFRAGE: ("Zwischenfrage", "Zwischenfragen"),
-    ZU_PROTOKOLL: ("Zu Protokoll gegebener Beitrag", "Zu Protokoll gegebene Beiträge"),
+    ZU_PROTOKOLL: ("zu Protokoll gegebener Beitrag", "zu Protokoll gegebene Beiträge"),
     BEFRAGUNG_FRAGE: ("Frage in der Befragung der Bundesregierung", "Fragen in der Befragung der Bundesregierung"),
     BEFRAGUNG_ANTWORT: ("Antwort in der Befragung der Bundesregierung", "Antworten in der Befragung der Bundesregierung"),
     FRAGESTUNDE_FRAGE: ("Frage oder Nachfrage in der Fragestunde", "Fragen und Nachfragen in der Fragestunde"),
     FRAGESTUNDE_ANTWORT: ("Antwort in der Fragestunde", "Antworten in der Fragestunde"),
     ANSPRACHE: ("Ansprache", "Ansprachen"),
 }
+
+
+def label_start(label: str) -> str:
+    """A ``KIND_LABELS`` wording where it opens a field or a card."""
+    return label[:1].upper() + label[1:]
+
 
 # DIP records only these two Kinds per Beitrag as an ``aktivitaetsart``. Its
 # "Frage" is not comparable to ours: it counts 43 in 21/6 where the XML holds 61
@@ -165,7 +172,25 @@ DIP_UNIT_KINDS = {
     "Erklärung zur Aussprache gem. § 30 Geschäftsordnung BT": ERKLAERUNG,
     "Mündliche Erklärung gem. § 31 Geschäftsordnung BT": ERKLAERUNG,
     "Persönliche Erklärung gem. § 32 Geschäftsordnung BT": ERKLAERUNG,
+    "Rede (zu Protokoll gegeben)": ZU_PROTOKOLL,
+    "Berichterstattung (zu Protokoll gegeben)": ZU_PROTOKOLL,
 }
+#: ``aktivitaetsart`` of DIP the store keeps as a Rede: the types stored Reden of the
+#: 806 sittings meet at their place (measured 2026-11-28). Only these explain a stored
+#: Rede; a type DIP adds later explains none, so the guard names more, never fewer.
+DIP_REDE_TYPES = frozenset({
+    "Rede", "Zur Geschäftsordnung BT", "Einleitende Ausführungen und Beantwortung",
+    "Berichterstattung und Beantwortung", "Berichterstattung",
+    "Erklärung zum Vermittlungsverfahren (§ 90 GO-BT, § 10 GO-VermA)", "Erklärung zum Plenarprotokoll",
+    "Wortbeitrag", "Änderungsantrag",
+})
+#: What DIP calls the turns of a Befragung the store keeps as Fragen and Antworten.
+DIP_BEFRAGUNG_TYPES = DIP_REDE_TYPES | {"Frage", "Antwort", "Zusatzfrage"}
+#: Stored Beiträge of a whole ``<rede>`` that a reviewed entry can turn into a Rede, so
+#: DIP's "Rede" can contradict them. A Rede zu Protokoll is not one: in an annex its
+#: heading decides (20/66 Steffen, which DIP types "Rede", stands in "Zu Protokoll
+#: gegebene Reden"), and inside a TOP every one is listed.
+_TYPED_BEITRAG_KINDS = frozenset({KURZINTERVENTION, ERWIDERUNG, ERKLAERUNG})
 
 
 def _last_word(name: str | None) -> str:
@@ -178,37 +203,145 @@ def _last_word(name: str | None) -> str:
     return "".join(char for char in plain if not unicodedata.combining(char))
 
 
-def dip_typed_reden(report: dict[str, Any], listed: Any = frozenset()) -> list[dict[str, Any]]:
-    """The stored Reden of one cached report that DIP types as a Kurzintervention,
-    an Erwiderung or an oral Erklärung, and that no reviewed entry (``listed``, the
-    ids listed as ``rede``) says are Reden.
+def person_name(name: str | None) -> tuple[str, frozenset[str]] | None:
+    """The surname and given names of a printed name, as ``_last_word`` folds them
+    ("Dr. Heribert Hirte, MdB, CDU/CSU" is ("hirte", {"heribert"})); titles and
+    initials end in a point and count as neither. None where no name is left
+    ("Dr. h. c.", the shown name of 19/69 ``ID196901400``)."""
+    words = [word for word in re.sub(r"\([^)]*\)", " ", name or "").split(",")[0].split() if not word.endswith(".")]
+    if not words:
+        return None
+    given = {_last_word(part) for word in words[:-1] for part in word.split("-")}
+    return _last_word(words[-1]), frozenset(given - {""})
 
-    A Rede and an Aktivität belong together by surname, page and quadrant. DIP's
-    other Aktivitäten of the same person at the same place explain that many Reden;
-    only when more are stored than those explain is each of them named. DIP is a
-    lead, not the verdict: the entry in ``reviewed_units.json`` is.
+
+def _speaker_person(speaker: dict[str, Any]) -> tuple[str, frozenset[str]] | None:
+    """A stored unit's person: the printed ``<vorname>`` and ``<nachname>``, or the
+    shown name where the XML prints no surname (19/69, 20/91, 20/94, ...)."""
+    if speaker.get("last_name"):
+        return person_name(f"{speaker.get('first_name') or ''} {speaker['last_name']}")
+    return person_name(speaker.get("display_name"))
+
+
+def _same_person(stored: tuple[str, frozenset[str]] | None, dip: tuple[str, frozenset[str]]) -> bool:
+    """One person by surname and, where both print one, a shared given name (as the
+    census of docs/plans/beitraege-as-reden does). A unit with no name at all
+    meets every Aktivität of its place."""
+    if stored is None:
+        return True
+    return stored[0] == dip[0] and (not stored[1] or not dip[1] or bool(stored[1] & dip[1]))
+
+
+def _remedy(unit: dict[str, Any]) -> str:
+    """What a reviewed entry can say for a named row (ADR 0002, amendment 2026-11-23)."""
+    if unit["stored"] in _TYPED_BEITRAG_KINDS:
+        return f"list it as rede if it is a Rede, or as {unit['stored']} where DIP is wrong"
+    kinds = ", ".join(unit["dip"])
+    if unit["befragung"]:
+        return ("list it as erklaerung if DIP is right; no entry yet confirms a Frage or Antwort "
+                "of a Befragung where DIP is wrong (TODOS.md)")
+    if not re.fullmatch(r"\d+", str((unit["unit"].get("speaker") or {}).get("xml_redner_id") or "")):
+        return f"DIP says {kinds}, but its speaker has no Bundestag Redner-ID, which every unit entry needs: record the case in TODOS.md"
+    return f"list it as {' or '.join(unit['dip'])}, or as rede where DIP is wrong"
+
+
+def dip_typed_reden(report: dict[str, Any], listed: Any = frozenset()) -> list[dict[str, Any]]:
+    """The stored units of one cached report whose Kind DIP contradicts, and that no
+    reviewed entry lists (``listed``: the ids of the sitting's unit entries,
+    ``reviewed_units.UNIT_KINDS``). Each row has a ``problem``:
+
+    - ``dip_types_otherwise``: a stored Rede, or a Frage or Antwort of a Befragung
+      held as a whole ``<rede>``, that DIP types as a Kurzintervention, an
+      Erwiderung, an oral Erklärung or a Rede zu Protokoll (a Befragung turn: an
+      Erklärung only);
+    - ``dip_types_rede``: a stored Kurzintervention, Erwiderung or Erklärung that
+      DIP types as a Rede;
+    - ``unchecked``: DIP has not indexed the sitting: it holds more Reden,
+      Beiträge of those Kinds and Reden zu Protokoll than DIP lists Aktivitäten
+      (none at all included), or Befragung turns and no Aktivität of a Befragung
+      type (DIP lists those sparsely: 20/10 has 60 turns and 16). One row, no
+      ``rede_id``.
+
+    A unit and an Aktivität belong together by person (``_same_person``), page and
+    quadrant. At one place, each of DIP's Aktivitäten of the types the store keeps that
+    way explains one unit of its person (``_explained``); only when they explain fewer
+    units than are stored there is each unlisted unit named that a contradicting
+    Aktivität could belong to. A listed unit counts at its place but is never named. DIP is a lead, not the verdict: the entry in ``reviewed_units.json`` is.
     """
-    places: dict[tuple[str, int, str], list[str]] = {}
-    for activity in (report.get("api_records") or {}).get("aktivitaeten") or []:
+    activities = (report.get("api_records") or {}).get("aktivitaeten") or []
+    acts: dict[tuple[int, str], list[tuple[tuple[str, frozenset[str]], str]]] = {}
+    for activity in activities:
         page = re.fullmatch(r"(\d+)\s*([A-D])", str((activity.get("fundstelle") or {}).get("seite") or ""))
-        surname = _last_word(activity.get("titel"))
-        if page and surname:
-            places.setdefault((surname, int(page.group(1)), page.group(2)), []).append(str(activity.get("aktivitaetsart")))
-    stored: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
-    for item in report.get("agenda_items") or []:
-        for speech in item.get("xml_speakers") or []:
-            ref = speech.get("source_page") or {}
-            surname = _last_word((speech.get("speaker") or {}).get("last_name"))
-            if surname and ref.get("page") is not None and ref.get("quadrant") and speech.get("rede_id") not in listed:
-                stored.setdefault((surname, int(ref["page"]), ref["quadrant"]), []).append(speech)
+        person = person_name(activity.get("titel"))
+        if page and person:
+            acts.setdefault((int(page.group(1)), page.group(2)), []).append((person, str(activity.get("aktivitaetsart"))))
+    units: list[dict[str, Any]] = []
+    for item in [report, *(report.get("agenda_items") or [])]:
+        befragung = BEFRAGUNG in (item.get("question_formats") or [])
+        candidates = [(speech, "rede") for speech in item.get("xml_speakers") or []]
+        candidates += [(c, c.get("kind")) for c in item.get("xml_contributions") or []
+                       if c.get("rede_id") and not str(c["rede_id"]).startswith("nested:")
+                       and c.get("kind") in _TYPED_BEITRAG_KINDS | {ZU_PROTOKOLL, BEFRAGUNG_FRAGE, BEFRAGUNG_ANTWORT}]
+        for unit, stored in candidates:
+            ref = unit.get("source_page") or {}
+            group = ("beitrag" if stored in _TYPED_BEITRAG_KINDS else "written" if stored == ZU_PROTOKOLL
+                     else "befragung" if stored != "rede" else "rede")
+            units.append({"unit": unit, "stored": stored, "group": group, "befragung": befragung,
+                          "person": _speaker_person(unit.get("speaker") or {}),
+                          "place": (int(ref["page"]), ref["quadrant"]) if ref.get("page") is not None and ref.get("quadrant") else None})
+    counted = sum(unit["group"] != "befragung" for unit in units)
+    turns = len(units) - counted
+    if counted > len(activities) or (turns and not any(str(a.get("aktivitaetsart")) in DIP_BEFRAGUNG_TYPES - DIP_REDE_TYPES
+                                                       for a in activities)):
+        return [{"rede_id": None, "speaker": None, "page": None, "dip": [], "stored": None, "problem": "unchecked",
+                 "remedy": f"{counted} Reden and Beiträge and {turns} Befragung turns, {len(activities)} DIP Aktivitäten: "
+                           "refresh the sitting online once DIP has indexed it"}]
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for unit in units:
+        if unit["place"] is not None and unit["group"] != "written":
+            groups.setdefault((unit["place"], unit["group"]), []).append(unit)
     rows = []
-    for place, speeches in stored.items():
-        arts = places.get(place, [])
-        kinds = sorted({DIP_UNIT_KINDS[art] for art in arts if art in DIP_UNIT_KINDS})
-        if kinds and len(speeches) > sum(art not in DIP_UNIT_KINDS for art in arts):
-            rows += [{"rede_id": s.get("rede_id"), "speaker": (s.get("speaker") or {}).get("display_name"),
-                      "page": f"{place[1]}{place[2]}", "dip": kinds} for s in speeches]
+    for (place, group), members in groups.items():
+        here = acts.get(place, [])
+        if group == "beitrag":  # only an oral Kind explains a Kurzintervention, Erwiderung or Erklärung
+            explains = [DIP_UNIT_KINDS.get(art) in _TYPED_BEITRAG_KINDS for _, art in here]
+            alarm_of = ["rede" if art in DIP_REDE_TYPES else None for _, art in here]
+            problem = "dip_types_rede"
+        else:
+            explains = [art in (DIP_REDE_TYPES if group == "rede" else DIP_BEFRAGUNG_TYPES) for _, art in here]
+            alarm_of = [DIP_UNIT_KINDS[art] if art in DIP_UNIT_KINDS and (group == "rede" or DIP_UNIT_KINDS[art] == ERKLAERUNG)
+                        else None for _, art in here]
+            problem = "dip_types_otherwise"
+        fits = [[i for i, (other, _) in enumerate(here) if _same_person(unit["person"], other)] for unit in members]
+        if _explained(fits, explains) >= len(members):
+            continue
+        for unit, fit in zip(members, fits):
+            alarms = sorted({alarm_of[i] for i in fit if alarm_of[i]})
+            if not alarms or unit["unit"].get("rede_id") in listed:
+                continue
+            unit = {**unit, "dip": alarms}
+            rows.append({"rede_id": unit["unit"].get("rede_id"), "speaker": (unit["unit"].get("speaker") or {}).get("display_name"),
+                         "page": f"{place[0]}{place[1]}", "dip": alarms, "stored": unit["stored"], "problem": problem,
+                         "remedy": _remedy(unit)})
     return rows
+
+
+def _explained(fits: list[list[int]], explains: list[bool]) -> int:
+    """How many units the Aktivitäten explain when each explains one unit of its
+    person (``fits``: per unit, the Aktivitäten of its person; ``explains``: per
+    Aktivität, whether its type explains the unit): a largest matching."""
+    owner: dict[int, int] = {}
+
+    def take(unit: int, seen: set[int]) -> bool:
+        for act in fits[unit]:
+            if explains[act] and act not in seen:
+                seen.add(act)
+                if act not in owner or take(owner[act], seen):
+                    owner[act] = unit
+                    return True
+        return False
+
+    return sum(take(unit, set()) for unit in range(len(fits)))
 
 
 # --- Question formats ---------------------------------------------------------
