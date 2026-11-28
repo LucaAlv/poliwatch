@@ -522,7 +522,7 @@
       "title": "Reden and Beiträge",
       "items": [
         "speech_kinds.py classifies source turns; occurrence roles and historical headings are recovered before counting.",
-        "speeches holds Reden; contributions holds Kurzintervention, Erwiderung, question-format turns, Zwischenfrage and zu_protokoll.",
+        "speeches holds Reden; contributions holds Kurzintervention, Erwiderung, Erklärung (erklaerung), question-format turns, Zwischenfrage, zu_protokoll and Ansprache (ansprache).",
         "Nested questions link to their container; unassigned written annex submissions stay at sitting level."
       ]
     },

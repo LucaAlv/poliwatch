@@ -1998,7 +1998,7 @@ def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], 
         person = (mp_lookup or {}).get(key)
         if person:
             name = f'<a href="../abgeordnete/{esc(person)}.html">{name}</a>'
-        label = speech_kinds.KIND_LABELS[c["kind"]][0]
+        label = speech_kinds.label_start(speech_kinds.KIND_LABELS[c["kind"]][0])
         if c["kind"] == speech_kinds.ANSPRACHE:
             # ADR 0004: the card names in what capacity the address was given.
             role = derive.role_without_name(derive.role_text(speaker), (

@@ -92,7 +92,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable, Collection, Mapping, Sequence
+from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Sibling scripts, imported as plain modules (scripts/ is on sys.path when this
@@ -2481,26 +2481,33 @@ def validate_cached_kinds(entries: list[dict[str, Any]]) -> None:
             raise CachedReportError(f"{_entry_label(entry)}: {exc}") from exc
 
 
-def unlisted_dip_typed_reden(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every stored Rede DIP types as another Kind and no entry of
-    scripts/reviewed_units.json lists (``speech_kinds.dip_typed_reden``)."""
+def unlisted_dip_typed_reden(entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every stored unit whose Kind DIP contradicts and no entry of
+    scripts/reviewed_units.json lists, and every sitting DIP has not indexed
+    (``speech_kinds.dip_typed_reden``). Reads the entries one at a time."""
     rows = []
     for entry in entries:
         report = entry["report"]
         number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer")) or ""
-        listed = {unit["rede_id"] for unit in reviewed_units.for_sitting(number) if unit["kind"] == "rede"}
+        listed = {unit["rede_id"] for unit in reviewed_units.for_sitting(number) if unit["kind"] in reviewed_units.UNIT_KINDS}
         rows += [{"document_number": number, **row} for row in speech_kinds.dip_typed_reden(report, listed)]
     return sorted(rows, key=lambda row: (_document_number_order(row["document_number"]), row["rede_id"] or ""))
+
+
+def dip_typed_row_label(row: dict[str, Any]) -> str:
+    """One named row as a refusal or warning prints it, with what an entry can say."""
+    what = f"{row['rede_id']} ({', '.join(row['dip'])})" if row["rede_id"] else "unchecked"
+    return f"{row['document_number']} {what}: {row['remedy']}"
 
 
 def refuse_release_with_unlisted_dip_typed_reden(tag: str, entries: list[dict[str, Any]]) -> None:
     rows = unlisted_dip_typed_reden(entries) if tag != "local" else []
     if rows:
-        shown = "; ".join(f"{row['document_number']} {row['rede_id']} ({', '.join(row['dip'])})" for row in rows[:20])
+        shown = "; ".join(dip_typed_row_label(row) for row in rows[:20])
         raise RuntimeError(
-            f"export: release {tag} holds {len(rows)} Reden that DIP types as another Kind: {shown}"
-            f"{' ...' if len(rows) > 20 else ''}. Fix: read each and list it in scripts/reviewed_units.json "
-            "(kurzintervention, erwiderung, erklaerung, or rede where DIP is wrong), then run --offline --repersist"
+            f"export: release {tag} holds {len(rows)} units whose Kind DIP contradicts, or sittings DIP has not indexed: {shown}"
+            f"{' ...' if len(rows) > 20 else ''}. Fix: read each and add the entry to scripts/reviewed_units.json, "
+            "then run --offline --repersist"
         )
 
 
@@ -2521,8 +2528,9 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
         print(f"warning: [classification] {len(details)} sitting/kind differences against DIP across {sittings} sittings. "
               f"Inspect source turns in {path}; disagreement alone does not reject a parse.", file=sys.stderr)
     if typed:
-        print(f"warning: [classification] {len(typed)} stored Reden are Kurzinterventionen, Erwiderungen or Erklärungen in DIP. "
-              f"Read each ({path}, reden_dip_types_otherwise) and list it in scripts/reviewed_units.json; a release export refuses them.",
+        print(f"warning: [classification] {len(typed)} stored units have another Kind in DIP, or sittings DIP has not indexed. "
+              f"Read each ({path}, reden_dip_types_otherwise, with what an entry can say) and list it in scripts/reviewed_units.json; "
+              "a release export refuses them.",
               file=sys.stderr)
     return audit
 
@@ -10607,14 +10615,14 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     for kind in counts:
         speech_kinds.validate_kind(kind)
     fields = "".join(
-        f'<div class="field"><span>{pulse_html.esc(speech_kinds.KIND_LABELS[kind][1])}</span>'
+        f'<div class="field"><span>{pulse_html.esc(speech_kinds.label_start(speech_kinds.KIND_LABELS[kind][1]))}</span>'
         f"<strong>{pulse_html.esc(counts[kind])}</strong></div>"
         for kind in speech_kinds.CONTRIBUTION_KINDS
         if counts.get(kind)
     )
     links = "".join(
         f'<li><a href="../protocols/plenarprotokoll-{slugify_document_number(c["document_number"])}.html#contribution-{pulse_html.esc(c["id"])}">'
-        f'BT-PlPr. {pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
+        f'BT-PlPr. {pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.label_start(speech_kinds.KIND_LABELS[c["kind"]][0]))}</a></li>'
         for c in mp.get("contribution_links") or []
     )
     return (

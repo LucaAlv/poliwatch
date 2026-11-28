@@ -83,7 +83,7 @@ class OwnWordsTests(unittest.TestCase):
     #   names; fails_when=it goes by the made-up id, which no other dataset has; why_new=7 of the 13; seam=reviewed
     def test_a_split_parts_rede_keeps_the_listed_id(self):
         self.assertEqual([s['rede_id'] for s in top_of(parse(self.split()))['speeches']], ['ID1', 'ID1:2', 'ID2'])
-        parsed = parse(self.split(), [own_words('ID2', '11000004', '12A')])
+        parsed = parse_with_pages(self.split(), {'ID1': '10B', 'ID2': '13C'}, [own_words('ID2', '11000004', '12A')])
         self.assertEqual([s['rede_id'] for s in top_of(parsed)['speeches']], ['ID1', 'ID2'])
         self.assertEqual(top_of(parsed)['speeches'][1]['text'], MAIN[3:-4] + '\nJa, gerne.\nJa. Und damit zum Schluss.')
 
@@ -104,9 +104,14 @@ class OwnWordsTests(unittest.TestCase):
                                  ('before the Rede it was split off', self.split(), '10A'), ('after the rest', self.split(), '13D')):
             with self.subTest(case), self.assertRaises(reviewed_units.ReviewedUnitsError):
                 parse_with_pages(body, {'ID1': '10B', 'ID2': '13C'}, [own_words('ID2', '11000004', page)])
+        # Codex (ship, 2026-11-24): a bound the Inhaltsverzeichnis does not give is not dropped; all 7 held entries have both.
+        for case, pages in (('no page of the Rede split off', {'ID2': '13C'}), ('no page of the rest', {'ID1': '10B'}), ('neither', {})):
+            with self.subTest(case), self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'Inhaltsverzeichnis'):
+                parse_with_pages(self.split(), pages, [own_words('ID2', '11000004', '12A')])
         for case, bad in (('no page key', entry('ID2', '11000004', 'own_words')), ('no quadrant', own_words('ID2', '11000004', '12')),
                           ('page on another kind', {**entry('ID2', '11000004', 'rede'), 'page': '12A'}),
-                          ('number', {**own_words('ID2', '11000004'), 'page': 12})):
+                          ('number', {**own_words('ID2', '11000004'), 'page': 12}),
+                          ('page 0', own_words('ID2', '11000004', '0A')), ('quadrant beyond D', own_words('ID2', '11000004', '12E'))):
             with self.subTest(case), self.assertRaises(reviewed_units.ReviewedUnitsError):
                 reviewed_units._check({'entries': [bad]}, Path('list.json'))
 
@@ -122,6 +127,17 @@ class OwnWordsTests(unittest.TestCase):
                 ('no such rede', self.two(), own_words('ID7', '11000004'))):
             with self.subTest(case), self.assertRaises(reviewed_units.ReviewedUnitsError):
                 parse(body, [listed])
+        chair = redner('11000009', 'Pau', role='Vizepräsidentin', first='Petra', printed='Petra Pau, Vizepräsidentin:')
+        with self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, "ADR 0004's kinds"):
+            parse(rede('ID1', chair, MAIN + self.ASKED) + rede('ID2', chair, self.REST), [own_words('ID2', '11000009')])
+
+    # Value: protects=a first part whose id the parser made from a speaker marker (N<n>, M<n>) is refused, not kept in place of a
+    #   Bundestag id; fails_when=a joined Rede is stored under a made-up id no other dataset has (TODOS item 11); why_new=code
+    #   review 2026-11-24; seam=reviewed
+    def test_a_made_up_first_part_is_refused(self):
+        for made_up in ('M1', 'N3'):
+            with self.subTest(made_up), self.assertRaisesRegex(reviewed_units.ReviewedUnitsError, 'made from a speaker marker'):
+                parse(rede(made_up, NEXT, MAIN + self.ASKED) + rede('ID2', NEXT, self.REST), [self.ENTRY])
 
 
 class ListedUnitTests(unittest.TestCase):
@@ -244,19 +260,65 @@ class ListedUnitTests(unittest.TestCase):
             self.assertIn(kind, sk.KIND_LABELS)
         self.assertLessEqual(set(sk.DIP_UNIT_KINDS.values()), reviewed_units.UNIT_KINDS)
 
+    # Value: protects=the architecture docs name every Kind the contributions table holds; fails_when=a new Kind ships and the docs
+    #   still list the old set (erklaerung and ansprache were missing, TODOS item 10); why_new=hand-synced list; seam=none
+    def test_the_architecture_docs_name_every_kind(self):
+        for name in ('bundestag-puls-architecture.json', 'bundestag-puls-architecture.html'):
+            text = (_support.ROOT / 'docs' / name).read_text(encoding='utf-8')
+            for kind in (sk.KURZINTERVENTION, sk.ERWIDERUNG, sk.ERKLAERUNG, sk.ZWISCHENFRAGE, sk.ZU_PROTOKOLL, sk.ANSPRACHE):
+                with self.subTest(name=name, kind=kind):
+                    self.assertIn(kind if kind in ('zu_protokoll', 'erklaerung', 'ansprache') else kind.capitalize(), text)
+
+
+
+class WithholdOneTests(unittest.TestCase):
+    """The D6 check (scripts/check_withhold_one.py) parses with every reviewed entry of the sitting."""
+
+    def check(self, text, entries):
+        import check_withhold_one
+        reviewed_units.use(list(entries))
+        try:
+            return check_withhold_one.check_sitting(sitting(text))
+        finally:
+            reviewed_units.use([])
+
+    # Value: protects=the exchange picks reach a listed Kurzintervention and the Erwiderung it makes, and withholding a listed unit
+    #   leaves the rest as it was; fails_when=the check parses without unit entries and never withholds a listed one (TODOS item 10);
+    #   why_new=TODOS items 10 and 11; seam=reviewed
+    def test_the_exchange_picks_reach_listed_units(self):
+        result = self.check(body(), [entry('ID2', '11000002', 'kurzintervention')])
+        self.assertEqual(result['exchange-kurzintervention'], {'withheld': 1, 'problems': []})
+        self.assertEqual(result['exchange-erwiderung'], {'withheld': 1, 'problems': []})
+
+    # Value: protects=a Rede joined from two printed parts is withheld whole, its joined-away part appearing nowhere; fails_when=the
+    #   check withholds the parts singly and never a joined one (TODOS item 11); why_new=plan review R2; seam=reviewed
+    def test_a_joined_rede_is_withheld_whole(self):
+        result = self.check(OwnWordsTests().two(), [OwnWordsTests.ENTRY])
+        self.assertEqual(result['joined-target'], {'withheld': 1, 'problems': []})
+
 
 def activity(art, name, page):
     return {'aktivitaetsart': art, 'titel': f'{name}, MdB, SPD', 'fundstelle': {'seite': page}}
 
 
-def speech(rede_id, last, page=100, quadrant='A'):
-    return {'rede_id': rede_id, 'speaker': {'last_name': last, 'display_name': last},
+def speech(rede_id, last, page=100, quadrant='A', first=None, redner='11000004', display=None):
+    return {'rede_id': rede_id, 'speaker': {'last_name': last, 'first_name': first, 'xml_redner_id': redner,
+                                            'display_name': last if display is None else display},
             'source_page': {'page': page, 'quadrant': quadrant}}
 
 
-def report(activities, speeches, number='21/900'):
+def contribution(rede_id, kind, last, page=100, quadrant='A', first=None):
+    return {**speech(rede_id, last, page, quadrant, first), 'kind': kind}
+
+
+def report(activities, speeches, number='21/900', contributions=(), formats=()):
     return {'protocol': {'dokumentnummer': number}, 'api_records': {'aktivitaeten': activities},
-            'agenda_items': [{'xml_speakers': speeches}]}
+            'agenda_items': [{'xml_speakers': speeches, 'xml_contributions': list(contributions),
+                              'question_formats': list(formats)}]}
+
+
+def named(rows):
+    return [(row['rede_id'], row['problem']) for row in rows]
 
 
 class DipTypedRedenTests(unittest.TestCase):
@@ -279,7 +341,7 @@ class DipTypedRedenTests(unittest.TestCase):
             ('Geschäftsordnung stays a Rede', [activity('Zur Geschäftsordnung BT', 'Petra Sitte', '100A')], [speech('ID1', 'Sitte')], ()),
             ('listed as a Rede', [kurz], [speech('ID1', 'Sitte')], {'ID1'}),
             ('no page', [kurz], [speech('ID1', 'Sitte', None, None)], ()),
-            ('no activities', None, [speech('ID1', 'Sitte')], ()),
+            ('nothing stored, nothing in DIP (20/5)', None, [], ()),
         ):
             with self.subTest(name):
                 self.assertEqual(sk.dip_typed_reden(report(activities, speeches), listed), [])
@@ -291,6 +353,129 @@ class DipTypedRedenTests(unittest.TestCase):
             [activity('Rede', 'Petra Sitte', '100A'), activity('Kurzintervention', 'Petra Sitte', '100A')],
             [speech('ID1', 'Sitte'), speech('ID2', 'Sitte')]))
         self.assertEqual([row['rede_id'] for row in rows], ['ID1', 'ID2'])
+
+    # Value: protects=only DIP types stored as Reden explain a stored Rede; fails_when=a Zwischenfrage, Frage or written § 31
+    #   Erklärung of the person at the place hides a Kurzintervention stored as a Rede; why_new=TODOS item 7 (review 2026-11-23); seam=none
+    def test_only_types_stored_as_reden_explain_a_rede(self):
+        for art in ('Zwischenfrage', 'Frage', 'Antwort', 'Zusatzfrage', 'Schriftliche Erklärung gem. § 31 Geschäftsordnung BT'):
+            with self.subTest(art):
+                rows = sk.dip_typed_reden(report([activity('Kurzintervention', 'Petra Sitte', '100A'), activity(art, 'Petra Sitte', '100A')],
+                                                 [speech('ID1', 'Sitte')]))
+                self.assertEqual(named(rows), [('ID1', 'dip_types_otherwise')])
+        for art in ('Zur Geschäftsordnung BT', 'Einleitende Ausführungen und Beantwortung', 'Berichterstattung',
+                    'Erklärung zum Vermittlungsverfahren (§ 90 GO-BT, § 10 GO-VermA)'):
+            with self.subTest(art):
+                self.assertEqual(sk.dip_typed_reden(report([activity('Kurzintervention', 'Petra Sitte', '100A'),
+                                                            activity(art, 'Petra Sitte', '100A')], [speech('ID1', 'Sitte')])), [])
+
+    # Value: protects=a Rede listed as `rede` uses up one explaining Aktivität and is never named, every other Rede of the place
+    #   still is; fails_when=listing one silences the other, or a listed Rede lets a Kurzintervention at its place pass;
+    #   why_new=TODOS item 7; seam=reviewed
+    def test_a_listed_rede_uses_up_its_place(self):
+        dip = [activity('Rede', 'Petra Sitte', '100A'), activity('Kurzintervention', 'Petra Sitte', '100A')]
+        two = [speech('ID1', 'Sitte'), speech('ID2', 'Sitte')]
+        self.assertEqual(named(sk.dip_typed_reden(report(dip, two), {'ID1'})), [('ID2', 'dip_types_otherwise')])
+        self.assertEqual(sk.dip_typed_reden(report(dip, two), {'ID1', 'ID2'}), [])
+        self.assertEqual(named(sk.dip_typed_reden(report(dip[1:] * 2, two), {'ID1'})), [('ID2', 'dip_types_otherwise')])
+
+    # Value: protects=a Rede DIP gives zu Protokoll is named as zu_protokoll; fails_when=18/46's two Reden zu Protokoll go unseen;
+    #   why_new=TODOS item 7 (/ship review 2026-11-23); seam=none
+    def test_a_rede_dip_gives_zu_protokoll(self):
+        for art in ('Rede (zu Protokoll gegeben)', 'Berichterstattung (zu Protokoll gegeben)'):
+            with self.subTest(art):
+                [row] = sk.dip_typed_reden(report([activity(art, 'Christina Jantz', '100A')], [speech('ID1', 'Jantz')]))
+                self.assertEqual(row['dip'], ['zu_protokoll'])
+
+    # Value: protects=a Befragung unit DIP types as an Erklärung is named, with `erklaerung` as the only entry offered, and Frage or
+    #   Antwort explain it; fails_when=19/191 and 20/105 go unseen again, or the refusal offers a `rede` entry the parser refuses;
+    #   why_new=TODOS item 7, plan review R3; seam=none
+    def test_a_befragung_unit_dip_types_as_an_erklaerung(self):
+        erklaerung = activity('Erklärung zur Aussprache gem. § 30 Geschäftsordnung BT', 'Petra Sitte', '100A')
+        frage = [contribution('ID5', sk.BEFRAGUNG_FRAGE, 'Sitte')]
+        other = activity('Frage', 'Hans Meier', '200A')  # the sitting is indexed
+        [row] = sk.dip_typed_reden(report([erklaerung, other], [], contributions=frage, formats=['befragung']))
+        self.assertEqual((row['rede_id'], row['stored'], row['dip']), ('ID5', sk.BEFRAGUNG_FRAGE, ['erklaerung']))
+        self.assertIn('erklaerung', row['remedy'])
+        self.assertNotIn('or as rede', row['remedy'])
+        self.assertIn('no entry yet confirms', row['remedy'])
+        self.assertEqual(sk.dip_typed_reden(report([erklaerung, activity('Frage', 'Petra Sitte', '100A')], [], contributions=frage,
+                                                   formats=['befragung'])), [])
+        self.assertEqual(sk.dip_typed_reden(report([activity('Kurzintervention', 'Petra Sitte', '100A'), other], [], contributions=frage,
+                                                   formats=['befragung'])), [])
+        # A Rede in a Befragung TOP takes no `rede` entry either.
+        [row] = sk.dip_typed_reden(report([erklaerung], [speech('ID1', 'Sitte')], formats=['befragung']))
+        self.assertIn('no entry yet confirms', row['remedy'])
+
+    # Value: protects=a Rede whose XML prints no <nachname> is matched by its shown name, and one with no name at all by its place;
+    #   fails_when=19/69 and six other Reden are skipped; why_new=TODOS item 7 (/ship review 2026-11-23); seam=none
+    def test_a_rede_without_a_printed_surname(self):
+        kurz = activity('Kurzintervention', 'Petra Sitte', '100A')
+        shown = speech('ID1', None, display='Petra Sitte')
+        self.assertEqual(named(sk.dip_typed_reden(report([kurz], [shown]))), [('ID1', 'dip_types_otherwise')])
+        nameless = speech('ID1', None, display='Dr. h. c.')
+        self.assertEqual(named(sk.dip_typed_reden(report([kurz], [nameless]))), [('ID1', 'dip_types_otherwise')])
+        self.assertEqual(sk.dip_typed_reden(report([kurz, activity('Rede', 'Hans Meier', '100A')], [nameless])), [])
+
+    # Value: protects=a namesake's Aktivität neither explains nor names a Rede where both print a given name, as census.py compares;
+    #   fails_when=Heinz Wiese's Rede hides Dirk Wiese's Kurzintervention, or Heinz's Kurzintervention names Dirk's Rede (PR 214);
+    #   why_new=TODOS item 7; seam=none
+    def test_a_namesake_is_another_person(self):
+        dirk = [speech('ID1', 'Wiese', first='Dirk')]
+        self.assertEqual(named(sk.dip_typed_reden(report([activity('Rede', 'Heinz Wiese (Ehingen)', '100A'),
+                                                          activity('Kurzintervention', 'Dirk Wiese', '100A')], dirk))),
+                         [('ID1', 'dip_types_otherwise')])
+        self.assertEqual(sk.dip_typed_reden(report([activity('Kurzintervention', 'Heinz Wiese', '100A')], dirk)), [])
+        self.assertEqual(named(sk.dip_typed_reden(report([activity('Kurzintervention', 'Dr. Dirk Wiese', '100A')], dirk))),
+                         [('ID1', 'dip_types_otherwise')])
+
+    # Value: protects=a sitting with more stored units than DIP Aktivitäten (none at all included) is refused as unchecked, also
+    #   where it holds no Rede; fails_when=a sitting DIP has not indexed passes in silence; why_new=TODOS item 7, plan review R1; seam=none
+    def test_a_sitting_dip_has_not_indexed_is_unchecked(self):
+        for name, activities, speeches, contributions in (
+                ('no Aktivitäten', None, [speech('ID1', 'Sitte')], ()),
+                ('fewer than Reden', [activity('Rede', 'Petra Sitte', '100A')], [speech('ID1', 'Sitte'), speech('ID2', 'Pau')], ()),
+                ('only a Kurzintervention', [], [], [contribution('ID3', sk.KURZINTERVENTION, 'Sitte')])):
+            with self.subTest(name):
+                [row] = sk.dip_typed_reden(report(activities, speeches, contributions=contributions))
+                self.assertEqual((row['rede_id'], row['problem']), (None, 'unchecked'))
+        # DIP lists a Befragung's turns sparsely (20/140: 118 turns, 105 Aktivitäten; 20/10: 60 and 16), so its turns need one
+        # Aktivität of a Befragung type, not one each.
+        turns = [contribution(f'ID{n}', sk.BEFRAGUNG_FRAGE, 'Sitte', 100 + n) for n in range(3)]
+        self.assertEqual(sk.dip_typed_reden(report([activity('Frage', 'Petra Sitte', '100A')], [], contributions=turns,
+                                                   formats=['befragung'])), [])
+        [row] = sk.dip_typed_reden(report([activity('Rede', 'Hans Meier', '200A')] * 3, [], contributions=turns, formats=['befragung']))
+        self.assertEqual(row['problem'], 'unchecked')
+
+    # Value: protects=a stored Kurzintervention, Erwiderung or Erklärung DIP types "Rede" at its place is named, and an entry of any
+    #   unit kind clears it; fails_when=a Rede stored as a Beitrag loses its count unseen; why_new=TODOS item 7; seam=reviewed
+    def test_a_beitrag_dip_types_as_a_rede(self):
+        rede_act = activity('Rede', 'Petra Sitte', '100A')
+        for kind in (sk.KURZINTERVENTION, sk.ERWIDERUNG, sk.ERKLAERUNG):
+            with self.subTest(kind):
+                [row] = sk.dip_typed_reden(report([rede_act], [], contributions=[contribution('ID3', kind, 'Sitte')]))
+                self.assertEqual((row['rede_id'], row['problem'], row['stored'], row['dip']), ('ID3', 'dip_types_rede', kind, ['rede']))
+                self.assertIn(f'or as {kind}', row['remedy'])
+                self.assertEqual(sk.dip_typed_reden(report([rede_act], [], contributions=[contribution('ID3', kind, 'Sitte')]), {'ID3'}), [])
+        both = [rede_act, activity('Kurzintervention', 'Petra Sitte', '100A')]
+        self.assertEqual(sk.dip_typed_reden(report(both, [speech('ID1', 'Sitte')],
+                                                   contributions=[contribution('ID3', sk.KURZINTERVENTION, 'Sitte')])), [])
+        self.assertEqual(sk.dip_typed_reden(report([rede_act], [], contributions=[contribution('nested:ID1:2', sk.ZWISCHENFRAGE, 'Sitte')])), [])
+
+    # Value: protects=the entry the remedy offers for a Beitrag DIP calls a Rede is one the parser accepts and leaves the Kind as it
+    #   is; fails_when=confirming 19/165 Bystron's Kurzintervention stops the run or moves it; why_new=new remedy; seam=reviewed
+    def test_an_entry_confirming_the_rules_kind_changes_nothing(self):
+        granted = body('Zu einer Kurzintervention erhält Herr De Masi das Wort.')
+        self.assertEqual(kinds(parse(granted, [entry('ID2', '11000002', 'kurzintervention'), entry('ID3', '11000001', 'erwiderung')])),
+                         kinds(parse(granted)))
+
+    # Value: protects=the refusal names each row with what an entry can say for it; fails_when=a reader is told to list a `rede`
+    #   entry the parser refuses (a speaker without a Bundestag Redner-ID); why_new=TODOS item 7; seam=none
+    def test_the_refusal_says_what_can_be_listed(self):
+        [row] = sk.dip_typed_reden(report([activity('Kurzintervention', 'Petra Sitte', '100A')], [speech('N1', 'Sitte', redner=None)]))
+        self.assertIn('no Bundestag Redner-ID', row['remedy'])
+        entries = [{'report': report([activity('Kurzintervention', 'Petra Sitte', '100A')], [speech('ID1', 'Sitte')])}]
+        with self.assertRaisesRegex(RuntimeError, r'21/900 ID1 \(kurzintervention\): list it as kurzintervention, or as rede'):
+            build.refuse_release_with_unlisted_dip_typed_reden('2026.12.01', entries)
 
     # Value: protects=a tagged export refuses such a Rede naming it, a local build does not, and a `rede` entry clears it;
     #   fails_when=a release ships a Kurzintervention counted as a Rede; why_new=new guard; seam=reviewed
@@ -316,7 +501,26 @@ class DipTypedRedenTests(unittest.TestCase):
             (data / 'plenarprotokoll-catalog.json').write_text('{}', encoding='utf-8')
             audit = build.write_classification_diagnostics(Path(tmp), [{'report': found}])
             self.assertEqual([row['rede_id'] for row in audit['reden_dip_types_otherwise']], ['ID1'])
-            self.assertEqual(gate.dip_typed_reden(Path(tmp)), audit['reden_dip_types_otherwise'])
+            self.assertEqual(gate.dip_typed_check(Path(tmp)), {'reports': 1, 'rows': audit['reden_dip_types_otherwise']})
+
+    # Value: protects=the gate reads only the reports the store holds, and a run that reads none fails; fails_when=an excluded
+    #   sitting's report fails the gate, or an empty directory passes check 7; why_new=TODOS item 7; seam=none
+    def test_the_gate_reads_the_stored_sittings_and_fails_on_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / 'data'
+            data.mkdir()
+            self.assertEqual(gate.dip_typed_check(Path(tmp)), {'reports': 0, 'rows': []})
+            self.assertFalse(gate.dip_typed_check_passes(gate.dip_typed_check(Path(tmp))))
+            found = report([activity('Erwiderung', 'Petra Sitte', '100A')], [speech('ID1', 'Sitte')], number='18/20')
+            (data / 'plenarprotokoll-18-20.json').write_text(json.dumps(found), encoding='utf-8')
+            (data / 'plenarprotokoll-catalog.json').write_text('{}', encoding='utf-8')
+            self.assertEqual(len(gate.dip_typed_check(Path(tmp))['rows']), 1)
+            (data / 'coverage-exclusions.json').write_text(json.dumps({'exclusions': [
+                {'document_number': '18/20', 'reason': 'source_defect', 'reason_detail': 'test'}]}), encoding='utf-8')
+            self.assertEqual(gate.dip_typed_check(Path(tmp)), {'reports': 0, 'rows': []})
+            clean = report([activity('Rede', 'Petra Sitte', '100A')], [speech('ID1', 'Sitte')], number='21/900')
+            (data / 'plenarprotokoll-21-900.json').write_text(json.dumps(clean), encoding='utf-8')
+            self.assertTrue(gate.dip_typed_check_passes(gate.dip_typed_check(Path(tmp))))
 
 
 def load_census():

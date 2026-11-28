@@ -9,7 +9,14 @@ three pick sets:
 - ``exchange``: a Kurzintervention, and separately the Erwiderung that answers
   one, where a TOP has such a pair;
 - ``resumed``: the Rede a resumed Rede gave its words back to, and separately
-  the resumed Rede itself, where a TOP has one.
+  the resumed Rede itself, where a TOP has one;
+- ``joined-target``: a Rede joined from two printed ``<rede>`` (an ``own_words``
+  entry, ADR 0004), withheld whole; ``joined-target-2`` and on take a TOP's
+  second and later joins.
+
+Both parses read every entry the reviewed list holds for the sitting, as the
+build does: listed unit kinds, own words, presidium, name, loose, annex and
+withhold entries.
 
 One parse withholds one Rede in every TOP at once: withholding writes no state
 another TOP reads. Every other unit must come out unchanged: speeches and
@@ -43,7 +50,7 @@ import reviewed_units
 import speech_kinds
 import validate_dip_protocol as dip
 
-PICK_SETS = ("middle", "exchange-kurzintervention", "exchange-erwiderung", "resumed-target", "resumed")
+PICK_SETS = ("middle", "exchange-kurzintervention", "exchange-erwiderung", "resumed-target", "resumed", "joined-target")
 
 
 def _speaker_key(speaker: dict[str, Any] | None) -> tuple[Any, ...]:
@@ -70,6 +77,10 @@ def picks(top: dict[str, Any], pick_set: str) -> str | None:
         return next((c["rede_id"] for c in contributions if c["kind"] == speech_kinds.KURZINTERVENTION), None)
     if pick_set == "exchange-erwiderung":
         return next((c["rede_id"] for c in contributions if c["kind"] == speech_kinds.ERWIDERUNG), None)
+    if pick_set.startswith("joined-target"):
+        joined = [d["target_rede_id"] for d in top["xml_turn_diagnostics"] if d["treatment"] == "joined_rede"]
+        round_ = int(pick_set.rsplit("-", 1)[1]) - 1 if pick_set[-1].isdigit() else 0
+        return joined[round_] if round_ < len(joined) else None
     resumed = [d for d in top["xml_turn_diagnostics"] if d["treatment"] == "merged_rede"]
     if pick_set == "resumed-target":
         return resumed[0]["target_rede_id"] if resumed else None
@@ -143,21 +154,24 @@ def compare(base: dict[str, Any], forced: dict[str, Any], withheld: dict[int, st
     return problems
 
 
-def check_sitting(xml_text: str, names: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def _pick_sets(base: dict[str, Any]) -> list[str]:
+    """``PICK_SETS``, with one more ``joined-target-<n>`` round for each further join
+    one TOP holds."""
+    most = max((sum(d["treatment"] == "joined_rede" for d in top["xml_turn_diagnostics"]) for top in base["agenda_items"]),
+               default=0)
+    return [*PICK_SETS, *(f"joined-target-{n}" for n in range(2, most + 1))]
+
+
+def check_sitting(xml_text: str, entries: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """All pick sets for one sitting: {pick set: {"withheld": n, "problems": [...]}}.
-    ``names``: the reviewed entries for speakers printed as ``<name>``, for
-    speaker markers outside any ``<rede>`` and for written Reden an annex prints
-    without a ``<rede>`` of their own, which both parses apply (a sitting with an
-    unlisted one outside any ``<rede>`` is refused); by default those of
-    ``scripts/reviewed_units.json``."""
+    ``entries``: the reviewed entries both parses apply; by default every entry
+    ``scripts/reviewed_units.json`` holds for the sitting, as the build reads it."""
     root = dip.ET.fromstring(xml_text)
     sitting = f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}"
-    if names is None:
-        names = [e for e in reviewed_units.for_sitting(sitting)
-                 if e["kind"] in reviewed_units.NAME_KINDS | reviewed_units.LOOSE_KINDS | reviewed_units.ANNEX_KINDS]
+    names = reviewed_units.for_sitting(sitting) if entries is None else entries
     base = dip.parse_protocol_xml(xml_text, reviewed=list(names))
     result = {}
-    for pick_set in PICK_SETS:
+    for pick_set in _pick_sets(base):
         chosen = {top["index"]: picks(top, pick_set) for top in base["agenda_items"]}
         chosen = {index: rid for index, rid in chosen.items() if rid}
         if not chosen:
