@@ -299,30 +299,49 @@ def dip_typed_reden(report: dict[str, Any], listed: Any = frozenset()) -> list[d
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for unit in units:
         if unit["place"] is not None and unit["group"] != "written":
-            groups.setdefault((unit["person"], unit["place"], unit["group"]), []).append(unit)
+            groups.setdefault((unit["place"], unit["group"]), []).append(unit)
     rows = []
-    for (person, place, group), members in groups.items():
-        if person is None:  # counted by place alone: every unit of the group there
-            members = [unit for key, others in groups.items() if key[1:] == (place, group) for unit in others]
-        arts = [art for other, art in acts.get(place, []) if _same_person(person, other)]
-        if group == "beitrag":
-            alarms, explain = (["rede"] if any(art in DIP_REDE_TYPES for art in arts) else []), sum(art in DIP_UNIT_KINDS for art in arts)
+    for (place, group), members in groups.items():
+        here = acts.get(place, [])
+        if group == "beitrag":  # only an oral Kind explains a Kurzintervention, Erwiderung or Erklärung
+            explains = [DIP_UNIT_KINDS.get(art) in _TYPED_BEITRAG_KINDS for _, art in here]
+            alarm_of = ["rede" if art in DIP_REDE_TYPES else None for _, art in here]
             problem = "dip_types_rede"
         else:
-            alarms = sorted({DIP_UNIT_KINDS[art] for art in arts if art in DIP_UNIT_KINDS
-                             and (group == "rede" or DIP_UNIT_KINDS[art] == ERKLAERUNG)})
-            explain = sum(art in (DIP_REDE_TYPES if group == "rede" else DIP_BEFRAGUNG_TYPES) for art in arts)
+            explains = [art in (DIP_REDE_TYPES if group == "rede" else DIP_BEFRAGUNG_TYPES) for _, art in here]
+            alarm_of = [DIP_UNIT_KINDS[art] if art in DIP_UNIT_KINDS and (group == "rede" or DIP_UNIT_KINDS[art] == ERKLAERUNG)
+                        else None for _, art in here]
             problem = "dip_types_otherwise"
-        if not alarms or len(members) <= explain:
+        fits = [[i for i, (other, _) in enumerate(here) if _same_person(unit["person"], other)] for unit in members]
+        if _explained(fits, explains) >= len(members):
             continue
-        for unit in members:
-            if unit["unit"].get("rede_id") in listed or (person is None and unit["person"] is not None):
+        for unit, fit in zip(members, fits):
+            alarms = sorted({alarm_of[i] for i in fit if alarm_of[i]})
+            if not alarms or unit["unit"].get("rede_id") in listed:
                 continue
             unit = {**unit, "dip": alarms}
             rows.append({"rede_id": unit["unit"].get("rede_id"), "speaker": (unit["unit"].get("speaker") or {}).get("display_name"),
                          "page": f"{place[0]}{place[1]}", "dip": alarms, "stored": unit["stored"], "problem": problem,
                          "remedy": _remedy(unit)})
     return rows
+
+
+def _explained(fits: list[list[int]], explains: list[bool]) -> int:
+    """How many units the Aktivitäten explain when each explains one unit of its
+    person (``fits``: per unit, the Aktivitäten of its person; ``explains``: per
+    Aktivität, whether its type explains the unit): a largest matching."""
+    owner: dict[int, int] = {}
+
+    def take(unit: int, seen: set[int]) -> bool:
+        for act in fits[unit]:
+            if explains[act] and act not in seen:
+                seen.add(act)
+                if act not in owner or take(owner[act], seen):
+                    owner[act] = unit
+                    return True
+        return False
+
+    return sum(take(unit, set()) for unit in range(len(fits)))
 
 
 # --- Question formats ---------------------------------------------------------

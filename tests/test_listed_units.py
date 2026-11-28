@@ -354,6 +354,26 @@ class DipTypedRedenTests(unittest.TestCase):
             [speech('ID1', 'Sitte'), speech('ID2', 'Sitte')]))
         self.assertEqual([row['rede_id'] for row in rows], ['ID1', 'ID2'])
 
+    # Value: protects=one DIP Aktivität explains one stored unit, however the person's given name is printed; fails_when=a Rede
+    #   printing "Petra" and one printing no given name each take DIP's single Rede and a Kurzintervention passes; why_new=Codex
+    #   (ship, 2026-11-28); seam=none
+    def test_one_aktivitaet_explains_one_unit_across_name_variants(self):
+        dip = [activity('Rede', 'Petra Sitte', '100A'), activity('Kurzintervention', 'Petra Sitte', '100A')]
+        rows = sk.dip_typed_reden(report(dip, [speech('ID1', 'Sitte', first='Petra'), speech('ID2', 'Sitte')]))
+        self.assertEqual(named(rows), [('ID1', 'dip_types_otherwise'), ('ID2', 'dip_types_otherwise')])
+        # A namesake's Rede at the same place is not named for Petra's Kurzintervention.
+        dip = [activity('Rede', 'Hans Sitte', '100A'), activity('Rede', 'Petra Sitte', '100A'), activity('Kurzintervention', 'Petra Sitte', '100A')]
+        rows = sk.dip_typed_reden(report(dip, [speech('ID1', 'Sitte', first='Hans'), speech('ID2', 'Sitte', first='Petra'),
+                                               speech('ID3', 'Sitte', first='Petra')]))
+        self.assertEqual(named(rows), [('ID2', 'dip_types_otherwise'), ('ID3', 'dip_types_otherwise')])
+
+    # Value: protects=only an oral Kind DIP gives explains a stored Kurzintervention, Erwiderung or Erklärung; fails_when=the person's
+    #   Rede zu Protokoll at the place clears a Beitrag DIP types "Rede"; why_new=Codex (ship, 2026-11-28); seam=none
+    def test_a_written_aktivitaet_explains_no_oral_beitrag(self):
+        stored = [contribution('ID3', sk.KURZINTERVENTION, 'Sitte'), contribution('ID4', sk.ZU_PROTOKOLL, 'Sitte')]
+        dip = [activity('Rede', 'Petra Sitte', '100A'), activity('Rede (zu Protokoll gegeben)', 'Petra Sitte', '100A')]
+        self.assertEqual(named(sk.dip_typed_reden(report(dip, [], contributions=stored))), [('ID3', 'dip_types_rede')])
+
     # Value: protects=only DIP types stored as Reden explain a stored Rede; fails_when=a Zwischenfrage, Frage or written § 31
     #   Erklärung of the person at the place hides a Kurzintervention stored as a Rede; why_new=TODOS item 7 (review 2026-11-23); seam=none
     def test_only_types_stored_as_reden_explain_a_rede(self):
