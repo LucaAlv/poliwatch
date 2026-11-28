@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.62.0] - 2026-11-28
+
+The rule that decides whether a Protokoll file stops before its sitting ends now reads a withheld Rede for what it would be, and the store gate re-checks every cut sitting against that rule. On the 806-sitting replay the same 33 sittings stay marked, with the same 1,189 Reden and 429 Reden zu Protokoll listed after the cut, and no Rede, vote or Fakt moves (0 of 1,944 Fakten). Cut rule 4; schema and export format are unchanged. A store needs one `--offline --repersist`.
+
+### Fixed
+
+- **A withheld unit counts as a printed Rede only where it would be one.** A withheld question in a Befragung or another Beitrag no longer fills the count that makes a cut file look whole, a withheld Rede zu Protokoll matches DIP's entry like a stored one, and a unit nobody has reviewed yet counts as neither. On the replay 87 of the 99 withheld units would be a Rede and 12 a Beitrag, none of them in a cut sitting.
+- **Two Reden on the same page and quadrant are ordered as the sitting ran,** not by their ids as text, when the rule finds the last Rede a cut file prints.
+- **A DIP Aktivität without an id stops a cut sitting only where it could become an entry** (a Rede or a Rede zu Protokoll), not for any other kind DIP lists.
+- **A cut report read under an older rule no longer crashes the store write.** It is stored without its count of unplaced Reden and reads as stale until the replay.
+
+### Changed
+
+- **The store gate judges every marked sitting.** It re-runs the cut rule over each one's cached XML and DIP Aktivitäten and checks that the store holds what the rule gives: the count of unplaced Reden and each unprinted Rede with its DIP id, kind, person, page and quadrant. A marked sitting without a cached report, or a run that reads none, fails the gate.
+
 ## [0.46.60.0] - 2026-11-27
 
 The release export no longer holds the Fakt der Woche tables (decision Q5). The build store keeps them, and the Fakt pages on the site stay as they are. Export format 29; store schema 17 is unchanged and no replay is needed. On the 806-sitting store the export goes from 37 to 34 tables, 36 to 33 table CSVs, 1,372,489 to 1,367,645 rows (the 8 + 1,944 + 2,892 facts rows) and 52 to 50 relationships; the other 34 tables hold the same rows, no figure on the site moves, and only the Daten page changes.

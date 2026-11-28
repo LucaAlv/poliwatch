@@ -160,6 +160,21 @@ Measured on the replay of 2026-11-27: 14 withhold entries, 14 withheld units wit
 **Priority:** P3
 **Depends on:** cut rule 4 (`would_be` on withheld records)
 
+### Cut rule 4 and gate check 8: latent edges the ship review left
+
+**What:** five edges the `/ship` review of cut rule 4 (2026-11-28) found that no current sitting reaches. All 806 replayed sittings pass check 8 with no problem.
+1. `validate_store_gate._recomputed_cut` catches `ProtocolCutError`, `ValueError` and `ReviewedUnitsError`, but not `derive.SprechrolleError` (a speaker role no rule maps), which is no `ValueError`: check 8 would end in a traceback instead of naming the sitting. The replay refuses such a file first, so the gate does not see one today. Fix: add it to the tuple, with a test like `test_a_marked_sitting_whose_recompute_refuses_is_named`. Found by Codex.
+2. `cut_protocol_check` sorts the marked sittings without a report, and the marked sittings of its receipt, by `tuple(int(part) for part in n.split("/"))`; a `document_number` not of the form `<WP>/<Nr>` raises `ValueError`. Every stored number has that form. Fix: one sort key that refuses with a named problem, shared by both sorts.
+3. `protocol_cut._distinct` refuses an id-less Aktivität only where it can become an entry, and keeps any other without collapsing a repeat across cursor pages. Nothing counts those today; a rule that counts another kind must deduplicate them first.
+4. The gate re-parses each marked sitting with `parse_protocol_xml`'s default reviewed list, as the replay does. If the replay ever passes its own `reviewed` entries, the gate must pass the same ones or it reports rows the rule does not give.
+5. `validate_dip_protocol.would_be` falls back to the label's own kind where `speech_kinds.REDE_STATUS` has no row. No kind reaches it once a must-review unit carries its refusal (the reviewed-withhold fix of 2026-11-28), and no test covers it. Fix: refuse an unknown kind, or test the fallback.
+
+**Why:** each would turn a named gate problem into a traceback or a miscount the day such input appears.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### ~~Bullet points of written Reden printed between two `<rede>`s~~
 
 **Done 2026-11-27** (branch `claude/vigorous-mendeleev-a93c94`, speech rule 18): the 24 loose paragraphs of six Reden zu Protokoll (18/136 Strebl and Kapschack, 18/206 Binding, 18/209 Klimke, 18/243 Bahr, 19/104 Höferlin) are listed with kind `annex_paragraphs`, placed against the PDFs, and moved back in by `move_annex_paragraphs`; a text paragraph loose after a `<rede>` now refuses its sitting unless listed (`docs/source-errors.md` E17).
