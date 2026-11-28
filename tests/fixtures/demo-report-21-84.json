@@ -799,7 +799,8 @@
     "fragestunde_questions_without_person": 0,
     "fragestunde_unplaced_turns": 0,
     "protocol_cut": null,
-    "cut_rule_version": 3,
+    "cut_rule_version": 4,
+    "printed_reden": 85,
     "xml_drucksache_count": 2,
     "unique_person_ids": 14,
     "extracted_text_char_count": 57748
