@@ -5486,6 +5486,12 @@ def enrich_with_api(
     }
 
 
+def cut_refusal(document_number: str, exc: protocol_cut.ProtocolCutError) -> DipError:
+    """The source refusal of a sitting the cut rule cannot judge (E16)."""
+    return DipError(f"{document_number}: protocol source rejected: {exc}; {protocol_cut.REFUSAL_FIX}",
+                    source_rejected=True)
+
+
 def build_report(
     args: argparse.Namespace,
     protocol: dict[str, Any] | None = None,
@@ -5514,6 +5520,7 @@ def build_report(
     progress("Downloading XML transcript.")
     pacer = getattr(args, "xml_pacer", None)
     xml_text = pacer.fetch(xml_url) if isinstance(pacer, XmlPacer) else fetch_text(xml_url)
+    xml_fetched_at = utc_now()
     # The caller decides whether to keep the report; only then does its XML become
     # the cache, so a cached XML never outlives the report it was parsed into.
     xml_sink = getattr(args, "xml_sink", None)
@@ -5543,6 +5550,8 @@ def build_report(
     except UnlistedAnnexTextError as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}; {UNLISTED_ANNEX_TEXT_FIX}",
                        source_rejected=True) from exc
+    except protocol_cut.ProtocolCutError as exc:
+        raise cut_refusal(document_number, exc) from exc
     except (ET.ParseError, ValueError) as exc:
         raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
@@ -5588,6 +5597,12 @@ def build_report(
             ).as_dict()
         }
 
+    try:
+        # Whether the XML is a first edition that stops partway (E16), by DIP's Aktivitäten.
+        cut_keys = protocol_cut.cut_summary(parsed_xml, enrichment["api_records"].get("aktivitaeten"))
+    except protocol_cut.ProtocolCutError as exc:
+        raise cut_refusal(document_number, exc) from exc
+
     report = {
         "protocol": {
             "id": protocol.get("id"),
@@ -5599,6 +5614,10 @@ def build_report(
             "xml_url": xml_url,
             "xml_header": parsed_xml["xml_protocol"],
             "xml_sha256": xml_source_sha256(xml_text),
+            # What DIP listed for the file this fetch read, and when: a backfill leaves a cut sitting whose file
+            # differs from that hash alone for a while (build_dip_pulse_site.replaced_cut_files). A replay keeps both.
+            "xml_listed_hash": str(protocol.get("xml_hash") or "").strip().lower() or None,
+            "xml_fetched_at": xml_fetched_at,
             "reviewed_digest": parsed_xml.get("reviewed_digest"),
         },
         "validation_summary": {
@@ -5609,8 +5628,7 @@ def build_report(
             "tops_with_api_positions": tops_with_api_positions,
             "tops_with_api_linked_drucksachen": tops_with_api_drucksachen,
             **enrichment["api_totals"],
-            # Whether the XML is a first edition that stops partway (E16), by DIP's Aktivitäten.
-            **protocol_cut.cut_summary(parsed_xml, enrichment["api_records"].get("aktivitaeten")),
+            **cut_keys,
         },
         "warnings": enrichment["warnings"],
         "sampled_people": enrichment["sampled_people"],

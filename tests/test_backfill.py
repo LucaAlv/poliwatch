@@ -15,7 +15,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -368,6 +368,22 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertGreater(contributions, 0)
 
 
+def cut_output(root: Path, xml: bytes = b"<dbtplenarprotokoll/>", **record: str) -> Path:
+    """An output directory holding 21/1 as a cut sitting (E16): its report, with ``record`` as the last fetch's
+    keys, and ``xml`` as its cached file."""
+    from test_cut_protocols import ACTIVITIES, CUT
+    output_dir = root / "site"
+    for name in ("protocols", "data/xml"):
+        (output_dir / name).mkdir(parents=True)
+    report = report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11")
+    report["validation_summary"]["protocol_cut"] = copy.deepcopy(CUT)
+    report["api_records"] = {"aktivitaeten": copy.deepcopy(ACTIVITIES)}
+    report["protocol"].update({"xml_sha256": build.dip.xml_source_sha256("<dbtplenarprotokoll/>"), **record})
+    write_cached(output_dir, report)
+    build.xml_cache_path(output_dir, "21/1").write_bytes(xml)
+    return output_dir
+
+
 class BackfillSelectionTests(unittest.TestCase):
     def entries(self, *reports: dict) -> list[dict]:
         return [{"report": report} for report in reports]
@@ -565,7 +581,71 @@ class BackfillSelectionTests(unittest.TestCase):
             mock.patch.object(sys, "stdout", new_callable=io.StringIO),
         ):
             code = build.main()
-        return code, [p["dokumentnummer"] for p in build_dossiers.call_args.args[0]], stderr.getvalue()
+        acquired = build_dossiers.call_args and [p["dokumentnummer"] for p in build_dossiers.call_args.args[0]]
+        return code, acquired, stderr.getvalue()
+
+    # Value: protects=the backfill wires the cut-file selection through: it acquires a replaced file, leaves one its
+    #   last fetch already gave, and counts only what it acquires; fails_when=main drops the deferral or the scope;
+    #   why_new=TODOS cut review items 5 and 7; the selection tests call the functions alone; seam=main (argv)
+    def test_a_backfill_fetches_a_cut_file_again_only_when_it_could_have_changed(self) -> None:
+        listed = "a" * 32
+        catalog = [{**catalog_protocol("21/1", "pp-1", "2026-06-11"), "xml_hash": listed},
+                   catalog_protocol("20/9", "pp-20-9", "2021-12-15"),
+                   catalog_protocol("18/1", "pp-18-1", "2013-10-22")]  # the v1 floor, so 20/9 is judged
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = cut_output(Path(tmp))
+            code, acquired, stderr = self.run_backfill_main(
+                output_dir, catalog, "--backfill-incomplete", "--protocol-wahlperiode", "20")
+            self.assertEqual((code, acquired), (0, ["20/9"]), stderr)
+            self.assertNotIn("cut sitting(s) again", stderr)
+            code, acquired, stderr = self.run_backfill_main(output_dir, catalog, "--backfill-incomplete")
+            self.assertEqual(acquired, ["21/1", "20/9", "18/1"], stderr)
+            self.assertIn("acquiring 1 cut sitting(s) again", stderr)
+        with tempfile.TemporaryDirectory() as tmp:
+            fetched = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            output_dir = cut_output(Path(tmp), xml_listed_hash=listed, xml_fetched_at=fetched)
+            code, acquired, stderr = self.run_backfill_main(output_dir, catalog, "--backfill-incomplete")
+            self.assertEqual((code, acquired), (0, ["20/9", "18/1"]), stderr)
+            self.assertIn("not fetching 1 cut sitting(s) again yet", stderr)
+
+    # Value: protects=a damaged cached XML of a cut sitting stops the backfill with the file and a fix that repairs
+    #   it; fails_when=it is hashed with replacement characters and the sitting fetched on every run, or the run
+    #   ends in a traceback; why_new=TODOS cut review item 10; seam=main (argv)
+    def test_a_cut_file_that_is_not_utf_8_stops_the_backfill_and_is_named(self) -> None:
+        catalog = [{**catalog_protocol("21/1", "pp-1", "2026-06-11"), "xml_hash": "a" * 32}]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = cut_output(Path(tmp), xml=b"<dbtplenarprotokoll>\xff</dbtplenarprotokoll>")
+            code, acquired, stderr = self.run_backfill_main(output_dir, catalog, "--backfill-incomplete")
+            path = build.xml_cache_path(output_dir, "21/1")
+        self.assertEqual((code, acquired), (1, None), stderr)
+        self.assertIn(f"ERROR [cached input]: {path}, the cached XML of 21/1, is not valid UTF-8", stderr)
+        self.assertIn(f"Fix: delete {path}, run --fetch-xml, then run the backfill again", stderr)
+
+    # Value: protects=excluding a cut sitting still lets the backfill run past its damaged file; fails_when=the cut
+    #   check reads an excluded sitting's cache and stops every backfill; why_new=Codex review of the reader edges;
+    #   seam=main (argv)
+    def test_an_excluded_cut_sitting_with_a_damaged_file_does_not_stop_the_backfill(self) -> None:
+        catalog = [{**catalog_protocol("21/1", "pp-1", "2026-06-11"), "xml_hash": "a" * 32},
+                   catalog_protocol("18/1", "pp-18-1", "2013-10-22")]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = cut_output(Path(tmp), xml=b"<dbtplenarprotokoll>\xff</dbtplenarprotokoll>")
+            code, acquired, stderr = self.run_backfill_main(
+                output_dir, catalog, "--backfill-incomplete", "--exclude-document-number", "21/1")
+        self.assertEqual((code, acquired), (0, ["18/1"]), stderr)
+
+    # Value: protects=a deferred sitting the run fetches after all, as --dossier-document-number names it, is not
+    #   reported as left alone; fails_when=the run says "not fetching" of a sitting it fetches;
+    #   why_new=Codex review of the reader edges; seam=main (argv)
+    def test_a_deferred_sitting_named_as_a_dossier_is_not_called_deferred(self) -> None:
+        listed = "a" * 32
+        catalog = [{**catalog_protocol("21/1", "pp-1", "2026-06-11"), "xml_hash": listed}]
+        with tempfile.TemporaryDirectory() as tmp:
+            fetched = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            output_dir = cut_output(Path(tmp), xml_listed_hash=listed, xml_fetched_at=fetched)
+            code, acquired, stderr = self.run_backfill_main(
+                output_dir, catalog, "--backfill-incomplete", "--dossier-document-number", "21/1")
+        self.assertEqual((code, acquired), (0, ["21/1"]), stderr)
+        self.assertNotIn("not fetching", stderr)
 
     # Value (D4): protects=a WP-by-WP backfill acquires exactly that WP, and --limit without
     # the flag takes the newest N overall; fails_when=the scope flag is ignored by the backfill

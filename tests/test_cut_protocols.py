@@ -4,11 +4,14 @@ check of it and the list of what DIP names after the cut."""
 
 import copy
 import hashlib
+import io
 import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import _support  # noqa: F401
@@ -415,6 +418,58 @@ class ParsedReportTests(unittest.TestCase):
         self.assertGreater(cut.CUT_RULE_VERSION, 3)  # pregate-literal: CUT_RULE_VERSION=3 asserts the rule moved past version 3
 
 
+class RefusalTests(unittest.TestCase):
+    """A file or a DIP list the cut rule cannot place stops the run with a fix that fits it: a re-fetch of the
+    same files gives the same refusal."""
+
+    PROTOCOL = {"id": "p1", "dokumentnummer": "20/999",
+                "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/20/20999.xml"}}
+    NO_ID = [{"aktivitaetsart": "Rede", "titel": "Ada Lovelace, MdB", "fundstelle": {"seite": "101A"}}]
+
+    @staticmethod
+    def other_sitting():
+        xml = cut_fixture_xml()
+        assert "Bericht der 999. Sitzung" in xml
+        return xml.replace("Bericht der 999. Sitzung", "Bericht der 998. Sitzung")
+
+    # Value: protects=an offline replay a cut refusal stops names the cause and its fix; fails_when=it says the file is
+    #   not the Plenarprotokoll XML and to delete it, which a re-fetch undoes; why_new=TODOS cut review item 1;
+    #   seam=reparse_cached_xml
+    def test_the_replay_gives_the_refusal_its_own_fix(self):
+        cases = (("notice names another sitting", self.other_sitting(), [], "names the 998. Sitzung"),
+                 ("Aktivität without an id", cut_fixture_xml(), self.NO_ID, "without an id"))
+        for name, xml, aktivitaeten, said in cases:
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                path = site.xml_cache_path(Path(tmp), "20/999")
+                path.parent.mkdir(parents=True)
+                path.write_text(xml, encoding="utf-8")
+                report = report_of(dip.parse_protocol_xml(cut_fixture_xml()), aktivitaeten)
+                with self.assertRaises(site.CachedReportError) as caught:
+                    site.reparse_cached_xml(Path(tmp), [{"report": report}])
+                self.assertIn(said, str(caught.exception))
+                self.assertEqual(caught.exception.fix, f"Fix: {cut.REFUSAL_FIX}")
+                self.assertNotIn("is not the Plenarprotokoll XML", str(caught.exception))
+                self.assertNotIn("--fetch-xml", str(caught.exception) + caught.exception.fix)
+
+    # Value: protects=an online build refuses the source with the same fix, for the notice at parse time and for DIP's
+    #   list after the enrichment; fails_when=the second escapes as a traceback; why_new=TODOS cut review item 1;
+    #   seam=fetch_text and enrich_with_api stubbed
+    def test_the_online_build_refuses_the_source_with_the_fix(self):
+        enrichment = {"agenda_items": [], "warnings": [], "sampled_people": [], "sitting_votes": [],
+                      "api_totals": {}, "api_records": {"aktivitaeten": self.NO_ID}}
+        args = SimpleNamespace(api_key="test", sleep=0, person_limit=0, vote_scan_pages=0, limit_tops=None)
+        cases = (("at parse time", self.other_sitting(), "names the 998. Sitzung"),
+                 ("after the enrichment", cut_fixture_xml(), "without an id"))
+        for name, xml, said in cases:
+            with self.subTest(name), mock.patch.object(dip, "fetch_text", return_value=xml), \
+                    mock.patch.object(dip, "enrich_with_api", return_value=enrichment), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(dip.DipError) as raised:
+                dip.build_report(args, protocol=self.PROTOCOL)
+            self.assertTrue(raised.exception.source_rejected)
+            self.assertIn(said, str(raised.exception))
+            self.assertIn(cut.REFUSAL_FIX, str(raised.exception))
+
+
 CUT = {"announced": "2026-10-13", "last_rede_id": "R3", "page": 103, "quadrant": "B", "place_from": "inhaltsverzeichnis",
        "unplaced_reden": 0, "entries": [
            {"dip_activity_id": "x1", "kind": "rede", "dip_person_id": "8173", "speaker": "Dora Dreher, MdB, Die Linke",
@@ -772,9 +827,9 @@ class BackfillTests(unittest.TestCase):
             path.write_bytes(b"<dbtplenarprotokoll/>")
             md5 = hashlib.md5(b"<dbtplenarprotokoll/>").hexdigest()
             entries = [self.cut_entry(1), self.cut_entry(2)]
-            same = site.replaced_cut_files(output_dir, entries, [self.catalog(1, md5), self.catalog(2, md5)])
+            same, _deferred = site.replaced_cut_files(output_dir, entries, [self.catalog(1, md5), self.catalog(2, md5)])
             self.assertEqual(same, set())
-            changed = site.replaced_cut_files(output_dir, entries, [self.catalog(1, "0" * 32), self.catalog(2, None)])
+            changed, _deferred = site.replaced_cut_files(output_dir, entries, [self.catalog(1, "0" * 32), self.catalog(2, None)])
             self.assertEqual(changed, {"21/1"})
         acquirable, *_rest, held = site.incomplete_sitting_protocols(
             entries, [self.catalog(2), self.catalog(1)], replaced=changed)
@@ -793,9 +848,66 @@ class BackfillTests(unittest.TestCase):
             md5 = hashlib.md5(path.read_bytes()).hexdigest()
             entry = self.cut_entry(1)
             entry["report"]["protocol"]["xml_sha256"] = dip.xml_source_sha256("<dbtplenarprotokoll/>")
-            self.assertEqual(site.replaced_cut_files(output_dir, [entry], [self.catalog(1, md5)]), set())
+            self.assertEqual(site.replaced_cut_files(output_dir, [entry], [self.catalog(1, md5)]), (set(), set()))
             entry["report"]["protocol"]["xml_sha256"] = "0" * 64
-            self.assertEqual(site.replaced_cut_files(output_dir, [entry], [self.catalog(1, md5)]), {"21/1"})
+            self.assertEqual(site.replaced_cut_files(output_dir, [entry], [self.catalog(1, md5)]), ({"21/1"}, set()))
+
+    def selection(self, tmp, listed, *, record=None, sha=None):
+        """What replaced_cut_files says of a cut sitting whose cached XML is ``<dbtplenarprotokoll/>``, with DIP
+        listing ``listed`` and the report's record of its last fetch ``record``."""
+        path = site.xml_cache_path(Path(tmp), "21/1")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"<dbtplenarprotokoll/>")
+        entry = self.cut_entry(1)
+        entry["report"]["protocol"].update({"xml_sha256": sha or dip.xml_source_sha256("<dbtplenarprotokoll/>"),
+                                            **(record or {})})
+        return site.replaced_cut_files(Path(tmp), [entry], [self.catalog(1, listed)],
+                                       now=datetime(2026, 11, 20, 12, tzinfo=timezone.utc))
+
+    # Value: protects=a cut sitting whose served XML never matches DIP's hash is not fetched on every backfill, and a
+    #   file DIP listed before dserver served it is still read within 7 days; fails_when=every run fetches it, or the
+    #   deferral never expires; why_new=TODOS cut review item 7; seam=replaced_cut_files(now)
+    def test_a_fetch_that_gave_a_file_unlike_dips_hash_is_left_for_seven_days(self):
+        listed, left, fetch = "a" * 32, (set(), {"21/1"}), ({"21/1"}, set())
+        cases = (
+            ("fetched an hour ago", {"xml_listed_hash": listed, "xml_fetched_at": "2026-11-20T11:00:00Z"}, left),
+            ("hash case and spaces", {"xml_listed_hash": f" {listed.upper()} ", "xml_fetched_at": "2026-11-20T11:00:00Z"}, left),
+            ("one second short of 7 days", {"xml_listed_hash": listed, "xml_fetched_at": "2026-11-13T12:00:01Z"}, left),
+            ("7 days ago", {"xml_listed_hash": listed, "xml_fetched_at": "2026-11-13T12:00:00Z"}, fetch),
+            ("DIP lists another hash now", {"xml_listed_hash": "b" * 32, "xml_fetched_at": "2026-11-20T11:00:00Z"}, fetch),
+            ("no record", {}, fetch),
+            ("no time", {"xml_listed_hash": listed}, fetch),
+            ("unreadable time", {"xml_listed_hash": listed, "xml_fetched_at": "gestern"}, fetch),
+            ("time ahead of the clock", {"xml_listed_hash": listed, "xml_fetched_at": "2026-11-21T00:00:00Z"}, fetch),
+            ("wrong types", {"xml_listed_hash": 7, "xml_fetched_at": 7}, fetch),
+        )
+        for name, record, expected in cases:
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                self.assertEqual(self.selection(tmp, listed, record=record), expected)
+        with self.subTest("a report read from another file is fetched at once"), tempfile.TemporaryDirectory() as tmp:
+            record = {"xml_listed_hash": listed, "xml_fetched_at": "2026-11-20T11:00:00Z"}
+            self.assertEqual(self.selection(tmp, listed, record=record, sha="0" * 64), fetch)
+
+    # Value: protects=a real fetch records what DIP listed for the file it read and when, and a replay keeps that
+    #   record; fails_when=the next backfill has nothing to defer by, or a replay restarts the 7 days;
+    #   why_new=TODOS cut review item 7; seam=fetch_text and enrich_with_api stubbed
+    def test_an_online_build_records_the_fetch_and_a_replay_keeps_it(self):
+        protocol = {"id": "p1", "dokumentnummer": "20/999", "xml_hash": " " + "A" * 32,
+                    "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/20/20999.xml"}}
+        enrichment = {"agenda_items": [], "warnings": [], "sampled_people": [], "sitting_votes": [],
+                      "api_totals": {}, "api_records": {"aktivitaeten": []}}
+        args = SimpleNamespace(api_key="test", sleep=0, person_limit=0, vote_scan_pages=0, limit_tops=None)
+        with mock.patch.object(dip, "fetch_text", return_value=cut_fixture_xml()), \
+                mock.patch.object(dip, "enrich_with_api", return_value=enrichment), \
+                mock.patch.object(dip, "utc_now", return_value="2026-11-20T11:00:00Z"), \
+                mock.patch("sys.stderr", new_callable=io.StringIO):
+            report = dip.build_report(args, protocol=protocol)
+        record = ("a" * 32, "2026-11-20T11:00:00Z")
+        self.assertEqual((report["protocol"]["xml_listed_hash"], report["protocol"]["xml_fetched_at"]), record)
+        parsed = dip.parse_protocol_xml(cut_fixture_xml())
+        report["agenda_items"] = report_of(parsed, [])["agenda_items"]
+        dip.reparse_report_xml(report, parsed)
+        self.assertEqual((report["protocol"]["xml_listed_hash"], report["protocol"]["xml_fetched_at"]), record)
 
     # Value: protects=the run names the cut files apart from withheld Reden; fails_when=they read as withheld Reden or
     #   as sittings a backfill would fix; why_new=step 5; seam=format_incomplete_report
@@ -818,12 +930,33 @@ class BackfillTests(unittest.TestCase):
         withheld["validation_summary"]["withheld_rede_count"] = 1
         no_times = report_for(3)
         entries = [self.cut_entry(1), {"report": withheld}, {"report": no_times}]
-        lines = site.unacquirable_lines([self.catalog(n) for n in (1, 2, 3)], entries, {"21/4"})
+        lines = site.unacquirable_lines([self.catalog(n) for n in (1, 2, 3)], entries, {"21/4"}, [self.catalog(4)])
         self.assertEqual([line.split(":")[0] for line in lines], [
             "[backfill] leaving 1 sitting(s) whose Protokoll file stops partway (E16)",
             "[backfill] leaving 1 sitting(s) held back only by withheld Reden (ADR 0005)",
             "[backfill] leaving 1 sitting(s) whose XML prints no start or end time",
             "[backfill] acquiring 1 cut sitting(s) again"])
+
+    # Value: protects=the run says "acquiring ... again" only of replaced cut sittings it acquires; fails_when=a
+    #   sitting outside --protocol-wahlperiode, or one DIP has no XML for, is counted; why_new=TODOS cut review item 5;
+    #   seam=unacquirable_lines
+    def test_only_the_replaced_sittings_the_run_acquires_are_counted(self):
+        lines = site.unacquirable_lines([], [], {"21/4", "21/5", "20/9"}, [self.catalog(4), self.catalog(6)])
+        # Both causes of ``replaced_cut_files`` are named: the hash, and a report read from another file.
+        self.assertEqual(lines, ["[backfill] acquiring 1 cut sitting(s) again: DIP lists their XML with another hash "
+                                 "now, so the file may have been replaced, or the report was read from another file "
+                                 "than the cached one (21/4)."])
+        self.assertEqual(site.unacquirable_lines([], [], {"20/9"}, [self.catalog(4)]), [])
+
+    # Value: protects=a deferred sitting is named, so the run is not silent about a hash that does not match;
+    #   fails_when=it reads only as a file the Bundestag has not replaced, or a sitting acquired for another gap is
+    #   named as left alone; why_new=TODOS cut review item 7; seam=unacquirable_lines
+    def test_a_deferred_sitting_the_run_leaves_is_named(self):
+        lines = site.unacquirable_lines([self.catalog(1)], [self.cut_entry(1)], set(), [self.catalog(2)],
+                                        {"21/1", "21/2"})
+        self.assertEqual(lines[1:], [
+            "[backfill] not fetching 1 cut sitting(s) again yet: their last fetch, made while DIP listed the same hash, "
+            "gave a file with another one; the first backfill 7 days after that fetch tries again (21/1)."])
 
 
 #: DIP's Aktivitäten for cut_fixture_xml() that give CUT under the current rule: the file's three Reden (101 A to
@@ -1090,6 +1223,30 @@ class CutSentenceTests(unittest.TestCase):
             "In Sitzung 21/99 endet die Protokolldatei vorzeitig; mindestens 1 Rede und 2 zu Protokoll gegebene Reden "
             "laut DIP fehlen auf dieser Seite.")
 
+    # Value: protects=a count of zero reads as words, and a floor of zero as an open count; fails_when=a page prints
+    #   "0 Reden laut DIP fehlen" or "mindestens 0 Reden"; why_new=TODOS cut review item 11; seam=renderer
+    def test_zero_reads_keine_rede_and_a_floor_of_zero_is_open(self):
+        week = "in Redeanteil und Rangfolge dieser Woche"
+        head = "In Sitzung 21/99 endet die Protokolldatei vorzeitig; "
+        for written in (None, 0):
+            with self.subTest(written=written):
+                self.assertEqual(pulse_html.cut_gap_sentence(["21/99"], 0, written, week),
+                                 f"{head}keine Rede laut DIP fehlt {week}.")
+                self.assertEqual(pulse_html.cut_gap_sentence(["21/99"], 0, written, week, floor=True),
+                                 f"{head}wie viele Reden {week} fehlen, ist offen.")
+        self.assertEqual(pulse_html.cut_gap_sentence(["21/99"], 0, 1, "auf dieser Seite", floor=True),
+                         f"{head}1 zu Protokoll gegebene Rede laut DIP fehlt auf dieser Seite; ob auch Reden fehlen, ist offen.")
+        # A sitting DIP has not indexed may hold more written Reden too; an unplaced Rede is a spoken one.
+        two = ["21/105", "21/108"]
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(two, 0, 1, "auf dieser Seite", floor=True, unindexed=["21/108"]),
+            "In 2 Sitzungen (21/105, 21/108) endet die Protokolldatei vorzeitig; mindestens 1 zu Protokoll gegebene Rede "
+            "laut DIP fehlt auf dieser Seite; ob auch Reden fehlen, ist offen, und 21/108 hat DIP noch nicht erfasst.")
+        self.assertEqual(
+            pulse_html.cut_gap_sentence(["21/105", "21/108"], 0, 0, "auf dieser Seite", floor=True, unindexed=["21/108"]),
+            "In 2 Sitzungen (21/105, 21/108) endet die Protokolldatei vorzeitig; wie viele Reden auf dieser Seite fehlen, "
+            "ist offen, und 21/108 hat DIP noch nicht erfasst.")
+
     def test_a_sitting_dip_has_not_indexed_says_so(self):
         self.assertEqual(
             pulse_html.cut_gap_sentence(["21/108"], 0, None, "in Redeanteil und Rangfolge dieser Woche",
@@ -1126,6 +1283,17 @@ class DossierNoteTests(unittest.TestCase):
         self.assertIn("<li>Emil Esch, MdB, CDU/CSU · zu Protokoll</li>", note)
         self.assertNotIn("speech-card", note)
         self.assertNotIn("<a href=\"../abgeordnete", note)
+
+    # Value: protects=the link says "ab Seite" only where it opens at that page; fails_when=a head without a readable
+    #   start page links the cover and promises the page; why_new=TODOS cut review item 12; seam=renderer
+    def test_the_pdf_link_names_a_page_only_where_it_opens_there(self):
+        for start_page in (None, "", "S. 101", "200"):
+            with self.subTest(start_page=start_page):
+                report = dossier_report()
+                report["protocol"]["xml_header"]["start_page"] = start_page
+                html = pulse_html.render_html(report)
+                self.assertIn('<a href="https://www.bundestag.de/pp.pdf">Vollständiges Protokoll als PDF ↗</a>', html)
+                self.assertNotIn("Im PDF ab Seite", html)
 
     def test_a_whole_sitting_has_no_note(self):
         self.assertNotIn("<section class=\"cut-gap\"", pulse_html.render_html(dossier_report(None)))
@@ -1176,6 +1344,87 @@ class PulsWeekSentenceTests(unittest.TestCase):
         self.assertNotIn("Protokolldatei", html)
 
 
+def week_entry(datum, number, party="SPD", *, protocol_cut=None, indexed=True):
+    """A sitting of the Puls week fixtures with one Rede; ``protocol_cut`` marks it cut."""
+    from test_build_dip_pulse_site import SittingWeekComparisonTests as W
+    entry = W._entry(datum, number, [W._item(1, [(party, 100)])])
+    entry["report"]["validation_summary"].update(
+        {"xml_top_count": 1, "xml_speech_count": 1, "protocol_cut": copy.deepcopy(protocol_cut)})
+    if protocol_cut:
+        entry["report"]["api_records"] = {"aktivitaeten": [{"id": "z"}] if indexed else []}
+    return entry
+
+
+def front_page(entries, week):
+    with mock.patch("sys.stderr", new_callable=io.StringIO):
+        return site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=week)
+
+
+class PulsWeekFloorTests(unittest.TestCase):
+    # Value: protects=a week holding a cut sitting DIP has not indexed gives its count of the others as a floor, as
+    #   DATA.md and the Daten page do; fails_when=the sentence gives an exact count; why_new=TODOS cut review item 16a;
+    #   seam=render_front_page
+    def test_an_unindexed_sitting_makes_the_weeks_count_a_floor(self):
+        unindexed = {**CUT, "unplaced_reden": None, "entries": []}
+        html = front_page([week_entry("2026-06-11", "21/83", protocol_cut=CUT),
+                           week_entry("2026-06-12", "21/84", protocol_cut=unindexed, indexed=False)], (2026, 24))
+        self.assertIn("In 2 Sitzungen dieser Woche (21/83, 21/84) endet die Protokolldatei vorzeitig; mindestens 1 Rede "
+                      "laut DIP fehlt in Redeanteil und Rangfolge dieser Woche, und 21/84 hat DIP noch nicht erfasst.", html)
+
+
+    # Value: protects=a week holding a cut sitting with Reden DIP lists but cannot place gives its count as a floor;
+    #   fails_when=week_cut_note drops the unplaced_reden term and the sentence states an exact count;
+    #   why_new=PulsWeekFloorTests covers only the unindexed cause of the floor; seam=none;
+    #   no_claim=the Daten page and DATA.md wording (separate renderers)
+    def test_unplaced_reden_make_the_weeks_count_a_floor(self):
+        html = front_page([week_entry("2026-06-11", "21/83", protocol_cut={**CUT, "unplaced_reden": 2})], (2026, 24))
+        self.assertIn("In Sitzung 21/83 endet die Protokolldatei vorzeitig; mindestens 1 Rede laut DIP fehlt in "
+                      "Redeanteil und Rangfolge dieser Woche.", html)
+
+
+class WeekComparisonCutTests(unittest.TestCase):
+    """KW 24/2026 against KW 23/2026: the deltas shift by what the earlier week's cut files lack."""
+
+    @staticmethod
+    def comparison(entries):
+        html = front_page(entries, (2026, 24))
+        start = html.index('id="wochenvergleich"')
+        return html[start:html.index("</section>", start)]
+
+    @staticmethod
+    def note(number):
+        return (f'<p class="week-note week-cut">In Sitzung {number} endet die Protokolldatei vorzeitig; 1 Rede laut DIP '
+                "fehlt in den Vergleichswerten aus KW 23/2026.</p>")
+
+    # Value: protects=a Wochenvergleich against a week holding a cut sitting names it; fails_when=Redeanteil deltas
+    #   shift with no word of it; why_new=TODOS cut review item 11; seam=render_front_page
+    def test_the_comparison_names_the_earlier_weeks_cut_sitting(self):
+        section = self.comparison([week_entry("2026-06-04", "21/81", protocol_cut=CUT),
+                                   week_entry("2026-06-11", "21/83")])
+        self.assertIn(self.note("21/81"), section)
+        whole = self.comparison([week_entry("2026-06-04", "21/81"), week_entry("2026-06-11", "21/83")])
+        self.assertNotIn("Protokolldatei", whole)
+        own = self.comparison([week_entry("2026-06-04", "21/81"),
+                               week_entry("2026-06-11", "21/83", protocol_cut=CUT)])
+        self.assertNotIn("Protokolldatei", own)
+
+    # Value: protects=with unequal sitting counts only the compared weekdays' cuts are named, and with no shared
+    #   weekday every cut of the week whose figures stand beside this one's; fails_when=the note names a sitting no
+    #   compared figure holds, or drops one it does; why_new=TODOS cut review item 11; seam=render_front_page
+    def test_only_the_compared_sittings_are_named(self):
+        thursday = week_entry("2026-06-11", "21/83")
+        outside = self.comparison([week_entry("2026-06-03", "21/80", protocol_cut=CUT),
+                                   week_entry("2026-06-04", "21/81"), thursday])
+        self.assertNotIn("Protokolldatei", outside)
+        inside = self.comparison([week_entry("2026-06-03", "21/80", protocol_cut=CUT),
+                                  week_entry("2026-06-04", "21/81", protocol_cut=CUT), thursday])
+        self.assertIn(self.note("21/81"), inside)
+        self.assertNotIn("21/80 ", inside.split('week-cut">')[1].split("</p>")[0] + " ")
+        no_shared = self.comparison([week_entry("2026-06-02", "21/79", protocol_cut=CUT),
+                                     week_entry("2026-06-03", "21/80"), thursday])
+        self.assertIn(self.note("21/79"), no_shared)
+
+
 class PersonPageTests(unittest.TestCase):
     # Value: protects=a person page names the Reden and Reden zu Protokoll DIP lists for that person in cut files,
     #   pooled over every row of the person; fails_when=a person's Reden count reads as complete; why_new=step 7;
@@ -1193,7 +1442,8 @@ class PersonPageTests(unittest.TestCase):
         conn.commit()
         mps, _ = site.collect_abgeordnete(conn)
         person = next(mp for mp in mps if mp.get("unprinted"))
-        self.assertEqual(person["unprinted"], {"rede": 1, "zu_protokoll": 1, "sittings": ["20/999"], "floor": False})
+        self.assertEqual(person["unprinted"], {"rede": 1, "zu_protokoll": 1, "sittings": ["20/999"], "floor": False,
+                                               "unindexed": []})
         self.assertIn("In Sitzung 20/999 endet die Protokolldatei vorzeitig; 1 Rede und 1 zu Protokoll gegebene Rede "
                       "laut DIP fehlen auf dieser Seite.", site.render_abgeordnete_detail(person))
         others = [mp for mp in mps if not mp.get("unprinted")]
@@ -1207,12 +1457,56 @@ class PersonPageTests(unittest.TestCase):
                       site.render_abgeordnete_detail(person))
 
 
+    # Value: protects=a page that names unprinted Reden also names every cut sitting of the person's Wahlperioden whose
+    #   speakers nobody can tell (unindexed, or unplaced Reden), and calls its count a floor; fails_when=it gives an
+    #   exact count while one of those Reden may be the person's; why_new=TODOS cut review item 16b; seam=store+renderer
+    def test_a_persons_note_adds_the_open_cut_sittings_of_their_wahlperioden(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = pulse_store.connect(Path(tmp.name) / "s.sqlite")
+        self.addCleanup(conn.close)
+        report = cut_report(copy.deepcopy(CUT))
+        report["validation_summary"]["protocol_cut"]["entries"][1]["dip_person_id"] = "8173"
+        pulse_store.persist_report(conn, report, None)
+        conn.execute("UPDATE mps SET dip_person_id = '8173' WHERE id = (SELECT MIN(id) FROM mps)")
+        pulse_store.resolve_unprinted_people(conn)
+        for number, day, unplaced in (("20/998", "2024-05-01", 2), ("20/1000", "2024-06-01", None),
+                                      ("20/997", "2024-04-01", 0), ("19/5", "2017-11-21", None)):
+            conn.execute(
+                "INSERT INTO protocols(id, document_number, date, created_at, updated_at, xml_cut, xml_cut_unplaced_reden) "
+                "VALUES (?, ?, ?, 'now', 'now', 1, ?)", (f"pp-{number}", number, day, unplaced))
+        conn.commit()
+        mps = site.collect_abgeordnete(conn)[0]
+        noted = [mp for mp in mps if mp.get("unprinted")]
+        self.assertEqual([mp["unprinted"] for mp in noted], [
+            {"rede": 1, "zu_protokoll": 1, "sittings": ["20/998", "20/999", "20/1000"], "floor": True,
+             "unindexed": ["20/1000"]}])
+        self.assertIn("In 3 Sitzungen (20/998, 20/999, 20/1000) endet die Protokolldatei vorzeitig; mindestens 1 Rede und "
+                      "mindestens 1 zu Protokoll gegebene Rede laut DIP fehlen auf dieser Seite, und 20/1000 hat DIP noch "
+                      "nicht erfasst.", site.render_abgeordnete_detail(noted[0]))
+        # A namentliche Abstimmung is a Wahlperiode the person belongs to as well (only MdBs vote).
+        voter = conn.execute("SELECT mp_id FROM unprinted_contributions WHERE mp_id IS NOT NULL").fetchone()[0]
+        conn.execute("INSERT INTO protocols(id, document_number, date, created_at, updated_at) "
+                     "VALUES ('pp-19/9', '19/9', '2017-12-01', 'now', 'now')")
+        conn.execute("INSERT INTO votes(id, protocol_id, date, top_link_step, created_at, updated_at) "
+                     "VALUES ('v-19', 'pp-19/9', '2017-12-01', 'none', 'now', 'now')")
+        conn.execute("INSERT INTO vote_members(vote_id, mp_id, vote) VALUES ('v-19', ?, 'yes')", (voter,))
+        voted = next(mp for mp in site.collect_abgeordnete(conn)[0] if mp.get("unprinted"))
+        self.assertEqual((voted["unprinted"]["sittings"], voted["unprinted"]["unindexed"]),
+                         (["19/5", "20/998", "20/999", "20/1000"], ["19/5", "20/1000"]))
+        # data/abgeordnete.json writes these entries whole: the Wahlperiode of a vote is read beside them.
+        self.assertEqual(set(voted["votes"][0]), {"vote_id", "vote", "date", "title", "topic", "detail_url"})
+        # A person with no unprinted row of their own gets no note (TODOS.md; ADR 0006).
+        self.assertTrue(any(mp["speech_count"] and not mp.get("unprinted") for mp in mps))
+
+
 class CorrectedEndReceiptTests(unittest.TestCase):
     # Value: protects=a Fakt whose sitting end the PDF corrects names both ends and the PDF page, so a reader who
     #   checks the XML is not misled; fails_when=the receipt shows only the corrected end; why_new=step 7 (3b);
     #   seam=renderer
     def test_the_protocol_receipt_names_both_ends(self):
-        row = {"citation": {"document_number": "19/55", "sitting_end_corrected": "01:28", "xml_sitting_end": "01:30"},
+        row = {"metric_id": "laengste-sitzung",
+               "citation": {"document_number": "19/55", "sitting_end_corrected": "01:28", "xml_sitting_end": "01:30"},
                "receipts": [{"entity_kind": "protocol", "document_number": "19/55", "position": 0}]}
         with reviewed_end_times.using(reviewed_end_times.load()):
             html = site._render_fact_sources(row, mp_lookup={}, document_numbers={"19/55"}, bill_slugs=set())
@@ -1232,6 +1526,21 @@ class CorrectedEndReceiptTests(unittest.TestCase):
                                                                     bill_slugs=set()))
 
 
+
+    # Value: protects=the corrected end stands under the cited sitting's receipt alone, and only on a Fakt whose
+    #   metric reads the sitting end; fails_when=one sitting's end and PDF page print under another's receipt;
+    #   why_new=TODOS cut review item 13; seam=renderer
+    def test_only_the_cited_sittings_receipt_carries_the_corrected_end(self):
+        receipts = [{"entity_kind": "protocol", "document_number": number, "position": position}
+                    for position, number in enumerate(("19/55", "19/56"))]
+        row = {"metric_id": "laengste-sitzung", "receipts": receipts,
+               "citation": {"document_number": "19/55", "sitting_end_corrected": "01:28", "xml_sitting_end": "01:30"}}
+        render = lambda fact: site._render_fact_sources(fact, mp_lookup={}, document_numbers=set(), bill_slugs=set())
+        with reviewed_end_times.using(reviewed_end_times.load()):
+            first, second = render(row).split("<li>")[1:]
+            self.assertIn("Ende laut PDF 01:28 Uhr", first)
+            self.assertNotIn("Ende laut PDF", second)
+            self.assertNotIn("Ende laut PDF", render({**row, "metric_id": "laengste-rede"}))
 
 class FaktenWeekGapTests(unittest.TestCase):
     # Value: protects=a Fakten week that posts a Fakt still names the metrics a cut sitting keeps incomplete, with the

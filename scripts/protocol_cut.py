@@ -52,6 +52,14 @@ class ProtocolCutError(ValueError):
     """The file or DIP says something the rule cannot place: a person reads it."""
 
 
+#: The fix a build prints for a ProtocolCutError, online and on a replay.
+REFUSAL_FIX = (
+    "read the sitting's XML and DIP's Aktivitäten (docs/source-errors.md E16). A re-fetch of the same files gives the "
+    "same refusal: change the rule in scripts/protocol_cut.py, or, where DIP's Aktivitäten are wrong, fetch the sitting "
+    "again once DIP has corrected them"
+)
+
+
 def _flat_text(root: ET.Element) -> str:
     return re.sub(r"\s+", " ", "".join(root.itertext()).replace("­", ""))
 

@@ -54,14 +54,14 @@ ACTIVITIES = [
 ]
 
 
-def data_dir(root, number, xml):
+def data_dir(root, number, xml, activities=ACTIVITIES, positions=()):
     """A data directory as a replay leaves it, with the tables the census reads."""
     name = number.replace('/', '-')
     (root / 'xml').mkdir()
     (root / 'xml' / f'plenarprotokoll-{name}.xml').write_text(xml, encoding='utf-8')
     (root / f'plenarprotokoll-{name}.json').write_text(json.dumps({
         'protocol': {'dokumentnummer': number, 'datum': '2026-10-08'},
-        'api_records': {'aktivitaeten': ACTIVITIES, 'vorgangspositionen': []},
+        'api_records': {'aktivitaeten': activities, 'vorgangspositionen': list(positions)},
     }), encoding='utf-8')
     conn = sqlite3.connect(root / 'bundestag-pulse.sqlite')
     conn.executescript('''
@@ -82,7 +82,42 @@ def data_dir(root, number, xml):
     conn.close()
 
 
+def census_row(xml, **data):
+    """The one row of a census over 21/99 with ``xml`` as its file."""
+    census = load_census()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        data_dir(root, '21/99', xml, **data)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            census.main(root)
+    [row] = csv.DictReader(io.StringIO(out.getvalue()), delimiter='\t')
+    return row
+
+
 class ProtokollGapCensusTests(unittest.TestCase):
+    # Value: protects=a count the census cannot know is empty, never 0; fails_when=a rerun reads a file without page
+    #   numbers (20/7, 20/97, 18/223, 19/161) as having nothing after its cut; why_new=TODOS census hygiene; seam=none
+    def test_without_a_page_the_columns_that_need_one_are_empty(self):
+        no_pages = protocol_xml().replace('pnr="10"', 'pnr=""').replace('pnr="12"', 'pnr=""')
+        unplaced = [activity(a['aktivitaetsart'], a['titel'], None) for a in ACTIVITIES]
+        row = census_row(no_pages, activities=unplaced,
+                         positions=[{'id': 'v1', 'fundstelle': {'anfangsseite': 99}}])
+        self.assertEqual(
+            [row[key] for key in ('xml_letzte_rede', 'dip_letzter_beitrag_gesprochen', 'dip_reden_danach',
+                                  'dip_zwischenfragen_kurzinterventionen_erwiderungen_danach',
+                                  'dip_vorgangspositionen_danach')],
+            ['', '', '', '', ''])
+        self.assertEqual((row['dip_zu_protokoll'], row['fehlend_zu_protokoll']), ('2', '1'))
+
+    # Value: protects=a Vorgangsposition whose page DIP gives as text is read as that page; fails_when=the run stops
+    #   comparing text with a number, or a text that is no page counts; why_new=TODOS census hygiene; seam=none
+    def test_a_position_page_given_as_text_is_read_as_a_number(self):
+        positions = [{'id': name, 'fundstelle': {'anfangsseite': page, 'anfangsquadrant': 'A'}}
+                     for name, page in (('after', '13'), ('number', 14), ('before', ' 11 '), ('none', 'Anlage 2'),
+                                        ('absent', None), ('long', '9' * 5000))]
+        self.assertEqual(census_row(protocol_xml(), positions=positions)['dip_vorgangspositionen_danach'], '2')
+
     # Value: protects=the place of the last <rede> is the last of the Sitzungsverlauf, never an annex's or a page the TOC leaves empty;
     #   fails_when=the cut moves and the Reden after it are counted wrongly; why_new=new script; seam=none
     def test_the_cut_is_the_last_rede_of_the_sitzungsverlauf(self):
@@ -121,9 +156,12 @@ class ProtokollGapCensusTests(unittest.TestCase):
         self.assertEqual((len(rows), sum(int(row['dip_reden_danach']) for row in rows),
                           sum(int(row['fehlend_zu_protokoll']) for row in rows)), (33, 1189, 429))
         methods = (_support.ROOT / 'docs' / 'data-methods.md').read_text(encoding='utf-8')
-        section = methods[methods.index('**Abgebrochene Protokolldateien.**'):methods.index('In der 18. Wahlperiode druckt')]
+        # Through the E17 paragraph, which reconciles the Reden zu Protokoll with DIP: its totals move with the next
+        # cut sitting too (4.599 DIP, 4.174 stored, 429 on 2026-11-26).
+        section = methods[methods.index('**Abgebrochene Protokolldateien.**'):methods.index('## Personen und Abstimmungen')]
+        self.assertIn('In der 18. Wahlperiode druckt', section)
         self.assertNotRegex(section, r'(?m)^\|')
-        self.assertNotRegex(section, r'\b(33|1\.189|429)\b')
+        self.assertNotRegex(section, r'\b(33|1\.189|429|4\.599|4\.174)\b')
 
 if __name__ == '__main__':
     unittest.main()

@@ -15,7 +15,7 @@ This is hard to reverse, and a reader will ask why 20 weeks of WP 21 more count 
 - **Two rules agree on which files are cut.** The notice is printed, and DIP's Aktivitäten list more "Rede" (the chair's farewells and greetings left out) than the file prints, counting a withheld unit as printed only where it would be a Rede (one that would be a Rede zu Protokoll counts with those; one not yet reviewed counts as neither), or more "Rede (zu Protokoll gegeben)" than it holds. A file with the notice whose Aktivitäten list no more is whole (19/107). A sitting DIP has not indexed yet is marked, not assumed whole, and is fetched again until DIP lists its Aktivitäten.
 - **A file without the notice that looks cut** (rule 3) stops the store gate for a person to read. It marks nothing.
 - **The rule has a version** (`protocol_cut.CUT_RULE_VERSION`), stored per sitting in `speech_rule_inputs.cut_rule_version`. A cached report or a store from another version is stale until `--offline --repersist`.
-- **The mark goes when the Bundestag replaces the file**: a re-read of a complete file clears it. A backfill fetches a cut sitting again only when DIP's `xml_hash` differs from the cached file, when its report was read from another file than the cached one, or when DIP had not indexed it.
+- **The mark goes when the Bundestag replaces the file**: a re-read of a complete file clears it. A backfill fetches a cut sitting again only when DIP's `xml_hash` differs from the cached file, when its report was read from another file than the cached one, or when DIP had not indexed it. Where the last fetch itself gave a file unlike the hash DIP listed (the cached report keeps that hash, `xml_listed_hash`, and the time, `xml_fetched_at`), the difference alone waits 7 days while DIP lists that same hash; the first backfill after that fetches it again, since DIP may list a replaced file before dserver serves it. A cached XML that is not UTF-8 stops the backfill and is named.
 
 ## What is stored
 
@@ -32,7 +32,7 @@ This is hard to reverse, and a reader will ask why 20 weeks of WP 21 more count 
 ## Readers
 
 - The dossier of a cut sitting shows, as a gap, where the file stops, what DIP lists after it, the PDF at that page and DIP's speakers, none of them looking like a Rede.
-- One generated sentence says which Reden DIP lists that a count lacks, on a Puls week whose Redeanteil and Rangfolge hold a cut sitting and on a person page with unprinted rows.
+- One generated sentence says which Reden DIP lists that a count lacks, on a Puls week whose Redeanteil and Rangfolge hold a cut sitting, in a Wochenvergleich whose compared figures of the earlier week hold one, and on a person page with unprinted rows. That page also names the cut sittings of the person's Wahlperioden that DIP has not indexed or where it lists Reden the cut cannot place, and calls its count a floor.
 - DATA.md and the Daten page give the cut files per Wahlperiode and per sitting from the store (`coverage.cut_protocols`); no figure is typed into a document.
 
 ## The minimum for analyses (N9)
